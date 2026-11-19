@@ -269,6 +269,22 @@ function img_pattern_suffixes(img::CciaImage)::Vector{String}
 end
 
 """
+    img_proximity_path(img, suffix) / img_proximity_suffixes(img)
+
+Proximity-profile runs (`spatialAnalysis.proximityProfile`): `{img._dir}/proximity/{suffix}.json`, one
+record per (population, distance band) around a structure. Listed from disk like the pattern runs
+above; no ccid.json registration.
+"""
+img_proximity_dir(img::CciaImage)::String = joinpath(img._dir, "proximity")
+img_proximity_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img_proximity_dir(img), "$(suffix).json")
+function img_proximity_suffixes(img::CciaImage)::Vector{String}
+    d = img_proximity_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".json")])
+end
+
+"""
     img_rois_path(img, suffix) / img_roi_reviews_path(img, suffix) / img_rois_suffixes(img)
 
 ROI auto-discovery (`docs/todo/ROI_TRIAGE_PLAN.md`): the ROI SET a `spatialAnalysis.roiDiscovery`

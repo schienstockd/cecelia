@@ -803,11 +803,20 @@ after fixing a gate. The GET cohort route computes the same answer without writi
 
 ## Undo / redo
 
-**Only for the hand-drawn pop types** — `flow` (cells) and `track` (tracks), i.e. `is_gating_pop_type`.
-A `clust`/`trackclust`/`region` population's edit is a cluster ID you ticked and can un-tick, and it
-mirrors set-wide through the client's `mirrorUids` (one user action, N image sidecars), so stepping
-one image back is not a coherent operation. A dragged gate or a deleted population *with its
-children* is work you cannot get back any other way, which is what this is for.
+**Server history is only for the hand-drawn pop types** — `flow` (cells) and `track` (tracks), i.e.
+`is_gating_pop_type`. A `clust`/`trackclust`/`region` edit mirrors set-wide through the client's
+`mirrorUids` (one user action, N image sidecars), so stepping one image's tree back is not a coherent
+operation. A dragged gate or a deleted population *with its children* is work you cannot get back any
+other way, which is what this is for.
+
+**Cluster pops: client-side history of strip clicks** (`utils/clusterAssignHistory.ts`). One click in
+the shared cluster strip — including a move off another population — is one step, holding only the
+cluster lists of the populations it touched. Undo writes those lists back through the same set-wide
+`updatePop`, drops before gains (the server refuses a cluster in two pops). A step whose populations
+no longer hold what it left them with (Claude's `set_cluster_pops`, another window, a deleted pop) is
+discarded with the rest of its stack instead of overwriting the later change. Keyed per (set,
+value_name, pop_type, run), capped at 50, held for the page's lifetime. Adding, renaming, recolouring
+and deleting cluster pops are not in it. Same buttons and shortcuts as gating.
 
 The mechanism is small because the document is: every mutation here is load → mutate →
 `save_pop_map!` of the WHOLE tree, so "the state before this edit" is just `to_tree` of what is still

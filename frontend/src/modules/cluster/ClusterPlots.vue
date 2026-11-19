@@ -30,7 +30,9 @@ import FloatingCanvasHost from '../../components/canvas/FloatingCanvasHost.vue'
 import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import { isInteractiveView, pageViews, migrateViewKey } from '../../components/canvas/interactiveViews'
+import { isInteractiveView, pageViews, viewOption, migrateViewKey } from '../../components/canvas/interactiveViews'
+import PlotPicker from '../../components/canvas/PlotPicker.vue'
+import type { PlotOption } from '../../plots/plotPicker'
 import { CLUSTER_PANELS, isClusterPanel, registeredControls } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
@@ -70,7 +72,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -175,15 +177,15 @@ watchPopRenames(() => g.flat, remap => {
 // plot types in the "+ Plot" picker, discovered from the SAME two registries the Analysis board uses
 // (no per-plot wiring): cluster-page interactive views (UMAP) + the CLUSTER_PANELS (heatmap, and — for
 // track clustering with the right obs columns — the HMM behaviour plots).
-const plotTypes = computed(() => [
+const plotTypes = computed<PlotOption[]>(() => [
   // only cluster-page interactive views (UMAP) — gatingStrategy/filmstrip are Analysis-board-only
-  ...pageViews('clusterPage').map(v => ({ kind: v.key, label: v.label })),
+  ...pageViews('clusterPage').map(v => ({ ...v, value: v.key })),
   ...Object.entries(CLUSTER_PANELS).filter(([, def]) => {
     if (def.trackOnly && props.popType !== 'trackclust') return false
     if (def.needsCols === 'hmmState' && !hmmStateCols.value.length) return false
     if (def.needsCols === 'hmmTransition' && !hmmTransitionCols.value.length) return false
     return true
-  }).map(([kind, def]) => ({ kind, label: def.label })),
+  }).map(([kind, def]) => ({ ...viewOption(kind, def), value: kind })),
 ])
 function addKind(kind: string) {
   const id = add()
@@ -313,11 +315,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
             <option v-for="s in suffixes" :key="s" :value="s">{{ s }}</option>
           </select>
         </label>
-        <select class="cp-add" v-tooltip.bottom="'Add a plot'"
-                @change="addKind(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-          <option value="" disabled selected>+ Plot…</option>
-          <option v-for="t in plotTypes" :key="t.kind" :value="t.kind">{{ t.label }}</option>
-        </select>
+        <PlotPicker :options="plotTypes" @pick="addKind" />
         <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
                               @update:cols="tileCols = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
@@ -355,7 +353,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         </button>
       </div>
 
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
@@ -442,6 +440,5 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 .cp-fix { flex-shrink: 0; margin-left: auto; align-self: center; font-size: var(--cc-fs-xs); padding: 3px 9px;
   border: 1px solid color-mix(in srgb, var(--cc-warn) 60%, transparent); border-radius: var(--cc-radius-xs); background: var(--cc-tint-amber); color: var(--cc-ink-amber); cursor: pointer; white-space: nowrap; }
 .cp-fix:hover { background: color-mix(in srgb, var(--cc-warn) 28%, transparent); }
-.cp-add { padding: 4px 8px; }
 
 </style>

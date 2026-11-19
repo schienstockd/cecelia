@@ -157,6 +157,67 @@ class CutTest(unittest.TestCase):
         with self.assertRaises(SystemExit):           # never over an existing cut
             self.cut.cut(KDIEEM, "movie", test_data=self.root)
 
+    def test_stores_are_cropped_to_one_box_with_the_cells_inside_it(self):
+        from cecelia.utils import zarr_utils
+        from cecelia.utils.label_props_utils import LabelPropsView
+        import numpy as np
+        from cecelia.tests.fixture_registry import fixture_for
+        fx = fixture_for("cells", "image-store", "label-store")      # what a store crop needs
+        src = pathlib.Path(fx.dir)
+        c = self.cut.cut(src, "cells-with-image-store", test_data=self.root, xy=8)
+        out = pathlib.Path(c["dir"])
+        vn = fx.value_name
+        src_im = pathlib.Path(fx.image_dir) / "ccidImage.ome.zarr"
+        src_lb = src / "labels" / f"{vn}.zarr"
+        im = self.root / "projects" / "FIXPRJ" / "0" / fx.uid / "ccidImage.ome.zarr"
+        lb = out / "labels" / f"{vn}.zarr"
+        # the box below is read off the source's own shape, so it holds for whichever fixture matches
+        lvl = zarr_utils.open_as_zarr(str(src_im))[0][0]
+        size = dict(zip(zarr_utils.read_axes(str(src_im)), lvl.shape))
+        box = c["box"]
+        # up to 4 channels and 16 planes from the start / around the cells, an 8 × 8 window in y/x
+        self.assertEqual(box["c"], (0, min(size["c"], 4)))
+        self.assertEqual(box["z"][1] - box["z"][0], min(size["z"], 16))
+        self.assertEqual(box["y"][1] - box["y"][0], min(size["y"], 8))
+        self.assertEqual(box["x"][1] - box["x"][0], min(size["x"], 8))
+        self.assertLess(box["x"][1] - box["x"][0], size["x"])        # the window really cuts
+        sl = lambda axes: tuple(slice(*box[a]) for a in axes)                      # noqa: E731
+        for src, dst in ((src_im, im), (src_lb, lb)):
+            axes = zarr_utils.read_axes(str(src))
+            self.assertEqual(zarr_utils.read_axes(str(dst)), axes)
+            self.assertEqual(zarr_utils.read_scale(str(dst)), zarr_utils.read_scale(str(src)))
+            want = np.asarray(zarr_utils.open_as_zarr(str(src))[0][0][sl(axes)])
+            got = np.asarray(zarr_utils.open_as_zarr(str(dst))[0][0][:])
+            np.testing.assert_array_equal(got, want)
+        # the cells kept are the ones whose centroid is in the box, moved to its origin
+        full = LabelPropsView(fx.table).only_centroid_cols().as_df()
+        inside = np.ones(len(full), bool)
+        for ax in ("x", "y", "z"):
+            v = full[f"centroid_{ax}"].to_numpy(float)
+            inside &= (v >= box[ax][0]) & (v < box[ax][1])
+        self.assertTrue(0 < inside.sum() < len(full))
+        cut_df = LabelPropsView(str(out / "labelProps" / f"{vn}.h5ad")).only_centroid_cols().as_df()
+        self.assertEqual(sorted(cut_df["label"]), sorted(full["label"][inside]))
+        joined = cut_df.merge(full, on="label", suffixes=("", "_src"))
+        for ax in ("x", "y", "z"):
+            np.testing.assert_allclose(joined[f"centroid_{ax}"], joined[f"centroid_{ax}_src"] - box[ax][0])
+        labels = np.asarray(zarr_utils.open_as_zarr(str(lb))[0][0][:])
+        for r in joined.itertuples():   # each kept cell's centroid voxel is its own label in the cut mask
+            self.assertEqual(labels[int(r.centroid_z), int(r.centroid_y), int(r.centroid_x)], r.label)
+        ccid = json.loads((out / "ccid.json").read_text(encoding="utf-8"))
+        self.assertEqual(ccid["labels"], {vn: f"{vn}.zarr"})
+        self.assertEqual(ccid["meta"]["SizeX"], "8")
+        self.assertIn(f'image_dir = "FIXPRJ/0/{fx.uid}"', self.cut.toml_entry(c))
+        self.assertIn("image-store", c["properties"])
+        self.assertIn("label-store", c["properties"])
+
+    def test_no_stores_cuts_the_table_alone(self):
+        from cecelia.tests.fixture_registry import fixture_for
+        fx = fixture_for("cells", "image-store", "label-store")
+        c = self.cut.cut(pathlib.Path(fx.dir), "cells-with-image-store", test_data=self.root, stores=False)
+        self.assertIsNone(c["box"])
+        self.assertFalse((self.root / "projects" / "FIXPRJ" / "0").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

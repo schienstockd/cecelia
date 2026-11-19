@@ -10,6 +10,7 @@ import FigureView from '../plots/FigureView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
 import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
+import type { PlotCategory, PlotSketchKind, PlotOption } from '../../plots/plotPicker'
 import TrackPathsView from '../plots/TrackPathsView.vue'
 import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 import TrackSchemeView from '../plots/TrackSchemeView.vue'
@@ -25,7 +26,6 @@ import HmmStateCardsView from '../plots/HmmStateCardsView.vue'
 // reference) and add ONE line here. The generic InteractivePanel + the canvases pick it up — no panel
 // or canvas changes. Shared infra (not cluster-specific) so the future universal canvas reuses it.
 // See docs/UI.md "Interactive plots".
-export type BoardGroup = 'interactive' | 'clustering' | 'image'
 export type PageFlag = 'clusterPage' | 'opticalFlowPage' | 'trackPage'
 
 export interface InteractiveView {
@@ -47,7 +47,10 @@ export interface InteractiveView {
   // (It was `trackCorrection` when this rule was written; the timeline replaced that worklist and
   // inherited the rule, which is the point of stating it about the BEHAVIOUR rather than the id.)
   pluginPage?: boolean
-  boardGroup?: BoardGroup     // which optgroup it lands in on the board (default 'interactive')
+  // Where the "+ Plot…" picker files it and the schematic it draws (plots/plotPicker.ts). Required, so
+  // a new view cannot land in the picker ungrouped.
+  category: PlotCategory
+  sketch: PlotSketchKind
   // WHICH MANAGER this plot needs in the host's rail (default 'pops'). The plot declares it; the host
   // resolves it. Before this, the board hardcoded `activeIsCluster ? PopulationManager : SeriesPicker`,
   // so a plot needing the model vault had no way to say so and `flowProbability` was simply dead
@@ -89,9 +92,9 @@ const TRACK_FAMILIES: PopTypeOption[] = TRACK_FAMILY_POP_TYPES.map(popType =>
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   clusterMap: {
     label: 'Cluster map',
-    answers: 'Where does each cluster sit in the UMAP / behaviour map, and which populations cover it?',
+    answers: 'Where does each cluster sit on the UMAP / behaviour map?',
     component: ClusterMapView, clusterPage: true, analysisBoard: true,
-    boardGroup: 'clustering', square: true, rail: 'clusterPops',
+    category: 'profiles', sketch: 'umap', square: true, rail: 'clusterPops',
     visControls: ['legend', 'pointSize', 'pointOpacity', 'palette', 'fontSize'],
     initialState: () => ({ labels: true, hl: [] }),
   },
@@ -99,17 +102,17 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // is dead chrome for them. `'none'` still gives them the rail's styling block — the gating strategy
   // reads font size and dot size from it.
   gatingStrategy: { label: 'Gating strategy',
-    answers: 'How was a population gated — every gate from the root down to it?',
-    component: GatingStrategyView, analysisBoard: true, rail: 'none', pluginPage: true,
+    answers: 'How was a population gated, from the root down?',
+    component: GatingStrategyView, analysisBoard: true, category: 'look', sketch: 'gate', rail: 'none', pluginPage: true,
     visControls: ['pointSize', 'fontSize'] },
   filmstrip: { label: 'Image / strip',
-    answers: 'What does it look like — a viewer screenshot or filmstrip beside the plots?',
-    component: ImageStripView, analysisBoard: true, boardGroup: 'image', rail: 'none', pluginPage: true },
+    answers: 'What does it look like — a viewer screenshot or filmstrip?',
+    component: ImageStripView, analysisBoard: true, category: 'look', sketch: 'image', rail: 'none', pluginPage: true },
   // A rendered figure (docs/todo/FIGURES_PLAN.md), picked by name and shown as made — the paper-quality
   // counterpart of `filmstrip`'s viewer screenshots. Read-only; the Movies & figures page edits it.
   figure: { label: 'Figure',
-    answers: 'Can a rendered figure from Movies & figures sit on the board beside the plots?',
-    component: FigureView, analysisBoard: true, boardGroup: 'image', rail: 'none' },
+    answers: 'Can a figure from Movies & figures sit beside the plots?',
+    component: FigureView, analysisBoard: true, category: 'look', sketch: 'image', rail: 'none' },
   // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
   // from `filmstrip`, which is a viewer SCREENSHOT montage — these planes are computed, are not
   // viewer layers, and have no reason to become any.
@@ -117,34 +120,34 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // exists, so it must not be handed one.
   flowMetrics: { label: 'Flow metrics',
     answers: 'Which flow metric planes should the motion model train on?',
-    component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true, rail: 'none' },
+    component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'planes', rail: 'none' },
   // Training convergence per loss TERM. A plot, not a chart in the vault's details modal, so it gets
   // the canvas chrome and the CSV/PNG/SVG + board-PDF export for free.
   flowTraining: { label: 'Training convergence',
-    answers: 'Has the flow model\'s training converged — loss per term over epochs?',
-    component: FlowTrainingView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
+    answers: 'Has the flow model\'s training converged?',
+    component: FlowTrainingView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'curve', rail: 'flowModels' },
   // What the trained model SEES: the projected input beside its probability map. Separate from
   // `flowMetrics` on purpose — that one is asked before a model exists and must not take one, this
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability',
-    answers: 'What does the trained flow model see — the input beside its probability map?',
-    component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, rail: 'flowModels' },
+    answers: 'What does the trained flow model see?',
+    component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'probability', rail: 'flowModels' },
   // Tracks as a PLOT (the viewer layer's counterpart): read-only, so unlike the timeline below it
   // belongs on the board. It takes the board's COMPARISON (`rail: 'pops'` + `TRACK_FAMILIES`): one group
   // per (images × population), so treatments and populations sit side by side like every other plot here
   // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is
   // a wrong one; the facet cells stay square too (`plots/facetGrid.ts`).
   trackPaths: { label: 'Tracks',
-    answers: 'What do the tracks look like — paths, star or rose plots per population, image or treatment?',
-    component: TrackPathsView, trackPage: true, analysisBoard: true,
+    answers: 'What do the tracks look like — paths, star or rose plots?',
+    component: TrackPathsView, trackPage: true, analysisBoard: true, category: 'look', sketch: 'tracksStar',
                 square: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
   // it belongs on the board: "is this movie comparable to its peers" is a board question, and it answers
   // it as a cohort — one curve per group, a group's images POOLED. Its verdicts come from the server, the
   // same ones `tracking.track_measures` banks as QC.
   trackDiagnostics: { label: 'Track diagnostics',
-    answers: 'Can this tracking be trusted — the track QC battery per group?',
-    component: TrackDiagnosticsView, trackPage: true,
+    answers: 'Can this tracking be trusted?',
+    component: TrackDiagnosticsView, trackPage: true, category: 'checks', sketch: 'trackCheck',
                       analysisBoard: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Tracks as LANES OVER FRAMES — the correction workspace (docs/todo/TRACK_SCHEME_PLAN.md). This
   // REPLACED the `trackCorrection` worklist, deleted with it: that surface drew each candidate on
@@ -157,12 +160,12 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `availableValueNames`; the panel exposes a segmentation picker (persisted as
   // `state.valueName`, priority via the shared `resolveValueName`). `rail: 'none'` (motif classes
   // are h5ad obs values, not populations — BEHAVIOUR_CARDS_PLAN Decision 6 re-scoped 2026-09-20).
-  // `boardGroup: 'clustering'` so it lands in the same picker section as cellCards.
+  // `category: 'look'` beside cellCards — both show real cells.
   motifCards: {
     label: 'Motif cards',
-    answers: 'What does each discovered motif class look like on real cells?',
+    answers: 'What does each motif class look like on real cells?',
     component: MotifCardsView, analysisBoard: true,
-    boardGroup: 'clustering', rail: 'none',
+    category: 'look', sketch: 'motifCard', rail: 'none',
   },
   // HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
   // column. Server enumerates eligible segmentations + hmm cols; panel exposes both pickers.
@@ -173,12 +176,12 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     label: 'HMM state cards',
     answers: 'What does each HMM state look like on a real track?',
     component: HmmStateCardsView, analysisBoard: true,
-    boardGroup: 'clustering', rail: 'none',
+    category: 'look', sketch: 'statesCard', rail: 'none',
   },
   trackScheme: {
     label: 'Track timeline',
-    answers: 'Which tracks overlap in time — lanes over frames, to join or split tracks?',
-    component: TrackSchemeView, trackPage: true,
+    answers: 'Which tracks overlap in time, to join or split them?',
+    component: TrackSchemeView, trackPage: true, category: 'look', sketch: 'trackLanes',
     // `'pops'` like its two siblings, and NOT `pluginPage`: this one mutates. A track population is
     // what a user picks — the segmentation is the storage detail underneath it — so the Track canvas
     // shows the series picker whenever one of these three is the active panel, rather than each panel
@@ -247,14 +250,17 @@ export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VI
 /** May a PLUGIN name this view on its own module page? See `pluginPage` above. */
 export const isPluginView = (key: string): boolean => !!INTERACTIVE_VIEWS[key]?.pluginPage
 
-export interface ViewOption { key: string; label: string }
+/** A view as a picker row (plots/plotPicker.ts → `PlotOption`, keyed by the view id). */
+export interface ViewOption extends Omit<PlotOption, 'value'> { key: string }
+
+export const viewOption = (key: string, v: Pick<InteractiveView, 'label' | 'answers' | 'category' | 'sketch'>): ViewOption =>
+  ({ key, label: v.label, answers: v.answers, category: v.category, sketch: v.sketch })
 
 const options = (pick: (v: InteractiveView) => boolean): ViewOption[] =>
-  Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => pick(v)).map(([key, v]) => ({ key, label: v.label }))
+  Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => pick(v)).map(([key, v]) => viewOption(key, v))
 
 /** Views a MODULE PAGE offers in its "+ Plot" picker, by that page's flag. */
 export const pageViews = (flag: PageFlag): ViewOption[] => options(v => !!v[flag])
 
-/** Views the ANALYSIS BOARD offers in one optgroup of its "+ Plot" picker. */
-export const boardViews = (group: BoardGroup): ViewOption[] =>
-  options(v => !!v.analysisBoard && (v.boardGroup ?? 'interactive') === group)
+/** Views the ANALYSIS BOARD offers in its "+ Plot" picker (grouped there by `category`, like every picker). */
+export const boardViews = (): ViewOption[] => options(v => !!v.analysisBoard)

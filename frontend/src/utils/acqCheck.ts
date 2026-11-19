@@ -109,7 +109,7 @@ export const fmt = (v: number | null | undefined, digits = 0): string =>
 
 /** The badge: warnings still open, and what the button says. */
 export function badgeOf(result: AcqCheckResult | null): { n: number; tip: string } {
-  if (!result) return { n: 0, tip: 'Check these movies against what you plan to do with them' }
+  if (!result) return { n: 0, tip: 'Check these images against what you plan to do with them' }
   if (!result.plan) return { n: result.nOpen, tip: result.nOpen ? `${result.nOpen} to look at — set a plan for the full check` : 'Set a plan for the full check' }
   return { n: result.nOpen, tip: result.nOpen ? `${result.nOpen} to look at` : 'Nothing to look at' }
 }

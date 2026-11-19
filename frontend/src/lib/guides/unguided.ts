@@ -237,6 +237,16 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Look at the Spatial pattern by group panel on real data'), todo('Whole-curve group test')],
   }) },
+  { id: 'proximity-profile', title: 'Proximity profile', group: 'Explore', maturity: covering(['spatialAnalysis.proximityProfile'], {
+    tier: 'experimental', testedOn: 'A real calibrated movie; hand-computed bands',
+    evidence: [
+      { path: 'app/test/suite/proximity_profile.jl', test: 'proximity records — shares, enrichment, overlapping populations',
+        failsIf: 'a band share or enrichment differs from the hand-computed value' },
+      { path: 'app/test/suite/proximity_profile.jl', test: 'proximityProfile on a real calibrated timecourse',
+        failsIf: 'band counts differ from a brute-force same-frame search in µm' },
+    ],
+    next: [todo('Look at the proximity plots on a real PhenoCycler or IBEX set')],
+  }) },
   { id: 'motif-discovery', title: 'Motif discovery', group: 'Explore', maturity: covering(['behaviour.motif_discovery'], {
     tier: 'experimental', testedOn: 'A real measured + tracked fixture',
     next: [

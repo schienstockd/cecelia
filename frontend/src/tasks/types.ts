@@ -115,7 +115,7 @@ export interface ParamDef {
   // Read by `utils/taskOutput.taskOutput` for the suggestion list, chain propagation and the preview
   // layer stem. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
   namespace?: 'filepaths' | 'labels' | 'spatialGraphs' | 'tracks' | 'branches'
-            | 'clusters' | 'regions' | 'stats' | 'patterns' | 'rois' | 'models' | 'obsCols'
+            | 'clusters' | 'regions' | 'stats' | 'patterns' | 'proximity' | 'rois' | 'models' | 'obsCols'
   // valueNameInput in the `labels` namespace: which ccid.json registry the written name lands in, when
   // it is not `labels` (segment.branching → 'branch_labels'). One declaration read by BOTH the run's
   // taken-name guard (`output_registry`, segmentation.jl) and the form's hint (`labelsTakenAdvisory`).
@@ -251,6 +251,9 @@ export interface ChainNodeSpec {
   params: Record<string, unknown>
   barrier_policy: string
   resource_pool: string
+  // "Queue after" wait step (app/src/tasks/chain/after_live.jl): starts nothing, waits for the runs of
+  // `fn` already going. Only on the runner's inline chains; absent on every saved template.
+  after_live?: boolean
 }
 
 export interface ChainEdgeSpec {

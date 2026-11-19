@@ -1,7 +1,9 @@
 {
   "id": "state_signature",
   "label": "State signature",
-  "answers": "What does each HMM state look like — the mean cell measures per state (heatmap)?",
+  "category": "profiles",
+  "sketch": "stateSignature",
+  "answers": "What are the mean cell measures of each HMM state?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["heatmap"],

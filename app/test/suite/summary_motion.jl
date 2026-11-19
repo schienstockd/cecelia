@@ -149,7 +149,9 @@ end
 # vector and the major one is +y, so taking the wrong eigenvector rotates every arrow 90°.
 @testset "anisotropy notebook readouts" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
-    if !have_fixture(h5)
+    # MAINT-EXEMPT: branch tables are not in the fixture registry (no property names "a second branch table")
+    h2 = fixture_path("testpr", "1", "KDIeEx", "labelProps", "aniso__branch.h5ad")
+    if !have_fixture(h5) || !have_fixture(h2)
         @test_skip "aniso__branch fixture (missing)"
     else
         # EXPLICIT uids. `@testset` reseeds the global RNG per testset, so `gen_uid()` deals
@@ -201,18 +203,26 @@ end
         @test "occupancy" in names(a) && "branching_act" in names(a)
 
         # a second branch table on the same image (SHG collagen + a DCs network) — long format,
-        # one block per value_name, which is what makes a cross-image comparison filterable
-        cp(h5, img_branch_props_path(img, "DCs"); force=true)
+        # one block per value_name, which is what makes a cross-image comparison filterable. The
+        # second table DISAGREES (two frames, t 0 and 5, anisotropy 0.55 / 0.66 — make_aniso_fixture.py),
+        # so a read that takes SHG's rows for DCs fails
+        cp(h2, img_branch_props_path(img, "DCs"); force=true)
         a2 = anisotropy_df(img)
-        @test nrow(a2) == 6 && sort(unique(a2.value_name)) == ["DCs", "SHG"]
+        @test nrow(a2) == 5 && sort(unique(a2.value_name)) == ["DCs", "SHG"]
+        dcs = a2[a2.value_name .== "DCs", :]
+        @test dcs.t == [0, 5]
+        @test Float64.(dcs.anisotropy) ≈ [0.55, 0.66] atol = 1e-6
+        @test Float64.(a2[a2.value_name .== "SHG", :anisotropy]) ≈ [0.21, 0.32, 0.43] atol = 1e-6
         @test nrow(anisotropy_df(img; value_name="SHG")) == 3
 
-        # across images — the cohort frame Figure 4 panel D scatters
+        # across images — the cohort frame Figure 4 panel D scatters; each image's rows are its own
         img2 = add_image!(s; name="img-b", uid="anisoB")
         mkpath(img_label_props_dir(img2))
-        cp(h5, img_branch_props_path(img2, "SHG"); force=true)
+        cp(h2, img_branch_props_path(img2, "SHG"); force=true)
         across = anisotropy_df([img, img2]; value_name="SHG")
-        @test nrow(across) == 6 && sort(unique(across.uID)) == sort([img.uid, img2.uid])
+        @test nrow(across) == 5 && sort(unique(across.uID)) == sort([img.uid, img2.uid])
+        @test Float64.(across[across.uID .== img2.uid, :anisotropy]) ≈ [0.55, 0.66] atol = 1e-6
+        @test Float64.(across[across.uID .== img.uid, :anisotropy]) ≈ [0.21, 0.32, 0.43] atol = 1e-6
 
         # an image with no branch table contributes nothing — never an error, never a zero row
         img3 = add_image!(s; name="img-c", uid="anisoC")
@@ -283,7 +293,8 @@ end
             @test all(g.i .< g.j)
             @test length(Set(zip(g.i, g.j))) == n_edges
             # a radius graph: no edge longer than the builder's 60 µm prune. In pixels, z unscaled: the
-            # fixture is uncalibrated, so this pins the reader, not the builder's µm conversion
+            # fixture is uncalibrated, so this pins the reader; the builder's µm conversion is pinned on
+            # the calibrated copy by test_spatial_utils.py → TestGraphRadiusIsMicrons
             @test all(k -> dist(g.label[g.i[k]], g.label[g.j[k]]) <= 60, eachindex(g.i))
             if per_t
                 # built per frame: `_t` is each cell's frame, and no edge joins two frames

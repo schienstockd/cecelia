@@ -494,6 +494,10 @@ Every one reduces to the **join contract** (squidpy edges ⟕ `pop_df`, group-by
 2. Neighbourhood composition around a specific population ("what surrounds cell X") — per-source group-by.
 3. Contact fraction between two pops with distance threshold — `cellContacts`/`cellContactsMeshes`.
 4. Distance to a structure/region/border — leading-edge (spatstat→shapely/scikit-image), branch kNN, min-distance.
+   **Composition around a structure: BUILT** — `spatialAnalysis.proximityProfile` (population share per
+   distance band vs the image, from the nearest structure cell; idea from SPACEc's patch proximity
+   analysis, Tan et al. 2025). Per-cell distance is `cellContacts`. A true border / leading-edge distance
+   (outline geometry rather than nearest cell) is still open.
 5. Region detection = neighbourhood-composition clustering ("i-niches") — the Region Clustering page.
 6. Region membership ("what fraction of pop X lives in region R") — cross-poptype query (Decision 6).
 7. Spatial-association significance ("≥1 B neighbour vs chance") — squidpy `nhood_enrichment` + binary test.

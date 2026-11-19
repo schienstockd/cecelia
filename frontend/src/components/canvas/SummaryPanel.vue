@@ -27,7 +27,8 @@ import { centroidLabel } from '../../utils/gatingAxes'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
-import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
+import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, MatrixMode } from '../../plots/types'
+import { isRunMatrixMode } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { visControlsFor } from '../../plots/plotControls'
 import { statsNotice } from '../../plots/statsInfo'
@@ -68,7 +69,7 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median'   // datapoint = each cell/track, or each image's mean/median (one dot per image)
         metricPop?: string    // per-image metric: which of the run's populations (or pairs) to plot
         statsPair?: string    // legacy name of metricPop, from boards saved before the pair plot became a metric
@@ -329,7 +330,10 @@ const specPinnedMode = computed(() => !!props.spec.dataSource.matrix?.mode)
 // `suffixes` (there is no spec field for a run picker, so the data supplies the options).
 // one predicate, shared with the population picker and mirrored server-side — see isPrecomputedSpec
 const isPrecomputed = computed(() => isPrecomputedSpec(props.spec))
-const isInteraction = computed(() => isPrecomputed.value && props.spec.dataSource.matrix?.mode === 'interaction')
+// a run-backed heatmap (interaction / proximity): its grid comes from a task's run, not the ticked pops
+const runMatrixMode = computed(() =>
+  isPrecomputed.value && isRunMatrixMode(props.spec.dataSource.matrix?.mode) ? props.spec.dataSource.matrix!.mode! : null)
+const isRunMatrix = computed(() => runMatrixMode.value !== null)
 // the HMM state-count elbow: y = log-likelihood (the elbow) or BIC
 const elbowMetric = computed<ElbowMetric>({
   get: () => props.ui.elbowMetric ?? 'logLik', set: v => (props.ui.elbowMetric = v) })
@@ -346,7 +350,7 @@ const metricPicksPops = computed(() => imageMetricPicksPops(props.spec))
 const metricPopOptions = computed<string[]>(() => result.value?.pops ?? [])
 const metricPop = computed<string>({
   get: () => props.ui.metricPop ?? props.ui.statsPair ?? '', set: v => (props.ui.metricPop = v) })
-const matrixMode = computed<'profile' | 'crosstab' | 'interaction'>({
+const matrixMode = computed<MatrixMode>({
   get: () => (specPinnedMode.value ? props.spec.dataSource.matrix!.mode! : (props.ui.matrixMode ?? 'profile')),
   set: v => (props.ui.matrixMode = v) })
 // which heatmap controls actually do something for the active matrix mode — ONE table (see
@@ -360,7 +364,7 @@ const zscore = computed<boolean>({ get: () => props.ui.zscore ?? false, set: v =
 // — a crosstab (counts/probs) and an interaction matrix (the log-odds effect size). NB the panel always
 // sends a boolean, so `buildHeatmap`'s own `??` default can never fire; this is the only default.
 const heatmapValues = computed<boolean>({
-  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab' || matrixMode.value === 'interaction'),
+  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab' || isRunMatrixMode(matrixMode.value)),
   set: v => (props.ui.heatmapValues = v) })
 const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
   get: () => props.ui.matrixNormalize ?? 'row', set: v => (props.ui.matrixNormalize = v) })
@@ -546,14 +550,14 @@ async function fetchData(isCurrent: () => boolean) {
 
   if (chartType.value === 'heatmap') {
     try {
-      const cat = isInteraction.value ? '' : matrixCategory.value
-      if (!isInteraction.value && !cat) {
+      const cat = isRunMatrix.value ? '' : matrixCategory.value
+      if (!isRunMatrix.value && !cat) {
         result.value = null; error.value = 'Pick a Category column (plot options) for the heatmap.'; return
       }
-      const body: Record<string, unknown> = isInteraction.value ? {
+      const body: Record<string, unknown> = isRunMatrix.value ? {
         projectUid: props.projectUid,
         popType: popType.value, granularity: granularity.value,
-        chartType: 'matrix', matrixMode: 'interaction',
+        chartType: 'matrix', matrixMode: runMatrixMode.value,
         // `suffix` names which run; '' lets the backend pick the first and report the rest
         ...(statsSuffix.value ? { suffix: statsSuffix.value } : {}),
       } : {
@@ -705,8 +709,10 @@ const hasData = computed(() => {
 // the run is missing — name the task that produces it rather than blaming the selection.
 const emptyMessage = computed(() => imageMetric.value
   ? `No ${imageMetric.value.task} run on these images yet.`
-  : isInteraction.value
+  : runMatrixMode.value === 'interaction'
   ? 'No interaction run yet — run "Interaction matrix" on this image.'
+  : runMatrixMode.value === 'proximity'
+  ? 'No proximity run yet — run "Proximity profile" on these images.'
   : chartType.value === 'elbow'
     ? 'No HMM fits recorded yet — run "HMM states" at several state counts.'
     : 'No data for the selected populations.')
@@ -727,6 +733,13 @@ const facetNote = computed(() => {
 })
 // state signature over an HMM run: which measures drove the states, and how well the run fit
 const fitNote = computed(() => (result.value?.chartType === 'matrix' ? hmmFitNote(result.value.fit) : null))
+
+// a run of this name that measured something else on some images (proximity plots): they are left out
+const skippedNote = computed(() => {
+  const n = result.value?.nSkipped ?? 0
+  return n > 0 ? { text: `${n} image${n === 1 ? '' : 's'} left out`,
+                   tip: 'Their run of this name used another structure, populations or bands' } : null
+})
 
 const emptyNote = computed(() => {
   const r = result.value
@@ -1280,8 +1293,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
            manager follows it, so this is the single control for "which pops am I looking at". -->
       <!-- which run this precomputed plot shows (interaction matrix / per-image metric); options come
            from the response -->
-      <select v-if="(isInteraction || imageMetric) && runOptions.length > 1" v-model="statsSuffix" class="sp-poptype"
-              v-tooltip.bottom="imageMetric ? 'Which run to show' : 'Which interaction run to show'">
+      <select v-if="(isRunMatrix || imageMetric) && runOptions.length > 1" v-model="statsSuffix" class="sp-poptype"
+              v-tooltip.bottom="'Which run to show'">
         <option v-for="s in runOptions" :key="s" :value="s">{{ s }}</option>
       </select>
       <select v-if="imageMetric && !metricPicksPops && metricPopOptions.length > 1" v-model="metricPop" class="sp-poptype"
@@ -1444,6 +1457,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
            a setting the renderer had to substitute, and series the chosen measure has no values for.
            Icon-only, text on hover: a wrapped sentence here made the footer row grow. -->
       <PlotNotice v-if="statsNote" class="sp-foot-note" icon-only :text="statsNote.text" :tip="statsNote.tip" />
+      <PlotNotice v-if="skippedNote" class="sp-foot-note" icon-only :text="skippedNote.text" :tip="skippedNote.tip" />
       <PlotNotice v-if="overrideText" class="sp-foot-note" icon-only :text="overrideText" :tip="overrideTip" />
       <PlotNotice v-else-if="facetNote" class="sp-foot-note" icon-only :text="facetNote.text" :tip="facetNote.tip" />
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"

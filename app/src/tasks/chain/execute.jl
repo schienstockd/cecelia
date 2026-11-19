@@ -6,7 +6,8 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
                               result      = nothing,
                               params_hash = nothing,
                               reason::Union{String,Nothing} = nothing,
-                              waited::Bool = false)
+                              waited::Bool = false,
+                              quiet::Bool = false)
     captured_result = Ref{Any}(nothing)
     # The scheduler task id this node ran as, captured under the lock alongside the result. It goes out
     # on every event so a consumer can correlate a node with its `TaskRecord` / `GET /api/tasks` row —
@@ -27,6 +28,8 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
         captured_task_id[] = something(st.task_id, "")
         _save_run!(run)
     end
+    # A "Queue after" step records state only: the run it waits for has its own rail row (after_live.jl)
+    quiet && return
     # Fire events outside the lock — handlers must not re-enter run._lock
     pool = _node_pool_name(run, node_id, fn)
     if status == NODE_QUEUED
@@ -239,6 +242,8 @@ end
 function _record_node_params(t::ChainTemplate, overrides::Dict{String,Any})::Dict{String,Any}
     out = Dict{String,Any}()
     for node in t.nodes
+        # a "Queue after" step ran nothing: what it records is what it waited for, never spec defaults
+        node.after_live && (out[node.id] = _apply_overrides(node.params, node.id, overrides); continue)
         out[node.id] = try
             task = _task_from_fun_name(node.fn)
             resolve_params_unscoped(task, _node_run_params(task, node, overrides, _ -> nothing))
@@ -323,6 +328,15 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             if st.status == NODE_DONE && st.params_hash == _params_hash(effective_params)
                 continue
             end
+        end
+
+        # "Queue after": wait for the runs of this fn already going, never start one (chain/after_live.jl).
+        # A resume keeps the outcome it recorded (`_reset_stale_nodes!` does not retry it): waiting again
+        # would find nothing running and pass.
+        if node.after_live
+            run.image_states[image_uid][node.id].status ∈ (NODE_FAILED, NODE_CANCELLED) && continue
+            _await_live_runs!(run, node, image_uid, effective_params; on_log, is_cancelled)
+            continue
         end
 
         # Resolve the task struct BEFORE announcing :queued so we can also check axis
@@ -916,7 +930,10 @@ function _reset_stale_nodes!(run::ChainRun, overrides::Dict{String,Any},
                 st.status=NODE_FAILED
                 any_changed = true
             end
-            retry        = st.status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
+            # A "Queue after" step is not retried: what it waited for is over, so a retry would find
+            # nothing running and pass — letting the follow-up run on an image whose run failed, was
+            # cancelled, or died with the process (the crash recovery above). Its outcome stands.
+            retry        = !node.after_live && st.status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
             # a parked manual step counts as finished prepare: kept (re-parked) unless its params moved
             params_stale = st.status ∈ (NODE_DONE, NODE_WAITING) && st.params_hash != ph
             pred_stale   = any((p, uid) ∈ stale_set for p in preds[node.id])

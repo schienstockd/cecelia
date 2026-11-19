@@ -1,0 +1,19 @@
+{
+  "id": "spatial_proximity",
+  "label": "Proximity profile",
+  "category": "profiles",
+  "sketch": "cellDistance",
+  "answers": "Which populations sit near a structure, and how far out?",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["heatmap"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+    ],
+    "matrix": { "mode": "proximity" }
+  },
+  "scopeModes": ["summarised"],
+  "params": []
+}

@@ -889,7 +889,7 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
 
 
 # the per-image analysis slices of /api/analysis/spatial — one MCP tool each
-_SPATIAL_SLICES = ("regionRuns", "contactStats", "patternStats")
+_SPATIAL_SLICES = ("regionRuns", "contactStats", "patternStats", "proximityStats")
 
 
 def _spatial_only(keep: str, project_uid: str, image_uid: str, set_uid: str) -> dict:
@@ -973,6 +973,30 @@ def get_spatial_patterns(project_uid: str, image_uid: str = "", set_uid: str = "
     the unit, not pooled cells; pair with get_image_attributes for the groups. Summary-level, reads
     current on-disk state (spatialPattern sidecars)."""
     return _spatial_only("patternStats", project_uid, image_uid, set_uid)
+
+
+@_tool
+def get_proximity_profiles(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """Which populations sit NEAR A STRUCTURE (a germinal centre, follicle, vessel, aggregate), in
+    distance bands around it, per image. Scope with `image_uid` / `set_uid`; omit both for the whole
+    project.
+
+    Per image, `proximityStats` is a list, one per proximityProfile run:
+      `{suffix, structurePops, pops, referencePops, bands, bandWidth, nStructureCells, nCounted,
+      nReference, records: [{pop, band, lo, hi, n, nBand, fraction, imageFraction, log2Enrichment}]}`.
+      - Each cell's distance is to the NEAREST structure cell (centroids, µm); structure cells are never
+        counted. `bands` run nearest first; the last is everything beyond the last edge.
+      - Shares are of the REFERENCE cells (`referencePops`; by default every cell of the segmentation,
+        `<vn>/root`, plus the counted cells). `nBand` = reference cells in the band. `fraction` = the
+        population's share of them; `imageFraction` = its share of all reference cells.
+        `log2Enrichment` (headline) = log2 of their ratio, pseudocount 0.5: > 0 = more of it near the
+        structure than in the tissue as a whole, < 0 = fewer. Name the reference when you report it.
+      - `nCounted` = distinct cells of `pops`; `nReference` = reference cells with a distance.
+      - A band with few cells (`nBand` < 20) is descriptive only.
+    To compare GROUPS (e.g. treatment), compare per-image `log2Enrichment` for one population and band
+    with the image as the unit, not pooled cells; pair with get_image_attributes for the groups.
+    Summary-level, reads current on-disk state (proximity sidecars)."""
+    return _spatial_only("proximityStats", project_uid, image_uid, set_uid)
 
 
 @_tool

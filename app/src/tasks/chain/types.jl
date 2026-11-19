@@ -46,11 +46,15 @@ struct ChainNode
     # _POOLS, sized from config.toml [pools]). "" falls back to the task JSON's resource_pool,
     # else "cpu". A pool with limit 1 (e.g. "gpu") serialises that node across the process.
     resource_pool::String
+    # A "Queue after" step (chain/after_live.jl): the node starts nothing. Per image it waits for the
+    # runs of `fn` already queued or running there, and their outcome is its outcome; an image with
+    # none is done at once. Written to JSON only when true, so every other template hashes as before.
+    after_live::Bool
     # The ONE construction path (keyword, positional, deserialised): a pool name that has since been
     # renamed (`_CUSTOM_CONF_RENAMES`, config.jl) is stored under its new name, so no caller can
     # build a node the validator then refuses for naming a pool that no longer exists.
-    ChainNode(id, fn, scope, params, barrier_policy, resource_pool) =
-        new(id, fn, scope, params, barrier_policy, _renamed_pool(String(resource_pool)))
+    ChainNode(id, fn, scope, params, barrier_policy, resource_pool, after_live::Bool = false) =
+        new(id, fn, scope, params, barrier_policy, _renamed_pool(String(resource_pool)), after_live)
 end
 
 # Default scope for a task fun_name, read from its JSON spec's "scope" field. The task JSON is
@@ -76,8 +80,9 @@ _coerce_barrier(p::ChainBarrierPolicy) = p
 _coerce_barrier(p::AbstractString) = parse_chain_barrier_policy(p)
 
 ChainNode(; id, fn, scope="", params=Dict{String,Any}(),
-            barrier_policy="all", resource_pool="") =
-    ChainNode(id, fn, _coerce_scope(scope, fn), params, _coerce_barrier(barrier_policy), resource_pool)
+            barrier_policy="all", resource_pool="", after_live::Bool=false) =
+    ChainNode(id, fn, _coerce_scope(scope, fn), params, _coerce_barrier(barrier_policy), resource_pool,
+              after_live)
 
 struct ChainEdge
     from::String

@@ -469,10 +469,22 @@ const channelCount = computed(() => {
     Math.max(max, img.channelNames?.length ?? 0, img.sizeC ?? 0), 0)
 })
 
-// 1-based channel indices, e.g. [1, 2, 3]
-const channelIndices = computed(() =>
-  Array.from({ length: channelCount.value }, (_, i) => i + 1)
-)
+// One column per channel is a lot for a 60-channel multiplex set, so the names fold into the `Ch`
+// count column (header toggle), per project and per person like the thumbnails. Shown by default.
+const channelNamesKey = (projectUid: string) => `cc.imageChannelNames:${projectUid}`
+const channelNamesShown = ref(true)
+watch(() => projectMeta.current?.uid, uid => {
+  channelNamesShown.value = uid ? profileStorage.getItem(channelNamesKey(uid)) !== '0' : true
+}, { immediate: true })
+function toggleChannelNames() {
+  channelNamesShown.value = !channelNamesShown.value
+  const uid = projectMeta.current?.uid
+  if (uid) profileStorage.setItem(channelNamesKey(uid), channelNamesShown.value ? '1' : '0')
+}
+
+// 1-based channel indices, e.g. [1, 2, 3] — none while the names are folded away
+const channelIndices = computed(() => channelNamesShown.value
+  ? Array.from({ length: channelCount.value }, (_, i) => i + 1) : [])
 
 // Dimension columns only appear when the set actually has a z-stack / timelapse (mirrors the
 // metadata-warning z>1 / t>1 tests), so 2D single-timepoint sets aren't cluttered with empty columns.
@@ -520,9 +532,10 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   { key: 'name', label: 'Name', sortable: true, sticky: true, width: defaultWidth('name') },
   // The thumbnail column — the table's mini map. Header toggles the whole set, each cell its own row.
   { key: 'thumb', label: '', fixed: true, width: anyThumbShown.value ? 128 : 40 },
+  // the channel count, and where the per-channel names fold to (its header toggles them)
+  { key: 'ch', label: 'Ch', sortable: true, fixed: true, width: channelCount.value ? 72 : 48 },
   ...channelIndices.value.map(idx => ({ key: `ch:${idx}`, label: String(idx), width: 90 })),
   ...attrKeys.value.map(k => ({ key: `attr:${k}`, label: k, sortable: true, width: 110 })),
-  ...(!props.showAttrs ? [{ key: 'ch', label: 'Ch', sortable: true, fixed: true, width: 48 }] : []),
   ...(anyZStack.value ? [{ key: 'z', label: 'Z', sortable: true, fixed: true, width: 48 }] : []),
   ...(anyTimelapse.value
     ? [{ key: 'duration', label: 'Duration', sortable: true, fixed: true, width: 90 }] : []),
@@ -627,6 +640,7 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     v-model:selected="selectedList"
     v-model:sort="sortModel"
     :disabled-ids="unselectableUids"
+    sticky-header
     column-width-key="cc-imagetable-cols"
     :row-class="img => ({ 'cc-row-excluded': isExcluded(img) })"
     :row-tooltip="img => isExcluded(img) && !canSelectExcluded
@@ -783,8 +797,16 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
         v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]}` : ''">{{ img.attr?.[key] || '—' }}</span>
     </template>
 
+    <template #head-ch>
+      <button v-if="channelCount" class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': channelNamesShown }"
+        @click.stop="toggleChannelNames"
+        v-tooltip.bottom="channelNamesShown ? 'Hide the channel names' : 'Show the channel names'">
+        <i class="pi pi-tag" />
+      </button>
+    </template>
     <template #cell-ch="{ row: img }">
-      <span v-if="img.sizeC">{{ img.sizeC }}</span>
+      <span v-if="img.sizeC" v-tooltip.right="!channelNamesShown && img.channelNames?.length
+        ? img.channelNames.join(', ') : ''">{{ img.sizeC }}</span>
       <span v-else class="dim">—</span>
     </template>
 

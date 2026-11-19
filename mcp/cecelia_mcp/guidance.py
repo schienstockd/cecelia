@@ -144,7 +144,7 @@ get_measure_summary (phenotype + motility per population), get_behaviour_summary
 get_cluster_summary (cluster sizes, and what defines each cluster: its z-scored feature profile — \
 describe from it, the name is the user's call), get_region_clusters (spatial niches), \
 get_contact_stats (pairwise co-localisation), get_spatial_patterns (one population clustered or \
-random among the tissue's cells).
+random among the tissue's cells), get_proximity_profiles (which populations sit near a structure).
 - A population as pictures: gate_histogram / gate_plot (its distribution and gate plot), \
 gate_cells_view / gate_examples (its cells in the image — zoomed, and as example crops), \
 gate_stats (its counts).

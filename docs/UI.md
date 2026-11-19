@@ -907,7 +907,7 @@ Every module page uses this same slot, so the plot canvas collapses identically 
 - `defaultOpen` — whether open on mount (default: `true`)
 - `maxHeight` — CSS `max-height` for the body (default: `'320px'`; pass `'none'` to allow full growth). With `'none'` the body is `overflow-y: visible` (not a scroll container) so a `position: sticky` descendant sticks to the outer page scroll instead of a box that never scrolls.
 - `storageKey` — when set, the open/closed state persists in localStorage under this key (the `#plots` wrapper uses this so a collapsed canvas stays collapsed across navigation)
-- `sticky` — the toggle bar pins to the top of the enclosing scroll box while the body scrolls under it, so a long section collapses without scrolling back up. Needs `maxHeight="none"`. ModuleLayout's "Images" section sets it.
+- `sticky` — the toggle bar pins to the top of the enclosing scroll box while the body scrolls under it, so a long section collapses without scrolling back up. Needs `maxHeight="none"`. ModuleLayout's "Images" section sets it. The bar's height goes to the body as `--cc-sticky-above`, so a SelectionTable `stickyHeader` inside stops below the bar — even inside a `fit="content"` wrapper, whose `overflow-x` traps CSS sticky (the header is then lifted by hand, `utils/stickyHead.ts`).
 
 ### Two-half side panels — `usePaneExpand` + `PaneExpandBar`
 
@@ -2305,8 +2305,8 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
 
 **Two registries carry the surface "checkboxes":**
 - `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
-  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
-  `interactive` (default) / `clustering` / `image`), the plugin flag `pluginPage`, the `rail` the plot
+  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard`, `category` + `sketch` (the `+ Plot…`
+  picker's group and schematic — `docs/PLOTS.md` → *The `+ Plot…` picker*), the plugin flag `pluginPage`, the `rail` the plot
   needs, an optional `initialState()` seed for a new panel's state bag, and — for a view that slices by
   population — `popTypes`, the population FAMILIES it offers (same shape as a summary spec's
   `dataSource.popTypes`, read by the same `plots/popTypes.ts` functions, so the rail lists the family
@@ -2320,14 +2320,14 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
 
-**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
+**Hosts render from the registries**: each builds its `+Plot` picker (`PlotPicker.vue`, the one picker) by filtering on its own flag and
 renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
 component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`), the
 Model Training page (`modelTraining/ModelPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
 there is no "cluster page way" and "board way", and a future chain-whiteboard host consumes the same
 registries rather than re-wiring plots per node.
 
-**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews(group)`; never
+**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews()`; never
 a local key list. The board once filtered a hardcoded `ANALYSIS_VIEWS`/`IMAGE_VIEWS` array, which made
 the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, with nothing failing.
 `interactiveViews.test.ts` now fails if any view id shows up as a literal in `LayoutCanvas.vue`.
@@ -2398,12 +2398,16 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
     (`contentBounds.h` + 16px), so a Tile grid that needs more rows than fit — or a panel dragged down —
     extends the workspace instead of spilling out of it. **Only the height grows**; the width stays
     viewport-derived, since Tile takes its columns from the width and a horizontal scrollbar on a plot
-    workspace is worse than a narrower grid. Each host therefore has THREE layers, the same shape
-    `LayoutCanvas` uses for the board: `.{gp,sc,cp,fp}-canvas` (`position: relative` — the rail's
-    offsetParent, so the rail does NOT scroll away with the plots) → `.…-scroll` (`inset: 0;
-    overflow: auto` — the measured viewport) → `.…-zoom` (the workspace, `transform: scale`). Zooming out
-    and growing compose: both are logical px, so a grown height is expressed in the same units as the
-    zoom-expanded base.
+    workspace is worse than a narrower grid. Each host (`FloatingCanvasHost`) has THREE layers:
+    `.floating-canvas` (`position: relative` — the rail's offsetParent) → `.floating-canvas-scroll`
+    (`inset: 0` — the measured viewport; scrolls SIDEWAYS only, when zoomed in past the width) →
+    `.floating-canvas-zoom` (the workspace, `transform: scale`). Zooming out and growing compose: both are
+    logical px, so a grown height is expressed in the same units as the zoom-expanded base.
+  - **…and the canvas box grows with it** (`hostStyle`, a min-height on `.floating-canvas`): the PAGE
+    scrolls to a low panel; the canvas has no vertical scroller of its own. It used to — a fixed 70vh box
+    scrolling inside a page that scrolls too, so a panel past the box's bottom edge read as cut off. The
+    base is the box's height *before* growth (`floorHeight`): measuring the grown box would ratchet (it
+    never shrinks back) and Tile would lay out into the grown height.
 
 **Zoom shortcuts** (all canvases, wired once in `useCanvasZoom`): **shift + mouse-wheel** over the canvas
 zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing in an input.
@@ -2435,7 +2439,7 @@ overflow, so clamping it there would shrink the plot for nothing.
 **Neither mode crams — the grid flows DOWN and the workspace grows.** When a cell would fall below the
 readable floor (`MIN_TILE_W` 300 / `MIN_TILE_H` 260), Tile keeps the floor, takes its columns from the
 WIDTH alone, and lets the extra rows go below the fold: 12 gating plots become 5 across × 3 down at
-260px, and the canvas scrolls. It never overflows sideways. The workspace then extends to hold them
+260px, and the page scrolls. It never overflows sideways. The workspace then extends to hold them
 (next bullet), so the bottom rows are reachable both by scrolling and by dragging a panel into the new
 room. **Tile is always sized from the VIEWPORT** (`tileBox`, i.e. `useCanvasWorkspace`'s
 `workspaceBase`), never from the grown workspace — feeding a content-derived height back into the
@@ -3218,9 +3222,10 @@ UI conventions specific to these pages:
 - **Heatmap features are exactly what the run clustered on**, read from the `{props}.clustfeatures.json`
   sidecar via `GET /api/gating/channels`; channel rows aggregate by RAW name and relabel via `nameMap`.
 - **The population manager is the shared, pop_type-agnostic one.** A cluster pop has no gate — it is a
-  filter on `clusters.{suffix}` — so in cluster mode the manager shows "Add population" plus per-pop
-  **cluster-ID toggle chips**, and ticking a chip moves that cluster out of any other pop (a cluster
-  lives in at most one). Writes mirror across the run's images (`mirrorUids`); a banner names selected
+  filter on `clusters.{suffix}` — so in cluster mode the manager shows "Add population" plus ONE shared
+  **cluster strip**: each chip coloured by the pop holding it, a click puts it into the *selected* row (click the row again, or the header ✕, to deselect)
+  (moving it out of any other pop — a cluster lives in at most one), the hovered row — else the selected one — lights its chips.
+  Rows are one line with a cluster count; strip clicks undo/redo (`docs/POPULATION.md` → *Undo / redo*). Writes mirror across the run's images (`mirrorUids`); a banner names selected
   images outside the run, with a "Select clustered images" button driving `selectUids`.
 - **Highlight → overlays.** The manager's per-pop eye feeds `shownPops`: UMAP recolours from cached codes
   (no refetch), the heatmap switches its columns from clusters to populations. Scope (global/local) works

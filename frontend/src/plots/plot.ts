@@ -16,6 +16,7 @@
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
+import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElbow'
 import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
@@ -223,9 +224,10 @@ export interface HeatmapControls {
 
 export function heatmapControls(mode: string | undefined): HeatmapControls {
   const m = mode ?? 'profile'
-  // An interaction matrix is PRECOMPUTED (see isPrecomputedSpec): the grid, its axes and its values all
-  // come from the run, so the only thing left to choose is whether the numbers are printed.
-  if (m === 'interaction') {
+  // A run-backed matrix (interaction, proximity) is PRECOMPUTED (see isPrecomputedSpec): the grid, its
+  // axes and its values all come from the run, so the only thing left to choose is whether the numbers
+  // are printed.
+  if (isRunMatrixMode(m)) {
     return { mode: false, category: false, zscore: false, normalize: false, cellValues: true }
   }
   return { mode: true, category: true, zscore: m === 'profile', normalize: m === 'crosstab',
@@ -775,7 +777,8 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // in this row". A signed effect size has to be DIVERGING and pivoted at 0, with a symmetric domain so
   // +0.6 and −0.6 read equally strongly. Rescaling is right for a profile (differently-scaled features
   // per row); it is wrong for anything already on a common, signed scale.
-  const interaction = r.matrixMode === 'interaction'
+  // a run-backed grid (interaction log-odds, proximity log2 enrichment) is a signed effect size
+  const interaction = isRunMatrixMode(r.matrixMode)
   const profile = !interaction && r.matrixMode !== 'crosstab'
   const useMinmax = profile && (o.heatmapScale ?? 'minmax') === 'minmax'
   const diverging = interaction || (profile && !useMinmax)   // log-odds / z-score → diverging RdBu
@@ -803,9 +806,16 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   const lo = Math.min(...vals), hi = Math.max(...vals), mid = (lo + hi) / 2
   const textInk = (c: { value: number; norm?: number }) =>
     diverging ? PAPER_INK : useMinmax ? ((c.norm ?? 0) > 0.5 ? PAPER_INK : PLOT_INK_DARK) : (c.value > mid ? PAPER_INK : PLOT_INK_DARK)
+  // Rotate 90° transposes the grid: the rows (features / `from`) run along X, the columns along Y. Only
+  // the channels and domains swap — the cells, the per-row rescale and the tooltips stay keyed by the
+  // data's own x/y. The flipped column order is the unflipped top→bottom order, read left→right.
+  const flip = !!o.rotate
+  const cx = flip ? 'y' : 'x', cy = flip ? 'x' : 'y'
+  const colLabels = flip ? [...(r.yLabels ?? [])].reverse() : (r.xLabels ?? [])
+  const rowLabels = flip ? (r.xLabels ?? []) : [...(r.yLabels ?? [])].reverse()   // first row at the top
   // profile heatmaps blank the category axis title (R uses xlab("")/ylab("")); crosstab keeps to/from.
-  const xLab = r.matrixMode === 'crosstab' ? 'to' : null
-  const yLab = r.matrixMode === 'crosstab' ? 'from' : null
+  const xLab = r.matrixMode === 'crosstab' ? (flip ? 'from' : 'to') : null
+  const yLab = r.matrixMode === 'crosstab' ? (flip ? 'to' : 'from') : null
   // on by default wherever the NUMBER is the readout: a transition rate, and a log-odds (a 2×2 or 3×3
   // interaction matrix has room, and the effect size is what the user came for)
   const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab' || interaction)
@@ -817,7 +827,9 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     interaction && c.significance ? `${fmt(c.value)} ${c.significance}` : fmt(c.value)
   const tip = (c: MatrixCell) =>
     `${r.matrixMode === 'crosstab' ? `${c.y} → ${c.x}` : `${c.y} · ${c.x}`}\n${valLabel}: ${fmt(c.value)}` +
-    (c.count != null ? `\nobserved ${fmtCount(c.count)}` : c.n != null ? `\nn ${fmtCount(c.n)}` : '') +
+    (c.count != null ? `\n${r.matrixMode === 'proximity' ? 'cells' : 'observed'} ${fmtCount(c.count)}`
+      : c.n != null ? `\nn ${fmtCount(c.n)}` : '') +
+    (c.nImages != null ? `\nmean of ${c.nImages} image${c.nImages === 1 ? '' : 's'}` : '') +
     // z and p were already on the wire and shown NOWHERE — the permutation test is the reason to
     // trust the effect size, so it belongs next to it
     (c.zScore != null ? `\nz ${fmt(c.zScore)}` : '') +
@@ -835,24 +847,24 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
   // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
   // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.
-  const marginLeft = yLabelMargin(r.yLabels ?? [], o.fontSize || 11)
+  const marginLeft = yLabelMargin(rowLabels, o.fontSize || 11)
   // the column labels are population / category names — same overlap problem, same resolver. The bands
-  // start after marginLeft, so that is what's reserved. A grid never flips, so a `rotate` left over from
-  // another plot must not switch the auto-rotation off.
-  const xrot = resolveXRotation((r.xLabels ?? []).map(String),
+  // start after marginLeft, so that is what's reserved. `rotate` here transposes the grid (above); it
+  // must not reach the resolver, where it would switch the column-label auto-rotation off.
+  const xrot = resolveXRotation(colLabels.map(String),
                                 { ...o, rotate: false, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + 60) })
   const opts: Record<string, unknown> = {
     // tight margins (R heat plots are compact — fig.height 2 × width 4)
     ...THEME, marginLeft, marginBottom: 48, marginTop: topPad, marginRight: 8,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: xrot.rotate ? xTickRotate(o) : 0 },
-    y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
+    x: { domain: colLabels, label: o.labX || xLab, tickRotate: xrot.rotate ? xTickRotate(o) : 0 },
+    y: { domain: rowLabels, label: o.labY || yLab },
     color: colorScale,
     marks: [
-      Plot.cell(drawCells, { x: 'x', y: 'y', fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
+      Plot.cell(drawCells, { x: cx, y: cy, fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
                          title: tip, tip: true }),
       ...(showValues
-        ? [Plot.text(drawCells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
+        ? [Plot.text(drawCells, { x: cx, y: cy, text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
         : []),
       // theme_classic L-shaped axis: a black (theme-ink) line on the left + bottom, matching the other
       // charts (Observable Plot draws ticks/labels but no domain line for band scales).
@@ -861,7 +873,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     ],
   }
   // the column bands are equal (Plot's default 0.1 padding), so the first tick sits ~half a band in
-  const xLabels = r.xLabels ?? []
+  const xLabels = colLabels
   if (xrot.rotate) {
     const lay = rotatedXMargins(xLabels, { ...o, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + THEME.marginLeft) },
                                 48, xLabels.length ? 0.5 / xLabels.length : 0)
@@ -869,7 +881,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     opts.marginLeft = Math.max(marginLeft, lay.marginLeft)
     fitAxisLabels(opts, 'x', xLabels, lay.maxLabelPx, o.fontSize || 11)
   }
-  fitAxisLabels(opts, 'y', r.yLabels ?? [], Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
+  fitAxisLabels(opts, 'y', rowLabels, Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }
@@ -1834,6 +1846,11 @@ export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string 
       if (r.matrixMode === 'interaction') {
         return tbl([yH, xH, r.valueLabel ?? 'value', 'observed', 'z', 'p', 'significance'],
                    cells.map(c => [c.y, c.x, c.value, c.count ?? c.n, c.zScore, c.pValue, c.significance]))
+      }
+      // proximity: the mean enrichment, the cells behind it, and how many images it averages
+      if (r.matrixMode === 'proximity') {
+        return tbl(['population', 'band', r.valueLabel ?? 'value', 'cells', 'images'],
+                   cells.map(c => [c.y, c.x, c.value, c.count ?? c.n, c.nImages]))
       }
       return tbl([yH, xH, r.valueLabel ?? 'value', 'n'],
                  cells.map(c => [c.y, c.x, c.value, c.count ?? c.n]))
