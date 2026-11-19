@@ -591,6 +591,30 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "acq.dim_movie.data" => (
         short = "Detection may be lower here",
         long  = "Check detection in this {item} before pooling it with the others."),
+    "acq.undersampled_xy" => (
+        short = "Pixels coarser than the optics resolve ({n} {item}{s}, up to {value}×)",
+        long  = "Fine for cells; zoom in if the plan needs small structures such as beads or dendrites."),
+    "acq.undersampled_xy.data" => (
+        short = "Small structures may be lost",
+        long  = "Cells are sampled well enough; objects only a few pixels wide may be missed or merged."),
+    "acq.oversampled_xy" => (
+        short = "Pixels finer than the optics resolve ({n} {item}{s}, {value}× finer)",
+        long  = "Zoom out: the same detail with less light per cell and faster frames."),
+    "acq.oversampled_xy.data" => (
+        short = "No effect on the analysis",
+        long  = "The detail is fully sampled; nothing changes in the analysis."),
+    "acq.undersampled_z" => (
+        short = "Z-step coarser than the optical section ({n} {item}{s}, up to {value}×)",
+        long  = "Objects thinner than the step can fall between planes — use a smaller step if the plan needs them."),
+    "acq.undersampled_z.data" => (
+        short = "Thin objects may fall between planes",
+        long  = "Check by eye that small objects appear in the stack before counting them."),
+    "acq.pinhole_differs" => (
+        short = "Channels set to different pinholes ({what} AU)",
+        long  = "Set every channel to the same Airy units, so each shows the same optical section."),
+    "acq.pinhole_differs.data" => (
+        short = "Channels show different sections",
+        long  = "A channel with the wider pinhole collects more out-of-focus light — compare overlap between channels with care."),
     # widefield (camera) variants of the advice that names a laser or a detector HV — chosen by
     # `qc_technology_key` when the set's settings say widefield (docs/todo/MICROSCOPE_PROFILES_PLAN.md)
     "acq.gain_high@widefield" => (
@@ -605,6 +629,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     # what the acquisition check's findings (and its model review) are about: `short` the heading
     "acq.cat.movies" => (short = "Images and channels", long = "Which images the check could read, and which channel holds each object."),
     "acq.cat.settings" => (short = "Settings", long = "Whether images compared with each other were acquired the same way."),
+    "acq.cat.sampling" => (short = "Sampling", long = "Whether the pixel size, z-step and pinhole match what the objective resolves."),
     "acq.cat.depth" => (short = "Depth", long = "Whether signal was compensated for depth."),
     "acq.cat.photons" => (short = "Photons", long = "How much light the objects carry, against the detector's range — noise and range in one."),
     "acq.cat.balance" => (short = "Balance", long = "Whether the plan's objects are similarly bright."),

@@ -39,7 +39,7 @@ end
     # told what the rules found, so it doesn't spend the turn repeating them
     @test occursin("do NOT repeat", p) && occursin("- Settings differ (m1)", p)
     @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", p)
-    @test occursin("Category one of: Images and channels, Settings, Depth, Photons, Balance, Shared structure, Fading, Other", p)
+    @test occursin("Category one of: Images and channels, Settings, Sampling, Depth, Photons, Balance, Shared structure, Fading, Other", p)
     # the verdict's rule part is the app's: the model is shown it and adds one step, or "Nothing to add."
     pv = acq_review_prompt(plan, ["m1 — uidA"]; verdict = "Collect more light for B cells.")
     @test occursin("these steps from the rule checks —\n“Collect more light for B cells.”", pv)

@@ -274,6 +274,20 @@ On real data:
   OTI ~ gBT (uGFP next to CTV) stands out of its movie's baseline in 11 of 16 movies (warn in 6),
   the one bleed-through step in the verdict.
 
+## Sampling against the optics (2026-11-19)
+
+Settings rules beside the measured ones, in `app/src/acq_sampling.jl` (category `sampling`): pixel
+size and z-step against the Nyquist value the objective needs, and a confocal's channels set to
+different pinholes. Formulas from Faklaris 2022 (doi:10.1083/jcb.202107093): λex/8NA for a closed
+confocal pinhole, ×1.6 at 1 AU; resolution FWHMs for confocal and wide field; "at least more than two
+times the resolution" for the z-step and a wide-field pixel; the shortest wavelength across channels.
+All notes, never warnings: whether a coarse pixel matters depends on the objects (cells are many
+pixels wide, beads may be one). `ACQ_OVERSAMPLE` (0.5× the Nyquist pixel) is our cut-off, not the
+source's. **Two-photon and Airyscan get none** — the source gives no formula for them; Zipfel 2003
+(doi:10.1038/nbt899) has the two-photon PSF but its equations weren't verified from an open copy.
+Came out of the ZEN API streaming audit: the API (ZEN blue only) was dropped; the rules need only
+the file's settings, so they cover every reader.
+
 ## Resume when
 
 The measures exist; what is left is the slice, which needs the maintainer first:
