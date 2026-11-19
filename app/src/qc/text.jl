@@ -382,6 +382,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Tissue lost by cycle {value}",
         long  = "Part of the section is gone in that cycle (lifted or torn); those cells read 0 in its markers — exclude them."),
 
+    # split into tissues (editImages.splitTissues `split_tissues_qc_findings`)
+    "editImages.split_no_tissue" => (
+        short = "No tissue found",
+        long  = "Lower the threshold, or pick the channels that mark tissue, and preview again."),
+    "editImages.split_whole_slide" => (
+        short = "One tissue covers most of the image",
+        long  = "If the preview shows glass inside it, pick the channels that mark tissue or raise the threshold; a cropped section can fill the image."),
+
     # cell contacts (spatialAnalysis.cellContacts / contactsMeshes): one column set per target, so a
     # target that resolved no cells is skipped rather than failing the run. Its refs go in `detail`.
     "contact.no_cells" => (

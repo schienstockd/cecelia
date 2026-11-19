@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { taskInScope, taskProjectLabel, frameTargetsOpenProject } from './taskScope'
+import { taskInScope, taskProjectLabel, frameTargetsOpenProject, newImageUidsOf } from './taskScope'
 
 const row = (projectUid: string) => ({ projectUid })
 const nameOf = (uid: string) => ({ pA: 'zolIMa', pB: 'exciDR' }[uid])
@@ -70,5 +70,21 @@ describe('frameTargetsOpenProject', () => {
   it('allows anything when no project is open', () => {
     expect(frameTargetsOpenProject('pB', '')).toBe(true)
     expect(frameTargetsOpenProject('pB', null)).toBe(true)
+  })
+})
+
+describe('newImageUidsOf', () => {
+  it('reads every image a multi-image task made', () => {
+    expect(newImageUidsOf({ newImageUids: ['a', 'b', 'c'], setUid: 's' })).toEqual(['a', 'b', 'c'])
+  })
+  it('falls back to the single new image', () => {
+    expect(newImageUidsOf({ newImageUid: 'a' })).toEqual(['a'])
+  })
+  it('a task that made none adds none', () => {
+    expect(newImageUidsOf({ newImageUids: [] })).toEqual([])
+    expect(newImageUidsOf({})).toEqual([])
+  })
+  it('drops malformed entries', () => {
+    expect(newImageUidsOf({ newImageUids: ['a', '', null, 3] })).toEqual(['a'])
   })
 })

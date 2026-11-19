@@ -48,6 +48,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const status   = ref<PreviewStatus | null>(null)
   const context  = ref<PreviewContext | null>(null)
   const counts   = ref<Record<string, number> | null>(null)
+  /** what `counts.base` counts, when the backend says it is not cells ("tissue") */
+  const countNoun = ref<string | null>(null)
   // Per model group, for a multi-pass config — see `previewSummary`. Null for a single pass.
   const passes   = ref<PreviewPass[] | null>(null)
   const fallback2d = ref(false)
@@ -95,6 +97,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   /** Forget the last result. Called whenever it stops describing what is on screen. */
   function clearResult() {
     counts.value = null
+    countNoun.value = null
     passes.value = null
     fallback2d.value = false
     signal.value = null
@@ -115,7 +118,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   /** the one line under the button: what is wrong, and whether it is amber */
   const notice  = computed(() => previewNotice(
     blocker.value, error.value ? { message: error.value, code: errorCode.value } : null))
-  const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined, passes.value))
+  const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined, passes.value,
+                                                  countNoun.value ?? undefined))
   /** a two-model run previews only its base type — say so rather than let it look complete */
   const baseOnly = computed(() => baseOnlyWarning(context.value?.params ?? null))
   /** a run would split this region at a tile seam; the preview segments it whole */
@@ -172,6 +176,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     if (res?.starting) { starting.value = true; pollUntilWarm(); return }
     starting.value = false
     counts.value = res?.counts ?? null
+    countNoun.value = typeof res?.countNoun === 'string' ? res.countNoun : null
     passes.value = res?.passes ?? null
     fallback2d.value = Boolean(res?.fallback2d)
     signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
@@ -184,7 +189,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // reach it.
     // The region rides along so the viewer can outline what was previewed when the cap cut it down.
     viewerStore.setPreviewLabels(
-      res?.previewLabels && typeof res.previewLabels === 'object' ? { ...res.previewLabels, region } : null)
+      res?.previewLabels && typeof res.previewLabels === 'object'
+        ? { ...res.previewLabels, region, wholeImage: Boolean(res?.wholeImage) } : null)
     // P7.1: an AF-shaped reply carries `previewImages: [{sourceChannel, valueName, ...}, …]`; when
     // set, ViewerWindow swaps each corrected channel's slab onto the scratch AF store. Same
     // cross-window story as previewLabels.

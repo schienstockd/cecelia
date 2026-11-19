@@ -469,6 +469,7 @@ const NOT_RUN_TASKS = Dict{String,String}(
     "cleanupImages.driftCorrect" => "image version", "cleanupImages.flowRegister" => "image version",
     "cleanupImages.smooth" => "image version", "cleanupImages.stackAlign" => "image version",
     "editImages.bin" => "image version", "editImages.cropImage" => "new image",
+    "editImages.splitTissues" => "new image",
     "editImages.copyImage" => "new image", "editImages.dtype" => "image version",
     "editImages.flip" => "image version", "editImages.register" => "image version",
     "editImages.resampleZ" => "image version", "editImages.tProject" => "image version",

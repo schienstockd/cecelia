@@ -1688,6 +1688,12 @@ read the same params; the backend still flattens because the chain path persists
 overloads it beside its struct, and there is a `CompositeTask` overload because the module page runs
 `segment.cellposeMeasure`. `GET /api/tasks/definitions` stamps it onto each spec as `previewable`.
 
+**A whole-image preview** (`editImages.splitTissues`): a task whose answer depends on the whole image —
+tissues are found and numbered slide-wide — ignores the region and says so in the reply
+(`wholeImage: true`, plus `region` = the whole image and `countNoun: "tissue"` so the summary reads
+"6 tissues"). The viewer then draws no preview box. It stays cheap by detecting on a ~10 µm/px pyramid
+level and staging the mask full-image at every level (`_stage_detection_labels`).
+
 **What it does NOT tell you** — all three surfaced in the UI rather than left to be discovered:
 - **One z-plane.** A visible z-stack costs ~89 s with no shortcut (cellpose rescales to a canonical
   diameter, so cost tracks CELLS, not pixels — a coarser pyramid level buys only 2.5× for 16× fewer

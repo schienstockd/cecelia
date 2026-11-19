@@ -80,3 +80,14 @@ export function frameTargetsOpenProject(
   if (!frameProjectUid || !openUid) return true
   return frameProjectUid === openUid
 }
+
+/**
+ * The new images a `task:result` frame reports: `newImageUids` from a task that makes several (split
+ * into tissues), else the single `newImageUid` (crop, copy, bin, …). Empty strings and non-strings are
+ * dropped, so a malformed frame adds nothing rather than fetching `imageUid=undefined`.
+ */
+export function newImageUidsOf(meta: Record<string, unknown>): string[] {
+  const many = meta.newImageUids
+  const list = Array.isArray(many) ? many : [meta.newImageUid]
+  return list.filter((u): u is string => typeof u === 'string' && u !== '')
+}

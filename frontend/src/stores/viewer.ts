@@ -85,6 +85,8 @@ export interface PreviewLabels {
   updateId: number
   /** the region this run previewed — the viewer outlines it when it is smaller than the view */
   region?: VisibleRegion
+  /** the preview covers the whole image whatever the region (split into tissues): no preview box */
+  wholeImage?: boolean
 }
 
 /** ONE cross-window handoff for "jump the browser viewer somewhere and, optionally, show these

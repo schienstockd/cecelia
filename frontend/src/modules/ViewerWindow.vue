@@ -4053,7 +4053,9 @@ const canvasPartial = computed(() =>
 // corners resize, the grip moves, the pencil draws a new one (`drawGeometry`'s rect gesture). Geometry
 // is `utils/viewer/previewBox.ts`; the box itself is bridged through `viewerStore.previewBox`.
 // An image that fits the budget has no box: the whole image is the region (`previewRegionBox`).
-const boxNeeded = computed(() => !!meta.value && previewBoxNeeded(meta.value.nX, meta.value.nY))
+const boxNeeded = computed(() => !!meta.value && previewBoxNeeded(meta.value.nX, meta.value.nY)
+  // a preview of the whole image (split into tissues) ignores the region, so a box would mislead
+  && !(viewerStore.previewLabels?.imageUid === imageUid && viewerStore.previewLabels?.wholeImage))
 const ownPreviewBox = computed(() => {
   const b = viewerStore.previewBox
   return boxNeeded.value && b && b.imageUid === imageUid ? b : null

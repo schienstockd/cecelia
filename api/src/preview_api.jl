@@ -592,6 +592,10 @@ function api_preview_run(body_bytes::Vector{UInt8})
         # values the task DERIVED for this image rather than took from params (AF: the two background
         # levels and the output ceiling), so the UI can show what it chose
         derived     = get(reply, "derived", Dict{String,Any}()),
+        # what `counts.base` counts when it is not cells ("tissue"), and whether the preview covers the
+        # whole image rather than the region sent (split into tissues) — the viewer then draws no box
+        countNoun   = get(reply, "countNoun", nothing),
+        wholeImage  = Bool(get(reply, "wholeImage", false)),
         # for a composite, the steps this preview does not run — the run does more than you see
         notPreviewed = task === nothing ? Dict{String,Any}[] : preview_steps_not_previewed(task),
         valueName    = value_name,

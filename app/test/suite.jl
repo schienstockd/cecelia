@@ -166,6 +166,7 @@ include(joinpath(@__DIR__, "suite", "task_machinery.jl"))
 # defined earlier in suite.jl are still in scope for the extracted fragments (Julia
 # includes are lexical).
 include(joinpath(@__DIR__, "suite", "calibration_helpers.jl"))
+include(joinpath(@__DIR__, "suite", "split_tissues.jl"))
 
 
 # ── Plugin testsets ────────────────────────────────────────────────────────

@@ -1,0 +1,113 @@
+{
+  "task": "splitTissues",
+  "fun_name": "editImages.splitTissues",
+  "label": "Split into tissues",
+  "purpose": "Cut each tissue on a slide into its own image, masked to its outline",
+  "useWhen": [
+    "A slide scan carrying several tissue sections or cores",
+    "Sections that interlace, so a box around one catches its neighbour"
+  ],
+  "notWhen": [
+    "One tissue with a region of interest: use Crop image",
+    "Brightfield (H&E): tissue must be brighter than the glass",
+    { "text": "Image already segmented: labels stay on the source image", "check": "segmented" }
+  ],
+  "category": "Edit",
+  "group": "Reshape",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "io",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Which image version to split"
+    },
+    {
+      "key": "channels",
+      "label": "Tissue channels",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Channels that mark tissue; none uses every channel"
+    },
+    {
+      "key": "thresholdAdjust",
+      "label": "Threshold",
+      "type": "float",
+      "min": 0.05,
+      "max": 2.0,
+      "step": 0.05,
+      "default": 0.3,
+      "tip": "Share of the automatic threshold above the glass; lower picks up fainter tissue"
+    },
+    {
+      "key": "splitNeck",
+      "label": "Neck cut-off",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05,
+      "default": 0.25,
+      "tip": "Touching tissues split where the join is narrower than this share of either"
+    },
+    {
+      "key": "nameSuffix",
+      "label": "Name",
+      "type": "text",
+      "default": "tissue",
+      "placeholder": "tissue",
+      "tip": "Added to the image name with the tissue's number"
+    },
+    {
+      "key": "toSetUid",
+      "label": "Put in set",
+      "type": "setSelection",
+      "default": "",
+      "tip": "Set the tissue images go into"
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "mergeGapUm",
+          "label": "Join gap (µm)",
+          "type": "int",
+          "min": 0,
+          "max": 5000,
+          "step": 50,
+          "default": 300,
+          "tip": "Crumbs closer than this to a much larger tissue join it"
+        },
+        {
+          "key": "minAreaMm2",
+          "label": "Smallest tissue (mm²)",
+          "type": "float",
+          "min": 0.0,
+          "max": 5.0,
+          "step": 0.05,
+          "default": 0.1,
+          "tip": "Pieces smaller than this are left out"
+        },
+        {
+          "key": "marginUm",
+          "label": "Edge margin (µm)",
+          "type": "int",
+          "min": 0,
+          "max": 1000,
+          "step": 10,
+          "default": 50,
+          "tip": "Grows each outline so edges are kept; never into a neighbour"
+        }
+      ]
+    }
+  ]
+}
