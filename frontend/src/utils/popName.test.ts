@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { popNameError, popPath, isInSubtree, popDisplayLabels, popRowLabels, withOwnName } from './popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName, popDisplayLabels, popRowLabels, withOwnName } from './popName'
 
 describe('popNameError', () => {
   const existing = ['CD4', 'CD8', 'myeloid']
@@ -117,5 +117,25 @@ describe('popRowLabels', () => {
       { vn: 'B', path: '/CD19', name: 'B cells' },
     ]
     expect(popRowLabels(rows)).toEqual(['T OTI/_tracked', 'gBT/_tracked', 'B OTI/_tracked', 'B cells'])
+  })
+})
+
+describe('nextClusterPopName — a new run never takes another run\'s name', () => {
+  it('ignores another run\'s numbering: its "Population 1" leaves this run at 1', () => {
+    const other = ['Population 1', 'Population 2', 'Population 3']
+    expect(nextClusterPopName('win50', 'region', other)).toBe('win50 region 1')
+  })
+  it('numbers past this run\'s own names, case aside, and fills a gap', () => {
+    expect(nextClusterPopName('win50', 'region', ['win50 region 1', 'WIN50 REGION 2'])).toBe('win50 region 3')
+    expect(nextClusterPopName('win50', 'region', ['win50 region 2'])).toBe('win50 region 1')
+  })
+  it('keeps a cluster run and a region run of the same name apart', () => {
+    expect(nextClusterPopName('default', 'clust', [])).toBe('default cell cluster 1')
+    expect(nextClusterPopName('default', 'trackclust', [])).toBe('default track cluster 1')
+    expect(nextClusterPopName('default', 'region', [])).toBe('default region 1')
+  })
+  it('never returns a name in the list', () => {
+    const names = Array.from({ length: 50 }, (_, i) => `m cell cluster ${i + 1}`)
+    expect(names).not.toContain(nextClusterPopName('m', 'clust', names))
   })
 })

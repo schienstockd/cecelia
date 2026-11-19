@@ -506,6 +506,9 @@ end
     @test _look_keyframe_mask(Dict{String,Any}("labelValueNames" => String[])) === nothing
     @test _look_keyframe_mask(Dict{String,Any}("labelValueNames" => ["a", "b"])) === nothing
     @test _look_keyframe_mask(nothing) === nothing
+    # no mask picked: the look has no labelValueNames key at all (threw ArgumentError via `something`)
+    @test _look_keyframe_mask(Dict{String,Any}("tool" => "readout")) === nothing
+    @test _look_keyframe_mask(JSON3.read("{\"tool\":\"readout\"}")) === nothing
 end
 
 @testset "API: movie rail — a recording renders the viewer's colours and framing" begin
@@ -697,4 +700,48 @@ end
     for k in String.(fx.keys)
         @test (k, occursin("\"$k\"", src) || occursin(":$k", src)) == (k, true)   # the key names itself on failure
     end
+end
+
+@testset "API: movie rail — the channel lens reaches the renderer (shaders/lens.wgsl)" begin
+    # The look's lens: centre + radius in L0 px, its channels by name → the renderer's per-state
+    # block, the channels as 0-based indices into the image's.
+    names = ["DAPI", "CD3", "CD20"]
+    l = lens_state(Dict{String,Any}("x" => 120.5, "y" => 80, "r" => 40,
+                                    "channels" => Dict("CD20" => "green", "CD3" => "red")), names)
+    @test l == Dict{String,Any}("x" => 120.5, "y" => 80.0, "r" => 40.0, "channels" => [1, 2])
+    # a view state's lens names its channels as a list; JSON3 hands Symbol keys
+    @test lens_state(Dict(:x => 1, :y => 2, :r => 3, :channels => ["DAPI"]), names)["channels"] == [0]
+    # nothing to draw: no lens, a zero radius, or none of its channels in this image
+    @test lens_state(nothing, names) === nothing
+    @test lens_state(Dict("x" => 1, "y" => 2, "r" => 0, "channels" => ["CD3"]), names) === nothing
+    @test lens_state(Dict("x" => 1, "y" => 2, "r" => 5, "channels" => ["FOXP3"]), names) === nothing
+    # no channels picked = the spotlight lens: kept, with no channels (lens.wgsl dims the rest)
+    @test lens_state(Dict("x" => 1, "y" => 2, "r" => 5, "channels" => String[]), names)["channels"] == Int[]
+    @test lens_state(Dict("x" => 1, "y" => 2, "r" => 5), names)["channels"] == Int[]
+
+    # A lens-only channel is hidden outside but takes the lens's colour, so the lens draws it as the
+    # viewer did; a channel neither picked nor in the lens keeps its saved colour.
+    base = [(; lo = 0.0, hi = 1.0, lut = _as_lut("gray"), visible = true) for _ in 1:3]
+    cfg = Dict{String,Any}("channels" => Dict("DAPI" => "blue"),
+                           "lens" => Dict{String,Any}("x" => 1, "y" => 1, "r" => 1,
+                                                      "channels" => Dict("CD3" => "red")))
+    sp = _picked_specs(base, cfg, names)
+    @test sp[1].visible && sp[1].lut[end] == _as_lut("blue")[end]
+    @test !sp[2].visible && sp[2].lut[end] == _as_lut("red")[end]
+    @test !sp[3].visible && sp[3].lut[end] == _as_lut("gray")[end]
+    # no lens on the look: as before it existed
+    sp0 = _picked_specs(base, Dict{String,Any}("channels" => Dict("DAPI" => "blue")), names)
+    @test !sp0[2].visible && sp0[2].lut[end] == _as_lut("gray")[end]
+
+    # An animation keyframe: its 2D view state's lens rides on the render args; a 3D one draws none.
+    vs = Dict{String,Any}("dims" => Dict("ndisplay" => 2, "current_step" => [0, 0]),
+                          "lens" => Dict("x" => 10, "y" => 20, "r" => 5, "channels" => ["CD20"]))
+    @test viewstate_to_render_args(vs, names, nothing, 100, 100).lens["channels"] == [2]
+    vs3 = merge(vs, Dict{String,Any}("dims" => Dict("ndisplay" => 3, "current_step" => [0, 0])))
+    @test viewstate_to_render_args(vs3, names, nothing, 100, 100).lens === nothing
+    # and it glides between keyframes: the centre tweens, the channel list steps
+    kfs = [Dict("viewState" => vs, "steps" => 1),
+           Dict("viewState" => merge(vs, Dict{String,Any}("lens" => Dict("x" => 30, "y" => 20, "r" => 5,
+                                                                       "channels" => ["CD20"]))), "steps" => 2)]
+    @test [f["lens"]["x"] for f in interpolate_keyframes(kfs)] == [10, 20.0, 30.0]
 end

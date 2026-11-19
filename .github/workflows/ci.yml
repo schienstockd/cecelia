@@ -276,6 +276,37 @@ jobs:
             || { echo "API refused the Bearer token"; exit 1; }
           pixi run stop || true
 
+  # ── GUI tests in a real browser ───────────────────────────────────────────────────────────────
+  # `*.browser.test.ts` mount shared components in Chromium and measure where things land (pinned
+  # headers, frozen columns) — what the Node suite above can't, having no layout engine. Linux only:
+  # the browser is Chromium on every OS, so three runners would test the same engine three times.
+  # Node only (no pixi, no Julia), so it adds nothing to the cache budget. The runner's Chrome, no
+  # browser download (scripts/lib/chromium.mjs). Advisory while its flake rate is measured
+  # (docs/todo/GUI_TESTING_PLAN.md, Decision 6) — a red run here is still a red run to merge on.
+  gui:
+    name: ubuntu-latest — GUI tests (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CECELIA_CHROMIUM: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Browser tests
+        working-directory: frontend
+        run: npm run test:browser
+
   # ── Python + MCP ──────────────────────────────────────────────────────────────────────────────
   # Needs the Pixi env and NOTHING else — no Julia, and therefore no Julia depot cache (see the
   # budget note at the top). The cheapest job by a wide margin.

@@ -29,8 +29,8 @@
 import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, MIP_PICK_BINDING, MIP_LAYOUT } from './mipShader'
 import { PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer } from '../../utils/viewerLabels'
 import {
-  MAX_CHANNELS, LUT_STOPS, LABEL_BPV, lutTextureBytes, extentUm,
-  type ViewerMeta, type ViewerChannel, type OrbitCamera,
+  MAX_CHANNELS, LUT_STOPS, LABEL_BPV, lutTextureBytes, extentUm, writeLens,
+  type ViewerMeta, type ViewerChannel, type OrbitCamera, type ViewerLens,
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
@@ -136,6 +136,8 @@ export interface VolumeRenderer {
   /** Orthographic projection. Required for the 2D view — under perspective a flat plane foreshortens
    *  towards the edges, which is wrong for a view people measure on. */
   setOrthographic(on: boolean): void
+  /** The channel lens, or `null` for none (`ViewerLens`). Takes effect on the next draw. */
+  setLens(lens: ViewerLens | null): void
   /**
    * Replace the overlay point instances (`POINT_STRIDE` floats each — see `utils/viewerOverlays.ts`).
    * Uploaded once per (image, populations), not per frame: the data is ordered by timepoint so a frame
@@ -772,6 +774,7 @@ export async function createVolumeRenderer(
       u[U.ch.lo + o] = ch ? ch.lo : 0
       u[U.ch.hi + o] = ch ? ch.hi : 1
       u[U.ch.visible + o] = ch && ch.visible ? 1 : 0
+      u[U.ch.lens + o] = ch && ch.lens ? 1 : 0
     }
   }
 
@@ -1057,6 +1060,7 @@ export async function createVolumeRenderer(
     // which is that plane. So the floor is 1, not 16.
     setSteps(n: number) { steps = Math.max(1, Math.round(n)) },
     setOrthographic(on: boolean) { u[U.vp.ortho] = on ? 1 : 0 },
+    setLens(lens) { writeLens(u, U.lens, lens) },
     setZPlane(zLo: number) {
       // Fast plane switch (2D plane view). `setImage` would `dropAll` every cached texture and
       // reallocate — measured 200+ ms of sync main-thread work on Dml3RG with Keep=all (181

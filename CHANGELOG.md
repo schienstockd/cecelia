@@ -18,6 +18,7 @@ stack. Per-tag notes are also on the
 These change results when old work is re-run:
 
 - **Neighbour stats on kNN graphs** now count edges stored one way only, which they missed (about a fifth). Re-run the graph and stats on every image of a set (#2317).
+- **Region clustering (Leiden)** clusters each distinct neighbourhood mix once; small neighbourhoods used to split regions into thousands. Runs over 200 regions now fail.
 
 ### Added
 

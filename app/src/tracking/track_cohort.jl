@@ -77,6 +77,7 @@ Resolve a track-plot request into [`TrackPlotGroup`]s, in the order they should 
 
 - `group_attrs` — image attributes to group by (`String[]` = don't). Wins over `pool_images`: grouping by
   attribute IS the pooling, and doing both would silently discard the attribute.
+- `group_order` — the attribute groups in the user's order; groups it doesn't name follow, category-sorted.
 - `pool_images` — one group over every image (the "pooled" compare mode).
 - `pops` — value-name-prefixed population refs; empty means the whole segmentation.
 - `pool_pops` — the selected populations as ONE group instead of one each.
@@ -90,6 +91,7 @@ group whose images carry no tracks yields no sources and is dropped here, so "no
 """
 function track_plot_groups(imgs::AbstractVector, uids::AbstractVector;
                            group_attrs::Vector{String} = String[],
+                           group_order::Vector{String} = String[],
                            pool_images::Bool = false,
                            pops::Vector{String} = String[],
                            pop_type::PopTypeArg = "live",
@@ -102,7 +104,7 @@ function track_plot_groups(imgs::AbstractVector, uids::AbstractVector;
     pairs = collect(zip(imgs, uids))
     vn0 = resolve_value_name(first(imgs), value_name)
 
-    igroups = _track_image_groups(pairs, group_attrs, pool_images)
+    igroups = _track_image_groups(pairs, group_attrs, pool_images; group_order = group_order)
     pgroups = _track_pop_groups(pops, vn0, pool_pops)
 
     out = TrackPlotGroup[]
@@ -169,7 +171,8 @@ end
 # not the image NAME. A microscope filename ("M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)") is longer
 # than the panel it titles and pushes the population — the part that differs between facets — off the
 # end; the uID is six characters and is what every other surface identifies an image by.
-function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bool)
+function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bool;
+                             group_order::Vector{String} = String[])
     if !isempty(group_attrs)
         amap = image_attr_groups(first.(pairs), last.(pairs), group_attrs)
         order = String[]
@@ -182,8 +185,8 @@ function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bo
         end
         # Sort the attribute-value axis (composed "Treatment.Mouse" when group_attrs is multi-)
         # so facets read in category order instead of image-insertion order — same rationale
-        # as _series_groups for the summary plots.
-        return [(; key = v, label = v, items = byval[v]) for v in _sort_cats(order)]
+        # as _series_groups for the summary plots, including the user's dragged order (`group_order`)
+        return [(; key = v, label = v, items = byval[v]) for v in _ordered_cats(order, group_order)]
     end
     pool_images && return [(; key = "pooled", label = "",
                              items = Any[(img, String(uid)) for (img, uid) in pairs])]

@@ -1,8 +1,8 @@
 # GUI tests: shared components in a real browser, and every bug that reaches the eye
 
-**Status:** planning (2026-11-19). Nothing built. Prompted by the SelectionTable sticky-header fix
-(#2361), the third pinned-header/frozen-column regression caught only by eye. Decisions 1–8 proposed;
-open questions below.
+**Status:** in progress — P1 (harness + SelectionTable sticky header) on `feat/gui-tests-harness`.
+Open questions answered by default (2026-11-19, "work through the plan autonomously"): advisory first,
+Chromium only, `fix/*` + `.vue`/CSS/layout-util trigger, smoke with `testpr`, base gap closed in P2.
 
 ## Goal
 

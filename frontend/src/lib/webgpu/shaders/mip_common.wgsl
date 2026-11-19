@@ -21,7 +21,8 @@ struct P {
   pan:  vec4<f32>,                       // pan xy (screen µm), then z/w = track ribbon planeLo/planeHi
   trail: vec4<f32>,                      // track tail fade: newest end timepoint shown, tail length (frames); µm per overlay size unit (0 = sizes are screen px), _
   zwin: vec4<f32>,                       // first shown plane within the held ones, shown plane count (0 = all), _, _ — see voxelAt
-  ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
+  ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, in lens
+  lens: vec4<f32>,                       // channel lens: centre x/y, radius, rim (px) — lens.wgsl
 };
 @group(0) @binding(0) var<uniform> p: P;
 

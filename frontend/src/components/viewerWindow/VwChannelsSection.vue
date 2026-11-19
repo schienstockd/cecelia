@@ -1,14 +1,15 @@
 <!--
   The viewer window's Channels section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): the
   section-wide row (all on, distinct colours, one at a time; auto / reset contrast, auto tuning,
-  compact all) and one card per channel (colour, visibility, contrast window). The window owns the
+  compact all) and one card per channel (colour, visibility, contrast window — and, while the channel
+  lens is on, whether the lens draws it). The window owns the
   channel state and pushes it to the renderer; this renders it and reports each change.
 
   The list scrolls inside the section (default max-height): a whole-slide image has 24+ channels and
   the sidebar's own scroll never engages.
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
@@ -22,9 +23,11 @@ import { channelHexFrom } from '../../utils/viewerProps'
 import { fmtContrastWindow } from '../../utils/contrastReadout'
 import { WHITE } from '../../plots/fixedColours'
 
-defineProps<{
+const props = defineProps<{
   /** the channels shown (the window caps how many) */
-  channels: { name: string; visible: boolean; lo: number; hi: number; lut: number[][] }[]
+  channels: { name: string; visible: boolean; lens?: boolean; lo: number; hi: number; lut: number[][] }[]
+  /** the channel lens is on — each card then offers "in the lens" */
+  lensOn: boolean
   /** the image's channel count — more than `channels.length` says the list is clipped */
   nC: number
   clipped: boolean
@@ -43,6 +46,8 @@ defineProps<{
   hiCeiling: number[]
   samples: ((Uint16Array | Uint8Array) | undefined)[] | null
 }>()
+/** every shown channel is in the lens — the master aperture button's state */
+const allLens = computed(() => props.channels.length > 0 && props.channels.every(ch => ch.lens))
 const emit = defineEmits<{
   setAll: [visible: boolean]
   'update:distinct': [on: boolean]
@@ -54,6 +59,8 @@ const emit = defineEmits<{
   afToggle: [c: number]
   colour: [c: number, hex: string]
   visible: [c: number, visible: boolean]
+  lens: [c: number, inLens: boolean]
+  lensAll: [inLens: boolean]
   auto: [c: number]
   reset: [c: number]
   range: [c: number, lo: number, hi: number]
@@ -61,8 +68,9 @@ const emit = defineEmits<{
 const settings = useSettingsStore()
 
 // Auto-contrast tuning popover; not persisted, because a popover that reopens on reload is its own bug.
-const autoTuneOpen = ref(false)
-const autoTuneTrigger = ref<HTMLElement | null>(null)
+/** the header's ⋯ menu */
+const menuOpen = ref(false)
+const menuTrigger = ref<HTMLElement | null>(null)
 
 /** The auto-contrast percentile, by what it does to the picture rather than what the number is:
  *  Tight = trim more, Balanced = middle, Wide = keep more bright pixels visible (the default). */
@@ -81,14 +89,11 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
 <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                       accordion="cc.vw.section" section="channels"
                       fill="content">
-    <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
-         colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
-         state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
-         labelled `CcToggle` rows, so the section header is one line. Each side is a non-wrapping
-         `.cc-row-group`, so a narrow sidebar breaks the row BETWEEN the two clusters (the right
-         one keeps its right edge) instead of stranding an icon or two on a second line. -->
+    <!-- ONE icon row for the section-wide controls, and it never changes width: what is shown on
+         the left (all on, distinct colours, one at a time), auto contrast and the ⋯ menu on the
+         right. The rest — the lens set, reset, auto range, card layout — is in the menu, so a mode
+         switching on (the lens) adds an item there instead of shifting the row. -->
     <div class="cc-row cc-row-tight vw-ch-master">
-      <div class="cc-row-group">
       <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allVisible }]"
               @click="emit('setAll', !allVisible)" :aria-pressed="allVisible"
               v-tooltip.right="allVisible ? 'Hide every channel' : 'Show every channel'"
@@ -107,44 +112,43 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
               aria-label="Show one channel at a time">
         <i class="pi pi-dot-circle" />
       </button>
-      </div>
       <div class="cc-row-group vw-ch-master-end">
       <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="emit('autoAll')"
               v-tooltip.left="'Auto contrast on every channel'"
               aria-label="Auto contrast every channel">
         <i class="pi pi-bolt" />
       </button>
-      <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="emit('resetAll')"
-              v-tooltip.left="'Reset every channel to the full bit range'"
-              aria-label="Reset every channel contrast">
-        <i class="pi pi-arrow-right-arrow-left" />
-      </button>
-      <!-- Auto-contrast tuning popover, anchored beside the Auto button so the two read together. -->
-      <button ref="autoTuneTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
-              @click="autoTuneOpen = !autoTuneOpen"
-              v-tooltip.left="'Auto tuning'" aria-label="Auto-contrast tuning">
-        <i class="pi pi-sliders-h" />
-      </button>
-      <TeleportPopover v-model="autoTuneOpen" :anchor="autoTuneTrigger" placement="bottom-end">
-        <div class="cc-eyebrow cc-fs-2xs">Auto range</div>
-        <div class="cc-row cc-row-tight">
-          <ChipSelect
-            :options="AUTO_CONTRAST_OPTIONS"
-            :model-value="String(settings.viewerAutoContrastPercent)"
-            variant="segmented" aria-label="Auto contrast percentile"
-            @update:model-value="v => (settings.viewerAutoContrastPercent = Number(v))"
-          />
-        </div>
-        <div class="cc-muted cc-fs-3xs vw-adv-note">
-          How far Auto pushes the top of the window.
-        </div>
-      </TeleportPopover>
-      <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="emit('toggleAllCards')"
-              v-tooltip.left="allCompact ? 'Expand every channel' : 'Compact every channel'"
-              :aria-label="allCompact ? 'Expand every channel' : 'Compact every channel'">
-        <i :class="['pi', allCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
+      <button ref="menuTrigger" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on': menuOpen }]"
+              @click="menuOpen = !menuOpen" :aria-expanded="menuOpen"
+              v-tooltip.left="'More'" aria-label="More channel actions">
+        <i class="pi pi-ellipsis-h" />
       </button>
       </div>
+      <TeleportPopover v-model="menuOpen" :anchor="menuTrigger" placement="bottom-end" flush>
+        <div class="cc-actions-menu" role="menu">
+          <button v-if="lensOn" class="cc-actions-item" role="menuitemcheckbox" :aria-checked="allLens"
+                  @click="emit('lensAll', !allLens)">
+            <i class="pi pi-lens" /> Every channel in the lens
+            <i v-if="allLens" class="pi pi-check cc-actions-check" />
+          </button>
+          <button class="cc-actions-item" role="menuitem" @click="emit('resetAll'); menuOpen = false">
+            <i class="pi pi-arrow-right-arrow-left" /> Reset contrast to full range
+          </button>
+          <button class="cc-actions-item" role="menuitem" @click="emit('toggleAllCards'); menuOpen = false">
+            <i :class="['pi', allCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
+            {{ allCompact ? 'Expand every channel' : 'Compact every channel' }}
+          </button>
+          <div class="cc-actions-head">Auto range</div>
+          <div class="vw-ch-menu-pad">
+            <ChipSelect
+              :options="AUTO_CONTRAST_OPTIONS"
+              :model-value="String(settings.viewerAutoContrastPercent)"
+              variant="segmented" aria-label="Auto contrast percentile"
+              @update:model-value="v => (settings.viewerAutoContrastPercent = Number(v))"
+            />
+          </div>
+        </div>
+      </TeleportPopover>
     </div>
     <div v-for="(ch, c) in channels" :key="c"
          :class="['vw-ch cc-card cc-card-2', { 'vw-ch-compact': isCompact(compact, flips, c) }]">
@@ -173,6 +177,15 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
           :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
           @update:model-value="v => emit('colour', c, v)"
         />
+        <!-- the aperture keeps its place while the lens is off (hidden, not removed), so switching
+             the lens on does not shift the card -->
+        <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-tint': ch.lens, 'vw-ch-slot-off': !lensOn }]"
+                :disabled="!lensOn" :aria-hidden="!lensOn" :tabindex="lensOn ? 0 : -1"
+                @click="emit('lens', c, !ch.lens)" :aria-pressed="!!ch.lens"
+                v-tooltip.left="ch.lens ? 'In the lens — click to take out' : 'Show in the lens'"
+                :aria-label="(ch.lens ? 'Take ' : 'Put ') + ch.name + (ch.lens ? ' out of the lens' : ' in the lens')">
+          <i class="pi pi-lens" />
+        </button>
         <CcToggle :model-value="ch.visible" :aria-label="'Show ' + ch.name"
                   @update:model-value="v => emit('visible', c, v)" />
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="emit('auto', c)"
@@ -227,9 +240,10 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
 .vw-ch-master { margin-bottom: 0.35rem; }
 .vw-ch-master-end { margin-left: auto; }
+.vw-ch-slot-off { visibility: hidden; }
+.vw-ch-menu-pad { padding: 0 0.6rem 0.45rem; }
 /* FIXED width, not min-width: a readout that grows with its digits shifts the slider beside it, so
    channels with different windows stop lining up. 11ch fits the longest `fmtContrast` window
    (`65.5k–65.5k`). */
 .vw-ch-val { flex: none; white-space: nowrap; width: 11ch; overflow: hidden; text-align: right; }
-.vw-adv-note { padding: 0.2rem 0 0.1rem; margin-left: calc(var(--cc-lbl-col) + 0.4rem); }
 </style>

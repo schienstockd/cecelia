@@ -21,6 +21,7 @@ import type { ViewerViewState } from '../utils/viewer/viewState'
 import type { CropPick } from '../utils/viewer/cropPick'
 import { expiresAtFrom, msUntil, liveOrNull } from '../utils/viewer/markLifetime'
 import { nextUpdateStamp } from '../utils/updateStamp'
+import type { ViewerRefLens } from '../utils/kiwiRef'
 
 /** What image is open in the browser viewer, in the same shape the preview worker's request needs. */
 export interface OpenImage {
@@ -114,6 +115,8 @@ export interface PendingViewState {
   viewState?: unknown
   /** Set for the seek-only case (legacy captures without `viewStateSnapshot`). */
   focus?: { t?: number; z?: number }
+  /** A Kiwi `viewer` ref's pinned lens: the viewer centres on it and pins it again (2D only). */
+  lens?: ViewerRefLens
   /** Set when a capture's marks should paint over the live view. */
   overlay?: { captureId: string; marks: unknown[] }     // marks: OverlayMark[], opaque here
   /** Optional filter — apply only when the popup is on this image. */
