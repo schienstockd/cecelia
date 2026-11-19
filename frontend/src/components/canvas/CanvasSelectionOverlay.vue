@@ -120,7 +120,8 @@ function onPointerUp(ev: PointerEvent) {
 // ESC cancels; Enter confirms. Global listener so the user doesn't have to click into the overlay
 // first.
 function onKey(ev: KeyboardEvent) {
-  if (ev.key === 'Escape') { emit('cancel'); ev.preventDefault() }
+  // an Escape a popover or dialog on top already took is not a cancel
+  if (ev.key === 'Escape' && !ev.defaultPrevented) { emit('cancel'); ev.preventDefault() }
   if (ev.key === 'Enter' && props.selection.count.value > 0) {
     emit('share', { panelIds: [...(props.selection.selected.value ?? [])] })
     ev.preventDefault()

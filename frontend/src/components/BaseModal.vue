@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useWindowListener } from '../composables/useKeepAlive'
+import { isTopmost } from '../utils/topmostSurface'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -36,16 +37,11 @@ function onOverlayClick() { if (pressedOnOverlay) emit('close'); pressedOnOverla
 // preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it.
 // Only the TOPMOST surface answers: a dialog opened from inside another (Packages over Settings, New
 // profile over Preferences), or a `TeleportPopover` open in a pane (HPC's ⋯ menu), would otherwise
-// close its parent modal with the same keypress. Topmost = last overlay or popover in document order
-// — a nested dialog sits inside its parent's DOM, popovers teleport to the end of <body>, and App.vue
-// mounts the app-level modals in stacking order, so DOM order IS stacking order.
+// close its parent modal with the same keypress. Topmost, and why `defaultPrevented` comes first:
+// utils/topmostSurface.ts.
 const overlay = ref<HTMLElement | null>(null)
-function isTopmost(): boolean {
-  const all = document.querySelectorAll('.cc-modal-overlay, .cc-popover')
-  return all.length === 0 || all[all.length - 1] === overlay.value
-}
 function onKey(e: KeyboardEvent) {
-  if (e.key !== 'Escape' || !isTopmost()) return
+  if (e.key !== 'Escape' || e.defaultPrevented || !isTopmost(overlay.value)) return
   emit('close'); e.preventDefault()
 }
 useWindowListener('keydown', onKey)

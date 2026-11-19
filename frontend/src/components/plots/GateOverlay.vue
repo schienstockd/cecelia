@@ -505,6 +505,8 @@ useWindowListener('dblclick', onBandDblClick)
 useWindowListener('mousemove', onBandMove)
 
 function onKey(e: KeyboardEvent) {
+  // an Escape a popover or dialog on top already took (a plot's settings menu) is not ours
+  if (e.defaultPrevented) return
   // idle Esc deselects (claimed only when there is a selection, so the maximised-layout Esc still works)
   if (e.key === 'Escape' && props.mode === 'off' && !editHandle && selected.value) {
     e.preventDefault(); select(null); return
