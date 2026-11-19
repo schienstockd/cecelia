@@ -42,6 +42,27 @@ _JL_TEST = """diff --git a/app/test/suite/acq.jl b/app/test/suite/acq.jl
 +    @test f(1) == 2
 """
 _GLOBS = ["python/cecelia/utils/*"]
+_VUE = """diff --git a/frontend/src/components/SelectionTable.vue b/frontend/src/components/SelectionTable.vue
+--- a/frontend/src/components/SelectionTable.vue
++++ b/frontend/src/components/SelectionTable.vue
+@@ -30,1 +30,1 @@
+-.a { top: 0 }
++.a { top: auto }
+"""
+_FE_TEST = """diff --git a/frontend/src/utils/stickyHead.test.ts b/frontend/src/utils/stickyHead.test.ts
+--- a/frontend/src/utils/stickyHead.test.ts
++++ b/frontend/src/utils/stickyHead.test.ts
+@@ -9,0 +10,3 @@
++  // the lift
++  it('lifts', () => {
++  })
+"""
+_BROWSER_TEST = """diff --git a/frontend/src/components/SelectionTable.browser.test.ts b/frontend/src/components/SelectionTable.browser.test.ts
+--- a/frontend/src/components/SelectionTable.browser.test.ts
++++ b/frontend/src/components/SelectionTable.browser.test.ts
+@@ -0,0 +1,1 @@
++test('pins', () => {})
+"""
 
 
 class AddedTestsTest(unittest.TestCase):
@@ -56,6 +77,21 @@ class AddedTestsTest(unittest.TestCase):
 
     def test_source_is_app_src_and_python_cecelia_not_tests(self):
         self.assertEqual(tv.source_changes(parse_diff(_SRC + _PY_TEST + _JL_TEST)), ["python/cecelia/utils/czi_meta.py"])
+
+    def test_frontend_source_counts_and_its_vitest_files_are_tests(self):
+        files = parse_diff(_VUE + _FE_TEST + _BROWSER_TEST)
+        self.assertEqual(tv.source_changes(files), ["frontend/src/components/SelectionTable.vue"])
+        a = tv.added_tests(files, lambda p: "")
+        self.assertEqual(a.frontend, ("frontend/src/utils/stickyHead.test.ts",
+                                      "frontend/src/components/SelectionTable.browser.test.ts"))
+        self.assertEqual(a.first, ("frontend/src/utils/stickyHead.test.ts", 11))   # the `it(`, not the comment
+
+    def test_what_renders(self):
+        for p in ("frontend/src/components/X.vue", "frontend/src/style.css", "frontend/src/utils/stickyHead.ts"):
+            self.assertTrue(tv.renders(p), p)
+        for p in ("frontend/src/utils/imageTable.ts", "frontend/src/components/X.browser.test.ts",
+                  "frontend/src/test/browser/mount.ts", "app/src/a.jl"):
+            self.assertFalse(tv.renders(p), p)
 
 
 class BulletsTest(unittest.TestCase):
@@ -140,6 +176,38 @@ class JuliaOnBaseTest(unittest.TestCase):
         self.assertFalse(any("Cecelia.jl=" in a for a in seen[0]))
 
 
+class BrowserTestBulletTest(unittest.TestCase):
+    def test_a_fix_that_changes_rendering_without_a_browser_test(self):
+        b = tv.browser_test_bullet(parse_diff(_VUE), "fix/imagetable-col-header")
+        self.assertIn("**frontend/src/components/SelectionTable.vue:30**", b)
+        self.assertIn("[**no browser test**]", b)
+
+    def test_not_a_fix_branch_or_a_browser_test_added_or_nothing_renders(self):
+        self.assertIsNone(tv.browser_test_bullet(parse_diff(_VUE), "feat/x"))
+        self.assertIsNone(tv.browser_test_bullet(parse_diff(_VUE), None))
+        self.assertIsNone(tv.browser_test_bullet(parse_diff(_VUE + _BROWSER_TEST), "fix/x"))
+        self.assertIsNone(tv.browser_test_bullet(parse_diff(_SRC + _FE_TEST), "fix/x"))
+
+
+@unittest.skipUnless((_REPO / "frontend" / "node_modules" / ".bin" / "vitest").exists(),
+                     "needs frontend/node_modules (npm ci in frontend/)")
+class FrontendOnBaseTest(unittest.TestCase):
+    """The real run: an export of HEAD's frontend with a staged test file on top, through vitest."""
+    path = "frontend/src/utils/zzTestValueProbe.test.ts"
+
+    def run_with(self, body: str, path: str | None = None) -> bool:
+        return tv.frontend_on_base(_REPO, [path or self.path], lambda p: body)
+
+    def test_a_test_failing_there_is_a_failure_and_a_passing_one_is_not(self):
+        imp = "import { expect, it } from 'vitest'\n"
+        self.assertTrue(self.run_with(imp + "it('x', () => { expect(1).toBe(2) })\n"))
+        self.assertFalse(self.run_with(imp + "it('x', () => { expect(1).toBe(1) })\n"))
+
+    def test_a_test_importing_what_the_change_adds_fails_there(self):
+        self.assertTrue(self.run_with("import { x } from './doesNotExistYet'\nimport { it } from 'vitest'\n"
+                                      "it('x', () => { void x })\n"))
+
+
 class OnBaseCacheTest(unittest.TestCase):
     def test_a_round_over_the_same_change_reuses_the_verdict(self):
         with tempfile.TemporaryDirectory() as d:
@@ -179,6 +247,26 @@ class RunCheckTest(unittest.TestCase):
 
     def test_tests_only_or_docs_only_skips_both(self):
         self.assertIn("skipped", self.run_check(_PY_TEST))
+
+    def test_a_frontend_test_passing_on_base_is_named(self):
+        body = self.run_check(_VUE + _FE_TEST, on_base=lambda *a: {"fe": False})
+        self.assertIn("(`stickyHead.test.ts`) all pass on the code before it", body)
+        self.assertIn("[**passes on base**]", body)
+
+    def test_a_frontend_result_path_starts_no_mutation_run(self):
+        ts = _VUE.replace("components/SelectionTable.vue", "stores/gating.ts")
+        body = tv.run_test_value_check(ts, root=_REPO, on_base=lambda *a: self.fail("on_base ran"),
+                                       mutate=lambda root: self.fail("mutation ran"), staged=lambda p: "",
+                                       result_globs=["frontend/src/stores/gating.ts"], branch="feat/x", commit="c")
+        self.assertIn("skipped", body)
+
+    def test_a_fix_branch_rendering_change_is_flagged_without_any_test(self):
+        body = tv.run_test_value_check(_VUE, root=_REPO, on_base=lambda *a: self.fail("on_base ran"),
+                                       mutate=lambda root: self.fail("mutation ran"), staged=lambda p: "",
+                                       result_globs=_GLOBS, branch="fix/x", commit="c")
+        self.assertIn("[**no browser test**]", body)
+        rows = [e for e in read_events() if e["event"] == "test_value_finding"]
+        self.assertEqual([r["payload"]["marker"] for r in rows], ["no browser test"])
 
     def test_added_tests_passing_on_base_is_a_tagged_finding(self):
         body = self.run_check(_SRC + _PY_TEST, on_base=lambda *a: {"py": False},
