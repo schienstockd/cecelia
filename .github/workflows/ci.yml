@@ -233,6 +233,19 @@ jobs:
         working-directory: frontend
         run: npm test
 
+      # The GUI route smoke (below) needs a set-up instance: a fresh config routes every page to /setup.
+      # The runner's home is throwaway, so its config gets a projects dir holding the committed
+      # fixture project `testpr` (test-data/, under 1 MB). Linux only, like the smoke.
+      - name: Projects dir for the GUI route smoke (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.cecelia/projects
+          cp -r test-data/projects/testpr ~/.cecelia/projects/
+          cfg=~/.cecelia/custom.toml
+          if [ -f "$cfg" ] && grep -q '^\[dirs\]' "$cfg"; then echo "custom.toml already has [dirs]:"; cat "$cfg"; exit 1; fi
+          printf '\n[dirs]\nprojects = "%s"\n' "$HOME/.cecelia/projects" >> "$cfg"
+
       - name: Start server and verify health + frontend serving
         run: |
           set -uo pipefail
@@ -274,7 +287,19 @@ jobs:
             || { echo "frontend not served after sign-in"; exit 1; }
           curl -fsS -H "Authorization: Bearer $tok" -o /dev/null http://localhost:8080/api/diagnostics \
             || { echo "API refused the Bearer token"; exit 1; }
-          pixi run stop || true
+
+      # Every page renders with no script error, console.error or ResizeObserver loop, without and with
+      # a project open (scripts/gui_smoke.mjs; docs/todo/GUI_TESTING_PLAN.md, Decision 8). The server
+      # above is up and this runner's 8080 is its own, hence --allow-default-ports. The runner's Chrome.
+      - name: GUI route smoke (Linux)
+        if: runner.os == 'Linux'
+        env:
+          CECELIA_CHROMIUM: /usr/bin/google-chrome
+        run: node scripts/gui_smoke.mjs --base http://localhost:8080 --config-dir ~/.cecelia --project testpr --allow-default-ports
+
+      - name: Stop server
+        if: always()
+        run: pixi run stop || true
 
   # ── GUI tests in a real browser ───────────────────────────────────────────────────────────────
   # `*.browser.test.ts` mount shared components in Chromium and measure where things land (pinned

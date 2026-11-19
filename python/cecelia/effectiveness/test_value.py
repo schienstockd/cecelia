@@ -1,14 +1,22 @@
 """Test value check — the mechanical recital step that asks whether the change's tests can fail when
-its code is wrong (`docs/todo/TEST_VALUE_PLAN.md` → P4). Two findings, both outcome-tagged:
+its code is wrong (`docs/todo/TEST_VALUE_PLAN.md` → P4). Three findings, all outcome-tagged:
 
 - **passes on base** (P4(a)): the change edits source code and adds tests, and none of the added tests
   fails on the code before the change (`HEAD`). CLAUDE.md: "A new test is evidence only once you have
   watched it fail." Python: the added test methods run in an export of `HEAD`'s tree with the staged
   test files on top. Julia: the staged suite files with added tests run in one process after the
-  changed `app/src` files are put back to their `HEAD` text (`scripts/julia_on_base.jl`).
+  changed `app/src` files are put back to their `HEAD` text (`scripts/julia_on_base.jl`). Frontend: the
+  added vitest files run in an export of `HEAD`'s `frontend/` and `scripts/` with the staged test files
+  on top — Node tests with the default config, `*.browser.test.ts` in Chromium
+  (`vitest.browser.config.ts`); never in the worktree, whose files a running dev server would hot-swap.
 - **untested** (P4(b)): the change touches a result path and mutants on its changed lines survive the
   tests that name the changed function (`scripts/mutate_changed.py --staged`, at most `SAMPLE` mutants a
   file, `BUDGET_S` in all). One finding per function, listing up to three survivors.
+
+- **no browser test** (GUI_TESTING_PLAN.md, Decision 7): a `fix/*` branch changes how something
+  renders (a `.vue` file, `style.css`, a layout util) and adds no `*.browser.test.ts`. A bug that was
+  seen on screen gets a browser test that fails without the fix; a fix that isn't a rendering or
+  interaction bug says so in its `false_positive` tag.
 
 Both are claims to check, not verdicts: a refactor's tests pass on base by design, and a mutant can be
 equivalent (it changes nothing a caller can see). The tag says which; the reason is the record the
@@ -43,6 +51,7 @@ MECHANISM = "test_value"
 TITLE = "Test value"
 PASSES_ON_BASE = "passes on base"
 UNTESTED = "untested"
+NO_BROWSER_TEST = "no browser test"
 #: Mutants per changed result file, drawn with a fixed seed (`mutate_changed.py --sample`).
 SAMPLE = 20
 #: Seconds after which no further file or Julia mutant starts (`--budget`). It runs beside the
@@ -54,16 +63,33 @@ QUOTED = 3
 _PY_TEST = re.compile(r"^python/cecelia/tests/test_\w+\.py$")
 _JL_TEST = re.compile(r"^app/test/suite/[\w-]+\.jl$")
 _JL_ADDED_TEST = re.compile(r"^\s*@test(set|_throws|_broken|_skip)?\b")
+_FE_TEST = re.compile(r"^frontend/src/.+\.test\.ts$")
+_FE_ADDED_TEST = re.compile(r"^\s*(it|test)(\.\w+)?\(")
+_FE_BROWSER = ".browser.test.ts"
+#: What decides where things land on screen, beside the components and the stylesheet: the layout utils
+#: whose output is a position or a size.
+_LAYOUT_UTILS = ("frontend/src/utils/stickyHead.ts", "frontend/src/utils/columnFill.ts",
+                 "frontend/src/utils/anchorPosition.ts")
 
 
 def is_test_path(path: str) -> bool:
     return "/test/" in path or "/tests/" in path or path.endswith(".test.ts")
 
 
+def _is_source(path: str) -> bool:
+    return ((path.startswith(("app/src/", "python/cecelia/")) and path.endswith((".jl", ".py")))
+            or (path.startswith("frontend/src/") and path.endswith((".ts", ".vue", ".css"))))
+
+
 def source_changes(files: _t.Sequence[FileDiff]) -> list[str]:
-    """Changed Julia/Python source the suites run (`app/src`, `python/cecelia`), tests excluded."""
-    return [f.path for f in files if not f.is_deleted and not is_test_path(f.path)
-            and (f.path.startswith(("app/src/", "python/cecelia/"))) and f.path.endswith((".jl", ".py"))]
+    """Changed source the suites run (`app/src`, `python/cecelia`, `frontend/src`), tests excluded."""
+    return [f.path for f in files if not f.is_deleted and not is_test_path(f.path) and _is_source(f.path)]
+
+
+def renders(path: str) -> bool:
+    """`path` decides how something looks or where it lands: a component, the stylesheet, a layout util."""
+    return path.startswith("frontend/src/") and not is_test_path(path) and (
+        path.endswith(".vue") or path == "frontend/src/style.css" or path in _LAYOUT_UTILS)
 
 
 def added_python_tests(f: FileDiff, staged_text: str) -> list[str]:
@@ -87,14 +113,20 @@ class Added(_t.NamedTuple):
     python: dict[str, list[str]]   # test file → added test ids
     julia: list[str]               # suite files that add a @test / @testset
     first: tuple[str, int]         # where the first added test sits, for the finding's location
+    frontend: tuple[str, ...] = () # vitest files (Node or `*.browser.test.ts`) that add an `it(` / `test(`
 
 
 def added_tests(files: _t.Sequence[FileDiff], staged: _t.Callable[[str], str]) -> Added | None:
-    py, jl, first = {}, [], None
+    py, jl, fe, first = {}, [], [], None
     for f in files:
         if f.is_deleted:
             continue
-        if _PY_TEST.match(f.path):
+        if _FE_TEST.match(f.path):
+            line = next((ln.lineno for ln in f.added if _FE_ADDED_TEST.match(ln.text)), None)
+            if line is not None:
+                fe.append(f.path)
+                first = first or (f.path, line)
+        elif _PY_TEST.match(f.path):
             ids = added_python_tests(f, staged(f.path))
             if ids:
                 py[f.path] = ids
@@ -102,7 +134,7 @@ def added_tests(files: _t.Sequence[FileDiff], staged: _t.Callable[[str], str]) -
         elif _JL_TEST.match(f.path) and adds_julia_tests(f):
             jl.append(f.path)
             first = first or (f.path, next(ln.lineno for ln in f.added if _JL_ADDED_TEST.match(ln.text)))
-    return Added(py, jl, first) if first else None
+    return Added(py, jl, first, tuple(fe)) if first else None
 
 
 # ---------------------------------------------------------------- running on base
@@ -172,6 +204,18 @@ def _head_text(root: pathlib.Path, path: str) -> str:
     return git_output("show", f"HEAD:{path}", cwd=str(root)) or ""
 
 
+def _export_head(root: pathlib.Path, trees: _t.Sequence[str], dest: pathlib.Path) -> None:
+    """`trees` as they are at HEAD, under `dest`; every other top-level entry of the checkout linked in
+    (fixtures, configs), `.git` and `.pixi` excepted. What both on-base runs stand on."""
+    tar = subprocess.run(["git", "archive", "--format=tar", "HEAD", *trees], cwd=root,
+                         capture_output=True, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(tar)) as t:
+        t.extractall(dest, filter="data")
+    for d in root.iterdir():
+        if d.name not in (*trees, ".git", ".pixi") and not (dest / d.name).exists():
+            (dest / d.name).symlink_to(d)
+
+
 #: The trees a Python on-base run takes from HEAD; the rest of the checkout is linked in.
 _BASE_TREES = ("python", "app", "scripts")
 
@@ -183,13 +227,7 @@ def python_on_base(root: pathlib.Path, tests: dict[str, list[str]], staged: _t.C
     find fixtures three levels above their file."""
     with tempfile.TemporaryDirectory(prefix="test_value_base_") as tmp:
         dest = pathlib.Path(tmp)
-        tar = subprocess.run(["git", "archive", "--format=tar", "HEAD", *_BASE_TREES], cwd=root,
-                             capture_output=True, check=True).stdout
-        with tarfile.open(fileobj=io.BytesIO(tar)) as t:
-            t.extractall(dest, filter="data")
-        for d in root.iterdir():
-            if d.name not in (*_BASE_TREES, ".git", ".pixi") and not (dest / d.name).exists():
-                (dest / d.name).symlink_to(d)
+        _export_head(root, _BASE_TREES, dest)
         for path in tests:
             (dest / path).write_text(staged(path), encoding="utf-8")
         env = os.environ | {"PYTHONPATH": str(dest / "python")}
@@ -197,6 +235,45 @@ def python_on_base(root: pathlib.Path, tests: dict[str, list[str]], staged: _t.C
         p = subprocess.run([sys.executable, "-m", "unittest", *ids], cwd=dest / "python", env=env,
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
         return p.returncode != 0
+
+
+#: The trees a frontend on-base run takes from HEAD (`scripts/` for `lib/chromium.mjs`, which the
+#: browser config imports); the rest of the checkout is linked in, `frontend/node_modules` among it.
+_FE_BASE_TREES = ("frontend", "scripts")
+
+
+def _vitest(cwd: pathlib.Path, files: _t.Sequence[str], config: str | None = None) -> bool:
+    """True when vitest fails on `files` (paths under `frontend/`). A run that found no test file is no
+    verdict — it would read as a failure — so it raises."""
+    p = subprocess.run(["npx", "vitest", "run", *(["-c", config] if config else []), *files], cwd=cwd,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if "No test files found" in (p.stdout + p.stderr):
+        raise RuntimeError(f"vitest found none of {', '.join(files)}")
+    return p.returncode != 0
+
+
+def frontend_on_base(root: pathlib.Path, tests: _t.Sequence[str], staged: _t.Callable[[str], str]) -> bool:
+    """True when at least one of the vitest files `tests` fails (or cannot import) on HEAD's code. HEAD's
+    `frontend/` and `scripts/` are exported and the staged test files go on top; `node_modules` and the
+    rest of the checkout are linked in. Browser tests need a browser config at HEAD: a change that adds
+    the harness itself `CannotJudge`."""
+    with tempfile.TemporaryDirectory(prefix="test_value_base_") as tmp:
+        dest = pathlib.Path(tmp)
+        _export_head(root, _FE_BASE_TREES, dest)
+        (dest / "frontend" / "node_modules").symlink_to(root / "frontend" / "node_modules")
+        for path in tests:
+            (dest / path).parent.mkdir(parents=True, exist_ok=True)
+            (dest / path).write_text(staged(path), encoding="utf-8")
+        fe = dest / "frontend"
+        rel = [p[len("frontend/"):] for p in tests]
+        node = [p for p in rel if not p.endswith(_FE_BROWSER)]
+        browser = [p for p in rel if p.endswith(_FE_BROWSER)]
+        failed = bool(node) and _vitest(fe, node)
+        if browser and not failed:
+            if not (fe / "vitest.browser.config.ts").is_file():
+                raise CannotJudge("no browser-test config before this change (it adds the harness)")
+            failed = _vitest(fe, browser, "vitest.browser.config.ts")
+        return failed
 
 
 #: The package's root file: `include`s and `export`s, no methods of its own. Its old text can't be
@@ -240,7 +317,7 @@ def default_on_base(root: pathlib.Path, added: Added, sources: _t.Sequence[str],
     `unjudged: {lang: why}` for one that couldn't be (`CannotJudge`). Cached on HEAD plus the staged
     text of every source and test file (`cache_dir`): a round over the same change reuses it."""
     d = cache_dir(root)
-    paths = sorted({*sources, *added.python, *added.julia})
+    paths = sorted({*sources, *added.python, *added.julia, *added.frontend})
     key = content_key(root, "on_base", git_output("rev-parse", "HEAD", cwd=str(root)) or "",
                       *(f"{p}\n{staged(p)}" for p in paths))
     hit = cache_get(d, key)
@@ -249,6 +326,11 @@ def default_on_base(root: pathlib.Path, added: Added, sources: _t.Sequence[str],
     out: dict = {}
     if added.python and any(s.endswith(".py") for s in sources):
         out["py"] = python_on_base(root, added.python, staged)
+    if added.frontend and any(s.startswith("frontend/src/") for s in sources):
+        try:
+            out["fe"] = frontend_on_base(root, added.frontend, staged)
+        except CannotJudge as e:
+            out.setdefault("unjudged", {})["fe"] = str(e)
     if added.julia and any(s.startswith("app/src/") and s.endswith(".jl") for s in sources):
         try:
             out["jl"] = julia_on_base(root, sources, added.julia)
@@ -292,7 +374,7 @@ def _bullet(file: str, line: int, text: str, marker: str) -> str:
     return f"- **{file}:{line}** — {text} [**{marker}**]"
 
 
-_LANG_NAMES = {"py": "Python", "jl": "Julia"}
+_LANG_NAMES = {"py": "Python", "jl": "Julia", "fe": "Frontend"}
 
 
 def unjudged_notes(failed: dict) -> list[str]:
@@ -301,17 +383,36 @@ def unjudged_notes(failed: dict) -> list[str]:
 
 
 def base_bullet(added: Added, failed: dict) -> str | None:
-    """The `passes on base` bullet when no language's added tests failed on base (`failed`'s `py` /
-    `jl`; one that couldn't be judged isn't in it)."""
+    """The `passes on base` bullet when no language's added tests failed on base (`failed`'s
+    `_LANG_NAMES` keys; one that couldn't be judged isn't in it)."""
     failed = {k: v for k, v in (failed or {}).items() if k in _LANG_NAMES}
     if not failed or any(failed.values()):
         return None
     names = [i.rsplit(".", 1)[-1] for v in added.python.values() for i in v] if "py" in failed else []
     names += [pathlib.Path(s).name for s in added.julia] if "jl" in failed else []
+    names += [pathlib.Path(s).name for s in added.frontend] if "fe" in failed else []
     shown = ", ".join(f"`{n}`" for n in names[:4]) + (f" and {len(names) - 4} more" if len(names) > 4 else "")
     return _bullet(*added.first, f"the tests this change adds ({shown}) all pass on the code before it, "
                    "so none of them shows the change works. Make one fail there (watch it fail); a "
                    "refactor that keeps behaviour is `false_positive: refactor`.", PASSES_ON_BASE)
+
+
+def browser_test_bullet(files: _t.Sequence[FileDiff], branch: str | None) -> str | None:
+    """The `no browser test` bullet: a `fix/*` branch changes what `renders` and adds no browser test.
+    The branch is the trigger because the recital runs before the commit message exists; fixes already
+    live on `fix/` branches (docs/DEV.md → Branches)."""
+    if not (branch or "").startswith("fix/"):
+        return None
+    if any(f.path.endswith(_FE_BROWSER) and not f.is_deleted for f in files):
+        return None
+    hit = next((f for f in files if not f.is_deleted and renders(f.path)), None)
+    if hit is None:
+        return None
+    return _bullet(hit.path, hit.added[0].lineno if hit.added else 1,
+                   "this fix changes how something renders and adds no browser test. If the bug was seen on "
+                   "screen, add a `*.browser.test.ts` that fails without the fix (docs/DEV.md → Tests → GUI); "
+                   "a fix that isn't a rendering or interaction bug is `false_positive: <what it fixes>`.",
+                   NO_BROWSER_TEST)
 
 
 def mutation_bullets(rows: _t.Sequence[dict]) -> list[str]:
@@ -380,7 +481,13 @@ def run_test_value_check(
         except Exception as e:   # a broken check must not cost the commit its recital
             errors.append(f"on base: {type(e).__name__}: {e}")
 
-    if any(is_result_path(p, result_globs) for p in sources):
+    browser = browser_test_bullet(files, branch)
+    if browser:
+        bullets.append(browser)
+        payload["no_browser_test"] = True
+
+    # mutate_changed.py mutates Python and Julia only; a frontend result path is the result reviewer's
+    if any(is_result_path(p, result_globs) for p in sources if p.endswith((".py", ".jl"))):
         try:
             rows = (mutate or default_mutate)(root).get("files", [])
             payload["mutated"] = [{"file": r["file"], "results": len(r.get("results") or []),
@@ -403,7 +510,7 @@ def run_test_value_check(
                    **({"errors": errors} if errors else {}))
     append_event("test_value_run", payload, pr=pr, commit=commit, branch=branch)
 
-    if not added and "mutated" not in payload and not errors:
+    if not added and "mutated" not in payload and not errors and not browser:
         return f"_{TITLE}: skipped — no added tests with a source change, no result path_"
     body = "\n\n".join(x for x in (_inject_slugs(text, MECHANISM) if text else "", *notes,
                                    *(f"> **test value check error** — {e}" for e in errors)) if x)

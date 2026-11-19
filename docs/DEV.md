@@ -283,7 +283,7 @@ parallel jobs per OS**, split by what each needs installed:
 | job | installs | runs |
 |---|---|---|
 | `julia` | pixi + Julia + depot cache | **package tests** (the long pole) |
-| `server` | pixi + Julia + Node | API tests → frontend build → **frontend tests (Vitest)** → server serves `/api/health` + the frontend |
+| `server` | pixi + Julia + Node | API tests → frontend build → **frontend tests (Vitest)** → server serves `/api/health` + the frontend → **GUI route smoke** (Linux: every page renders, no project and `testpr` open) |
 | `python` | pixi only | **Python tests** → MCP tests |
 | `gui` | Node only, **Linux only** | **GUI tests** (Chromium, the runner's Chrome) — advisory while its flake rate is measured |
 
@@ -412,7 +412,10 @@ toolchain.
   the network** (`fetch` / `WebSocket` are replaced) or trips a ResizeObserver loop, and the config
   drops the dev `server` block (the proxy to your live :8080, the 5173 port) — guarded by
   `src/test/browser/vitestBrowserConfig.test.ts`. A rendering bug that reached someone's eyes gets a
-  browser test in its fix PR, watched failing against the old code. Plan:
+  browser test in its fix PR, watched failing against the old code. **Route smoke:** `pixi run
+  test-gui-app -- --base <url> --config-dir <dir> [--project testpr]` (`scripts/gui_smoke.mjs`) visits
+  every route the app's router lists against a RUNNING, isolated instance and fails on a script error,
+  a `console.error` or a ResizeObserver loop — CI runs it in the `server` job. Plan:
   `docs/todo/GUI_TESTING_PLAN.md`.
 - **Python (analysis env):** `pixi run test-py` — the Pixi-env Python code Julia drives via `run_py`
   (segmentation, measurement, corrections, the zarr/dask I/O layer): anywhere logic can silently produce

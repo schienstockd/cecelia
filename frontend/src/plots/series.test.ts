@@ -68,6 +68,14 @@ describe('pickedOrderChips — the plot-order strip', () => {
     expect(chips.map(c => c.label)).toEqual(['CD8', 'T cells'])
     expect(chips[0].swatch).toBe('#00ff00')
   })
+  it('names two picked pops that share a name by their parents (every tracked pop is _tracked)', () => {
+    const tg = [{ valueName: 'T', populations: [
+      { path: '/qc/OTI/_tracked', name: '_tracked', colour: '#111111', popType: 'live', uid: 'c' },
+      { path: '/qc/non-OTI/gBT/_tracked', name: '_tracked', colour: '#222222', popType: 'live', uid: 'd' },
+      { path: '/qc/non-OTI/P14', name: 'P14', colour: '#333333', popType: 'live', uid: 'e' }] }]
+    expect(pickedOrderChips(['live::T/qc/OTI/_tracked', 'live::T/qc/non-OTI/gBT/_tracked', 'live::T/qc/non-OTI/P14'], tg)
+      .map(c => c.label)).toEqual(['OTI/_tracked', 'gBT/_tracked', 'P14'])
+  })
   // a mixed board keeps every slot's picks in one selection — the active plot's picker lists one family
   it('shows only picks the picker lists — not another family, nor a pop gone from the images', () => {
     expect(pickedOrderChips(['flow::cpSAM/T', 'hmm::cpSAM/Scanning', 'flow::cpSAM/gone/B', 'flow::cpSAM/T/CD8'], groups)

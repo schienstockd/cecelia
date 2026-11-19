@@ -178,6 +178,19 @@ end
     @test pop_path("/a", "b") == "/a/b"
     @test pop_path(ROOT, "a") == "/a"
     @test is_root(ROOT) && is_root("/") && !is_root("/a")
+    # display labels: unique names stay short; clashing ones climb until they differ
+    let l = pop_display_labels(["/qc/OTI/_tracked", "/qc/non-OTI/gBT/_tracked", "/qc/non-OTI/P14"])
+        @test l["/qc/OTI/_tracked"] == "OTI/_tracked"
+        @test l["/qc/non-OTI/gBT/_tracked"] == "gBT/_tracked"
+        @test l["/qc/non-OTI/P14"] == "P14"
+    end
+    let l = pop_display_labels(["/a/x/_t", "/b/x/_t", "/_t"])
+        @test (l["/a/x/_t"], l["/b/x/_t"], l["/_t"]) == ("a/x/_t", "b/x/_t", "_t")
+    end
+    @test pop_display_labels(["/a/1", "/b/2"]; name_of = _ -> "C") == Dict("/a/1" => "a/C", "/b/2" => "b/C")
+    @test pop_display_labels(["/a/x"]; name_of = _ -> "N") == Dict("/a/x" => "N")   # no clash: own name only
+    @test pop_display_labels(["/"]) == Dict("/" => "/")
+    @test pop_display_labels(["/_t", "/qc/_t"]) == Dict("/_t" => "_t", "/qc/_t" => "qc/_t")
 
     m = PopulationMap(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10), colour="#f00")

@@ -2258,6 +2258,14 @@ full-size `GateScatterCell` (Gate page), and both flow plots (via `useFlowPlanes
 decision so the two cannot disagree); `ClusterMapView` has its own empty-state wheel. New heavy plots: reuse
 these two primitives.
 
+**A redraw with no request needs the wheel too.** Rotate 90°, a palette or a font size redraws a
+summary plot entirely in the browser — no loading flag, and the synchronous Observable Plot build
+blocks the page, so a wheel switched on inside it never paints. `PlotChart` therefore learns from its
+previous draw (`utils/slowPaint.ts`): if that took ≥ 200 ms, the next one first shows the wheel
+("Redrawing…") and dims the old chart, waits two frames so that paints, then draws. The wheel's CSS
+rotation is composited, so it keeps turning during the draw. A host already showing its own wheel
+passes `hostBusy` so the two don't stack (`SummaryPanel`). Fast plots never cross the threshold.
+
 **A slow plot should also say its content is STALE.** The flow plots dim the planes while a render is
 queued or running (`.planes-stale`, tied to the same delayed flag as the wheel). Without it a slow
 render is indistinguishable from a control that did nothing — which is how a debounced slider reads as

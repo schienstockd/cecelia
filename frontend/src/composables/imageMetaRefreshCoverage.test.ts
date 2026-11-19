@@ -25,7 +25,7 @@ const SUBSCRIBES = [
 ]
 // key their reload on the store image's `channelNames` instead (the form context IS the store image)
 const KEYED: Record<string, RegExp> = {
-  'tasks/ParamRenderer.vue': /images\?\.\[0\]\?\.channelNames/,
+  'tasks/ParamRenderer.vue': /watch\(colsReloadSources\(/,  // keyed in paramValues.ts (behaviour pinned in paramReloadSources.test.ts)
   'tasks/paramAdvisors.ts': /\(i\.channelNames \?\? \[\]\)/,  // popsCompatAdvisor.reloadOn (behaviour pinned in paramAdvisors.test.ts)
 }
 

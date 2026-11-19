@@ -112,7 +112,7 @@ test whether an agent can actually use the framework.
    the code and says `live_bug` when one changes a value a caller would see, `not_a_bug` when all
    are equivalent; verify traces the callers. Not rerun (over the budget, or it failed): `unjudged`, or
    still `open`. Issues get the `test-gap` label; the fix brief asks for a test whose expected value
-   comes from a definition. `passes on base` findings aren't swept: once merged there is no base.
+   comes from a definition. `passes on base` and `no browser test` findings aren't swept: once merged there is no base, and the browser test is the fix PR's to add.
 
    Errors the autonomous runs hit (`agent_run_finding`, one per error key, counting the runs that hit
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks

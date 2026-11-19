@@ -31,7 +31,7 @@ import ColourPicker from '../ColourPicker.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
-import { popNameError, popPath, isInSubtree, nextClusterPopName } from '../../utils/popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName, popDisplayLabels } from '../../utils/popName'
 import { claudeProposal } from '../../utils/authorStamp'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
@@ -412,7 +412,9 @@ const boolTermOptions = computed(() => visiblePops.value
   .map(p => p.path))
 const boolParentOptions = computed(() => parentChoices(bpEditPath.value))
 // a path → the population's own name, for the summary line (paths get long and the leaf is the name)
-const popLabel = (path: string) => g.flat.find(x => x.path === path)?.name ?? path
+// a combined pop's terms can come from anywhere in the tree: two sharing a name are named apart
+const flatLabels = computed(() => popDisplayLabels(g.flat.map(x => x.path), q => g.flat.find(x => x.path === q)?.name))
+const popLabel = (path: string) => flatLabels.value.get(path) ?? path
 
 function addBoolTerm() { bpTerms.value.push({ path: '', negate: false }) }
 function removeBoolTerm(i: number) { bpTerms.value.splice(i, 1) }

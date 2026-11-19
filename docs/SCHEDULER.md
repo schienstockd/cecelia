@@ -532,6 +532,16 @@ A user report showed three gaps around one Cancel: the row read `cancelled` whil
   own record (`TaskJob.rec`) — defence in depth for the same id reuse: deleting by id let an old run's
   late deregistration remove the new run's record, which could then never be cancelled.
 
+- **A run that is not done removes the new images it made.** Crop, copy, Z/T-project, bin, resample Z,
+  register and split into tissues register each output image with `add_image!` before writing its
+  pixels, and mark it done after. `_execute_job!` runs `_run_task` inside `tracking_new_images`
+  (`model/set.jl`), which records every `(set, uid)` that `add_image!` registers on that Julia task; when
+  the run ends cancelled or failed (returned `nothing`, or threw), `discard_new_images!` deletes them with
+  `delete_image!` and the task log says how many went. A done run keeps them. Only images registered
+  during a scheduled run are tracked — an import's `add_image!` in a route is never undone. A
+  `_run_task` that registered images from a task it spawned itself would escape the tracking (none
+  does). A backend crash mid-run still leaves them: no Julia code runs to discard them.
+
 What this does **not** cover: a Python child orphaned by a backend *crash*. The installed-app launcher
 restarts the backend without killing its children, and nothing records the task's pid, so such a
 process is invisible to every cancel. The run-log entry it left is reaped as `interrupted` at the next
