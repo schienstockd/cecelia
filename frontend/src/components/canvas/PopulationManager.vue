@@ -15,6 +15,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
+import { tooManyClustersToDraw, tooManyClustersText } from '../../utils/clusterLimit'
 import { useObserverStore } from '../../stores/observer'
 import { ref, computed, watch } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
@@ -645,7 +646,9 @@ function moveTo(target: string) {
                     @click.stop="emit('update:selected', '')"><i class="pi pi-times" /></button></template>
           <template v-else>Select a population, then click clusters</template>
         </div>
-        <div class="pm-chip-grid cc-row cc-row-tight">
+        <span v-if="tooManyClustersToDraw(props.clusterIds.length)" class="pm-chip-empty cc-empty-inline cc-fs-2xs">
+          {{ tooManyClustersText(props.clusterIds.length) }}</span>
+        <div v-else class="pm-chip-grid cc-row cc-row-tight">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
                   :class="{ on: !!clusterOwner(id), ro: readonly || !armedPop, lit: isFocusLit(id), dim: isFocusDim(id) }"
                   :disabled="readonly || !armedPop"

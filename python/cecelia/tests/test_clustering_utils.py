@@ -3,6 +3,7 @@
 `cluster_seg_stats` (pure) pins the per-segment cluster distribution the QC sidecar banks: point
 count, distinct clusters occupied, and the largest-cluster fraction (dominance). See qc.jl
 cluster_qc_findings + COHORT_METRICS. `find_populations` gets one small end-to-end run."""
+import sys
 import unittest
 
 import numpy as np
@@ -155,6 +156,56 @@ def _continuum_adata(n=150, k=10, seed=0):
     adata.uns["neighbors"] = {"connectivities_key": "connectivities", "distances_key": "distances",
                               "params": {"n_neighbors": k, "method": "umap"}}
     return adata, t
+
+
+class TestFindPopulationsOnDistinctRows(unittest.TestCase):
+    """Neighbourhood compositions over ~6 neighbours repeat exactly (fractions in steps of 1/6). Leiden's
+    15-neighbour kNN graph then splits into one island per repeated row, and Leiden returns hundreds
+    of clusters for a handful of real regions. The truth here is the region each cell was drawn from."""
+
+    @staticmethod
+    def _compositions(n=6000, k=6, seed=0):
+        rng = np.random.default_rng(seed)
+        mixes = np.array([[.7, .2, .1, 0, 0, 0], [0, .1, .6, .3, 0, 0], [0, 0, 0, .2, .4, .4]])
+        region = rng.integers(0, 3, n)
+        X = np.stack([rng.multinomial(k, mixes[r]) / k for r in region]).astype(np.float32)
+        return X, region
+
+    @unittest.skipIf(sys.platform == "darwin", "scanpy's neighbour graph segfaults on the macOS runner")
+    def test_repeated_compositions_give_the_real_regions(self):
+        import anndata as ad
+        from sklearn.metrics import adjusted_rand_score
+        from cecelia.utils import clustering_utils
+        X, region = self._compositions()
+        adata = ad.AnnData(X)
+        clustering_utils.find_populations_on_distinct_rows(
+            adata, resolution=0.6, axis="NONE", transformation="NONE", create_umap=False,
+            backend="cpu", random_state=0)
+        clusters = adata.obs["clusters"].to_numpy()
+        self.assertLessEqual(len(set(clusters)), 10)
+        self.assertGreater(adjusted_rand_score(region, clusters), 0.8)
+        # identical compositions always share a cluster
+        _, inverse = np.unique(X, axis=0, return_inverse=True)
+        per_row = pd.Series(clusters).groupby(np.asarray(inverse).ravel()).nunique()
+        self.assertEqual(int(per_row.max()), 1)
+
+    def test_umap_position_follows_the_row(self):
+        from unittest import mock
+        import anndata as ad
+        from cecelia.utils import clustering_utils
+
+        def fake_find(sub, **_kw):     # each distinct row its own cluster, UMAP = the row's first value
+            sub.obs["clusters"] = pd.Categorical([str(i) for i in range(sub.n_obs)])
+            sub.obsm["X_umap"] = np.stack([sub.X[:, 0], sub.X[:, 0]], axis=1)
+
+        X = np.array([[1, 0], [0, 1], [1, 0], [.5, .5], [0, 1]], dtype=np.float32)
+        adata = ad.AnnData(X)
+        with mock.patch.object(clustering_utils, "find_populations", side_effect=fake_find):
+            clustering_utils.find_populations_on_distinct_rows(adata)
+        c = adata.obs["clusters"].to_numpy()
+        self.assertEqual(c[0], c[2]); self.assertEqual(c[1], c[4])
+        self.assertEqual(len(set(c)), 3)
+        np.testing.assert_array_equal(adata.obsm["X_umap"][:, 0], X[:, 0])
 
 
 class TestBehaviourAxes(unittest.TestCase):
