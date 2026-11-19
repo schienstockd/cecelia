@@ -9,6 +9,9 @@
 //    toast); this catches the same-list duplicate immediately as the user types.
 // Returns a human-readable message, or null when the name is acceptable.
 
+import { popTypeInfo } from '../plots/popTypeRegistry'
+import type { ClusterPopType } from './clusterMeasure'
+
 export const DERIVED_POP_PREFIX = '_'
 
 export function popNameError(
@@ -42,3 +45,17 @@ export const popPath = (parent: string, name: string) =>
 // Is `path` inside `sub`'s own subtree (or `sub` itself)? The cycle guard a re-parent needs — a
 // population cannot be moved under one of its own descendants (Julia `move_pop!` rejects it too).
 export const isInSubtree = (path: string, sub: string) => path === sub || path.startsWith(sub + '/')
+
+// What the manager's "+" names a new cluster population: its run and kind, then the first free number
+// — `win50 region 1`. A segmentation's populations of every run share ONE name space (and pop types
+// share it too, `pop_name_conflict`), so a name numbered within the run alone collides with another
+// run's `Population 1`. The kind keeps a region run and a cluster run of the same name apart.
+export function nextClusterPopName(suffix: string, popType: ClusterPopType, existingNames: string[]): string {
+  // the kind is the pop-type registry's label, singular: "Regions" → "region"
+  const kind = (popTypeInfo(popType)?.label ?? 'clusters').toLowerCase().replace(/s$/, '')
+  const base = `${suffix} ${kind}`
+  const taken = new Set(existingNames.map(e => e.trim().toLowerCase()))
+  let k = 1
+  while (taken.has(`${base} ${k}`.toLowerCase())) k++
+  return `${base} ${k}`
+}
