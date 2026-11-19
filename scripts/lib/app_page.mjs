@@ -14,6 +14,17 @@ export function refuseSlotZero(base, allow = false) {
     throw new Error(`refusing ${base}: slot 0 is usually someone's working instance (use an isolated slot)`)
 }
 
+/** Routes that aren't a page of the main window — pop-outs and first-run screens — each with why a
+ *  script that visits every page leaves it out (gui_capture.mjs, gui_smoke.mjs). */
+export const NOT_A_PAGE = {
+  '/viewer-window': 'pop-out window; its WebGPU canvas has no adapter in headless Chromium',
+  '/board-render': 'pop-out render target, WebGPU',
+  '/tasks-window': 'pop-out window',
+  '/console': 'pop-out window',
+  '/setup': 'first-run screen, bounces once set up',
+  '/profile-picker': 'launch screen, shown only with several profiles',
+}
+
 /** Run `fn(globalProperties, arg)` in the page: `g.$pinia._s.get(store)`, `g.$router`. */
 export const vue = (page, fn, arg) =>
   page.evaluate(`(${fn.toString()})(document.querySelector('#app').__vue_app__.config.globalProperties, ${JSON.stringify(arg)})`)

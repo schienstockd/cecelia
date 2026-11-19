@@ -108,6 +108,10 @@ layout test would rot faster than it catches anything.
    `projectsDir` / `copyProject`, lifted from `scripts/docshots/fixture.mjs` (module-private today) into
    `scripts/lib/` so both callers share the one guard that refuses a dir outside `--config-dir`. In prod builds the RO trace is off. The smoke
    still catches the bare error event; only the attribution is DEV-only.
+   **As built (P4):** the routes come from the RUNNING app's router (`$router.getRoutes()`), so nothing
+   moves out of `main.ts`; the project is the committed `testpr` named directly, not through a fixture
+   CLI — the smoke needs "a project", not one with given properties. CI writes the runner's
+   `~/.cecelia/custom.toml` `[dirs] projects` (throwaway home) before boot.
 
 ## Architecture
 

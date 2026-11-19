@@ -273,6 +273,8 @@ test-frontend = { cmd = "npm test", cwd = "frontend" }
 # Shared components mounted in a real (system) Chromium — `*.browser.test.ts`, vitest.browser.config.ts.
 # Never reaches a backend or :5173. docs/DEV.md → Tests → GUI (browser).
 test-gui      = { cmd = "npm run test:browser", cwd = "frontend" }
+# Every page of a RUNNING, ISOLATED instance renders (scripts/gui_smoke.mjs; needs --base, --config-dir).
+test-gui-app  = "node scripts/gui_smoke.mjs"
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 # No PYTHONPATH override on the two mcp tasks: `-m` / `-t .` already put mcp/ on sys.path, and the
 # project-wide pin ([activation.env]) supplies python/ for `cecelia.utils.loopback`.
