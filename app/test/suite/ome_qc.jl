@@ -2181,6 +2181,12 @@ end
         @test_throws BoardSpecError ex([Dict("plot" => "trackPaths", "pops" => ["Tcells/qc/P14"])])   # flow
         @test_throws BoardSpecError ex([Dict("plot" => "trackPaths", "mode" => "spiral")])
 
+        # population positions: any family, one per plot; the family and the frame land in its state
+        pp = ex([Dict("plot" => "popPositions", "pops" => ["Tcells/qc/P14"], "frame" => 3)])["contents"][1]["state"]
+        @test pp["sel"] == ["flow::Tcells/qc/P14"] && pp["popType"] == "flow" && pp["frame"] == 3
+        @test_throws BoardSpecError ex([Dict("plot" => "popPositions", "pops" => ["Tcells/qc", "Tcells/qc/P14"])])
+        @test_throws BoardSpecError ex([Dict("plot" => "popPositions", "frame" => -1)])
+
         # gating strategy: the image must exist; fields map onto the view's own state keys
         g = ex([Dict("plot" => "gatingStrategy", "image" => "img2", "valueName" => "Tcells",
                      "popType" => "live", "pop" => "/qc", "hierarchy" => true)])["contents"][1]["state"]

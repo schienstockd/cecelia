@@ -283,7 +283,7 @@ parallel jobs per OS**, split by what each needs installed:
 | job | installs | runs |
 |---|---|---|
 | `julia` | pixi + Julia + depot cache | **package tests** (the long pole) |
-| `server` | pixi + Julia + Node | API tests → frontend build → **frontend tests (Vitest)** → server serves `/api/health` + the frontend |
+| `server` | pixi + Julia + Node | API tests → frontend build → **frontend tests (Vitest)** → server serves `/api/health` + the frontend → **GUI route smoke** (Linux: every page renders, no project and `testpr` open) |
 | `python` | pixi only | **Python tests** → MCP tests |
 | `gui` | Node only, **Linux only** | **GUI tests** (Chromium, the runner's Chrome) — advisory while its flake rate is measured |
 
@@ -412,7 +412,10 @@ toolchain.
   the network** (`fetch` / `WebSocket` are replaced) or trips a ResizeObserver loop, and the config
   drops the dev `server` block (the proxy to your live :8080, the 5173 port) — guarded by
   `src/test/browser/vitestBrowserConfig.test.ts`. A rendering bug that reached someone's eyes gets a
-  browser test in its fix PR, watched failing against the old code. Plan:
+  browser test in its fix PR, watched failing against the old code. **Route smoke:** `pixi run
+  test-gui-app -- --base <url> --config-dir <dir> [--project testpr]` (`scripts/gui_smoke.mjs`) visits
+  every route the app's router lists against a RUNNING, isolated instance and fails on a script error,
+  a `console.error` or a ResizeObserver loop — CI runs it in the `server` job. Plan:
   `docs/todo/GUI_TESTING_PLAN.md`.
 - **Python (analysis env):** `pixi run test-py` — the Pixi-env Python code Julia drives via `run_py`
   (segmentation, measurement, corrections, the zarr/dask I/O layer): anywhere logic can silently produce
@@ -715,9 +718,10 @@ tested on that movie) and in the viewer overlay test (`if sizes[3] != 1.0` — n
   `test-data/NEEDS.toml` (properties, why, the waiting tests, a size budget), pass `need = "<id>"`, and
   let the test skip with its warning. If a synthesised fixture with a known answer would do
   (`synthetic = true` — distances, band edges, a unit conversion), build it yourself like `CONTMESH`;
-  only real-data behaviour waits for the maintainer — the weekly judge lists the images in their
-  projects that match (`pixi run judge-fixtures`), and `pixi run fixture-cut` cuts one under the cap
-  into `test-data/projects/FIXPRJ` (cell table, and the image + label stores cropped to one box). A PR reservation that says "not run on <X> data"
+  only real-data behaviour waits for the maintainer — the weekly judge matches the request against
+  their projects and stages a cut under the cap outside the repo (`pixi run judge-fixtures` shows it),
+  and `pixi run fixture-accept -- <id>` takes it into `test-data/projects/FX<uid>` once they have looked
+  at it. A PR reservation that says "not run on <X> data"
   names the request id. The registry testset fails once a registered fixture meets an open request, so
   the list can't go stale.
 - **Guards that skip on the fixture are the same bug.** `if <property> … end` around the assertion that

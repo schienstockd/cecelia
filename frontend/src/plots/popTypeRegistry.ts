@@ -35,6 +35,8 @@ export const STORED_POP_TYPES = names(i => i.suffix !== null)
 export const TRACK_FAMILY_POP_TYPES = names(i => i.trackFamily)
 /** The stored, cell-grained types — what the viewer draws as centroid point overlays. */
 export const STORED_CELL_POP_TYPES = names(i => i.suffix !== null && i.grain === 'cell')
+/** Every type whose populations are cells or tracks (not branches) — what a plot of cells can draw. */
+export const CELL_PLOT_POP_TYPES = names(i => i.grain !== 'branch')
 // The predicates over these rows keep their existing homes: `isTrackPopType` (utils/measureGroups),
 // `isClusterPopType` / `isGatingPopType` / `clusterMeasurePrefix` (utils/clusterMeasure),
 // `popTypeLabel` (plots/popTypes).

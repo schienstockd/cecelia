@@ -114,7 +114,7 @@ export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
 export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df, branch_paths
 export SkeletonSegments, skeleton_segments, skeleton_segments_at
-export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between
+export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between, spatial_graph_window_grid, window_grid_segments
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
@@ -128,7 +128,7 @@ export Density2D, density_2d, axis_summary, grid_summary
 export Population, PopulationMap, ROOT, PopType, PopTypeArg
 export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
 export parse_pop_type
-export pop_parent, pop_name, pop_path, is_root
+export pop_parent, pop_name, pop_path, is_root, pop_display_labels
 export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
 export boolean_dependents, boolean_spec, filter_spec, pops_depending_on, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse_bool_membership
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,
@@ -154,6 +154,7 @@ export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, 
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
+export pop_positions, pop_index_by_label
 export image_metric_frame, image_metric_summary, IMAGE_METRIC_SOURCES
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
@@ -334,6 +335,7 @@ include("plotting/plot_data.jl")
 include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "elbow") from the hmmfit records
 include("plotting/stats.jl")
 include("plotting/image_metrics.jl")   # per-image sidecar metrics → summary plots (SPATIAL_PATTERN_PLAN D8)
+include("plotting/pop_positions.jl")   # every cell at its position, tagged by population (popPositions plot)
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_headings.jl")     # per-movie heading circular stats (radiatR port; the battery reads it)
@@ -419,6 +421,7 @@ include("tasks/behaviour/hmm_transitions.jl")
 include("tasks/behaviour/motif_discovery.jl")
 include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
+include("tasks/spatialAnalysis/neighbour_graph_qc.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
 include("tasks/spatialAnalysis/spatialPattern.jl")
@@ -431,6 +434,7 @@ include("tasks/spatialAnalysis/proximity_bands.jl")
 include("tasks/spatialAnalysis/proximityProfile.jl")
 include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")
+include("tasks/clustRegions/graph.jl")
 include("tasks/clustRegions/cluster.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")

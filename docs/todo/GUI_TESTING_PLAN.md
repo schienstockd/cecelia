@@ -1,8 +1,11 @@
 # GUI tests: shared components in a real browser, and every bug that reaches the eye
 
-**Status:** in progress — P1 (harness + SelectionTable sticky header) on `feat/gui-tests-harness`.
-Open questions answered by default (2026-11-19, "work through the plan autonomously"): advisory first,
-Chromium only, `fix/*` + `.vue`/CSS/layout-util trigger, smoke with `testpr`, base gap closed in P2.
+**Status:** in progress — MERGED: P1 harness + SelectionTable sticky header (#2370), P2 recital leg
+(#2375), P3b popover/modal/confirm (#2379), P4 route smoke (#2383). Open: P3a SelectionTable
+fit/resize/picking + CollapsibleSection (#2376), P3c chips/toggle/tooltip (#2381). P5 (make `gui`
+required) after two weeks of runs. Open questions answered by default (2026-11-19, "work through the
+plan autonomously"): advisory first, Chromium only, `fix/*` + `.vue`/CSS/layout-util trigger, smoke
+with `testpr`, base gap closed in P2.
 
 ## Goal
 
@@ -108,6 +111,10 @@ layout test would rot faster than it catches anything.
    `projectsDir` / `copyProject`, lifted from `scripts/docshots/fixture.mjs` (module-private today) into
    `scripts/lib/` so both callers share the one guard that refuses a dir outside `--config-dir`. In prod builds the RO trace is off. The smoke
    still catches the bare error event; only the attribution is DEV-only.
+   **As built (P4):** the routes come from the RUNNING app's router (`$router.getRoutes()`), so nothing
+   moves out of `main.ts`; the project is the committed `testpr` named directly, not through a fixture
+   CLI — the smoke needs "a project", not one with given properties. CI writes the runner's
+   `~/.cecelia/custom.toml` `[dirs] projects` (throwaway home) before boot.
 
 ## Architecture
 

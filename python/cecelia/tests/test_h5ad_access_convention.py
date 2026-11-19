@@ -29,7 +29,7 @@ _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # Files allowed to `import h5py` / `import anndata` directly. Every entry has a reason.
 # _BASELINE_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
 # reviewer sees "weaken the check" attempts. Same shape as test_zarr_access_convention.py.
-_BASELINE_MAX = 13
+_BASELINE_MAX = 12
 _BASELINE = {
     # Owns the read/write idiom — LabelPropsView IS the canonical h5ad wrapper.
     os.path.join('python', 'cecelia', 'utils', 'label_props_utils.py'),
@@ -52,7 +52,6 @@ _BASELINE = {
     # existing-file rule doesn't apply. Any NEW creator has to enter the baseline in the same PR
     # (bumping _BASELINE_MAX) so the "is this really a creator" question is visible in review.
     os.path.join('app', 'src', 'tasks', 'segment', 'branching_run.py'),
-    os.path.join('app', 'src', 'tasks', 'clustRegions', 'cluster_run.py'),
     os.path.join('app', 'src', 'tasks', 'clustTracks', 'cluster_run.py'),
     os.path.join('app', 'src', 'tasks', 'clustPops', 'cluster_run.py'),
     os.path.join('app', 'src', 'tasks', 'behaviour', 'motif_discovery_run.py'),

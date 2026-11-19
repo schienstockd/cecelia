@@ -5,14 +5,15 @@
   "purpose": "Build the neighbour graph that interaction and region steps read",
   "useWhen": [
     "Before Interaction matrix or Cluster regions: both need this graph",
-    "Live imaging: per timepoint links cells only within one frame"
+    "Live imaging: per timepoint links cells only within one frame",
+    "Fixed windows: regions as places on a grid, not around each cell"
   ],
   "notWhen": [],
   "category": "Spatial analysis",
   "group": "Neighbourhood",
   "env": ["local"],
   "resource_pool": "cpu",
-  "sweep": { "output": "graphSuffix", "params": ["neighbourRadius", "nNeighbours"] },
+  "sweep": { "output": "graphSuffix", "params": ["neighbourRadius", "nNeighbours", "windowSize"] },
   "requires": { "scale": ["xy"] },
   "params": [
     {
@@ -41,9 +42,10 @@
       "options": [
         { "value": "delaunay", "label": "Delaunay (radius-pruned)" },
         { "value": "knn",      "label": "k nearest neighbours" },
-        { "value": "radius",   "label": "Fixed radius" }
+        { "value": "radius",   "label": "Fixed radius" },
+        { "value": "windows",  "label": "Fixed windows" }
       ],
-      "tip": "Delaunay (radius-pruned), kNN, or fixed radius"
+      "tip": "Delaunay (radius-pruned), kNN, fixed radius, or a grid of overlapping square windows"
     },
     {
       "key": "neighbourRadius",
@@ -68,11 +70,31 @@
       "tip": "Number of nearest neighbours for the kNN graph"
     },
     {
-      "key": "perTimepoint",
-      "label": "Per timepoint",
-      "type": "bool",
-      "default": true,
-      "tip": "Link cells only within the same frame; off = pool all frames"
+      "key": "windowSize",
+      "label": "Window size (µm)",
+      "type": "float",
+      "min": 5,
+      "max": 500,
+      "step": 1,
+      "default": 50,
+      "showIf": { "neighbourMethod": "windows" },
+      "tip": "Side of each square window; windows overlap by half"
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "perTimepoint",
+          "label": "Per timepoint",
+          "type": "bool",
+          "default": true,
+          "showIf": { "neighbourMethod": ["delaunay", "knn", "radius"] },
+          "tip": "Link cells only within the same frame; off = pool all frames"
+        }
+      ]
     }
   ]
 }

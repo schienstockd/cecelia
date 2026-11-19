@@ -7,14 +7,13 @@
 // INVENTORY-EXEMPT: callers are GatingCopyDialog + PopulationManager; the wording is specific to this finding.
 
 import { clusterMeasurePrefix } from './clusterMeasure'
+import { popDisplayLabels } from './popName'
 
 export interface MissingColumn { column: string; pops: string[] }
 export type CopyWarnings = Record<string, MissingColumn[]>
 
 // `info` — a note, not a problem (the copy went through as meant): rendered without a severity.
 export interface CopyWarningLine { uid: string; text: string; pops: string[]; info?: boolean }
-
-const popLeaf = (path: string) => path.slice(path.lastIndexOf('/') + 1) || path
 
 export function copyWarningLines(warnings: CopyWarnings | undefined,
                                  nameOf: (uid: string) => string): CopyWarningLine[] {
@@ -23,11 +22,12 @@ export function copyWarningLines(warnings: CopyWarnings | undefined,
     .map(([uid, cols]) => {
       const pops = [...new Set(cols.flatMap(c => c.pops))]
       const n = pops.length
+      const labels = popDisplayLabels(pops)   // two pops sharing a name, named apart
       return {
         uid,
         text: `${nameOf(uid)}: no ${cols.map(c => c.column).join(', ')} — ` +
               `${n} population${n === 1 ? '' : 's'} will be empty`,
-        pops: pops.map(popLeaf),
+        pops: pops.map(p => labels.get(p)!),
       }
     })
 }

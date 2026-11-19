@@ -31,6 +31,7 @@ Base.@kwdef struct ClustRegionsParams
     valueNameSuffix::String      = "default"
     graphSuffix::String          = "default"
     includeOther::Bool           = true
+    pooling::String              = "frame"
     clusterMethod::String        = "leiden"
     numClusters::Int             = 5
     resolution::Float64          = 1.0
@@ -43,6 +44,7 @@ function parse_clust_regions_params(d::AbstractDict)::ClustRegionsParams
         valueNameSuffix = string(get(d, "valueNameSuffix", "default")),
         graphSuffix     = string(get(d, "graphSuffix", "default")),
         includeOther    = Bool(get(d, "includeOther", true)),
+        pooling         = string(get(d, "pooling", "frame")),
         clusterMethod   = string(get(d, "clusterMethod", "leiden")),
         numClusters     = Int(get(d, "numClusters", 5)),
         resolution      = Float64(get(d, "resolution", 1.0)),
@@ -57,41 +59,22 @@ end
 _comp_col(basis_pop::AbstractString, suffix::AbstractString) =
     "spatial.comp.$(replace(String(basis_pop), "/" => "_", " " => "_")).$(suffix)"
 
+# A window graph's density column — the cells in each cell's window, beside its composition.
+const WINDOW_DENSITY_NAME = "cells per window"
+
 # Did the runner skip the "other" composition column? It does so when the graph holds nothing outside
 # the basis, so the column would be all-zero (see cluster_run.py). Pure read of the run's QC json;
 # defaults to `false` (column written) if the file is missing or unreadable, matching the old behaviour.
-function _region_other_all_zero(qc_path::AbstractString)::Bool
+_region_other_all_zero(qc_path::AbstractString)::Bool = _region_qc_flag(qc_path, "otherAllZero")
+
+# One boolean the runner banked in the run's QC json (`otherAllZero`, `windowGraph`); `false` if the
+# file or the key is missing, matching a run from before the runner wrote it.
+function _region_qc_flag(qc_path::AbstractString, key::AbstractString)::Bool
     isfile(qc_path) || return false
     try
-        Bool(get(JSON3.read(read(qc_path, String), Dict{String,Any}), "otherAllZero", false))
+        Bool(get(JSON3.read(read(qc_path, String), Dict{String,Any}), key, false))
     catch
         false
-    end
-end
-
-# The neighbour graph's own QC, re-judged per image on the graph the run actually LOADED. Composition
-# vectors on a sparse graph are noise, so the region run carries the same finding the graph task banks
-# (`_neighbours_qc_findings`, same `SPARSE_GRAPH_MEAN_DEGREE`) where the regions are inspected. Pure:
-# the parsed region_qc.json → uID → findings. A run from before the runner banked `graphMetrics` → none.
-function _region_graph_findings(qc::AbstractDict, graph_suffix::AbstractString)
-    out = Dict{String,Vector{Dict{String,Any}}}()
-    gm = get(qc, "graphMetrics", nothing)
-    gm isa AbstractDict || return out
-    for (uid, m) in gm
-        m isa AbstractDict || continue
-        m = Dict{String,Any}(String(k) => v for (k, v) in m)    # nested JSON3 objects key by Symbol
-        fs = _loaded_graph_findings(m, graph_suffix)
-        isempty(fs) || (out[String(uid)] = fs)
-    end
-    out
-end
-
-function _region_graph_findings(qc_path::AbstractString, graph_suffix::AbstractString)
-    isfile(qc_path) || return Dict{String,Vector{Dict{String,Any}}}()
-    try
-        _region_graph_findings(JSON3.read(read(qc_path, String), Dict{String,Any}), graph_suffix)
-    catch
-        Dict{String,Vector{Dict{String,Any}}}()
     end
 end
 
@@ -120,6 +103,8 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
                                 "available: $(join(sort(have), ", "))"))
         return nothing
     end
+    prob = region_pooling_problem(p.pooling, region_graph_kinds(imgs, p.graphSuffix))
+    prob === nothing || (on_log("[ERROR] clustRegions: graph \"$(p.graphSuffix)\": $prob"); return nothing)
 
     # ── pooled basis cells: one row per cell tagged (uID, value_name, label, pop) ──
     # basis pops may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each.
@@ -144,7 +129,9 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
         "suffix" => p.valueNameSuffix, "segments" => segments, "basis" => basis,
         "graphPaths" => graph_paths, "graphSuffix" => p.graphSuffix,
         "compCols" => comp_cols, "otherCol" => other_col,
+        "densityCol" => _comp_col(WINDOW_DENSITY_NAME, p.valueNameSuffix),
         "includeOther" => p.includeOther,
+        "pooling" => p.pooling,
         "clusterMethod" => p.clusterMethod,
         "numClusters" => p.numClusters,
         "resolution" => p.resolution,
@@ -170,6 +157,10 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     feat_cols = other_written ? vcat(comp_cols, other_col) : comp_cols
     labels = Dict{String,String}(comp_cols[i] => basis[i] for i in eachindex(basis))
     other_written && (labels[other_col] = OTHER_BASIS_NAME)
+    if _region_qc_flag(qc_out_path, "windowGraph")
+        density_col = _comp_col(WINDOW_DENSITY_NAME, p.valueNameSuffix)
+        feat_cols = vcat(feat_cols, density_col); labels[density_col] = WINDOW_DENSITY_NAME
+    end
     at = string(Dates.now())                  # one stamp for the whole run
     for seg in segments
         _write_clust_features!(seg["propsPath"], p.valueNameSuffix, feat_cols, uids;

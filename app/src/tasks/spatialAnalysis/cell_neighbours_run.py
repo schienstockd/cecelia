@@ -15,7 +15,7 @@ runner is only the task's Julia↔Python boundary.
 
 Node resolution happens in Julia (cellNeighbours.jl). Params: segments [{valueName, propsPath, labels}]
 (`labels: null` = every cell of that segmentation), graphPath, physicalSizes [sz,sy,sx], neighbourMethod,
-neighbourRadius, nNeighbours, perTimepoint, qcOutPath.
+neighbourRadius, nNeighbours, perTimepoint, windowSize (µm, method "windows"), qcOutPath.
 """
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -36,6 +36,7 @@ def run(params):
     radius     = float(script_utils.get_param(params, "neighbourRadius", default=30.0))
     k          = int(script_utils.get_param(params, "nNeighbours", default=6))
     per_t      = bool(script_utils.get_param(params, "perTimepoint", default=True))
+    window     = float(script_utils.get_param(params, "windowSize", default=50.0))
     qc_path    = script_utils.get_param(params, "qcOutPath", default=None)
 
     if len(segments) == 0 or graph_path is None:
@@ -44,7 +45,7 @@ def run(params):
         return
 
     adata, obs = spatial_utils.build_pooled_image_graph(
-        segments, phys, method=method, radius=radius, n_neighs=k, per_timepoint=per_t)
+        segments, phys, method=method, radius=radius, n_neighs=k, per_timepoint=per_t, window_size=window)
     if adata is None:
         log.log("[ERROR] cellNeighbours: no cells found in the selected segmentations")
         _dump(qc_path, _EMPTY_QC)
@@ -55,6 +56,14 @@ def run(params):
     spatial_utils.save_graph(adata, obs, graph_path, meta=meta)
 
     m = spatial_utils.graph_metrics(adata)
+    if method == "windows":
+        # no edges by design — report the grid instead, and how full its tiles are
+        m = spatial_utils.window_metrics(adata)
+        log.log(f">> {m['nCells']} cells on a {' × '.join(map(str, m['gridShape']))} grid of "
+                f"{m['tile']:g} µm tiles ({m['windowSize']:g} µm windows over {', '.join(m['gridAxes'])})")
+        log.log(f">> wrote {graph_path}")
+        _dump(qc_path, m)
+        return
     log.log(f">> pooled {', '.join(meta['valueNames'])}: {m['nCells']} cells, {m['nEdges']} edges, "
             f"mean degree {m['meanDegree']:.2f}, {m['isolatedFrac'] * 100:.1f}% isolated")
     log.log(f">> wrote {graph_path}")

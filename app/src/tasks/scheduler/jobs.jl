@@ -81,6 +81,14 @@ function _execute_job!(job::TaskJob)
     post!(result) = (posted[] || (posted[] = true; put!(job.done, result)))
 
     rec = job.rec
+    # Images this run registers with `add_image!` — discarded unless it ends done (`discard_new_images!`).
+    new_images = Tuple{CciaSet,String}[]
+    discard_unfinished!() = try
+        n = discard_new_images!(new_images)
+        n > 0 && Base.invokelatest(job.on_log, "[INFO] Removed $n unfinished new image(s) this run had added.")
+    catch e
+        @warn "discarding unfinished images failed" task_id = job.id exception = e
+    end
     # Skip if cancelled while queued
     if rec.status === TASK_CANCELLED
         post!(nothing)
@@ -133,6 +141,7 @@ function _execute_job!(job::TaskJob)
         # set-scope job runs _run_task over the whole image vector at once; else single image.
         job_target = run_task_target(job.target)
         result = try
+          tracking_new_images(new_images) do   # every image `add_image!` registers lands in new_images
           # On `TARGET_HPC` the handler still runs here; its `run_py` calls go to the cluster
           # (hpc/dispatch.jl). A dispatch that cannot be set up fails the task before it starts.
           _with_run_target(rec, job.task, representative_image(job.target),
@@ -153,6 +162,7 @@ function _execute_job!(job::TaskJob)
                           Base.invokelatest(job.on_process, proc)
                       end)
           end
+          end
         catch e
             bt = catch_backtrace()
             @warn "Unhandled error in task" task_id = job.id exception = (e, bt)
@@ -172,6 +182,9 @@ function _execute_job!(job::TaskJob)
         final === TASK_CANCELLED && try
             Base.invokelatest(job.on_log, "[INFO] Task cancelled — output is incomplete.")
         catch; end
+        # A run that is not done leaves no half-made images behind: crop/copy/split… register the new
+        # image before writing it, so a cancel or failure would otherwise strand it "pending" in the set.
+        final === TASK_DONE || discard_unfinished!()
         # CLOSE each target image's run-log entry — automatic run history for the image table AND the AI
         # observer. Records :done, :failed AND :cancelled (previously cancelled runs were skipped, which
         # is how a killed segmentation left no trace at all — see run_log.jl). Never fail a task over a
@@ -205,6 +218,7 @@ function _execute_job!(job::TaskJob)
             @error "Scheduler job aborted" task_id = job.id exception = (e, catch_backtrace())
         catch; end
         try; _set_status!(rec, TASK_FAILED); catch; end
+        discard_unfinished!()
         # …and close the run-log entry opened above, for the same reason the status is set: an entry
         # left at "running" is indistinguishable from a task still going, and would be reaped as
         # "interrupted" at the next project open rather than reading as the failure it was.

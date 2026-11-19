@@ -76,7 +76,7 @@ describe('interactive view surface flags', () => {
   })
 
   it('the cluster page offers only cluster-page views', () => {
-    expect(pageViews('clusterPage').map(v => v.key)).toEqual(['clusterMap'])
+    expect(pageViews('clusterPage').map(v => v.key)).toEqual(['clusterMap', 'popPositions'])
   })
 
   // The rail is the SECOND thing the board must derive from the registry rather than a key list. The

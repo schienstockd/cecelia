@@ -455,7 +455,8 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
 
     pops = Vector{Dict{String,Any}}()
     if overlay_pops !== nothing
-        seen = Set{String}()   # dedupe by pop NAME — one pop spans segmentations (one layer each)
+        # Resolve every requested row first, so rows sharing a name can be told apart below.
+        rows = NamedTuple[]
         for pp in overlay_pops
             # Both key spellings: the route's JSON3 body is Symbol-keyed, `_config_overlay_pops` String-keyed.
             vn   = _wstr_any(pp, :valueName, "valueName")
@@ -465,11 +466,8 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
             # A captured track layer may say the colour its tails ARE drawn in (`colour`; null = by
             # track id / speed, no one swatch is true) — the viewer's colour mode outranks the pop's.
             drawn = haskey(pp, :colour) ? (pp[:colour] isa AbstractString ? String(pp[:colour]) : nothing) : missing
-            if endswith(path, "_tracked")   # whole-segmentation tracks → one row per source, as `_track_source_items`
-                name = "$(vn) tracks"
-                name in seen && continue
-                push!(seen, name)
-                push!(pops, Dict{String,Any}("name" => name, "colour" => drawn === missing ? nothing : drawn))
+            if endswith(path, "_tracked")
+                push!(rows, (; vn, kind = :tracked, path, own = nothing, colour = drawn === missing ? nothing : drawn))
                 continue
             end
             # A cell-track ribbon (`track` layer over a flow / clust / region pop) is its own row, in
@@ -477,13 +475,42 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
             ribbon = pt == "track"
             try
                 p = pop_at(_live_map(img, vn, ribbon ? read_pop_type(img, vn, path) : pt), path)
-                name = ribbon ? "$(p.name) tracks" : p.name
-                name in seen && continue
-                push!(seen, name)
-                push!(pops, Dict{String,Any}("name" => name, "colour" => drawn === missing ? p.colour : drawn))
+                push!(rows, (; vn, kind = ribbon ? :ribbon : :pop, path, own = p.name,
+                               colour = drawn === missing ? p.colour : drawn))
             catch
                 # pop map / path unavailable → skip
             end
+        end
+        # One tracked pop in a segmentation = its whole tracks ("<vn> tracks", one row per source as
+        # `_track_source_items`). Several (tracking per population) = one row each, named by the pop it
+        # tracks. Plain pops sharing a name (two branches' "CD8") climb their paths (`pop_display_labels`).
+        tracked = Dict{String,Set{String}}()
+        for r in rows
+            r.kind === :tracked && push!(get!(tracked, r.vn, Set{String}()), r.path)
+        end
+        # `/_tracked` (the root's) is still the whole segmentation's tracks, beside per-pop ones
+        per_pop(r) = r.kind === :tracked && length(tracked[r.vn]) > 1 && !is_root(pop_parent(r.path))
+        lpath(r) = per_pop(r) ? pop_parent(r.path) : r.path
+        owns = Dict(lpath(r) => r.own for r in rows if r.own !== nothing)
+        labelled = filter(r -> r.kind !== :tracked || per_pop(r), rows)
+        labels = pop_display_labels(lpath.(labelled); name_of = q -> get(owns, q, nothing))
+        names = [r.kind === :tracked && !per_pop(r) ? "$(r.vn) tracks" :
+                 r.kind === :pop ? labels[lpath(r)] : "$(labels[lpath(r)]) tracks" for r in rows]
+        # Tails are drawn per segmentation, each in its own colour: a track row whose name another
+        # segmentation also uses says which segmentation it is ("B OTI tracks").
+        vns_of = Dict{String,Set{String}}()
+        for (r, n) in zip(rows, names)
+            r.kind === :pop || push!(get!(vns_of, n, Set{String}()), r.vn)
+        end
+        seen = Set{Tuple{String,Any}}()
+        for (r, n) in zip(rows, names)
+            name = r.kind !== :pop && length(vns_of[n]) > 1 ? "$(r.vn) $(n)" : n
+            # a pop row: one per NAME — one pop spans segmentations (one layer each); a track row: one
+            # per name AND colour, so tails drawn in another colour keep their swatch
+            key = (name, r.kind === :pop ? nothing : r.colour)
+            key in seen && continue
+            push!(seen, key)
+            push!(pops, Dict{String,Any}("name" => name, "colour" => r.colour))
         end
     end
     (; colourBy = Dict{String,Any}("column" => column, "items" => cby), populations = pops)

@@ -17,7 +17,7 @@ segment, the member labels and their basis-population codes.
 
 Params: suffix, segments [{uID, valueName, propsPath, labels, popCodes}], basis (population names ↔
 code index), graphPaths {uID: path}, graphSuffix, compCols (composition column names, aligned to basis),
-otherCol, includeOther, clusterMethod ("leiden"|"kmeans"), numClusters, resolution, createUmap,
+otherCol, densityCol, includeOther, pooling ("frame"|"track"|"movie", spatial_utils.POOLINGS), clusterMethod ("leiden"|"kmeans"), numClusters, resolution, createUmap,
 randomState, qcOutPath.
 """
 from collections import defaultdict
@@ -44,13 +44,14 @@ def run(params):
     graph_pths = script_utils.get_param(params, "graphPaths", default={})
     graph_sfx  = script_utils.get_param(params, "graphSuffix", default="default")
     inc_other  = bool(script_utils.get_param(params, "includeOther", default=True))
+    # "track": sum each track's per-frame neighbour counts → one composition, one region per track
+    pooling    = script_utils.get_param(params, "pooling", default="frame")
     n_basis    = len(basis)
 
     if len(segments) == 0 or n_basis < 2:
         log.log("[ERROR] clustRegions: no segments or <2 basis populations")
         return
 
-    import anndata as ad
 
     # ── per image: LOAD the shared graph → attach this basis → composition ──
     by_uid = defaultdict(list)
@@ -61,6 +62,7 @@ def run(params):
     # per-image metrics of the graph actually loaded — banked in the run's QC so Julia can flag a graph
     # too sparse for composition vectors (the same check + threshold as the graph task, cellNeighbours.jl)
     graph_metrics = {}
+    kinds = set()     # per image: the window grid's axes, or None for cell-to-cell — must agree
     for uid, segs in by_uid.items():
         gp = graph_pths.get(uid)
         if gp is None:
@@ -75,21 +77,31 @@ def run(params):
             return
         obs_all = obs_all.copy()
         obs_all.insert(0, "uID", uid)
-        # Composition is computed over the WHOLE graph — every neighbour counts, including cells outside
-        # the basis (the "other" bin) — but only BASIS cells are then clustered and labelled. The graph
-        # now spans more cells than the analysis (it is pop-agnostic), and a non-basis cell must not pick
-        # up a `regions.{suffix}` value for a basis the user did not put it in.
-        comp = spatial_utils.neighbourhood_composition(
-            a.obsp["spatial_connectivities"], codes_all, n_basis, include_other=inc_other)
-        keep = codes_all >= 0
-        comp = comp[keep]
+        # Composition counts EVERY neighbour, including cells outside the basis (the "other" bin), but
+        # only BASIS cells are clustered and labelled: the graph is pop-agnostic and spans more cells
+        # than the analysis, and a non-basis cell must not pick up a region for a basis it isn't in.
+        counts, own, keep, problem = spatial_utils.image_region_rows(
+            a, obs_all, codes_all, n_basis, pooling, inc_other,
+            {s["valueName"]: s["propsPath"] for s in segs})
+        if problem:
+            log.log(f"[ERROR] clustRegions: {uid}, graph '{graph_sfx}': {problem}")
+            return
+        n_dropped = int((codes_all >= 0).sum() - keep.sum())
+        if n_dropped:
+            log.log(f">> {uid}: {n_dropped} basis cells are not on a track — they get no region")
         obs_all = obs_all.loc[keep].reset_index(drop=True)
-        m = spatial_utils.graph_metrics(a)
+        win_grid = spatial_utils.graph_window_grid(a)
+        m = spatial_utils.window_metrics(a) if win_grid else spatial_utils.graph_metrics(a)
         graph_metrics[uid] = m
-        log.log(f">> {uid}: graph '{graph_sfx}' {m['nCells']} cells, {m['nEdges']} edges, "
-                f"mean degree {m['meanDegree']:.1f} → {int(keep.sum())} basis cells "
-                f"({coverage * 100:.1f}%)")
-        comp_blocks.append(comp)
+        kinds.add(tuple(win_grid["gridAxes"]) if win_grid else None)
+        if len(kinds) > 1:
+            log.log(f"[ERROR] clustRegions: graph '{graph_sfx}' differs across images (window vs cell graph, "
+                    "or windows through Z on some only) — rebuild it the same way on every image")
+            return
+        log.log(f">> {uid}: graph '{graph_sfx}' {m['nCells']} cells, "
+                + (f"{m['tile']:g} µm tiles" if win_grid else f"mean degree {m['meanDegree']:.1f}")
+                + f" → {int(keep.sum())} basis cells ({coverage * 100:.1f}%), {len(counts)} rows")
+        comp_blocks.append((counts, own))
         obs_blocks.append(obs_all)
         coverages.append(coverage)
 
@@ -110,81 +122,59 @@ def run(params):
             return
         comp_cols = comp_cols + [other_col]
 
-    X = np.vstack(comp_blocks).astype(np.float32)
+    counts, inverse = spatial_utils.pool_region_rows(comp_blocks)
     obs = pd.concat(obs_blocks, ignore_index=True)
+    Xc = spatial_utils.normalise_counts(counts)      # what is clustered: cells, tracks or windows
+    X = Xc[inverse]                                    # each cell carries its row's composition
+    windows = None not in kinds
+    log.log(f">> {X.shape[0]} cells → {len(Xc)} {'window' if windows else 'cell/track'} rows clustered "
+            f"(pooling: {pooling})")
+    density_col = script_utils.get_param(params, "densityCol", default="spatial.comp.cells_per_window")
+    if windows:
+        # a window's cell count joins its composition, so dense, sparse and near-empty places separate
+        density = counts.sum(axis=1)
+        Xc = np.hstack([Xc, (density / max(density.max(), 1.0))[:, None]]).astype(np.float32)
     if X.shape[1] != len(comp_cols):
         log.log(f"[ERROR] clustRegions: composition has {X.shape[1]} columns, expected {len(comp_cols)}")
         return
-    log.log(f">> {X.shape[0]} cells pooled; composition over {n_basis} populations"
-            + (" + other" if inc_other else ""))
-
-    adata = ad.AnnData(X)
-    adata.var_names = [str(c) for c in comp_cols]
-    adata.obs_names = [str(i) for i in range(X.shape[0])]
-    adata.obs["uID"]       = obs["uID"].to_numpy()
-    adata.obs["valueName"] = obs["valueName"].to_numpy()
-    adata.obs["label"]     = obs["label"].to_numpy()
 
     # ── cluster the pooled composition vectors (comparable region IDs across the set) ──
-    create_umap = bool(script_utils.get_param(params, "createUmap", default=True))
-    rs = int(script_utils.get_param(params, "randomState", default=0))
-    method_c = script_utils.get_param(params, "clusterMethod", default="leiden")
-    # → run log `env`: the Leiden path names the device that ran (GPU may fall back to CPU); k-means is
-    # sklearn on the CPU with nothing to fall back from, so it reports none — Julia adds the seed.
-    run_env = {}
+    run_env = {}   # → run log `env` (Leiden names the device that ran; Julia adds the seed)
+    clustered = spatial_utils.cluster_composition(
+        Xc, comp_cols + ([density_col] if windows else []), method=script_utils.get_param(params, "clusterMethod", default="leiden"),
+        num_clusters=int(script_utils.get_param(params, "numClusters", default=5)),
+        resolution=float(script_utils.get_param(params, "resolution", default=1.0)),
+        create_umap=bool(script_utils.get_param(params, "createUmap", default=True)),
+        random_state=int(script_utils.get_param(params, "randomState", default=0)),
+        log=log.log, run_env=run_env)
+    # back to one row per CELL for the write-back (per track: every cell takes its track's region)
+    adata = spatial_utils.broadcast_clusters(clustered, X, obs, inverse)
 
-    if method_c == "kmeans":
-        import scanpy as sc
-        from sklearn.cluster import KMeans
-        n_clusters = int(script_utils.get_param(params, "numClusters", default=5))
-        km = KMeans(n_clusters=n_clusters, random_state=rs, n_init=10).fit(X)
-        adata.obs["clusters"] = pd.Categorical([str(c) for c in km.labels_])
-        log.log(f">> k-means: {n_clusters} regions")
-        if create_umap:
-            sc.pp.neighbors(adata, use_rep="X")
-            sc.tl.umap(adata, random_state=rs)   # obsm['X_umap']
-    else:
-        # Leiden on the composition graph — no normalisation (vectors are already fractions in [0,1]).
-        # Compositions over a small neighbourhood repeat exactly (k/6 steps on a Delaunay graph), which
-        # splits Leiden's kNN graph into one island per repeated vector — cluster the distinct vectors.
-        clustering_utils.find_populations_on_distinct_rows(
-            adata,
-            resolution=float(script_utils.get_param(params, "resolution", default=1.0)),
-            axis="NONE", transformation="NONE",
-            create_umap=create_umap, backend="auto", random_state=rs, log=log.log, run_env=run_env)
-
-    # A region map with hundreds of regions is not a result, and the pages that plot it draw one label,
-    # legend row and heatmap column per region — refuse to write it rather than leave a run that
-    # freezes the browser.
+    # hundreds of regions is not a result, and the pages draw a label, legend row and heatmap column per
+    # region — refuse to write it rather than leave a run that freezes the browser
     n_regions = adata.obs["clusters"].nunique()
     if n_regions > MAX_REGIONS:
         log.log(f"[ERROR] clustRegions: {n_regions} regions — over the limit of {MAX_REGIONS}, nothing "
                 "written. Lower the resolution, or choose k-means with a set number of regions.")
         raise SystemExit(1)
 
-    # ── persist the composition vectors as continuous per-cell measures so the region-composition
-    # heatmap reuses the cluster-heatmap (region × measures) — no new plot family (SPATIAL_REGIONS_PLAN
-    # Decision 16). Names were resolved above from Julia's `compCols`/`otherCol`, which are ALSO what the
-    # clustfeatures sidecar records for the heatmap — one namer, so the two cannot drift. ──
+    # ── composition vectors as per-cell measures, so the region heatmap reuses the cluster heatmap
+    # (SPATIAL_REGIONS_PLAN Decision 16); names are Julia's `compCols`/`otherCol`, one namer for both ──
     comp_obs = {comp_cols[j]: X[:, j] for j in range(len(comp_cols))}
+    if windows:
+        comp_obs[density_col] = density[inverse]       # cells in its window per frame (edge-corrected)
 
-    # DON'T persist an all-zero "other" column. It is all-zero exactly when the graph contains nothing
-    # outside the basis — i.e. the graph was built over the basis populations themselves — and then it is
-    # not a measurement, just a flat row in the composition heatmap that invites "where does this come
-    # from?". Dropping it here (and telling Julia, so the clustfeatures sidecar doesn't advertise it)
-    # keeps the option on by default without producing a dead measure for a basis-only graph.
-    other_all_zero = False
-    if inc_other and other_col in comp_obs:
-        if not np.any(comp_obs[other_col] > 0):
-            other_all_zero = True
-            del comp_obs[other_col]
-            log.log(">> every graph neighbour is in the basis — skipping the empty 'other' column "
-                    "(build the graph over the segmentations' all-cells roots to populate it)")
+    # an all-zero "other" column means a basis-only graph, not a measure — dropped, and Julia is told
+    other_all_zero = bool(inc_other) and spatial_utils.drop_empty_other(comp_obs, other_col)
+    if other_all_zero:
+        log.log(">> every graph neighbour is in the basis — skipping the empty 'other' column "
+                "(build the graph over the segmentations' all-cells roots to populate it)")
 
     # ── write regions.{suffix} back per segmentation (shared writer, region column family) ──
     qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log,
                                                col_prefix="regions", extra_obs=comp_obs)
     qc["otherAllZero"] = other_all_zero
+    qc["windowGraph"] = windows
     qc["coverage"] = float(min(coverages)) if coverages else 0.0
     qc["graphMetrics"] = graph_metrics
     qc["runEnv"] = run_env

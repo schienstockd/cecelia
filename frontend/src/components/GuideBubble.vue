@@ -26,6 +26,7 @@ import { useGuideMirrorStore } from '../stores/guideMirror'
 import { isPopoutWindow } from '../lib/popout'
 import { openGuides } from '../lib/guideOpen'
 import { placeBox, arrowOffset, type Placed } from '../utils/anchorPosition'
+import { anySurfaceOpen } from '../utils/topmostSurface'
 import { resolveAnchor, isReachable, isOccluded, visibleRect, scrollAnchorIntoView,
          NAV_PREFIX } from '../utils/guideAnchor'
 
@@ -166,8 +167,8 @@ onBeforeUnmount(() => {
 // this guard dismissing the picker would silently kill the guide as well. An open `TeleportPopover`
 // owns Escape the same way — the set `BaseModal.isTopmost` checks.
 function onKey(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
-  if (document.querySelector('.cc-modal-overlay, .cc-popover')) return
+  // `defaultPrevented` first — the surface that took it may already be gone (utils/topmostSurface.ts)
+  if (e.key !== 'Escape' || e.defaultPrevented || anySurfaceOpen()) return
   guide.exit()
   e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
 }

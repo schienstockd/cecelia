@@ -158,6 +158,23 @@ Cecelia._run_task(::_HoldTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = (take!(_HOLD_TASK_GO[]); true)
 
+# A task that makes new images the way crop/copy/split do — `add_image!` first, pixels later — then
+# ends as `params["mode"]` says: "done", "fail" (returns nothing), "crash" (throws) or "hold" (waits on
+# `_HOLD_TASK_GO`, so a test can cancel it). The set it adds to is `_NEW_IMAGE_SET[]`.
+const _NEW_IMAGE_SET = Ref{Any}(nothing)
+struct _NewImageTask <: CciaTask end
+function Cecelia._run_task(::_NewImageTask, img::CciaImage, params::Dict{String,Any};
+                           on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                           on_process::Function = _ -> nothing)
+    for k in 1:2
+        add_image!(_NEW_IMAGE_SET[]; name = "$(img.name)_new$k")
+    end
+    mode = params["mode"]
+    mode == "crash" && error("boom after registering (test)")
+    mode == "hold"  && take!(_HOLD_TASK_GO[])
+    mode == "done" ? true : nothing
+end
+
 # A task whose subprocess has a CHILD of its own — `sh` backgrounds one `sleep` and waits on another —
 # so a test can check that cancel kills the whole tree, not just the process the scheduler holds. The
 # shell writes the child's pid to `params["pidFile"]`. Unix only (`sh`); the Windows kill path is

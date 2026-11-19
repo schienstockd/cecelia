@@ -273,6 +273,8 @@ test-frontend = { cmd = "npm test", cwd = "frontend" }
 # Shared components mounted in a real (system) Chromium — `*.browser.test.ts`, vitest.browser.config.ts.
 # Never reaches a backend or :5173. docs/DEV.md → Tests → GUI (browser).
 test-gui      = { cmd = "npm run test:browser", cwd = "frontend" }
+# Every page of a RUNNING, ISOLATED instance renders (scripts/gui_smoke.mjs; needs --base, --config-dir).
+test-gui-app  = "node scripts/gui_smoke.mjs"
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 # No PYTHONPATH override on the two mcp tasks: `-m` / `-t .` already put mcp/ on sys.path, and the
 # project-wide pin ([activation.env]) supplies python/ for `cecelia.utils.loopback`.
@@ -422,11 +424,14 @@ judge-rules  = "python scripts/judge/rules.py"
 # The agent run reviews a pass would log (guide / platform causes) and its agent causes per guide,
 # printed; reads the run harness's projects dir (`--projects-dir D`), logs nothing.
 judge-run-reviews = "python scripts/judge/run_reviews.py"
-# Open fixture requests (test-data/NEEDS.toml) matched against a projects dir (`--projects-dir` or
-# CECELIA_FIXTURE_SOURCE_PROJECTS): prints candidates and the cut command; names stay local.
+# Open fixture requests (test-data/NEEDS.toml) matched against a projects dir (`--projects-dir`,
+# CECELIA_FIXTURE_SOURCE_PROJECTS, or [dirs] projects in custom.toml): prints candidates and staged cuts
+# (`--cut` stages them, as the weekly pass does); names stay local.
 judge-fixtures = "python scripts/judge/fixture_requests.py"
-# Cut a candidate into test-data/projects/FIXPRJ under the 1 MB cap (`-- --image D --need ID`). Commits nothing.
+# Cut a candidate into test-data/projects/FX<uid> under the 1 MB cap (`-- --image D --need ID`). Commits nothing.
 fixture-cut = "python scripts/fixture_cut.py"
+# Move a cut the weekly judge staged into test-data, register it, mark the request met (`-- ID [--confirm P]`).
+fixture-accept = "python scripts/fixture_accept.py"
 # Re-render a stored run record's markdown (`judge-record D [--mirror]`). Spawns nothing.
 judge-record = "python scripts/judge/record.py"
 # The owner's queue for the newest run record: the bugs a verify agent sent you (`decide`). One key

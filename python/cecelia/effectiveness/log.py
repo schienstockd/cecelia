@@ -69,11 +69,12 @@ EVENT_TYPES = frozenset({
     #: sweep sends it to the owner, whichever branch the finding came from.
     "result_review_test_edited",
     #: Test value check — mechanical recital step (`test_value.py`, TEST_VALUE_PLAN.md → P4): the
-    #: change's added tests run on the code before it (`passes on base`), and mutants on its changed
-    #: result lines (`untested`). `_run` payload: `on_base` ({"py"|"jl": failed}), `mutated` (per file:
-    #: results, survived, note), `findings`, `duration_s`, `errors`. `_finding` = one bullet (outcome
-    #: tag required). The weekly judge sweeps the `untested` ones (`scripts/judge/bugs.py`: mutated
-    #: again at main); `passes on base` is read only by the P4 review.
+    #: change's added tests run on the code before it (`passes on base`), mutants on its changed
+    #: result lines (`untested`), and a `fix/*` rendering change with no browser test (`no browser
+    #: test`). `_run` payload: `on_base` ({"py"|"jl"|"fe": failed}, `unjudged`), `mutated` (per file:
+    #: results, survived, note), `no_browser_test`, `findings`, `duration_s`, `errors`. `_finding` = one
+    #: bullet (outcome tag required). The weekly judge sweeps the `untested` ones
+    #: (`scripts/judge/bugs.py`: mutated again at main); the others are read only by the P4 review.
     "test_value_run",
     "test_value_finding",
     "test_value_finding_resolved",

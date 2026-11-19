@@ -25,7 +25,7 @@ export const PLOT_SKETCH_KINDS = [
   'cell', 'track', 'popImage', 'cellDistance', 'contactImages', 'spreadImages', 'popOverTime',
   'states', 'motif', 'movementPatterns', 'contacts', 'stateSignature', 'transitions', 'clusters', 'umap',
   'gate', 'image', 'tracksStar', 'trackLanes', 'trackCard', 'motifCard', 'statesCard', 'masks',
-  'stateCount', 'trackCheck', 'planes', 'probability', 'curve', 'regions', 'generic',
+  'stateCount', 'trackCheck', 'planes', 'probability', 'curve', 'regions', 'popPositions', 'generic',
 ] as const
 export type PlotSketchKind = typeof PLOT_SKETCH_KINDS[number]
 export const isPlotSketchKind = (v: unknown): v is PlotSketchKind =>
@@ -135,6 +135,12 @@ const lane = (cls: string, x1: number, x2: number, y: number) => path(`${cls} la
 const MASKS: [number, number, number][] = [[26, 24, 8], [48, 38, 9], [70, 22, 8]]
 
 const ART: Record<PlotSketchKind, () => SketchShape[]> = {
+  // an image with two populations' cells in place, and a frame scrubber under it
+  popPositions: () => [frame(14, 4, 68, 42),
+    ...dots([[26, 14], [32, 20], [24, 24], [30, 28]], 2.6, 'acc fill'),
+    ...dots([[60, 30], [66, 24], [70, 34], [62, 38]], 2.6, 'ink fill'),
+    ...dots([[46, 12], [50, 36], [40, 30], [72, 12], [20, 38]], 2.6, 'fill-dim'),
+    path('dim', 'M14 53 L82 53'), dot(38, 53, 2.6, 'acc fill')],
   cell,
   track,
   popImage,
