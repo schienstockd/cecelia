@@ -36,19 +36,32 @@ test whether an agent can actually use the framework.
    notes describe the same gap is the owner's read: no judge step compares notes.
    **Fixture requests** (`fixture_requests.py`). Read the open requests in `test-data/NEEDS.toml`
    (data a test needs and no committed fixture has; `docs/DEV.md` → *Ask for properties, not a
-   path*) and match them against the images in `CECELIA_FIXTURE_SOURCE_PROJECTS`
-   (`--fixture-projects-dir` overrides; unset → nothing is matched and the record says so). An
-   image's properties are read off its `ccid.json` and cell table, in the `test-data/fixtures.toml`
-   vocabulary; `structure` can't be, and is left to confirm by eye. **The record carries only each
-   request's id and candidate count** — it is published — under *Fixture requests*. The candidates
-   (project, image, cells) go to `~/.cecelia-effectiveness/fixture-candidates.json`, and
-   `pixi run judge-fixtures` prints them with a ready `pixi run fixture-cut -- --image … --need …`.
-   The cut (`scripts/fixture_cut.py`) writes `test-data/projects/FIXPRJ/1/<uid>/` — the cells nearest
-   the image centre, shrunk under the 1 MB cap, the gating sidecars, a `ccid.json` without the
-   image's name or paths — and prints the `fixtures.toml` entry. An image with an image store and a
-   label store for that segmentation gets both cropped to one box instead (≤ 64 × 64 px, 5 frames,
-   4 channels, 16 planes, one level, NGFF axes/scale/units kept; `FIXPRJ/0/<uid>/` for the image), and
-   the table keeps the cells inside it; `--no-stores` skips that. Committing it is the owner's call.
+   path*) and match them against the images in a projects dir: `--fixture-projects-dir`, else
+   `CECELIA_FIXTURE_SOURCE_PROJECTS`, else `[dirs] projects` in the Cecelia config the judge
+   worktree's `.env` names (`CECELIA_DEV_DIR` → `custom.toml`); none → nothing is matched and the
+   record says so. An image's properties are read off its `ccid.json` and cell table, in the
+   `test-data/fixtures.toml` vocabulary; `structure` can't be, and is left to confirm by eye. **The
+   record carries only each request's id, candidate count and whether a cut is ready** — it is
+   published — under *Fixture requests*. The candidates (project, image, cells) go to
+   `~/.cecelia-effectiveness/fixture-candidates.json`; `pixi run judge-fixtures` prints them.
+   **Then it cuts one per request — into a staging dir, never the repo** (the repo is public; a cut
+   is lab data). For every open real-data request not already staged, it tries the candidates
+   smallest first, past the listed five, with `scripts/fixture_cut.py` into
+   `~/.cecelia-effectiveness/fixture-cuts/<id>/`, and keeps the first that cuts cleanly: every file
+   under the 1 MB cap, every checkable property the request asks for still there, and — for a store
+   crop — the cells sitting on their own label in the label store (a table numbered off by one from
+   its mask is refused). The cut writes `projects/FX<uid>/1/<uid>/` (one project per cut, so two
+   cuts never make a `multi-image` project) — the cells nearest the image centre, the gating
+   sidecars, a `ccid.json` without the image's name or paths. A request that names `image-store` /
+   `label-store` gets both stores cropped to one box instead (≤ 64 × 64 px, 5 frames, 4 channels, 16
+   planes, one level, a chunk per frame and channel, NGFF axes/scale/units kept; `FX<uid>/0/<uid>/`
+   for the image) and the table keeps the cells inside it; any other request gets the table alone,
+   so a multiplex panel keeps its channels. All candidates failing marks it `failed` (reasons in
+   `<id>/failed.json`, local), and the next pass tries again. `pixi run judge-fixtures` shows a ready
+   cut and its accept command; `pixi run fixture-accept -- <id> [--confirm structure]` copies it into
+   `test-data/projects/`, appends its `fixtures.toml` entry and marks the request `met: <uid>` (a
+   property no file shows must be `--confirm`ed); `--discard` drops it. Committing it is the owner's
+   call. `pixi run fixture-cut` still cuts one by hand, straight into `test-data/`.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
    never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, and every
    `plausible` note not tagged `fixed_pre_commit`; a finding's tag is the newest resolution on its own

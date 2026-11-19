@@ -44,10 +44,18 @@ class _WeeklyFixture(_Fixture):
         super().setUp()
         self.w = _load_weekly()
         self.rec = self.w._record   # the module the pass writes with
-        # never the real projects dir: the run-review scan reads an empty one unless a test says so
-        env = mock.patch.dict(os.environ, {"CECELIA_AGENT_APP_PROJECTS": str(self.tmp / "no-projects")})
+        # never the real projects dir: the run-review scan and the fixture step read an empty one unless a
+        # test says so. The fixture step would otherwise fall back to the dev config's projects dir and
+        # cut real images into the state dir, so reaching that fallback at all fails the test
+        env = mock.patch.dict(os.environ, {"CECELIA_AGENT_APP_PROJECTS": str(self.tmp / "no-projects"),
+                                           self.w._fixture_requests.ENV: str(self.tmp / "no-projects")})
         env.start()
         self.addCleanup(env.stop)
+        def no_config(*_a, **_k):
+            raise AssertionError("a test reached the dev config's projects dir")
+        cfg = mock.patch.object(self.w._fixture_requests, "configured_projects", no_config)
+        cfg.start()
+        self.addCleanup(cfg.stop)
         # never the real `gh`: the issue layout is the default, and a test that reached it would file,
         # close and comment on the real repo. A test that wants issues passes a fake `Gh`
         def no_gh(args, input):

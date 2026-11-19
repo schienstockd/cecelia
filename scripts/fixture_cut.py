@@ -3,11 +3,12 @@
 
     pixi run fixture-cut -- --image <projects>/<project>/<n>/<uid> --need <id> [--max-bytes N]
 
-Writes `test-data/projects/<FIXPRJ>/1/<uid>/`: a `ccid.json` keeping only what a fixture needs (meta,
-channel names, the cell table entry; the image's name replaced by `fixture-<uid>`), the cell table
-cut to a spatial window — the cells nearest the image's centre, so neighbourhoods stay whole — and
-the gating sidecars of that segmentation. The window shrinks until the table is under the 1 MB
-per-file cap.
+Writes `test-data/projects/FX<uid>/1/<uid>/` (one project per cut, so a second cut never makes the
+first a `multi-image` project its registry entry doesn't list): a `ccid.json` keeping only what a
+fixture needs (meta, channel names, the cell table entry; the image's name replaced by
+`fixture-<uid>`), the cell table cut to a spatial window — the cells nearest the image's centre, so
+neighbourhoods stay whole — and the gating sidecars of that segmentation. The window shrinks until
+the table is under the 1 MB per-file cap.
 
 When the image has an image store (`<project>/0/<uid>/`) AND a label store for that segmentation, both
 are cropped to one box instead — at most `XY` × `XY` px around the cells' median, the first `FRAMES`
@@ -16,7 +17,9 @@ NGFF axes, scale and units — and the cell table keeps the cells whose centroid
 to the box's origin. `--no-stores` cuts the table alone.
 
 Nothing is committed: read what it wrote, register it in `test-data/fixtures.toml` (the printed
-entry), mark the request `met: <uid>`, and commit it yourself — it is lab data.
+entry), mark the request `met: <uid>`, and commit it yourself — it is lab data. The weekly judge runs
+this cut itself into a local staging dir (`fixture_requests.stage_cuts`); `pixi run fixture-accept`
+then does the registering and marking for you.
 """
 from __future__ import annotations
 
@@ -37,7 +40,13 @@ from cecelia.utils.label_props_utils import LabelPropsView  # noqa: E402
 from cecelia.utils.vn_versioning import versioned_active, versioned_get_field_at  # noqa: E402
 
 CAP = 1024 * 1024
-FIXTURE_PROJECT = "FIXPRJ"
+
+
+def fixture_project(uid: str) -> str:
+    """The project a cut of image `uid` lives in: its own, so cuts never share one."""
+    return f"FX{uid}"
+
+
 #: ccid.json fields a fixture keeps; the rest (file paths, attributes, history) stays behind.
 KEEP = ("class", "uid", "kind", "status", "imChannelNames", "meta")
 #: the store crop's box (NEEDS.toml → cells-with-image-store budget)
@@ -120,9 +129,11 @@ def _write_store(src: pathlib.Path, dst: pathlib.Path, box: dict[str, tuple[int,
     src_scale = zarr_utils.read_scale(str(src))
     scale = dict(zip(axes, src_scale)) if src_scale else None       # none stated stays none stated
     units = zarr_utils.read_axis_units(str(src)) or None
+    # one chunk per frame and channel: a whole-box chunk of a 5-frame 4-channel crop is over the cap
+    chunks = tuple(1 if a in ("t", "c") else n for a, n in zip(axes, data.shape))
     with zarr_utils.staged_store(str(dst)) as staging:
         zarr_utils.create_multiscales(data, staging, axes=[a.upper() for a in axes], nscales=1, kind=kind,
-                                      reference_zarr=lvl0, im_chunks=tuple(data.shape))
+                                      reference_zarr=lvl0, im_chunks=chunks)
         zarr_utils.set_ngff_axes(staging, axes, scale=scale, units=units)
     return axes
 
@@ -159,15 +170,53 @@ def cut_box_table(src: pathlib.Path, dst: pathlib.Path, box: dict[str, tuple[int
         view.close()
 
 
+#: Share of a store cut's cells whose centroid voxel must carry their own label. A centroid can fall
+#: outside a curved cell, so not all; a table numbered off by one from its mask gets ~0.
+LABEL_AGREEMENT = 0.8
+
+
+def label_agreement(table: pathlib.Path, store: pathlib.Path) -> tuple[int, int]:
+    """(cells whose centroid voxel in `store` is their own label, cells) — whether the table and the
+    label store number the same cells."""
+    axes = zarr_utils.read_axes(str(store)) or []
+    mask = np.asarray(zarr_utils.open_as_zarr(str(store))[0][0][:])
+    view = LabelPropsView(str(table))
+    try:
+        df = view.only_centroid_cols().as_df()
+    finally:
+        view.close()
+    hit = 0
+    for _, r in df.iterrows():
+        at = tuple(0 if a == "c" else int(np.clip(int(r.get(f"centroid_{a}", 0)), 0, n - 1))
+                   for a, n in zip(axes, mask.shape))
+        hit += int(mask[at] == int(r["label"]))
+    return hit, len(df)
+
+
 def cut(image: pathlib.Path, need: str, *, test_data: pathlib.Path = _REPO / "test-data",
         max_bytes: int = CAP, stores: bool = True, xy: int = XY) -> dict:
+    """Cut `image` into `test_data/projects/FX<uid>/`. A cut that fails (over the cap, no cells in the
+    box, a table that doesn't match its mask) leaves nothing behind."""
+    ccid = json.loads((image / "ccid.json").read_text(encoding="utf-8"))
+    root = test_data / "projects" / fixture_project(ccid["uid"])
+    fresh = not root.exists()
+    try:
+        return _cut(image, ccid, need, test_data=test_data, max_bytes=max_bytes, stores=stores, xy=xy)
+    except BaseException:
+        if fresh:
+            shutil.rmtree(root, ignore_errors=True)
+        raise
+
+
+def _cut(image: pathlib.Path, ccid: dict, need: str, *, test_data: pathlib.Path, max_bytes: int,
+         stores: bool, xy: int) -> dict:
     import fixture_requests as fr   # the judge step's property reader, so the entry says what it saw
 
-    ccid = json.loads((image / "ccid.json").read_text(encoding="utf-8"))
     uid = ccid["uid"]
+    project = fixture_project(uid)
     vn = versioned_active(ccid["label_props"])
     src = image / "labelProps" / versioned_get_field_at(ccid, "label_props")
-    out = test_data / "projects" / FIXTURE_PROJECT / "1" / uid
+    out = test_data / "projects" / project / "1" / uid
     if out.exists():
         raise SystemExit(f"{out} exists — a fixture with this uid is already cut")
     (out / "labelProps").mkdir(parents=True)
@@ -183,12 +232,18 @@ def cut(image: pathlib.Path, need: str, *, test_data: pathlib.Path = _REPO / "te
             box = crop_box(view, zarr_utils.read_axes(str(im)) or [], levels[0].shape, xy=xy)
         finally:
             view.close()
-        zero = test_data / "projects" / FIXTURE_PROJECT / "0" / uid
+        zero = test_data / "projects" / project / "0" / uid
         zero.mkdir(parents=True)
         _write_store(im, zero / IMAGE_STORE, box, "image")
         (out / "labels").mkdir()
         _write_store(lb, out / "labels" / f"{vn}.zarr", box, "labels")
         n = cut_box_table(src, out / "labelProps" / f"{vn}.h5ad", box, max_bytes=max_bytes)
+        hit, total = label_agreement(out / "labelProps" / f"{vn}.h5ad", out / "labels" / f"{vn}.zarr")
+        if total == 0:
+            raise SystemExit(f"{image}: no cell's centroid is in the crop box")
+        if hit < LABEL_AGREEMENT * total:
+            raise SystemExit(f"{image}: {hit} of {total} cells sit on their own label in the label store — "
+                             "the table and the mask number cells differently")
     for g in sorted((image / "gating").glob(f"{vn}*.json")):
         (out / "gating").mkdir(exist_ok=True)
         shutil.copy2(g, out / "gating" / g.name)
@@ -205,20 +260,24 @@ def cut(image: pathlib.Path, need: str, *, test_data: pathlib.Path = _REPO / "te
             kept["imChannelNames"] = {k: (v[:box["c"][1]] if isinstance(v, list) else v)
                                       for k, v in kept["imChannelNames"].items()}
     write_json_atomic(str(out / "ccid.json"), kept, indent=2)
-    proj = test_data / "projects" / FIXTURE_PROJECT / "project.json"
+    proj = test_data / "projects" / project / "project.json"
     if not proj.exists():
-        write_json_atomic(str(proj), {"class": "CciaProject", "uid": FIXTURE_PROJECT,
-                                      "name": "Fixtures cut from real projects", "set_uids": []}, indent=4)
+        write_json_atomic(str(proj), {"class": "CciaProject", "uid": project,
+                                      "name": f"Fixture cut from {uid}", "set_uids": []}, indent=4)
+    root = test_data / "projects" / project
+    over = [f for f in root.rglob("*") if f.is_file() and f.stat().st_size > max_bytes]
+    if over:
+        raise SystemExit(f"{over[0]}: {over[0].stat().st_size} bytes over the {max_bytes} cap — pass a smaller box")
     props = fr.image_properties(out) or {"properties": [], "technology": None}
-    return {"uid": uid, "dir": str(out), "value_name": vn, "cells": n, "properties": props["properties"],
+    return {"uid": uid, "project": project, "dir": str(out), "value_name": vn, "cells": n, "properties": props["properties"],
             "technology": props["technology"], "need": need, "box": box}
 
 
 def toml_entry(c: dict) -> str:
-    image_dir = f'image_dir = "{FIXTURE_PROJECT}/0/{c["uid"]}"\n' if c.get("box") else ""
+    image_dir = f'image_dir = "{c["project"]}/0/{c["uid"]}"\n' if c.get("box") else ""
     where = ("in a " + " × ".join(f"{hi - lo} {ax}" for ax, (lo, hi) in c["box"].items()) + " crop"
              if c.get("box") else "nearest the centre")
-    return (f'[fixtures.{c["uid"]}]\ndir = "{FIXTURE_PROJECT}/1/{c["uid"]}"\n{image_dir}value_name = "{c["value_name"]}"\n'
+    return (f'[fixtures.{c["uid"]}]\ndir = "{c["project"]}/1/{c["uid"]}"\n{image_dir}value_name = "{c["value_name"]}"\n'
             f'technology = "{c["technology"] or "unknown"}"\nproperties = {json.dumps(c["properties"])}\n'
             f'note = "Cut for NEEDS.toml → {c["need"]}: {c["cells"]} cells {where}. Add what it is."\n')
 
