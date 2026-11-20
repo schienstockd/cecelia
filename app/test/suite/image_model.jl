@@ -599,6 +599,11 @@ end
     b = run_log_params_for_output(img._dir, fun, "B")
     @test !isnothing(b) && b["maxSearchRadius"] == 20 && b["valueName"] == "B"
     @test run_log_params_for_output(img._dir, fun, "T")["maxSearchRadius"] == 35
+    # a later run on B that wrote nothing (logged `unchanged`) did not produce B's output
+    Cecelia.open_run_log!(img, fun, "B", Dict{String,Any}("valueName" => "B", "maxSearchRadius" => 99);
+                          task_id = "noop-b")
+    close_run_log!(img, "noop-b", "done"; unchanged = true)
+    @test run_log_params_for_output(img._dir, fun, "B")["maxSearchRadius"] == 20
     # the form and `_tracks_delete!` read through this — B's record, not "the last run" (T's)
     @test read_module_fun_params(img._dir, fun; value_name = "B")["maxSearchRadius"] == 20
 

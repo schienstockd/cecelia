@@ -264,5 +264,8 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
                      "outputValueName" => p.valueName,
                      "nOps"            => length(ops),
                      "metrics"         => metrics,
-                     "skipDownstream"  => n_pixels == 0)
+                     "skipDownstream"  => n_pixels == 0,
+                     # …and the run log records the run as `unchanged` (no `replaces`), so the tracks
+                     # and measures on this label set are not reported stale by a no-op (`run_unchanged`)
+                     "unchanged"       => n_pixels == 0)
 end
