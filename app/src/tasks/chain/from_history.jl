@@ -343,7 +343,7 @@ their models. Returns, all plain JSON:
                   is a real fork (it writes a label set, or runs per population), else the versions
                   are alternatives — keep one; `siblingRead` = another version of this task feeds a
                   later step, so this one was a try the exemplars moved past; `inputs` = the
-                  populations it read (display), `inputsKey` = what it read (`_history_inputs`, the
+                  input names and populations it read (display, `_history_inputs_read`), `inputsKey` = what it read (`_history_inputs`, the
                   same identity `siblingRead` uses) — alternatives are versions on the same inputs
 - `conflicts`   — `[{nodeId, param, values: {uid => value}}]`: exemplars disagree; the template holds
                   the latest value until the user picks
@@ -460,7 +460,7 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
                                             "multi" => _history_forks(s, leaves_of(s.fn)), "at" => s.at,
                                             "imageUids" => s.image_uids, "kept" => s.id in kept_finals,
                                             "siblingRead" => sibling(s) in read_sweeps,
-                                            "inputs" => _history_pops_read(s.params, leaves_of(s.fn)),
+                                            "inputs" => _history_inputs_read(s.params, leaves_of(s.fn)),
                                             "inputsKey" => last(sibling(s)))
                            for s in finals],
         "conflicts"    => [c for c in conflicts if c["nodeId"] in keep_ids],
@@ -537,6 +537,22 @@ function _history_pops_read(params::AbstractDict, lv)::String
         (l !== nothing && l.type == "popSelection") && append!(vals, [x for (_, x) in _keyed_strings(Dict(k => v))])
     end
     join(vals, ", ")
+end
+
+# What a run read, for the dialog's step label: the same pickers `_history_inputs` keys alternatives
+# by (input names AND populations), so two groups that key apart also read apart. Every non-empty name
+# is said, even one a population ref repeats: dropping it would let two keys share a label.
+function _history_inputs_read(params::AbstractDict, lv)::String
+    params = _history_current_params(params, lv)
+    names, pops = String[], String[]
+    for k in sort!(collect(keys(params)))
+        l = get(lv, k, nothing)
+        (l === nothing || l.writes) && continue
+        dest = l.type == "popSelection" ? pops : l.type == "valueNameSelection" ? names : continue
+        append!(dest, [x for (_, x) in _keyed_strings(Dict(k => params[k]))])
+    end
+    filter!(!isempty, names)
+    join(vcat(names, pops), ", ")
 end
 
 # Can several versions of this step sensibly run side by side? Yes when each writes its own label set
