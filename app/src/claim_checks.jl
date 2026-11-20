@@ -143,7 +143,7 @@ _claim_gate_prefix(parent) = isnothing(parent) ? "gate." : "gate@" * parent * ":
 _claim_is_gate_key(k::AbstractString) = startswith(k, "gate.") || startswith(k, "gate@")
 function _claim_gate_vars(img::CciaImage, vn::AbstractString, path::AbstractString)
     path == "/" && return Dict{String,Any}()
-    m = try load_pop_map(img._dir, vn; backfill_save = false) catch; return nothing end
+    m = try load_pop_tree(img._dir, vn; backfill_save = false) catch; return nothing end
     has_pop(m, path) || return nothing
     out = Dict{String,Any}()
     segs = split(path, "/"; keepempty = false)

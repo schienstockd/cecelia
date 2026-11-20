@@ -64,7 +64,7 @@
         strip_new(p) = merge(p, Dict("children" => [strip_new(c) for c in p["children"] if c["name"] != "proposed"]))
         @test strip_new(dim) == before["populations"][1]
         # the stamp survives a reload (round-trips through from_tree / to_tree)
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         @test pop_at(m, "/dim/proposed").created_by["via"] == "claude"
         @test pop_at(m, "/dim").created_by === nothing
 
@@ -105,7 +105,7 @@
         st, _ = handle_http(HTTP.Request("POST", "/api/gating/pop/add", claude_hdrs),
             Vector{UInt8}(JSON3.write(merge(ids, Dict("popType" => "flow", "name" => "auto", "gate" => poly)))))
         @test st == 200
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         @test pop_at(m, "/auto").created_by === nothing && pop_at(m, "/dim/small").created_by === nothing
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
@@ -151,7 +151,7 @@ end
         @test st == 200 && d.count < real.count && sidecar() == snap
         st, r = call("/api/gating/pop/set-own-gate", Dict("path" => "/prop", "gate" => rect(0.0, 50.0)))
         @test st == 200 && r.count == d.count && r.gate.x_max == 50.0
-        @test pop_at(load_pop_map(img; value_name = "B", pop_type = "flow"), "/prop").gate.x_max == 50.0
+        @test pop_at(load_pop_tree(img; value_name = "B", pop_type = "flow"), "/prop").gate.x_max == 50.0
         @test String(r.createdBy.via) == "claude"                     # moving keeps who drew it
 
         # the user's gate: neither moved nor removed, and nothing written
@@ -180,7 +180,7 @@ end
         st, d = call("/api/gating/pop/delete-own", Dict("path" => "/p2", "dryRun" => true))
         @test st == 200 && collect(d.deleted) == ["/p2", "/p2/p2c"] && sidecar() == snap
         st, _ = call("/api/gating/pop/delete-own", Dict("path" => "/p2"))
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         @test st == 200 && !has_pop(m, "/p2") && has_pop(m, "/mine") && has_pop(m, "/prop/kept")
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
@@ -219,7 +219,7 @@ end
 
         @test call("/api/gating/pop/add-gate", Dict("name" => "edited", "gate" => rect(0.0, 500.0)))[1] == 200
         @test _post(api_gating_pop_set_gate, flow(Dict("path" => "/edited", "gate" => rect(0.0, 300.0))))[1] == 200
-        p = pop_at(load_pop_map(img; value_name = "B", pop_type = "flow"), "/edited")
+        p = pop_at(load_pop_tree(img; value_name = "B", pop_type = "flow"), "/edited")
         @test p.created_by["via"] == "claude" && p.updated_by["via"] == "app"
         snap = sidecar()
         st, e = call("/api/gating/pop/set-own-gate", Dict("path" => "/edited", "gate" => rect(0.0, 1.0)))
@@ -236,7 +236,7 @@ end
         # a user's GUI gate is never stamped by an edit — its sidecar keeps its shape
         @test _post(api_gating_pop_add, flow(Dict("name" => "plain", "gate" => rect(0.0, 500.0))))[1] == 200
         @test _post(api_gating_pop_set_gate, flow(Dict("path" => "/plain", "gate" => rect(0.0, 200.0))))[1] == 200
-        @test pop_at(load_pop_map(img; value_name = "B", pop_type = "flow"), "/plain").updated_by === nothing
+        @test pop_at(load_pop_tree(img; value_name = "B", pop_type = "flow"), "/plain").updated_by === nothing
 
         # ── a task read it ──
         @test call("/api/gating/pop/add-gate", Dict("name" => "used", "gate" => rect(0.0, 500.0)))[1] == 200
@@ -322,7 +322,7 @@ end
               collect(r.boolean.not) == ["/qc/OTI"]
         @test String(r.createdBy.via) == "claude"
         # stored as the GUI stores a combination, plus the stamp — and get_populations shows it
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         p = pop_at(m, "/qc/non-OTI")
         @test p.boolean_op == BOOL_AND && p.boolean_not == ["/qc/OTI"] && p.created_by["via"] == "claude"
         summ = Cecelia._pop_summary(p)
@@ -372,7 +372,7 @@ end
         @test call("/api/gating/pop/delete-own", Dict("path" => "/either"))[1] == 200
         st, d = call("/api/gating/pop/delete-own", Dict("path" => "/qc/non-OTI"))
         @test st == 200 && collect(d.deleted) == ["/qc/non-OTI", "/qc/non-OTI/sub"]
-        @test has_pop(load_pop_map(img; value_name = "B", pop_type = "flow"), "/qc/OTI")
+        @test has_pop(load_pop_tree(img; value_name = "B", pop_type = "flow"), "/qc/OTI")
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end
@@ -429,7 +429,7 @@ end
         @test r.filter.conditions[2].values isa Real && r.filter.conditions[2].values ≈ xmed   # unwrapped from [xmed]; JSON round-trip
 
         # stored as the GUI's filter form stores one, plus the stamp — and get_populations shows BOTH conditions
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         p = pop_at(m, "/qc/big-dim")
         @test p.gate === nothing && length(p.filter_conditions) == 2 && p.filter_measure == "area" &&
               p.created_by["via"] == "claude"

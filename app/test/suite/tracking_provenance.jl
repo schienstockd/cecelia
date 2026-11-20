@@ -139,12 +139,12 @@ end
         # two halves of the field (disjoint), and a pop overlapping the first
         xs  = (label_props(props) |> select_cols(["centroid_x"]) |> as_df).centroid_x
         mid = sort(xs)[length(xs) ÷ 2]
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         add_pop!(m, "left";  filter_measure = "centroid_x", filter_fun = "lt",  filter_values = mid)
         add_pop!(m, "right"; filter_measure = "centroid_x", filter_fun = "gte", filter_values = mid)
         add_pop!(m, "all";   filter_measure = "centroid_x", filter_fun = "gte", filter_values = -1.0)
         add_pop!(m, "none";  filter_measure = "centroid_x", filter_fun = "lt",  filter_values = -1.0)
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         run(pops; logs = String[]) = (Cecelia._run_task(Cecelia.BayesianTracking(), img,
             Dict{String,Any}("valueName" => "B", "minTimepoints" => 2, "popsToTrack" => pops);
             on_log = l -> push!(logs, l)), logs)
@@ -161,7 +161,7 @@ end
 
         res, logs = run(Any["B/left", "B/right"])
         @test res !== nothing || error(join(logs, "\n"))
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         uid_l, uid_r = pop_uid(m, "/left"), pop_uid(m, "/right")
         src = label_track_sources(img, "B")
         @test uid_l in values(src) && uid_r in values(src)
@@ -181,9 +181,9 @@ end
         # run 2 failing after run 1 wrote back: run 1 renumbered every track id, so the per-track table
         # from before must still go. `/rt` is a slice of `/right`, whose tracks own those cells — the
         # write-back refuses them, so run 2 fails.
-        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         add_pop!(m, "rt"; filter_measure = "centroid_x", filter_fun = "gte", filter_values = sort(xs)[3 * length(xs) ÷ 4])
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         @test Cecelia._run_task(Cecelia.TrackMeasures(), img,
             Dict{String,Any}("valueName" => "B"); on_log = _ -> nothing) !== nothing
         trk = img_track_props_path(img, "B"); @test isfile(trk)

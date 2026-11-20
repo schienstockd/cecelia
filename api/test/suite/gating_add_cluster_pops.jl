@@ -47,7 +47,7 @@
                                                       "valueName" => "B", "popType" => "clust"), obj))
         channels() = JSON3.read(api_gating_channels(HTTP.Request("GET",
             "/x?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=clust"))[2])
-        clustmap(im) = load_pop_map(im; value_name = "B", pop_type = "clust")
+        clustmap(im) = load_pop_tree(im; value_name = "B", pop_type = "clust")
 
         # the run's clusters, as the cluster page offers them, and its stamp
         ch = channels()
@@ -195,7 +195,7 @@ end
         @test r.images == ["KDIeEm"] && r.populations[1].count > 0       # tracks, not cells
         @test r.runAt === nothing                                         # a run from before the stamp
         img = Cecelia.init_object("testpr", "KDIeEm")
-        p = load_pop_map(img; value_name = "B", pop_type = "trackclust").pops["/fast"]
+        p = load_pop_tree(img; value_name = "B", pop_type = "trackclust").pops["/fast"]
         @test p.filter_measure == "clusters.movement" && p.run_at === nothing
         # set-cluster-pops on the track run: regroup + rename Claude's population, counted in tracks
         st, body = handle_http(HTTP.Request("POST", "/api/gating/pop/set-cluster-pops", ["X-Cecelia-Client" => "claude"]),
@@ -204,7 +204,7 @@ end
         @test st == 200
         r = JSON3.read(body)
         @test String(r.populations[1].path) == "/quick" && 0 < r.populations[1].count < r.total
-        m = load_pop_map(img; value_name = "B", pop_type = "trackclust")
+        m = load_pop_tree(img; value_name = "B", pop_type = "trackclust")
         @test !haskey(m.pops, "/fast") && Int.(m.pops["/quick"].filter_values) == universe[1:1]
         @test Int(universe[2]) in Int.(r.unassigned)
     finally
@@ -253,7 +253,7 @@ end
             claude("/api/gating/pop/set-cluster-pops", merge(Dict{String,Any}("groups" => groups), extra))
         gui(f, obj) = _post(f, merge(Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
                                                       "valueName" => "B", "popType" => "clust"), obj))
-        clustmap(im) = load_pop_map(im; value_name = "B", pop_type = "clust")
+        clustmap(im) = load_pop_tree(im; value_name = "B", pop_type = "clust")
         ids_of(im, path) = sort(Int.(clustmap(im).pops[path].filter_values))
 
         ch = JSON3.read(api_gating_channels(HTTP.Request("GET",

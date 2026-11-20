@@ -1,9 +1,9 @@
 # ── Gating engine: recompute, membership ─────────────────────────────────────────
 #
-# Walks a PopulationMap and derives membership (child = parent ∩ own definition) in
+# Walks a PopulationTree and derives membership (child = parent ∩ own definition) in
 # topological order, caching the result on the map. Membership is derived here, never
 # stored in the H5AD (docs/POPULATION.md). The pop_type-agnostic `pop_df` accessor that
-# builds on this lives with the pop-map infrastructure in population_manager.jl.
+# builds on this lives with the pop-tree infrastructure in population_manager.jl.
 
 # ── Filter mask for filtered populations (clust/live; e.g. tracked = track_id > 0) ─
 # `fun` is `FilterFun | Nothing` — the `Nothing` branch is the "no filter" fast path used by
@@ -81,7 +81,7 @@ function _pop_columns(p)::Vector{String}
 end
 
 # columns the gates + filters in this map need from the H5AD
-_needed_columns(m::PopulationMap)::Vector{String} =
+_needed_columns(m::PopulationTree)::Vector{String} =
     unique(String[c for path in m.order for c in _pop_columns(m.pops[path])])
 
 _rename_gate(g::RectangleGate, f) = RectangleGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
@@ -90,14 +90,14 @@ _rename_gate(g::PolygonGate, f)   = PolygonGate(f(g.x_channel), f(g.y_channel), 
                                                 g.vertices)
 
 """
-    rename_pop_columns(m, rename::AbstractDict) -> PopulationMap
+    rename_pop_columns(m, rename::AbstractDict) -> PopulationTree
 
 A copy of `m` with every column a population reads (`_pop_columns`: gate x/y channels, the single
 filter measure, each compound-filter condition) renamed through `rename`; columns not in it are kept.
 `m` is untouched. Used by `copy_gating!` to point a copied gate at the target's column for the same
 channel name (`match_channel_columns`).
 """
-function rename_pop_columns(m::PopulationMap, rename::AbstractDict)::PopulationMap
+function rename_pop_columns(m::PopulationTree, rename::AbstractDict)::PopulationTree
     out = deepcopy(m); out._labels = nothing; out._membership = nothing
     isempty(rename) && return out
     f(c) = get(rename, c, c)
@@ -120,7 +120,7 @@ and a child is `parent ∩ own`). Paths in map order; columns in first-use order
 combines an emptied pop is not listed — `not X` or `X or Y` keeps members, so "empty" would be wrong.
 Empty result ⇒ every column is there. Used by the gating copy to warn per target (docs/POPULATION.md).
 """
-function missing_gate_columns(m::PopulationMap, available)::Vector{@NamedTuple{column::String, pops::Vector{String}}}
+function missing_gate_columns(m::PopulationTree, available)::Vector{@NamedTuple{column::String, pops::Vector{String}}}
     have = Set{String}(String(c) for c in available)
     out = @NamedTuple{column::String, pops::Vector{String}}[]
     for col in _needed_columns(m)
@@ -144,7 +144,7 @@ evaluates by it, and `gate_axis_scale` scales the data a gate plot DISPLAYS by i
 ticks and the gate outlines cannot end up in different units (docs/todo/SPATIAL_GATE_UNITS_PLAN.md
 decision 3). A legacy (unstamped, px) map and an uncalibrated image are both `false`.
 """
-gates_in_um(m::PopulationMap)::Bool = m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing
+gates_in_um(m::PopulationTree)::Bool = m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing
 
 """
     gate_axis_scale(m, col) -> Float64
@@ -154,7 +154,7 @@ conversion — for a non-spatial column (`centroid_t` included: it stays a frame
 uncalibrated image. The labels-version pin never enters: the scale describes the gate geometry, not
 which labels version the cells come from.
 """
-gate_axis_scale(m::PopulationMap, col::AbstractString)::Float64 =
+gate_axis_scale(m::PopulationTree, col::AbstractString)::Float64 =
     (is_spatial_axis(String(col)) && gates_in_um(m)) ?
         physical_size_for_axis(m.physical_sizes, axis_of(String(col))) : 1.0
 
@@ -165,7 +165,7 @@ Derive membership for every population. `fetch_cols(cols::Vector{String})` must 
 `DataFrame` with a `label` column plus the requested columns (production wraps
 `label_props`; tests pass an in-memory closure). Result cached on the map.
 """
-function recompute!(m::PopulationMap, fetch_cols::Function)
+function recompute!(m::PopulationTree, fetch_cols::Function)
     df = fetch_cols(_needed_columns(m))
     "label" in names(df) || error("recompute!: fetch_cols must return a `label` column")
     # ── spatial axes: put the DATA in the same unit as the GATE, here and nowhere else ──
@@ -236,11 +236,11 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
     m
 end
 
-_check_recomputed(m::PopulationMap) =
-    m._membership === nothing && error("PopulationMap not computed — call recompute! first")
+_check_recomputed(m::PopulationTree) =
+    m._membership === nothing && error("PopulationTree not computed — call recompute! first")
 
 """Boolean membership mask for a population (over the recompute row order)."""
-function pop_membership(m::PopulationMap, path::AbstractString)::BitVector
+function pop_membership(m::PopulationTree, path::AbstractString)::BitVector
     _check_recomputed(m)
     is_root(path) && return trues(length(m._labels))
     has_pop(m, path) || error("pop_membership: not found: $path")
@@ -248,10 +248,10 @@ function pop_membership(m::PopulationMap, path::AbstractString)::BitVector
 end
 
 """Label IDs belonging to a population."""
-cells_in_pop(m::PopulationMap, path::AbstractString) = m._labels[pop_membership(m, path)]
+cells_in_pop(m::PopulationTree, path::AbstractString) = m._labels[pop_membership(m, path)]
 
 """Count + percent-of-parent for a population."""
-function pop_stats(m::PopulationMap, path::AbstractString)
+function pop_stats(m::PopulationTree, path::AbstractString)
     cnt = sum(pop_membership(m, path))
     parent = is_root(path) ? ROOT : m.pops[String(path)].parent
     pcnt = sum(pop_membership(m, parent))

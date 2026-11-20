@@ -1,7 +1,7 @@
 # The population-type registry — ONE row per pop type, holding the properties code branches on.
 #
 # Every list of pop types the rest of the code needs is DERIVED from this table: the sidecar suffixes
-# (`POP_MAP_SUFFIX`), the hand-drawn types (`GATING_POP_TYPES`), the stored types a walk of the
+# (`POP_TREE_SUFFIX`), the hand-drawn types (`GATING_POP_TYPES`), the stored types a walk of the
 # gating maps covers (`STORED_POP_TYPES`), the track-grained / cluster-family predicates, the picker
 # category, the board's track families. Hand-written lists drifted apart (one walk lacked `branch`,
 # a legend lacked `region`), so a new list of pop-type literals outside this file fails the
@@ -16,7 +16,7 @@ struct PopTypeInfo
     type::PopType
     label::String                       # user-facing name in plot pickers ("Gated", not "flow")
     suffix::Union{String,Nothing}       # own sidecar `gating/{vn}<suffix>.json`; nothing = no own file
-    map_type::Union{PopType,Nothing}    # the stored map its pops live in (live → flow); nothing = none
+    tree_type::Union{PopType,Nothing}    # the stored map its pops live in (live → flow); nothing = none
     gating::Bool                        # pops are hand-drawn gate geometry (undo/redo, copy, gating QC)
     cluster::Bool                       # pops are `filter_fun="in"` filters on a per-run cluster column
     cluster_prefix::String              # that column's family prefix (`clusters.` / `regions.`), else ""
@@ -57,7 +57,7 @@ const CLUSTER_POP_TYPES = _pop_type_names(i -> i.cluster)
 const TRACK_FAMILY_POP_TYPES = _pop_type_names(i -> i.track_family)
 """`gating/{vn}<suffix>.json` per type that has a non-empty suffix (flow's file has none; `live` reads
 flow's file; `labels` has none). `gating_path` falls back to `""`."""
-const POP_MAP_SUFFIX = Dict{String,String}(string(i.type) => i.suffix for i in POP_TYPE_REGISTRY
+const POP_TREE_SUFFIX = Dict{String,String}(string(i.type) => i.suffix for i in POP_TYPE_REGISTRY
                                            if i.suffix !== nothing && !isempty(i.suffix))
 
 # The type `resolve_pop_type` probes when a picker value carries only a path: priority, not
@@ -76,9 +76,9 @@ is_track_grained(pop_type)::Bool = (i = pop_type_info(pop_type); i !== nothing &
 
 """The stored map a pop type's populations live in, as a wire string (`live` → `"flow"`), or
 `nothing` (`labels`, unknown)."""
-function pop_map_type(pop_type)::Union{String,Nothing}
+function pop_tree_type(pop_type)::Union{String,Nothing}
     i = pop_type_info(pop_type)
-    (i === nothing || i.map_type === nothing) ? nothing : string(i.map_type)
+    (i === nothing || i.tree_type === nothing) ? nothing : string(i.tree_type)
 end
 
 """The registry as JSON-ready rows (field order fixed) — what the frontend snapshot holds."""
@@ -86,7 +86,7 @@ pop_type_registry_wire() = [(;
         name          = string(i.type),
         label         = i.label,
         suffix        = i.suffix,
-        mapType       = i.map_type === nothing ? nothing : string(i.map_type),
+        treeType       = i.tree_type === nothing ? nothing : string(i.tree_type),
         gating        = i.gating,
         cluster       = i.cluster,
         clusterPrefix = i.cluster_prefix,

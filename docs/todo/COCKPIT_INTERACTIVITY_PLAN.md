@@ -39,7 +39,7 @@ already shipped in their own earlier surfaces. Fix the six correctness bugs at t
 4. **Every interactive affordance ships behind pure logic in `frontend/src/utils/*.ts`.** Cockpit
    `.vue` stays the reactivity layer, never the algorithm — matches the `reviewPager.ts` split
    already shipped.
-5. **No new pop-map JSON shape.** `/Review focus` uses the existing transient-pop machinery
+5. **No new pop-tree JSON shape.** `/Review focus` uses the existing transient-pop machinery
    (`_set_pick_selection!` sibling in `gating_api.jl`), so the frontend and the pop-manager reader
    don't need a schema change.
 6. **Keybinds are opt-in and scoped to the cockpit panel** — document-level listener attached on

@@ -55,14 +55,14 @@ correct. It is not a live bug. Two things make it wrong anyway:
    different members depending on which path resolved it. Scaling inside `recompute!` makes that
    structurally impossible.
 
-4. **A `spatial_unit` stamp on the gating file, so legacy files keep working.** `PopulationMap` gains
+4. **A `spatial_unit` stamp on the gating file, so legacy files keep working.** `PopulationTree` gains
    `spatial_unit` ∈ `{"px", "um"}`, round-tripped through `to_tree`/`from_tree`. **Absent ⇒ `"px"`**
    (every file written before this change). `recompute!` scales only when the map says `"um"`, so a file
    that was never converted keeps evaluating correctly — deliberately unlike `CENTROID_AXES_PLAN.md`'s
    no-fallback stance, because here the old data is *correct in its own terms* rather than malformed.
    That fallback is what lets decision 8 ship no migration at all.
 
-5. **A map adopts µm whenever there is nothing to reinterpret.** `load_pop_map(img; …)` stamps `"um"`
+5. **A map adopts µm whenever there is nothing to reinterpret.** `load_pop_tree(img; …)` stamps `"um"`
    when the image is calibrated **and** the map has no spatial gate (`has_spatial_gate`) — on a new map
    and equally on a long-standing intensity-only one, since neither holds coordinates whose meaning
    could change. Left alone: a map that *does* carry a position gate (re-stamping would silently move
@@ -91,8 +91,8 @@ correct. It is not a live bug. Two things make it wrong anyway:
 ## Blast radius
 
 ### Julia — package
-- `gating/population_manager.jl` — `PopulationMap.spatial_unit` + pixel sizes; `to_tree`/`from_tree`
-  round-trip; `load_pop_map(img; …)` stamps sizes; `save_pop_map!` stamps the unit.
+- `gating/population_manager.jl` — `PopulationTree.spatial_unit` + pixel sizes; `to_tree`/`from_tree`
+  round-trip; `load_pop_tree(img; …)` stamps sizes; `save_pop_tree!` stamps the unit.
 - `gating/gating_engine.jl` — `recompute!` scales the fetched frame (the ONE place).
 - `label_props.jl` — `is_spatial_axis` (the physical-axis predicate; excludes `centroid_t`).
 
@@ -109,8 +109,8 @@ correct. It is not a live bug. Two things make it wrong anyway:
 
 ## Phases
 
-**Phase 1 — the stamp.** `PopulationMap.spatial_unit` + sizes, `to_tree`/`from_tree` round-trip,
-`load_pop_map`/`save_pop_map!`. No behaviour change yet (everything reads `"px"`).
+**Phase 1 — the stamp.** `PopulationTree.spatial_unit` + sizes, `to_tree`/`from_tree` round-trip,
+`load_pop_tree`/`save_pop_tree!`. No behaviour change yet (everything reads `"px"`).
 
 **Phase 2 — the scale, in `recompute!`.** Membership honours µm maps. Legacy px maps unchanged.
 

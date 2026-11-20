@@ -70,10 +70,10 @@ end
 @testset "pop_df pooling + dedup" begin
     dfA = DataFrame(label=[1, 2, 3], x=[1.0, 6.0, 9.0])
     dfB = DataFrame(label=[10, 11], x=[7.0, 2.0])
-    mA = PopulationMap(pop_type="flow", value_name="A")
+    mA = PopulationTree(pop_type="flow", value_name="A")
     add_pop!(mA, "p"; gate=RectangleGate("x", "x", -1e9, 1e9, -1e9, 1e9))
     add_pop!(mA, "c"; parent="/p", gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))
-    mB = PopulationMap(pop_type="flow", value_name="B")
+    mB = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(mB, "hi"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))
     maps = Dict("A" => mA, "B" => mB)
     load_map = vn -> maps[vn]
@@ -106,7 +106,7 @@ end
     # NaN is in a measure column (x), NOT the gate column (g) — a NaN gate value would
     # fail the gate comparison and never enter the result, masking what drop_na does.
     df = DataFrame(label=[1, 2, 3], g=[0.0, 0.0, 0.0], x=[1.0, NaN, 9.0])
-    m = PopulationMap(pop_type="flow", value_name="A")
+    m = PopulationTree(pop_type="flow", value_name="A")
     add_pop!(m, "p"; gate=RectangleGate("g", "g", -1e9, 1e9, -1e9, 1e9))  # all pass
     load_map = _ -> m
     fetch = (_, _) -> df
@@ -120,7 +120,7 @@ end
 # ── pop_df: track_id joins the dedup key when present (most-specific pop still wins) ──
 @testset "pop_df track_id dedup key" begin
     df = DataFrame(label=[1, 2], x=[9.0, 9.0], track_id=[10.0, 20.0])
-    m = PopulationMap(pop_type="flow", value_name="A")
+    m = PopulationTree(pop_type="flow", value_name="A")
     add_pop!(m, "p"; gate=RectangleGate("x", "x", -1e9, 1e9, -1e9, 1e9))
     add_pop!(m, "c"; parent="/p", gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))
     load_map = _ -> m
@@ -136,7 +136,7 @@ end
 @testset "pop_df live _tracked (derived filter)" begin
     # label4 fails the qc gate (x=1); label2 is in qc but untracked (track_id=NaN).
     df = DataFrame(label=[1, 2, 3, 4], x=[9.0, 9.0, 9.0, 1.0], track_id=[10.0, NaN, 20.0, 30.0])
-    m = PopulationMap(pop_type="flow", value_name="A")
+    m = PopulationTree(pop_type="flow", value_name="A")
     add_pop!(m, "qc"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))   # qc = {1,2,3}
     # "_tracked" is derived, not stored — injecting it adds a filtered child of /qc
     Cecelia._inject_derived_pops!(m, ["/qc/_tracked"], "live")
@@ -149,7 +149,7 @@ end
     @test sort(res.label) == [1, 3]                # qc ∩ track_id>0 (label2 NaN, label4 not in qc)
     @test unique(res.pop) == ["/qc/_tracked"]
     # a derived pop is only injected under its registered pop_type (foreign type → skip)
-    m2 = PopulationMap(pop_type="flow", value_name="A")
+    m2 = PopulationTree(pop_type="flow", value_name="A")
     add_pop!(m2, "qc"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))
     Cecelia._inject_derived_pops!(m2, ["/qc/_tracked"], "clust")  # _tracked is a `live` spec
     @test !has_pop(m2, "/qc/_tracked")
@@ -163,7 +163,7 @@ end
     @test is_reserved_pop_name("_tracked")
     @test is_reserved_pop_name("_anything")
     @test !is_reserved_pop_name("qc")
-    m = PopulationMap(pop_type="flow", value_name="A")
+    m = PopulationTree(pop_type="flow", value_name="A")
     add_pop!(m, "qc"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))
     # a hand-drawn gate may not take a reserved name
     @test_throws ErrorException add_pop!(m, "_tracked"; parent="/qc",
@@ -211,10 +211,10 @@ end
         truth = sum(full.mean_intensity_0 .>= thr)
         @test 0 < truth < nrow(full)                          # genuinely partial selection
 
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "pos"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
                                               thr, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         df = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area", "mean_intensity_0"])
         @test nrow(df) == truth
         @test Set(names(df)) ⊇ Set(["label", "area", "mean_intensity_0", "pop", "value_name"])

@@ -44,7 +44,7 @@ every input segment). Source of truth = the clustfeatures sidecar (cheap JSON, n
   sidecars) → returns `["B","T"]`.
 
 ### Stage 2 — cluster-pop auto-share (fixes the pop summary split, the original ask)
-- `load_pop_map(img; value_name, pop_type)` (CciaImage method ONLY — not the task_dir base, which
+- `load_pop_tree(img; value_name, pop_type)` (CciaImage method ONLY — not the task_dir base, which
   save uses): for cluster pop_types (`clust`/`trackclust`) when the requested vn has NO own sidecar,
   BORROW a co-clustered sibling's map, relabeled to the requested vn (set `m.value_name` + each
   `pop.value_name`), so BOTH the picker (`plot_population_groups`) and membership (`pop_df`) resolve
@@ -56,7 +56,7 @@ every input segment). Source of truth = the clustfeatures sidecar (cheap JSON, n
 ### Stage 3 — UMAP pooling (`api_plots_cluster_map`)  ✅ DONE (browser-verified)
 - Endpoint now pools `obsm[X_umap.suffix]` + `clusters.suffix` across `co_clustered_value_names`
   (an explicit `valueName` restricts to one). Pop subset resolves membership per vn (via `_live_map`,
-  which uses the borrowing `load_pop_map`). Kept the binary `[x, y, code]` shape, so the frontend
+  which uses the borrowing `load_pop_tree`). Kept the binary `[x, y, code]` shape, so the frontend
   concatenates as before — no frontend change. NB: `co_clustered_value_names` had to be **exported**
   (Cecelia.jl) or the bare API call `UndefVarError`s → 500 → "No UMAP at suffix" (the symptom hit
   once; fixed). API + export change → **server restart** to load.
@@ -77,7 +77,7 @@ every input segment). Source of truth = the clustfeatures sidecar (cheap JSON, n
 ## Notes / invariants
 - `api/src/*.jl` (umap/heatmap endpoints) are NOT Revise-tracked → server restart to test Stages 3-4.
 - `app/src/` (Stages 1-2) IS Revise-tracked; `pixi run test-pkg` must stay green (868 base + new).
-- Don't touch the SAVE path — borrow is READ-side only (CciaImage `load_pop_map`), so a user edit
+- Don't touch the SAVE path — borrow is READ-side only (CciaImage `load_pop_tree`), so a user edit
   still writes a normal per-vn sidecar.
 - Pop colours are stable per (valueName, path); the frontend colour map already accumulates
   (see population-summary work) so pooled/borrowed pops render in their manager colours.

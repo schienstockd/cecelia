@@ -67,7 +67,7 @@ export function groupPopulations(groups: RawGroup[]): PopGroupDef[] {
 export type PopPickerSpec = Pick<ParamDef, 'accepts' | 'popScope' | 'popType'>
 
 /**
- * The pop_type a SINGLE-segmentation popSelection lists (`/api/gating/popmap?popType=`). Single mode
+ * The pop_type a SINGLE-segmentation popSelection lists (`/api/gating/pop-tree?popType=`). Single mode
  * reads ONE map, so it takes ONE `accepts` token (`live`/`flow` → the flow gate map); built-ins are
  * pinned to exactly one by `app/test/suite/task_spec_ratchets.jl`. An explicit `popType` wins; the
  * legacy `popScope` (custom modules) maps `cells` → `flow`, `tracks` → `live`. Default `flow`.

@@ -57,7 +57,7 @@ function _image_cluster_runs(img::CciaImage, segs::AbstractVector)
 end
 
 # Gate-defined populations per segmentation (the "gated into CD3/CD8" story). Names + counts only —
-# full gate geometry is Slice B (`get_populations`). Flow + track pop maps only; cluster pops
+# full gate geometry is Slice B (`get_populations`). Flow + track pop trees only; cluster pops
 # (clust/trackclust) are the clustering story, covered by `clusterRuns`.
 # Cap the pop-name list per (value_name, pop_type) — the plan mandates hard caps on every list. `n`
 # carries the TRUE count, so a truncated `pops` is never silent.
@@ -66,7 +66,7 @@ function _image_gated_pops(img::CciaImage, segs::AbstractVector)
     out = Vector{Any}()
     for v in segs, pt in GATING_POP_TYPES
         isfile(gating_path(img._dir, v; pop_type = pt)) || continue
-        ps = pop_paths(load_pop_map(img; value_name = v, pop_type = pt))
+        ps = pop_paths(load_pop_tree(img; value_name = v, pop_type = pt))
         isempty(ps) && continue
         push!(out, (; valueName = v, popType = pt, n = length(ps), pops = ps[1:min(end, _LINEAGE_POP_CAP)]))
     end

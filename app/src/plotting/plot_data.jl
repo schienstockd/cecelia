@@ -1263,10 +1263,10 @@ function _cluster_category_names(imgs, keys, value_names, measure, granularity::
         entry = isfile(props) ? _clustfeatures_entry(props, suffix; family=family) : nothing
         # the SEGMENTATION is part of the run: two segmentations clustered separately share image uids
         # but not clusters (segmentations clustered TOGETHER already share names on one image through
-        # `load_pop_map`'s co-clustered borrow)
+        # `load_pop_tree`'s co-clustered borrow)
         rid = vn * "@" * join(sort!(unique!(vcat(_clustfeatures_part_of(entry, img.uid), [String(img.uid)]))), ",")
         run_of[(String(key), vn)] = rid
-        pm = load_pop_map(img; value_name=vn, pop_type=pt, backfill_save=false)   # a plot read never writes
+        pm = load_pop_tree(img; value_name=vn, pop_type=pt, backfill_save=false)   # a plot read never writes
         names_ = pop_label_overrides(pm, m)
         isempty(names_) && continue
         own[(String(key), vn)] = names_

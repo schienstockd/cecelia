@@ -149,7 +149,7 @@ export function useSummaryData(opts: {
   // A plain computed(segPops) would drop every OTHER popType's colours the moment the active slot
   // switches — so the non-active slots (and a full-board PDF export) render grey. We instead MERGE each
   // load into a persistent map so once a popType's colours have loaded they stay available for its
-  // slots even while another popType is active; popmap reload re-merges to refresh any changed colour.
+  // slots even while another popType is active; pop tree reload re-merges to refresh any changed colour.
   const popColors = ref(new Map<string, string>())
   function mergeColors(groups: SegmentationPops[]) {
     if (!groups.length) return
@@ -195,7 +195,7 @@ export function useSummaryData(opts: {
     return (s: PlotSeries): string => m.get(s.pop) ?? UNASSIGNED_POP
   })
 
-  // live updates: the server broadcasts gating:popmap after any gate mutation. The picker list
+  // live updates: the server broadcasts gating:pop-tree after any gate mutation. The picker list
   // refreshes at once; plot refetches are TARGETED — only panels plotting a changed pop (or one under
   // it) refetch, by the rule the gating plots use (`utils/popChanges.ts`) — and held for Apply in
   // manual-apply mode. `reloadToken` is the untargeted part: manual reload + task completion.
@@ -214,8 +214,8 @@ export function useSummaryData(opts: {
   // a WS handler is not a watcher, so the kept-alive pause doesn't reach it — defer by hand, so a
   // hidden page doesn't refetch on every gate edit made elsewhere (composables/useKeepAlive.ts)
   const whenVisible = useWhenVisible()
-  const reloadFromPopmap = () => { loadPops(); deferUntilApply('plots', applyPopChanges) }
-  function onPopmap(d: unknown) {
+  const reloadFromPopTree = () => { loadPops(); deferUntilApply('plots', applyPopChanges) }
+  function onPopTree(d: unknown) {
     const m = d as { imageUid?: string; valueName?: string; popType?: string
                      tree?: { populations?: SigNode[] } }
     if (m.imageUid && imageUids.value.length && !imageUids.value.includes(m.imageUid)) return
@@ -227,13 +227,13 @@ export function useSummaryData(opts: {
       for (const p of changedPopPaths(lastSigs.get(doc), sigs, booleanDeps(pops))) heldChanged.add(popChangeKey(vn, p))
       lastSigs.set(doc, sigs)
     }
-    whenVisible(reloadFromPopmap)   // stable identity: whenVisible dedupes a hidden page's queue by it
+    whenVisible(reloadFromPopTree)   // stable identity: whenVisible dedupes a hidden page's queue by it
   }
   /** The refetch token of a panel plotting `series` — bind it to the panel's `reloadToken`. */
   const panelReloadToken = (series: readonly SeriesTarget[]) =>
     seriesReloadToken(reloadToken.value, popChanges.value, series, anyPopChange.value)
   // a task finishing on one of THESE images → refetch (pop list may have new pops; data may have
-  // changed in place). Same mechanism as the gate popmap above; targeted per-image via useDataRefresh.
+  // changed in place). Same mechanism as the gate pop tree above; targeted per-image via useDataRefresh.
   useDataRefresh(() => imageUids.value, () => { loadPops(); reloadToken.value++ })
   // Manual reload — hosts wire this to the CanvasSidePanel reload button. Same chokepoint as the
   // auto path (bump reloadToken → every panel that watches it refetches), but ungated.
@@ -284,8 +284,8 @@ export function useSummaryData(opts: {
     stagedSel.value = remap(stagedSel.value)
     _prevSegIdents = nextIdents
   })
-  onMounted(async () => { ws.on('gating:popmap', onPopmap); await loadSpecs(); await loadPops(); await loadAttrs() })
-  onUnmounted(() => ws.off('gating:popmap', onPopmap))
+  onMounted(async () => { ws.on('gating:pop-tree', onPopTree); await loadSpecs(); await loadPops(); await loadAttrs() })
+  onUnmounted(() => ws.off('gating:pop-tree', onPopTree))
 
   return {
     // data

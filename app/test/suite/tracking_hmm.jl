@@ -132,10 +132,10 @@ end
         @test 0 < truth < length(spd)
 
         # a TRACK gate (one point per track) on the speed axis, stored under __tracks
-        m = PopulationMap(pop_type="track", value_name="B")
+        m = PopulationTree(pop_type="track", value_name="B")
         add_pop!(m, "fast"; gate=RectangleGate("live.track.speed", "live.track.speed",
                                                thr, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         @test isfile(joinpath(td, "gating", "B__tracks.json"))   # track gate file
         @test !isfile(joinpath(td, "gating", "B.json"))          # NOT the flow file
 

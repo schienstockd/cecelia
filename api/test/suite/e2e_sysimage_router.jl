@@ -282,7 +282,7 @@ end
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/summary", "/api/gating/membership",
         "/api/gating/plotdata", "/api/gating/plotmeta",
-        "/api/gating/popmap", "/api/gating/stats", "/api/rois",
+        "/api/gating/pop-tree", "/api/gating/stats", "/api/rois",
         "/api/gating/plot-image", "/api/gating/cells-image",   # gating as pictures (gating_views_api.jl)
         "/api/gating/examples",
         "/api/health", "/api/images",

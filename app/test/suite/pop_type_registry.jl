@@ -12,7 +12,7 @@
     @test Cecelia._CLUST_POP_TYPES == ("clust", "trackclust")
     @test POP_TYPE_PROBE_ORDER == ("flow", "clust", "region", "track", "trackclust", "branch")
     @test Set(Cecelia.ACCEPT_TOKENS) == Set(["live", "flow", "clust", "trackclust", "region", "track", "branch"])
-    @test Cecelia.POP_MAP_SUFFIX == Dict("track" => "__tracks", "clust" => "__clust",
+    @test Cecelia.POP_TREE_SUFFIX == Dict("track" => "__tracks", "clust" => "__clust",
         "trackclust" => "__trackclust", "region" => "__region", "branch" => "__branch")
     @test Cecelia._scope_accepts("cells", true) == ["live", "clust", "region"]
     @test Cecelia._scope_accepts("tracks", true) == ["track", "trackclust"]
@@ -28,7 +28,7 @@
           ["gated", "gated", "gated", "clustered", "clustered", "region", "gated", "gated", "gated"]
     @test Cecelia._category_of_pop_type("region") == "Clustering"
     @test Cecelia._category_of_pop_type("track") == Cecelia.CATEGORY_GATING
-    @test pop_map_type("live") == "flow" && pop_map_type("labels") === nothing && pop_map_type("x") === nothing
+    @test pop_tree_type("live") == "flow" && pop_tree_type("labels") === nothing && pop_tree_type("x") === nothing
     # every enum value has exactly one row
     @test sort([string(i.type) for i in POP_TYPE_REGISTRY]) == sort(collect(string.(instances(PopType))))
 end
@@ -48,9 +48,9 @@ end
     push!(proj._sets, s); push!(proj.set_uids, s.uid)
     img = CciaImage(; uid = "i1", dir = mktempdir())
     img.label_props = Dict("A" => "A.h5ad")
-    mb = PopulationMap(; pop_type = "branch", value_name = "A")
+    mb = PopulationTree(; pop_type = "branch", value_name = "A")
     add_pop!(mb, "endpoints"; filter_measure = "branch-type", filter_fun = "eq", filter_values = 0)
-    save_pop_map!(mb, img)
+    save_pop_tree!(mb, img)
     push!(s._images, img); push!(s.image_uids, img.uid)
     pops = populations_summary(proj).images[1].populations
     @test any(p -> p.name == "endpoints" && p.popType == "branch", pops)

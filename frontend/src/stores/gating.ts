@@ -41,7 +41,7 @@ export interface BooleanSpec { op: 'and' | 'or'; pops: string[]; not: string[] }
 
 export interface PopNode {
   name: string; colour: string; show: boolean
-  // Stable gating-map identity (`PopulationMap._fresh_pop_uid` on the server, always emitted by
+  // Stable gating-map identity (`PopulationTree._fresh_pop_uid` on the server, always emitted by
   // `to_tree` in `app/src/gating/popmanager/persistence.jl`). Preserved across rename/reparent —
   // used by `utils/popRenameRemap` to keep path-keyed highlights alive when a rename rewrites the
   // pop's path. Optional on the wire type for legacy pop trees that predate the field.
@@ -98,7 +98,7 @@ function flatten(tree: PopTree): FlatPop[] {
 //  - the store lives and pauses with its page (composables/useKeepAlive.ts) — a hidden page's store
 //    does not publish to the viewer or refetch;
 //  - two canvases on the SAME document (a cluster page and the board) stay in step through the
-//    server's `gating:popmap` push, which every store subscribes to for its own document.
+//    server's `gating:pop-tree` push, which every store subscribes to for its own document.
 // Enforced by `utils/gatingStoreOwnership.test.ts`.
 // Exported for its unit test only; a component calls provideGatingStore.
 export function createGatingStore(initialPopType: string) {
@@ -275,7 +275,7 @@ export function createGatingStore(initialPopType: string) {
     // own authored vN and may have no drift).
     labelsVersionPin.value = null
     await fetchChannels()
-    await fetchPopmap()
+    await fetchPopTree()
   }
 
   async function fetchChannels() {
@@ -309,10 +309,10 @@ export function createGatingStore(initialPopType: string) {
     }
   }
 
-  async function fetchPopmap() {
+  async function fetchPopTree() {
     if (!imageUid.value) return
     try {
-      const res = await fetch(`/api/gating/popmap?${_params()}`)
+      const res = await fetch(`/api/gating/pop-tree?${_params()}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean;
         missingColumns?: Record<string, string[]>
@@ -324,23 +324,23 @@ export function createGatingStore(initialPopType: string) {
       authoredLabelsVersion.value = d.authoredLabelsVersion ?? null
       currentLatestLabelsVersion.value = d.currentLatestLabelsVersion ?? null
     } catch (e) {
-      log.error(`Gating popmap: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Gating pop tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
     }
   }
 
   // P3b banner actions. `pinToAuthored` sets the session pin to the authored vN so every subsequent
   // gating request reads at that vN — membership + plot dots + density all shift onto the labels
-  // the map was authored against. `clearPin` returns to `_latest`. Both trigger a popmap refresh so
+  // the map was authored against. `clearPin` returns to `_latest`. Both trigger a pop tree refresh so
   // the tree + membership snap to the new evaluation frame in one tick.
   async function pinToAuthored() {
     if (!authoredLabelsVersion.value) return
     labelsVersionPin.value = authoredLabelsVersion.value
     // the axis pickers too: /channels answers per pin, so a `_latest`-only column isn't left on offer
-    await fetchChannels(); await fetchPopmap(); await fetchStats()
+    await fetchChannels(); await fetchPopTree(); await fetchStats()
   }
   async function clearLabelsVersionPin() {
     labelsVersionPin.value = null
-    await fetchChannels(); await fetchPopmap(); await fetchStats()
+    await fetchChannels(); await fetchPopTree(); await fetchStats()
   }
 
   async function fetchStats() {
@@ -399,7 +399,7 @@ export function createGatingStore(initialPopType: string) {
                       patch: { colour?: string; show?: boolean; filter?: Record<string, unknown> }) =>
     _post('/api/gating/pop/update', { path, ...patch })
 
-  // WS push: server broadcasts gating:popmap after any mutation (incl. from other clients / viewer)
+  // WS push: server broadcasts gating:pop-tree after any mutation (incl. from other clients / viewer)
   // The guard matches the DOCUMENT the broadcast is about — image + segmentation + pop type. popType
   // was missing: an edit to the same image's cluster pops (another tab, the cluster page) broadcasts
   // under the same image/valueName, and its tree would have been applied straight onto the gating
@@ -411,7 +411,7 @@ export function createGatingStore(initialPopType: string) {
     if (data.imageUid === imageUid.value && data.valueName === valueName.value &&
         (data.popType === undefined || data.popType === popType.value) && data.tree) {
       // a broadcast answers `missingColumns` at `_latest`; a session pinned to another labels
-      // version keeps its own (pinned) answer, refreshed by its own edits and fetchPopmap
+      // version keeps its own (pinned) answer, refreshed by its own edits and fetchPopTree
       setTree(data.tree, labelsVersionPin.value ? missingColumns.value : data.missingColumns)
       _setHistory(data)
     }
@@ -451,14 +451,14 @@ export function createGatingStore(initialPopType: string) {
   // Live updates for THIS store's document (another page's store on the same document, another tab,
   // the viewer's picker, an MCP edit): the server pushes the new tree to every client after any
   // mutation. Subscribed here, not in each canvas, so every owner gets it and none can forget it.
-  const onPopmapPush = (d: unknown) => applyBroadcast(d as Parameters<typeof applyBroadcast>[0])
-  ws.on('gating:popmap', onPopmapPush)
-  onScopeDispose(() => ws.off('gating:popmap', onPopmapPush))
+  const onPopTreePush = (d: unknown) => applyBroadcast(d as Parameters<typeof applyBroadcast>[0])
+  ws.on('gating:pop-tree', onPopTreePush)
+  onScopeDispose(() => ws.off('gating:pop-tree', onPopTreePush))
   // WS reconnect: the backend may have restarted, and the transient viewer-selection pop lived only in
   // its memory (docs/POPULATION.md) — refetch so a stale selection stops greying the plots. The COUNT,
   // not `status`: while the page is hidden this watcher is paused and sees only the latest value.
   watch(() => ws.connects, (n) => {
-    if (n > 1 && imageUid.value) void fetchChannels().then(fetchPopmap)
+    if (n > 1 && imageUid.value) void fetchChannels().then(fetchPopTree)
   })
   // Channel renamed (image table, metadata panel): `channelNames` is a once-per-select copy, so
   // refetch or the axis labels keep the old names until the image is reselected.
@@ -527,7 +527,7 @@ export function createGatingStore(initialPopType: string) {
     spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, defaultTransformFor,
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
-    projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
+    projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
     addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,

@@ -2,7 +2,7 @@
 #
 # HTTP routes for the population manager + gating engine (docs/POPULATION.md, docs/API.md).
 # Synchronous, in-process — interactive latency, no task pool. Mutations persist the
-# per-segmentation sidecar gating/{value_name}.json and broadcast `gating:popmap`.
+# per-segmentation sidecar gating/{value_name}.json and broadcast `gating:pop-tree`.
 # Plot data is served as raw Float32 (already transformed); membership as label IDs.
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ const _POP_404_SHOWN = 8
 
 # A population 404 names the paths that DO exist, so the caller (a person or an agent) corrects the
 # path in one step instead of guessing again. Those sharing the requested leaf name come first.
-function _pop_not_found(m::PopulationMap, pop::AbstractString)
+function _pop_not_found(m::PopulationTree, pop::AbstractString)
     paths = String[p for p in pop_paths(m) if !pop_at(m, p).transient]
     isempty(paths) && return _gerr(404, "Population not found: $pop — this label set has no populations yet")
     parts = split(String(pop), '/'; keepempty = false)
@@ -49,7 +49,7 @@ _get_pick_selection(task_dir::AbstractString, vn::AbstractString) =
 # add the transient pick-selection pop to a freshly-loaded map (no-op when no selection). Cell-grained
 # maps only — its labels are CELL labels, which mean nothing on the per-track table (`label ==
 # track_id`) — so a track/trackclust tree never lists a pop no read can resolve.
-function _inject_pick_pop!(m::PopulationMap, img::CciaImage)
+function _inject_pick_pop!(m::PopulationTree, img::CciaImage)
     is_track_grained(m.pop_type) && return m
     labs = _get_pick_selection(img._dir, m.value_name)
     (labs === nothing || isempty(labs)) && return m
@@ -150,10 +150,10 @@ _track_motility_cols(img, vn) = (p = img_track_props_path(img, vn);
 # there, see `_inject_pick_pop!`), which keeps those reads cacheable.
 _pick_hook(img, pop_type) = is_track_grained(pop_type) ? nothing : (m -> _inject_pick_pop!(m, img))
 
-# load + recompute a map (membership ready) — `computed_pop_map` plus the pick selection.
+# load + recompute a map (membership ready) — `computed_pop_tree` plus the pick selection.
 # `labels_version` is the P3b session pin (`nothing` = follow `_latest`).
 _live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing) =
-    computed_pop_map(img; value_name = vn, pop_type = pop_type, labels_version = labels_version,
+    computed_pop_tree(img; value_name = vn, pop_type = pop_type, labels_version = labels_version,
                      map_hook = _pick_hook(img, pop_type))
 
 # The pop_type a read route evaluates `pop` under: the package's `read_pop_type` over the request's
@@ -258,7 +258,7 @@ end
 # plot VALUES are scaled by, so the label and the numbers cannot disagree.
 _axis_unit(img, vn, pop_type, col)::String =
     !is_spatial_axis(String(col)) ? "" :
-    (gate_axis_scale(load_pop_map(img; value_name = vn, pop_type = pop_type), String(col)) == 1.0 ?
+    (gate_axis_scale(load_pop_tree(img; value_name = vn, pop_type = pop_type), String(col)) == 1.0 ?
         SPATIAL_UNIT_PX : "µm")
 
 # x/y in the gates' unit — the point cloud, the whole-dataset extents that drive the ticks, density.
@@ -303,7 +303,7 @@ end
 # (#1769). Rides beside every `tree` so the Population Manager can say why such a pop reads 0.
 # Column NAMES only (`missing_gate_columns` → `pop_membership_cols`), no data read, so it is cheap
 # enough for every tree payload. Never fails the request: an unreadable table reports nothing.
-function _missing_columns_by_pop(m::PopulationMap, img::CciaImage, vn;
+function _missing_columns_by_pop(m::PopulationTree, img::CciaImage, vn;
                                  labels_version=nothing)::Dict{String,Vector{String}}
     out = Dict{String,Vector{String}}()
     (isempty(m.order) || !_has_label_props(img)) && return out
@@ -320,10 +320,10 @@ function _missing_columns_by_pop(m::PopulationMap, img::CciaImage, vn;
 end
 
 # broadcast the updated tree to all clients
-function _broadcast_popmap(project_uid, image_uid, vn, pop_type, m::PopulationMap, img::CciaImage;
+function _broadcast_pop_tree(project_uid, image_uid, vn, pop_type, m::PopulationTree, img::CciaImage;
                            missing_cols = _missing_columns_by_pop(m, img, vn))
     broadcast_ws(Dict{String,Any}(
-        "type" => "gating:popmap", "projectUid" => project_uid, "imageUid" => image_uid,
+        "type" => "gating:pop-tree", "projectUid" => project_uid, "imageUid" => image_uid,
         "valueName" => vn, "popType" => pop_type, "tree" => to_tree(m),
         "missingColumns" => missing_cols,
         # ride along with the tree so the undo/redo buttons settle in the same frame the edit lands
@@ -333,19 +333,19 @@ function _broadcast_popmap(project_uid, image_uid, vn, pop_type, m::PopulationMa
         "canRedo" => _can_redo(project_uid, image_uid, vn, pop_type)))
 end
 
-# Serialise gating pop CRUD. Each handler does load_pop_map → mutate → save_pop_map!; under
+# Serialise gating pop CRUD. Each handler does load_pop_tree → mutate → save_pop_tree!; under
 # `-t auto` two concurrent edits to the same map (rapid clicks / two tabs) would otherwise both
 # load the same tree and the second save would clobber the first (lost update). One process-wide
 # ReentrantLock held across the whole load→save is enough — gating edits are user-paced and cheap,
-# so contention across images/value_names is negligible. (save_pop_map! also writes atomically.)
-# The lock lives in the package (`with_popmap_lock`, gating/popmanager/copy.jl) so a task that writes
+# so contention across images/value_names is negligible. (save_pop_tree! also writes atomically.)
+# The lock lives in the package (`with_pop_tree_lock`, gating/popmanager/copy.jl) so a task that writes
 # gating — the manual gate chain step — serialises with these handlers.
-_with_popmap_lock(f) = with_popmap_lock(f)
+_with_pop_tree_lock(f) = with_pop_tree_lock(f)
 
 # ── Undo / redo for HAND-DRAWN gating ─────────────────────────────────────────
 #
 # The whole document is one serialisable value: every mutation here is load → mutate →
-# `save_pop_map!` of the ENTIRE tree, so "the state before this edit" is just `to_tree` of what is
+# `save_pop_tree!` of the ENTIRE tree, so "the state before this edit" is just `to_tree` of what is
 # still on disk when the handler is about to save. That is what makes an undo stack a ring of
 # snapshots rather than a set of hand-written inverse operations — there is no diff protocol to
 # invert, and nothing to keep in sync as new mutations are added.
@@ -371,11 +371,11 @@ _history_for(key) = get!(() -> (undo = _GatingSnapshot[], redo = _GatingSnapshot
 # out of history — it is ephemeral server state that is re-injected on every read, and restoring a
 # stale one would resurrect a selection the user has since cleared.
 _gating_snapshot(img::CciaImage, vn, pop_type)::Dict{String,Any} =
-    to_tree(load_pop_map(img; value_name = vn, pop_type = pop_type); include_transient = false)
+    to_tree(load_pop_tree(img; value_name = vn, pop_type = pop_type); include_transient = false)
 
 # Record the PRE-edit state. Called from `_persist_and_broadcast!` — the one choke point every
 # mutating handler already goes through, so a new mutation cannot forget to be undoable. Runs under
-# the gating lock (`with_popmap_lock`; the handler holds it across load→save), so what is on disk here is exactly what
+# the gating lock (`with_pop_tree_lock`; the handler holds it across load→save), so what is on disk here is exactly what
 # this edit is about to replace. A new edit invalidates the redo branch, as everywhere else.
 function _history_record!(proj, image_uid, vn, pop_type, img::CciaImage)
     is_gating_pop_type(pop_type) || return
@@ -396,16 +396,16 @@ _can_redo(proj, image_uid, vn, pop_type) = is_gating_pop_type(pop_type) &&
 # HTTP response body: the tree (incl. the transient pop) plus the undo/redo flags, so the POST that
 # made the edit is self-sufficient. The broadcast carries them too, but a client must not need its
 # WS to be up to know whether it can undo what it just did.
-function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop_type)
+function _persist_and_broadcast!(m::PopulationTree, img::CciaImage, body, vn, pop_type)
     proj, image_uid, err = _require_ids(body); err === nothing || return err
     _history_record!(proj, image_uid, vn, pop_type, img)
-    save_pop_map!(m, img)
+    save_pop_tree!(m, img)
     _inject_pick_pop!(m, img)
     # the broadcast reaches every client, so it answers at `_latest`; the reply answers at THIS
     # client's labels-version pin (the store sends it in the body), the same frame its counts use
     pin = _labels_version_pin(body)
     miss = _missing_columns_by_pop(m, img, vn)
-    _broadcast_popmap(proj, image_uid, vn, pop_type, m, img; missing_cols = miss)
+    _broadcast_pop_tree(proj, image_uid, vn, pop_type, m, img; missing_cols = miss)
     (; tree = to_tree(m),
        missingColumns = pin === nothing ? miss : _missing_columns_by_pop(m, img, vn; labels_version = pin),
        canUndo = _can_undo(proj, image_uid, vn, pop_type),
@@ -423,7 +423,7 @@ function _history_step(body_bytes::Vector{UInt8}, dir::Symbol)
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     is_gating_pop_type(pt) || return _gerr(400, "Undo is for hand-drawn gating only (flow/track), not $pt")
     proj, image_uid, err = _require_ids(body); err === nothing || return err
-    _with_popmap_lock() do
+    _with_pop_tree_lock() do
         h = _history_for(_history_key(proj, image_uid, vn, pt))
         from, to = dir === :undo ? (h.undo, h.redo) : (h.redo, h.undo)
         isempty(from) && return _gerr(409, dir === :undo ? "Nothing to undo" : "Nothing to redo")
@@ -433,13 +433,13 @@ function _history_step(body_bytes::Vector{UInt8}, dir::Symbol)
             timg, _ = _gating_image(proj, uid)
             timg === nothing && continue                      # image gone — skip, don't fail the step
             push!(counter, (uid, _gating_snapshot(timg, vn, pt)))
-            save_pop_map!(from_tree(tree), timg)
-            m = load_pop_map(timg; value_name = vn, pop_type = pt)
+            save_pop_tree!(from_tree(tree), timg)
+            m = load_pop_tree(timg; value_name = vn, pop_type = pt)
             _inject_pick_pop!(m, timg)
-            _broadcast_popmap(proj, uid, vn, pt, m, timg)
+            _broadcast_pop_tree(proj, uid, vn, pt, m, timg)
         end
         push!(to, counter)
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         _inject_pick_pop!(m, img)
         200, JSON3.write((; tree = to_tree(m),
                             missingColumns = _missing_columns_by_pop(m, img, vn;
@@ -748,20 +748,20 @@ function api_gating_channels(req::HTTP.Request)
     ))
 end
 
-# ── GET /api/gating/popmap ────────────────────────────────────────────────────
+# ── GET /api/gating/pop-tree ────────────────────────────────────────────────────
 # Returns the tree PLUS P3b breadcrumb fields:
 #   • `authoredLabelsVersion`     — the labels vN this map was last saved against (`nothing` on
 #     legacy pre-breadcrumb files and on maps whose value_name has no label_props yet).
 #   • `currentLatestLabelsVersion` — the image's current `_latest` labels version for this
 #     value_name (`nothing` when no label_props entry exists yet).
 # The frontend renders the drift banner when both are non-null AND they differ.
-function api_gating_popmap(req::HTTP.Request)
+function api_gating_pop_tree(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
     pt = get(q, "popType", "flow")
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    m = load_pop_tree(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
     proj, image_uid = get(q, "projectUid", ""), get(q, "imageUid", "")
     current_latest = haskey(img.label_props, vn) ? resolve_version(img, :label_props, vn) : nothing
@@ -796,7 +796,7 @@ function api_gating_membership(req::HTTP.Request)
     isempty(pops) && return _gerr(400, "pops required")
     # one map serves every pop: `live` is `flow` plus the derived sets, so a mix of the two reads as live
     pts = unique(_read_pop_type(q, img, vn, p) for p in pops)
-    pt = length(pts) == 1 ? only(pts) : all(p -> pop_map_type(p) == "flow", pts) ? "live" : get(q, "popType", "flow")
+    pt = length(pts) == 1 ? only(pts) : all(p -> pop_tree_type(p) == "flow", pts) ? "live" : get(q, "popType", "flow")
     m = _live_map(img, vn, pt; labels_version = _labels_version_pin(q))
     for p in pops
         (is_root(p) || has_pop(m, p)) || return _pop_not_found(m, p)
@@ -906,7 +906,7 @@ end
 # The child gates of `pop` drawn on this (x, y) pair, re-projected into the display transforms — each
 # a `project_gate` outline plus its `path` and `colour`. Gates on another channel pair are left out.
 # Shared by plotmeta (the browser plot) and the gate-plot image (`gating_views_api.jl`).
-function _child_gate_outlines(m::PopulationMap, pop, x, y, xt, yt)
+function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt)
     gates = Dict{String,Any}[]
     for cpath in direct_children(m, pop)
         p = m.pops[cpath]
@@ -1002,7 +1002,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     # Child gates of the displayed population, re-projected into the EFFECTIVE display transform so
     # their outlines land on the dots even when a gate was drawn under a different transform (the client
     # has no transform math). Colour/path travel so the client renders directly. Membership is untouched.
-    gates = _child_gate_outlines(load_pop_map(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt)
+    gates = _child_gate_outlines(load_pop_tree(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt)
     # Autoscale to the child gates: a gate edge drawn just beyond the data cloud would otherwise fall
     # outside the axes and be un-grabbable, so grow the display extent to it and re-derive the raw tick
     # range so ticks span the whole axis. Only the side an edge exceeds moves, and only for an edge
@@ -1316,8 +1316,8 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
     _conflict === nothing || return _gerr(400,
         "A $_conflict population named \"$_name\" already exists in this segmentation — names must be " *
         "unique across population types so a population can be selected unambiguously. Choose another name.")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(_gate_spec_auto(body["gate"], img, vn, pt)) : nothing
         flt = get(body, "filter", nothing)
         bl = get(body, "boolean", nothing)      # Decision 16: a set operation over other pops
@@ -1362,8 +1362,8 @@ function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
     name, parent, colour, path, err = _claude_new_pop(body); err === nothing || return err
     gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
     gerr === nothing || return _gerr(422, gerr)
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = "flow")
         refusal = _claude_place_refusal(m, img, vn, parent, path, name); refusal === nothing || return refusal
         add_pop!(m, name; parent = parent, gate = gate, colour = colour, show = true, created_by = author_stamp())
         _claude_gate_reply(m, img, body, vn, path)
@@ -1390,7 +1390,7 @@ _is_hex_colour(c) = c isa AbstractString && occursin(r"^#[0-9a-fA-F]{6}$", c)
 
 # Where a new population would land, on the map in hand: 404 no such parent, 409 the path is taken
 # here or by another pop type (`pop_name_conflict`) — an existing population is never replaced.
-function _claude_place_refusal(m::PopulationMap, img, vn, parent, path, name)
+function _claude_place_refusal(m::PopulationTree, img, vn, parent, path, name)
     (is_root(parent) || has_pop(m, parent)) || return _pop_not_found(m, parent)
     has_pop(m, path) && return 409, JSON3.write((; error = "A population \"$path\" already exists — " *
         "choose another name; an existing population is never replaced", code = "pop_exists"))
@@ -1422,8 +1422,8 @@ function api_gating_pop_add_boolean(body_bytes::Vector{UInt8})
     catch e
         return _gerr(422, replace(sprint(showerror, e), r"^boolean pop: " => ""))
     end
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = "flow")
         (is_root(parent) || has_pop(m, parent)) || return _pop_not_found(m, parent)
         for r in [inc; exc]
             has_pop(m, r) || return _pop_not_found(m, r)
@@ -1451,8 +1451,8 @@ function api_gating_pop_add_filter(body_bytes::Vector{UInt8})
     name, parent, colour, path, err = _claude_new_pop(body); err === nothing || return err
     conds, cerr = _proposed_conditions(get(body, "conditions", nothing), img, vn)
     cerr === nothing || return _gerr(422, cerr)
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = "flow")
         refusal = _claude_place_refusal(m, img, vn, parent, path, name); refusal === nothing || return refusal
         add_pop!(m, name; parent = parent, colour = colour, show = true, created_by = author_stamp(),
                  filter_conditions = conds)
@@ -1528,8 +1528,8 @@ function api_gating_pop_add_cluster_pops(body_bytes::Vector{UInt8})
     measure = Cecelia._cluster_measure_prefix(pt) * run
     stamp = author_stamp()
     dry = _wbool(body, "dryRun", false)
-    _with_popmap_lock() do
-        maps = [(u, ti, load_pop_map(ti; value_name = vn, pop_type = pt)) for (u, ti) in targets]
+    _with_pop_tree_lock() do
+        maps = [(u, ti, load_pop_tree(ti; value_name = vn, pop_type = pt)) for (u, ti) in targets]
         # every image's map is checked before any is changed — all or nothing
         for (u, ti, m) in maps
             held = cluster_id_owners(m, run)
@@ -1628,8 +1628,8 @@ function api_gating_pop_set_cluster_pops(body_bytes::Vector{UInt8})
     # only a population whose clusters this call replaces gives its old ones up; one renamed or recoloured
     # keeps them, so they stay held
     regrouped = Set(e.path for e in edits if e.clusters !== nothing)
-    _with_popmap_lock() do
-        maps = [(u, ti, load_pop_map(ti; value_name = vn, pop_type = pt)) for (u, ti) in targets]
+    _with_pop_tree_lock() do
+        maps = [(u, ti, load_pop_tree(ti; value_name = vn, pop_type = pt)) for (u, ti) in targets]
         for (u, ti, m) in maps
             for e in edits
                 has_pop(m, e.path) || return _pop_not_found(m, e.path)
@@ -1773,7 +1773,7 @@ end
 # tick moves it (off the holder first, then on), so a request that would put it in two is refused here
 # rather than silently double-counting its cells. Ids the population already held are not re-checked, so a
 # legacy overlap never blocks an unrelated edit.
-function _cluster_ids_taken(m::PopulationMap, path::AbstractString, new_values, old_values = nothing)
+function _cluster_ids_taken(m::PopulationTree, path::AbstractString, new_values, old_values = nothing)
     sfx = cluster_pop_suffix(m.pops[String(path)])
     sfx === nothing && return nothing
     _cluster_taken_refusal(cluster_id_owners(m, sfx; except = String(path)), _value_cluster_ids(new_values);
@@ -1799,7 +1799,7 @@ _cluster_taken_refusal(held, ids, image; kw...) = _cluster_taken_refusal(held, i
 
 # A cluster population's new path `path` on image `u`'s map → nothing, or the 409: taken on this map
 # (`pop_exists`) or by another pop type of the segmentation (`pop_name_conflict`).
-function _cluster_name_refusal(m::PopulationMap, img::CciaImage, vn, pt, path::AbstractString, u)
+function _cluster_name_refusal(m::PopulationTree, img::CciaImage, vn, pt, path::AbstractString, u)
     has_pop(m, path) && return 409, JSON3.write((; code = "pop_exists", image = u,
         error = "A population \"$path\" already exists — choose another name; an existing population is never replaced"))
     conflict = pop_name_conflict(img, vn, path; pop_type = pt)
@@ -1876,7 +1876,7 @@ claude_made(created_by, updated_by) = _via_claude(created_by) && (updated_by ===
 claude_made(p) = claude_made(p.created_by, p.updated_by)
 
 # `path` and everything under it must be Claude's; else the 403 that names what is the user's.
-function _own_subtree(m::PopulationMap, path::AbstractString)
+function _own_subtree(m::PopulationTree, path::AbstractString)
     sub = [String(path); descendants(m, path)]
     theirs = [q for q in sub if !claude_made(m.pops[q])]
     isempty(theirs) && return (sub, nothing)
@@ -1891,7 +1891,7 @@ end
 # everything under those: the populations OUTSIDE `sub` whose membership depends on `path` through a
 # boolean term. They must be Claude's too, else the 403 naming the user's — the same rule as a child.
 # (delete-own needs none of this: it refuses outright while anything combines what it would remove.)
-function _own_combinations(m::PopulationMap, path::AbstractString, sub::AbstractVector)
+function _own_combinations(m::PopulationTree, path::AbstractString, sub::AbstractVector)
     inside = Set(sub)
     combos = [q for q in pops_depending_on(m, path) if !(q in inside)]
     theirs = [q for q in combos if !claude_made(m.pops[q])]
@@ -1920,7 +1920,7 @@ end
 # The reply every own-gate write gives: the population's counts on the map just written — or, for a
 # `dryRun`, on the map in hand, which is never saved. One recompute on the edited map either way, so a
 # preview and the write it previews report the same numbers.
-function _claude_gate_reply(m::PopulationMap, img::CciaImage, body, vn, path::AbstractString)
+function _claude_gate_reply(m::PopulationTree, img::CciaImage, body, vn, path::AbstractString)
     dry = _wbool(body, "dryRun", false)
     if !dry
         saved = _persist_and_broadcast!(m, img, body, vn, "flow")
@@ -1947,8 +1947,8 @@ function api_gating_pop_set_own_gate(body_bytes::Vector{UInt8})
     isempty(path) && return _gerr(422, "path required")
     gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
     gerr === nothing || return _gerr(422, gerr)
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = "flow")
         has_pop(m, path) || return _pop_not_found(m, path)
         sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
         combos, refusal = _own_combinations(m, path, sub); refusal === nothing || return refusal
@@ -1971,15 +1971,15 @@ function api_gating_pop_delete_own(body_bytes::Vector{UInt8})
     pt = _wstr(body, "popType", "flow")
     (pt == "flow" || Cecelia._is_cluster_pop_type(pt)) ||
         return _gerr(422, "popType must be flow or a cluster type: $(join(CLUSTER_POP_TYPES, ", "))")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         has_pop(m, path) || return _pop_not_found(m, path)
         sfx = cluster_pop_suffix(m.pops[String(path)])
-        targets = Tuple{CciaImage,PopulationMap}[(img, m)]
+        targets = Tuple{CciaImage,PopulationTree}[(img, m)]
         if sfx !== nothing
             for (u, ti) in first(_cluster_run_images(_wstr(body, "projectUid"), img, vn, pt, sfx))
                 u == img.uid && continue
-                tm = load_pop_map(ti; value_name = vn, pop_type = pt)
+                tm = load_pop_tree(ti; value_name = vn, pop_type = pt)
                 has_pop(tm, path) && push!(targets, (ti, tm))
             end
         end
@@ -2094,8 +2094,8 @@ end
 function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     (haskey(body, "path") && haskey(body, "gate")) || return _gerr(400, "path and gate required")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         try
             set_gate!(m, String(body["path"]), gate_from_spec(_gate_spec_auto(body["gate"], img, vn, pt)))
@@ -2113,8 +2113,8 @@ end
 function api_gating_pop_delete(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "path") || return _gerr(400, "path required")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         _path = String(body["path"])
         _children_only = _wbool(body, "childrenOnly", false)
@@ -2135,8 +2135,8 @@ end
 function api_gating_pop_update(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "path") || return _gerr(400, "path required")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         p = pop_at(m, String(body["path"]))
         # showing/hiding is looking, not editing; anything else here is the user's edit
@@ -2200,8 +2200,8 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
     _conflict === nothing || return _gerr(400,
         "A $_conflict population named \"$_newName\" already exists in this segmentation — names must be " *
         "unique across population types so a population can be selected unambiguously. Choose another name.")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         stamp_edit!(m, String(body["path"]))
         newpath = try
@@ -2230,8 +2230,8 @@ function api_gating_pop_move(body_bytes::Vector{UInt8})
     _conflict === nothing || return _gerr(400,
         "A $_conflict population already exists at \"$_newpath\" in this segmentation — names must be " *
         "unique across population types so a population can be selected unambiguously. Rename it first.")
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
         has_pop(m, _path) || return _pop_not_found(m, _path)
         stamp_edit!(m, _path)
         newpath = try
@@ -2268,7 +2268,7 @@ function api_gating_copy(body_bytes::Vector{UInt8})
     end
     r = try
         copy_gating!(img, targets; value_name = vn, pop_type = pt,
-                     on_copied = (timg, m) -> _broadcast_popmap(proj, timg.uid, vn, pt, m, timg))
+                     on_copied = (timg, m) -> _broadcast_pop_tree(proj, timg.uid, vn, pt, m, timg))
     catch e
         e isa ArgumentError || rethrow()
         return _gerr(400, "Source image has no $pt gating to copy")

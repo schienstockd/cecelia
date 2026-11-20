@@ -230,9 +230,9 @@ end
         cp(h5, joinpath(td, "labelProps", "B.h5ad"))
         img = CciaImage(uid="KDIeEm", dir=td)
         img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         run(ps) = Cecelia._run_task(DetectAggregates(), img, Dict{String,Any}(ps...); on_log = _ -> nothing)
         obs() = col_names(label_props(img; value_name="B"); data_type = :obs)
         @test run(["pops" => ["B/all"], "aggregateName" => "clumps", "clustDiameter" => 30.0, "minCells" => 3]) !== nothing
@@ -251,7 +251,7 @@ end
         @test !any(iso .& (coalesce.(d[!, "flow.cell.is.aggregate#single"], 0.0) .> 0)) # never both
         @test all(≥(1), skipmissing(filter(!isnan, d[iso, "flow.cell.aggregate.frames#single"])))
         # both runs' populations exist under the input pop
-        pm = load_pop_map(img; value_name="B", pop_type="flow")
+        pm = load_pop_tree(img; value_name="B", pop_type="flow")
         @test all(p -> p in pop_paths(pm), ["/all/_aggregated_clumps", "/all/_isolated_single"])
         # re-run "single" without linking: its event columns go, "clumps" is untouched
         before = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id#clumps"]) |> as_df
@@ -275,9 +275,9 @@ end
     else
         img = Cecelia._load_image(fx.dir)
         @test img_is_calibrated(img)
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         res = Cecelia._run_task(DetectAggregates(), img,
                                 Dict{String,Any}("pops" => ["B/all"], "clustDiameter" => 30.0, "minCells" => 3);
                                 on_log = _ -> nothing)
@@ -360,10 +360,10 @@ end
         full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0", "centroid_t"]) |> as_df
         @test length(unique(full.centroid_t)) > 1
         thr = sort(full.mean_intensity_0)[cld(nrow(full), 2)]
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "hi"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", thr, 1e12, -1e12, 1e12))
         add_pop!(m, "lo"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, thr, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         res = Cecelia._run_task(CellContacts(), img,
                                 Dict{String,Any}("popsA" => ["B/hi"], "popsB" => ["B/lo"], "maxContactDist" => 10.0);
                                 on_log = _ -> nothing)
@@ -419,12 +419,12 @@ end
         full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
         v = sort(full.mean_intensity_0); t1 = v[cld(nrow(full), 3)]; t2 = v[cld(2 * nrow(full), 3)]
         for vn in ("B", "C")
-            m = PopulationMap(pop_type="flow", value_name=vn)
+            m = PopulationTree(pop_type="flow", value_name=vn)
             band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
             add_pop!(m, "lo"; gate=band(-1e12, t1))
             add_pop!(m, "mid"; gate=vn == "B" ? band(t1, t2) : band(t2, 1e12))
             add_pop!(m, "hi"; gate=band(t2, 1e12)); add_pop!(m, "none"; gate=band(1e11, 1e12))
-            save_pop_map!(m, img)
+            save_pop_tree!(m, img)
         end
         labs(pop) = Set(Int.(pop_df(img, "flow", ["B/$(pop)"]; value_name="B").label))
         run(popsB; kw...) = Cecelia._run_task(CellContacts(), img,
@@ -494,11 +494,11 @@ end
         td = mktempdir()
         cp(fixture_path("CONTMESH"), joinpath(td, "CONTMESH"))
         img = Cecelia._load_image(joinpath(td, "CONTMESH", "1", "CtMsh1"))
-        m = PopulationMap(pop_type="flow", value_name="seg")
+        m = PopulationTree(pop_type="flow", value_name="seg")
         band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
         add_pop!(m, "A"; gate=band(50, 150)); add_pop!(m, "near"; gate=band(150, 250))
         add_pop!(m, "far"; gate=band(250, 350))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         logs = String[]
         run(popsB; combine = false) = Cecelia._run_task(ContactsMeshes(), img,
             Dict{String,Any}("popsA" => ["seg/A"], "popsB" => popsB, "maxContactDist" => 5.0,

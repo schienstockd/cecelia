@@ -117,7 +117,7 @@ const gatePath = g => `${g.parent ?? ''}/${g.name}`
 async function addGate(api, projectUid, imageUid, g, srcImageDir) {
   const valueName = g.segmentation ?? 'cells', popType = g.popType ?? 'flow'
   const q = `projectUid=${projectUid}&imageUid=${imageUid}&valueName=${valueName}&popType=${popType}`
-  const tree = (await api(`/api/gating/popmap?${q}`)).body.tree
+  const tree = (await api(`/api/gating/pop-tree?${q}`)).body.tree
   // the parent's populations (docs/API.md's `{name,gate,filter,children}` is each node below the root's)
   let level = tree?.populations ?? []
   for (const step of (g.parent ?? '').split('/').filter(Boolean)) level = level.find(c => c.name === step)?.children ?? []

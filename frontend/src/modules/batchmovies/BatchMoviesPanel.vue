@@ -256,7 +256,7 @@ async function loadObs() {
 }
 watch(() => [props.selectedUids[0], segNames.value[0]] as const, loadObs, { immediate: true })
 
-// ── populations to draw (paths from the representative image's popmap) ─────────
+// ── populations to draw (paths from the representative image's pop tree) ─────────
 // The batch shares ONE config across the selection, but pop paths live per-image. Fetching the
 // representative image (first selected) is enough — the backend clamps unknown paths per image, and
 // a batch designed around a set typically has parallel pop trees. Refreshes when the image, the
@@ -275,7 +275,7 @@ async function loadPopPaths() {
   if (!uid || !projectUid || !seg || !pt) { popPaths.value = []; return }
   try {
     const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(seg)}&popType=${encodeURIComponent(pt)}`
-    const res = await fetch(`/api/gating/popmap?${q}`)
+    const res = await fetch(`/api/gating/pop-tree?${q}`)
     if (!res.ok) { popPaths.value = []; return }
     const j = await res.json() as { tree?: PopTree }
     const out: { path: string; label: string; uid: string }[] = []

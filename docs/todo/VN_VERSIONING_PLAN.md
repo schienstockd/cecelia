@@ -291,15 +291,15 @@ versions when frozen").
 
 **Touchpoints.**
 
-- `app/src/gating/popmanager/population.jl` — `PopulationMap` grows two optional fields:
+- `app/src/gating/popmanager/population.jl` — `PopulationTree` grows two optional fields:
   `authored_labels_version::Union{String,Nothing}` (persisted breadcrumb) and
   `pinned_labels_version::Union{String,Nothing}` (session-only, not persisted).
 - `app/src/gating/popmanager/persistence.jl` — `to_tree` emits `authored_labels_version` when set;
-  `from_tree` reads it. New `save_pop_map!(m, img)` overload stamps
+  `from_tree` reads it. New `save_pop_tree!(m, img)` overload stamps
   `resolve_version(img, :label_props, m.value_name)` before writing.
 - `api/src/gating_api.jl` — `_live_map(img, vn, pop_type; labels_version=nothing)` and every
   `label_props(img; value_name=vn)` call in the file thread the optional `version` kwarg. Every
-  gating GET/POST accepts an optional `labelsVersion` query/body param. `api_gating_popmap` returns
+  gating GET/POST accepts an optional `labelsVersion` query/body param. `api_gating_pop_tree` returns
   `authoredLabelsVersion` + `currentLatestLabelsVersion` so the frontend can decide banner rendering.
 - Frontend — gating module renders the drift banner from state; the two buttons set/clear a
   session ref that stamps `labelsVersion=vN` on every subsequent gating request. `pi-lock` badge

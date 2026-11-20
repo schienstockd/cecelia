@@ -107,7 +107,7 @@ function board_spec_populations(proj::CciaProject;
     for s in proj._sets, img in images(s); push!(imgs, img); end
     isempty(imgs) && return Dict{String,String}()
     names_for = img -> versioned_keys(img.label_props)
-    load_map  = (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt)
+    load_map  = (img, vn, pt) -> load_pop_tree(img; value_name = vn, pop_type = pt)
     # A derived `/_tracked` only where it is informative (the pop holds tracks no sub-population
     # already holds) — the same rule the picker applies, so we never accept a population the user
     # cannot select (plotting_api.jl `tracked_ok`). Cached per (image, value_name): the answer covers

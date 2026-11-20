@@ -210,10 +210,10 @@ end
         @test all(>(0.97), tracks[!, "live.track.straightness"])
 
         # ── 3. gate: CD4-high, a rectangle on the two channel means ─────────────────────────────
-        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        m = load_pop_tree(img; value_name = vn, pop_type = "flow")
         add_pop!(m, "cd4hi"; gate = RectangleGate("mean_intensity_0", "mean_intensity_1",
                                                   600.0, 1e9, -1e9, 1e9))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         gated = pop_df(img, "flow", ["/cd4hi"]; value_name = vn, centroids = :pixel)
         # fails if the gate evaluates on the wrong channel or the wrong cells: exactly the CD4-high
         # cells, in every frame

@@ -9,7 +9,7 @@
     df = DataFrame(label=[1, 2, 3, 4, 5], x=[1.0, 6, 6, 9, 9], track_id=[0, 5, 9, 0, 7])
 
     # flow: parent (x≥0) ∩ child (x≥5)
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "p"; gate=RectangleGate("x", "x", 0.0, 1e9, -1e9, 1e9))
     add_pop!(m, "c"; parent="/p", gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))
     recompute!(m, _ -> df)
@@ -18,19 +18,19 @@
     @test pop_stats(m, "/p/c").pct_parent == 80.0
 
     # filtered (tracked) pop: track_id > 0
-    mt = PopulationMap(pop_type="live", value_name="T")
+    mt = PopulationTree(pop_type="live", value_name="T")
     add_pop!(mt, "tracked"; filter_measure="track_id", filter_fun="gt", filter_values=0)
     recompute!(mt, _ -> df)
     @test cells_in_pop(mt, "/tracked") == [2, 3, 5]
 
-    @test_throws ErrorException cells_in_pop(PopulationMap(), "/x")  # not recomputed
+    @test_throws ErrorException cells_in_pop(PopulationTree(), "/x")  # not recomputed
 end
 
 # ── explicit-label membership (pick selection) + transient not persisted ─
 @testset "explicit-label (pick selection) membership" begin
     df = DataFrame(label=[1, 2, 3, 4, 5], x=[1.0, 6, 6, 9, 9])
 
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "p"; gate=RectangleGate("x", "x", 5.0, 1e9, -1e9, 1e9))   # x≥5 → 2,3,4,5
     # transient pick selection of labels {2,4,9} ∩ parent(x≥5) → {2,4}
     add_pop!(m, "pick"; parent="/p", explicit_labels=[2, 4, 9],
@@ -39,15 +39,15 @@ end
     @test cells_in_pop(m, "/p/pick") == [2, 4]              # 9 absent, 3/5 not selected
 
     # root-level selection (no gate parent): exactly the labels present
-    m2 = PopulationMap(pop_type="flow", value_name="B")
+    m2 = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m2, "sel"; explicit_labels=[1, 3, 99], transient=true)
     recompute!(m2, _ -> df)
     @test cells_in_pop(m2, "/sel") == [1, 3]
 
     # transient pops are NOT written to disk, but stay in the in-memory/broadcast tree
     td = mktempdir()
-    save_pop_map!(m, td)
-    reloaded = load_pop_map(td, "B")
+    save_pop_tree!(m, td)
+    reloaded = load_pop_tree(td, "B")
     @test !has_pop(reloaded, "/p/pick")                     # dropped on persist
     @test has_pop(reloaded, "/p")                           # real pop kept
     @test "transient" in keys(Cecelia._node_dict(m, "/p/pick"))  # flagged in broadcast tree
@@ -136,8 +136,8 @@ end
 # scaled with THIS image's µm/px, so one gate means one physical region on every image.
 @testset "spatial gate units" begin
     # ── the stamp round-trips, and a legacy file (no stamp) reads as px ──
-    @test PopulationMap().spatial_unit == SPATIAL_UNIT_PX
-    let m = PopulationMap(; spatial_unit=SPATIAL_UNIT_UM)
+    @test PopulationTree().spatial_unit == SPATIAL_UNIT_PX
+    let m = PopulationTree(; spatial_unit=SPATIAL_UNIT_UM)
         @test to_tree(m)["spatial_unit"] == SPATIAL_UNIT_UM
         @test from_tree(to_tree(m)).spatial_unit == SPATIAL_UNIT_UM
     end
@@ -156,26 +156,26 @@ end
         img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
 
         # brand-new map on a calibrated image → µm, with that image's sizes attached
-        m0 = load_pop_map(img; value_name="B", pop_type="flow")
+        m0 = load_pop_tree(img; value_name="B", pop_type="flow")
         @test m0.spatial_unit == SPATIAL_UNIT_UM
         @test m0.physical_sizes == [1.0, 0.5, 0.25]
 
         # an EXISTING intensity-only file (stamped px, as every pre-change file is) is upgraded
-        mpx = PopulationMap(; pop_type="flow", value_name="B", spatial_unit=SPATIAL_UNIT_PX)
+        mpx = PopulationTree(; pop_type="flow", value_name="B", spatial_unit=SPATIAL_UNIT_PX)
         add_pop!(mpx, "hi"; gate=RectangleGate("area", "mean_intensity_0", 0., 1., 0., 1.))
-        save_pop_map!(mpx, td)
-        @test load_pop_map(img; value_name="B", pop_type="flow").spatial_unit == SPATIAL_UNIT_UM
+        save_pop_tree!(mpx, td)
+        @test load_pop_tree(img; value_name="B", pop_type="flow").spatial_unit == SPATIAL_UNIT_UM
 
         # …but one that ALREADY holds a position gate keeps px — re-stamping would move its coordinates
-        msp = PopulationMap(; pop_type="flow", value_name="B", spatial_unit=SPATIAL_UNIT_PX)
+        msp = PopulationTree(; pop_type="flow", value_name="B", spatial_unit=SPATIAL_UNIT_PX)
         add_pop!(msp, "pos"; gate=RectangleGate("centroid_x", "centroid_y", 0., 500., 0., 400.))
-        save_pop_map!(msp, td)
-        @test load_pop_map(img; value_name="B", pop_type="flow").spatial_unit == SPATIAL_UNIT_PX
+        save_pop_tree!(msp, td)
+        @test load_pop_tree(img; value_name="B", pop_type="flow").spatial_unit == SPATIAL_UNIT_PX
 
         # an UNCALIBRATED image adopts nothing and carries no sizes (no µm to convert to)
         u = CciaImage(uid="UNCAL", dir=mktempdir())
         u.label_props["B"] = "B.h5ad"; u.label_props["_active"] = "B"
-        let mu = load_pop_map(u; value_name="B", pop_type="flow")
+        let mu = load_pop_tree(u; value_name="B", pop_type="flow")
             @test mu.spatial_unit == SPATIAL_UNIT_PX
             @test mu.physical_sizes === nothing
         end
@@ -192,7 +192,7 @@ end
                       "centroid_y" => [0.0, 0.0, 0.0])
     fetch = _ -> cells
     mk(unit, sizes) = begin
-        m = PopulationMap(; pop_type="flow", value_name="B", spatial_unit=unit, physical_sizes=sizes)
+        m = PopulationTree(; pop_type="flow", value_name="B", spatial_unit=unit, physical_sizes=sizes)
         add_pop!(m, "sel"; gate=RectangleGate("centroid_x", "centroid_y", 40.0, 110.0, -1.0, 1.0))
         recompute!(m, fetch)
         m
@@ -204,7 +204,7 @@ end
     # the caller's frame is never mutated by the scaling (recompute! copies)
     @test cells.centroid_x == [100.0, 200.0, 300.0]
     # an intensity-only gate is untouched by any of this
-    let m = PopulationMap(; spatial_unit=SPATIAL_UNIT_UM, physical_sizes=[1.0, 0.5, 0.5])
+    let m = PopulationTree(; spatial_unit=SPATIAL_UNIT_UM, physical_sizes=[1.0, 0.5, 0.5])
         add_pop!(m, "hi"; gate=RectangleGate("area", "perim", 5.0, 15.0, 0.0, 100.0))
         recompute!(m, _ -> DataFrame("label" => [1, 2, 3], "area" => [1.0, 10.0, 20.0],
                                      "perim" => [1.0, 1.0, 1.0]))
@@ -212,7 +212,7 @@ end
     end
 
     # ── has_spatial_gate: which strategies need the target image to be calibrated to copy ──
-    g(f) = (m = PopulationMap(); f(m); m)
+    g(f) = (m = PopulationTree(); f(m); m)
     @test has_spatial_gate(g(m -> add_pop!(m, "s";
         gate=RectangleGate("centroid_x", "centroid_y", 0., 1., 0., 1.))))
     @test has_spatial_gate(g(m -> add_pop!(m, "m";      # y axis alone is enough
@@ -227,5 +227,5 @@ end
         gate=RectangleGate("centroid_t", "area", 0., 1., 0., 1.))))
     @test !has_spatial_gate(g(m -> add_pop!(m, "n";
         filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)))
-    @test !has_spatial_gate(PopulationMap())
+    @test !has_spatial_gate(PopulationTree())
 end

@@ -93,10 +93,10 @@ function _gating_qc_fixture(f)
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
         imgs = [init_object("testpr", u) for u in ("KDIeEm", "GqcImB", "GqcImC")]
         for (img, thr) in zip(imgs, (0, 0, 10^9))          # the third image's /sub selects nothing
-            m = load_pop_map(img; value_name = "B", pop_type = "flow")
+            m = load_pop_tree(img; value_name = "B", pop_type = "flow")
             add_pop!(m, "sub"; filter_measure = "label", filter_fun = "gt", filter_values = thr)
             add_pop!(m, "gone"; filter_measure = "no_such_column", filter_fun = "gt", filter_values = 0)
-            save_pop_map!(m, img)
+            save_pop_tree!(m, img)
         end
         set = Cecelia.CciaSet("GqcSet", "gating-qc", [i.uid for i in imgs], Dict{String,Any}(),
                               mktempdir(), imgs)
@@ -128,8 +128,8 @@ end
         log = read_lab_log(proj)
         @test occursin("Cohort check", log) && occursin("gating.flow (B)", log) && occursin("GqcImC", log)
         # the gate fixed on the third image → a re-check clears its empty-pop finding
-        m = load_pop_map(imgs[3]; value_name = "B", pop_type = "flow")
-        set_filter = m.pops["/sub"]; set_filter.filter_values = 0; save_pop_map!(m, imgs[3])
+        m = load_pop_tree(imgs[3]; value_name = "B", pop_type = "flow")
+        set_filter = m.pops["/sub"]; set_filter.filter_values = 0; save_pop_tree!(m, imgs[3])
         gating_qc!(set, "flow")
         @test [String(f[:code]) for f in read_qc(imgs[3], "gating.flow", "B")[:findings]] == ["gating.missing_column"]
         # the check button can reach it
