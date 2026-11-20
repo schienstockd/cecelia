@@ -714,6 +714,7 @@ end
     # nothing to draw: no lens, a zero radius, or none of its channels in this image
     @test lens_state(nothing, names) === nothing
     @test lens_state(Dict("x" => 1, "y" => 2, "r" => 0, "channels" => ["CD3"]), names) === nothing
+    @test lens_state(Dict("x" => 1, "y" => 2, "r" => 0.5, "channels" => ["CD3"]), names) === nothing   # under a pixel, as the Kiwi schema
     @test lens_state(Dict("x" => 1, "y" => 2, "r" => 5, "channels" => ["FOXP3"]), names) === nothing
     # no channels picked = the spotlight lens: kept, with no channels (lens.wgsl dims the rest)
     @test lens_state(Dict("x" => 1, "y" => 2, "r" => 5, "channels" => String[]), names)["channels"] == Int[]

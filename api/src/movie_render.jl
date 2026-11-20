@@ -104,13 +104,14 @@ _specs_payload(specs) = [begin
 # The channel lens of a look or a view state — `{x, y, r, channels}`, centre and radius in level-0 image
 # px (pinned to the tissue), `channels` the lens's channel names (a list, or a look's name → colormap) —
 # → the renderer's per-state `lens`: the same geometry, the channels as 0-based indices into
-# `ch_names`. `nothing` when there is none, it is malformed, or none of its channels is in the image.
+# `ch_names`. `nothing` when there is none, it is malformed (a radius under one pixel too — the Kiwi
+# schema's `r >= 1`, `kiwiRef.schema.json`), or none of its channels is in the image.
 # Drawn by `shaders/lens.wgsl`; the frontend half is `utils/viewer/channelLens.ts`.
 function lens_state(lens, ch_names)
     (lens isa AbstractDict && ch_names !== nothing) || return nothing
     g(k) = get(lens, k, get(lens, Symbol(k), nothing))
     x, y, r = g("x"), g("y"), g("r")
-    (x isa Real && y isa Real && r isa Real && isfinite(x) && isfinite(y) && isfinite(r) && r > 0) ||
+    (x isa Real && y isa Real && r isa Real && isfinite(x) && isfinite(y) && isfinite(r) && r >= 1) ||
         return nothing
     chs = g("channels")
     names = chs isa AbstractDict ? Set(String(string(k)) for k in keys(chs)) :

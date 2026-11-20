@@ -51,7 +51,12 @@ export interface WebgpuBlock {
   zWindow?: ZWindow
   t: number
   valueName: string
+  /** A pinned channel lens, level-0 px (`useVwLens`). Absent = not pinned. */
+  lensPin?: LensPin
 }
+
+/** Where a pinned lens sits on the tissue, level-0 px. */
+export interface LensPin { x: number; y: number }
 
 export interface ZWindow { on: boolean; half: number }
 
@@ -78,11 +83,12 @@ export interface CaptureInput {
   zWindow?: ZWindow
   t: number
   valueName: string
+  lensPin?: LensPin
 }
 
 /** Build the JSON to write. Never throws. */
 export function captureViewState(input: CaptureInput): ViewerViewState {
-  const { meta, channels, cam, mode, zPlane, zRange, zWindow, t, valueName } = input
+  const { meta, channels, cam, mode, zPlane, zRange, zWindow, t, valueName, lensPin } = input
   const webgpu: WebgpuBlock = {
     channels: channels.map(ch => ({
       hex: channelHexFrom(ch.lut),
@@ -96,6 +102,7 @@ export function captureViewState(input: CaptureInput): ViewerViewState {
     ...(zWindow ? { zWindow: { on: !!zWindow.on, half: zWindow.half } } : {}),
     t,
     valueName,
+    ...(lensPin ? { lensPin: { x: lensPin.x, y: lensPin.y } } : {}),
   }
   const layers: Record<string, ViewerLayerProps> = {}
   for (let c = 0; c < channels.length; c++) {
@@ -123,6 +130,8 @@ export interface ApplyTarget {
   applyZ(zPlane: number, zRange: [number, number]): void
   /** Optional — only the viewer that owns the window control restores it. */
   applyZWindow?(on: boolean, half: number): void
+  /** Optional — only the viewer that owns the lens restores its pin. */
+  applyLensPin?(pin: LensPin): void
   applyT(t: number): void
 }
 
@@ -149,6 +158,8 @@ export function applyViewState(
     }
     const zw = w.zWindow
     if (zw && Number.isFinite(zw.half) && zw.half >= 1) target.applyZWindow?.(!!zw.on, Math.round(zw.half))
+    const lp = w.lensPin
+    if (lp && Number.isFinite(lp.x) && Number.isFinite(lp.y)) target.applyLensPin?.({ x: lp.x, y: lp.y })
     if (Number.isFinite(w.t)) target.applyT(w.t)
     return
   }

@@ -1,0 +1,16 @@
+/* The floating readout card beside the pointer, shared by the cursor readout (ViewerWindow.vue) and
+   the lens chip (VwLensChip.vue) — included scoped by each (`<style scoped src>`), so one rule set
+   styles both. They hold a table, not a status line: a `.cc-card` that follows the scheme (not the
+   fixed-dark `.cc-hud-chip`), so their bare icon buttons read in either. */
+.vw-readout {
+  position: absolute; pointer-events: none; z-index: 40;
+  display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem; white-space: nowrap;
+  padding: 0.3rem 0.55rem; font-size: var(--cc-fs-xs); color: var(--cc-text);
+  box-shadow: 0 6px 18px var(--cc-shadow);
+}
+.vw-readout-head { column-gap: 0.6rem; }
+.vw-readout-cell { font-weight: 600; }
+.vw-readout-row { display: flex; align-items: center; gap: 0.35rem; }
+.vw-readout-name { flex: 1; opacity: 0.8; }
+.vw-readout-dim { opacity: 0.65; font-size: var(--cc-fs-2xs); }
+.vw-readout-val { font-variant-numeric: tabular-nums; }

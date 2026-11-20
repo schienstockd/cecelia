@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   lensRadiusRangeUm, lensRadiusUm, lensRadiusWheel, lensFetchChannels, lensChipPops, lensChipCounts, lensCircleL0, lensForRecording, lensPopCounts, lensRadiusCss, lensScreenAt, lensUniform, pointerToolChips, lensFocusView,
-  LENS_RADIUS_MIN, LENS_RIM_PX,
+  LENS_RADIUS_MIN, LENS_RIM_PX, LENS_UM_CAPS, lensCountLayer,
 } from './channelLens'
 import { VIEW_HALF_ANGLE } from '../volumeViewer'
+import { isProxy, reactive } from 'vue'
 import type { ViewerViewState } from './viewState'
 
 describe('pointerToolChips', () => {
@@ -36,6 +37,11 @@ describe('the lens radius, µm on the tissue', () => {
   const range = lensRadiusRangeUm({ nX: 2000, nY: 1000, voxelUm: [1, 1, 1] })
   it('the slider spans 1% to half the short side, starting at a tenth', () => {
     expect(range).toEqual({ min: 10, max: 500, step: 5, def: 100 })
+  })
+  it('a whole slide is capped at a tissue scale, not 1–50% of 5.8 mm', () => {
+    // a 5760 µm short side gave 60–2880 µm before the caps
+    expect(lensRadiusRangeUm({ nX: 16000, nY: 11520, voxelUm: [0.5, 0.5, 1] }))
+      .toEqual({ min: LENS_UM_CAPS.min, max: LENS_UM_CAPS.max, step: 5, def: LENS_UM_CAPS.def })
   })
   it('follows the pixel size: the same pixels at 0.5 µm halve every bound', () => {
     expect(lensRadiusRangeUm({ nX: 2000, nY: 1000, voxelUm: [0.5, 0.5, 1] })).toMatchObject({ max: 250, def: 50 })
@@ -247,5 +253,18 @@ describe('lensFocusView — a Kiwi ref reopening its pinned lens', () => {
   })
   it('is null with no view to start from', () => {
     expect(lensFocusView(null, { x: 0, y: 0, r: 10 }, 0)).toBeNull()
+  })
+})
+
+describe('lensCountLayer', () => {
+  it('hands the count plain arrays, never Vue proxies (a proxied read was ~25x slower per pointer move)', () => {
+    const live = reactive({ vn: 'cells', payload: { cells: { label: [1, 2], x: [0, 5], y: [0, 5] },
+      pops: [{ path: '/a', name: 'a', colour: '#fff', labels: [1] }] } })
+    const l = lensCountLayer(live.vn, live.payload, new Set(), 'regions')
+    expect(isProxy(l.payload)).toBe(false)
+    expect(isProxy(l.payload.cells.x)).toBe(false)
+    expect(isProxy(l.payload.pops[0].labels)).toBe(false)
+    expect(l.group).toBe('regions')
+    expect(lensChipCounts({ pops: [l], regions: [], tracks: [] }, { x: 0, y: 0, r: 1 }, [1, 1, 1], 0, [-1, -1]).cells).toBe(1)
   })
 })

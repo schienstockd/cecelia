@@ -22,6 +22,7 @@ import { cameraViewL0 } from '../viewerPick'
 import { buildFocusViewState } from './focusOnCell'
 import type { ViewerViewState } from './viewState'
 import type { ViewerRefLens } from '../kiwiRef'
+import { toRaw } from 'vue'
 import SHADER_CONSTANTS from '../../lib/webgpu/shaders/constants.json'
 
 /** The on-screen radius a reopened lens is zoomed to fit between, CSS px (`lensFocusView`). The
@@ -39,16 +40,20 @@ function niceStep(x: number): number {
 }
 
 /** The radius slider for one image, µm: from 1% to half of the image's short side, starting at a
- *  tenth of it, in round steps (about 400 of them across the short side). A lens sized on the
- *  tissue, like the population dots, so a pinned lens keeps what it holds as you zoom. */
+ *  tenth of it — capped at a tissue scale (`LENS_UM_CAPS`), so a whole slide does not get a slider
+ *  from 60 µm to 3 mm. A lens sized on the tissue, like the population dots, so a pinned lens keeps
+ *  what it holds as you zoom. Round steps, about 200 of them up to the top. */
 export interface LensRadiusRange { min: number; max: number; step: number; def: number }
+/** The most the slider's bottom, top and default reach, µm: a few cells across to a neighbourhood. */
+export const LENS_UM_CAPS = { min: 10, max: 500, def: 100 } as const
 export function lensRadiusRangeUm(meta: Pick<ViewerMeta, 'nX' | 'nY' | 'voxelUm'>): LensRadiusRange {
   const um = meta.voxelUm[0] > 0 ? meta.voxelUm[0] : 1
   const short = Math.max(1, Math.min(meta.nX, meta.nY)) * um
-  const step = niceStep(short / 400)
+  const top = Math.min(short / 2, LENS_UM_CAPS.max)
+  const step = niceStep(top / 200)
   const snap = (v: number) => Math.max(step, Math.round(v / step) * step)
-  const min = snap(short / 100), max = Math.max(snap(short / 2), min)
-  return { min, max, step, def: Math.min(max, Math.max(min, snap(short / 10))) }
+  const min = snap(Math.min(short / 100, LENS_UM_CAPS.min)), max = Math.max(snap(top), min)
+  return { min, max, step, def: Math.min(max, Math.max(min, snap(Math.min(short / 10, LENS_UM_CAPS.def)))) }
 }
 
 /** The radius in µm for this image: the setting held in its range, or the image's default while the
@@ -184,6 +189,14 @@ export interface LensCountLayer {
   hidden: ReadonlySet<string>
   /** Tags the layer's counts (`LensPopCount.group`), so one pass can be split by source after. */
   group?: string
+}
+
+/** A layer for the lens count, its payload unwrapped from Vue's reactivity (`toRaw`). The viewer
+ *  holds its layers in a deep `ref`, and the count reads every cell on every pointer move: through the
+ *  proxies that was ~216 ms a move at 170k cells, against ~8 ms on the plain arrays. */
+export function lensCountLayer(vn: string, payload: LensCountLayer['payload'], hidden: ReadonlySet<string>,
+                               group?: string): LensCountLayer {
+  return { vn, payload: toRaw(payload), hidden, ...(group ? { group } : {}) }
 }
 
 /**

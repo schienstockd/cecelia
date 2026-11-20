@@ -2793,12 +2793,14 @@ doi:10.1109/TVCG.2021.3114786); no code is taken from it.
   `settings.viewerLens`). The two pointer tools are exclusive — the one just switched on wins
   (`pointerToolChips`). 2D only, like the readout. Its radius is on the tissue, in µm, so it grows
   as you zoom in, like the population dots (`settings.viewerLensRadiusUm`; 0 = the image's default).
-  The Annotations slider spans 1% to half of the image's short side, starting at a tenth, in round
+  The Annotations slider spans 1% to half of the image's short side, starting at a tenth, capped at
+  10 µm / 500 µm / 100 µm (`LENS_UM_CAPS` — a whole slide no longer gets 60 µm to 3 mm), in round
   steps (`lensRadiusRangeUm`); a value from another image is held in this one's range, not rewritten.
   Alt+wheel over the image moves it 10% a notch (`lensRadiusWheel`).
 - **Pinning**: a click (no drag) pins the lens to the tissue (`lensPin`, level-0 px; `lensScreenAt`
   places it through the camera, so a pan or zoom carries it); a click unpins it back onto the
-  pointer. Pinned, the chip holds still and takes clicks: unpin, **@ Kiwi** (the view's Kiwi ref
+  pointer. A pin is kept with the image's viewer props (`webgpu.lensPin`, `utils/viewerProps.ts`), so a
+  reload brings it back while the lens is on. Pinned, the chip holds still and takes clicks: unpin, **@ Kiwi** (the view's Kiwi ref
   carries the lens and its channels by name — `viewerRefFor`, schema `viewer.lens`; clicking that ref
   reopens the viewer centred on the lens, zoomed so it fits the radius slider, and pins it again with
   those channels — `pointTarget` → `pendingViewState.lens` → `lensFocusView` + `placeLens`; 2D only)
