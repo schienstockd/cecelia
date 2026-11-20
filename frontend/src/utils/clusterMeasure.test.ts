@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { clusterMeasurePrefix, clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale } from './clusterMeasure'
+import { clusterMeasurePrefix, clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale,
+  claimsClusterIds, clusterPopIds } from './clusterMeasure'
 
 describe('clusterMeasure', () => {
   it('is behaviour-preserving for the existing cluster pop types', () => {
@@ -43,5 +44,27 @@ describe('isGatingPopType', () => {
     expect(clusterPopStale(undefined, '2026-11-17T09:30:00')).toBe(false)              // picked before stamps
     expect(clusterPopStale('2026-11-16T10:00:00', undefined)).toBe(false)              // a run before stamps
     expect(clusterPopStale(null, null)).toBe(false)
+  })
+})
+
+// A cluster population owns its ids only when its filter SELECTS them (Julia `_claims_values`): a
+// "Motile = clusters.movement neq 3" pop holds every cluster but 3, so it must never be drawn, ticked or
+// carded as owning 3 (shownPopsFor, PopulationManager's owner check / strip).
+describe('clusterPopIds', () => {
+  it('an in / eq / legacy (no fun) pop owns its values', () => {
+    expect(clusterPopIds({ fun: 'in', values: [1, '2'] })).toEqual([1, 2])
+    expect(clusterPopIds({ fun: 'eq', values: 3 })).toEqual([3])
+    expect(clusterPopIds({ values: [4] })).toEqual([4])
+    expect(claimsClusterIds({ fun: 'in' }) && claimsClusterIds({})).toBe(true)
+  })
+  it('a neq / gt / lt pop owns none of its values — never the cluster it excludes', () => {
+    for (const fun of ['neq', 'gt', 'gte', 'lt', 'lte']) {
+      expect(clusterPopIds({ fun, values: [3] })).toEqual([])
+      expect(claimsClusterIds({ fun })).toBe(false)
+    }
+  })
+  it('no filter or no values owns nothing', () => {
+    expect(clusterPopIds(undefined)).toEqual([])
+    expect(clusterPopIds({ fun: 'in', values: null })).toEqual([])
   })
 })

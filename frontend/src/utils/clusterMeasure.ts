@@ -30,6 +30,42 @@ export function isGatingPopType(popType: string): boolean {
   return !!popTypeInfo(popType)?.gating
 }
 
+// Does a cluster population CLAIM its `filter.values` — select exactly those ids? Only an `in`/`eq`
+// filter does (no fun = a legacy pop, always `in`). The frontend mirror of Julia `_claims_values`: a
+// `neq 3` / `gt 2` population holds everything except/above its values, so treating 3 as its own would
+// paint, tick and card exactly the cluster it excludes. Every cluster pop the manager and Claude write
+// is `in`; a raw `pop/add` is the only way to store another fun on one.
+export function claimsClusterIds(filter: { fun?: string | null } | null | undefined): boolean {
+  const f = filter?.fun
+  return f == null || f === '' || f === 'in' || f === 'eq'
+}
+
+// The cluster ids a cluster population OWNS, given the run's id `universe`.
+// Domain: an `in` filter (or legacy, no fun) is what the manager and Claude write — its values are the
+// ids. Any other fun is evaluated with ONE rule, the gating engine's (`_filter_mask`: `cmp(x, vals)`, the
+// stored value compared AS IS, no coercion): an id equals only the same NUMBER — a list or a string
+// ("3", [3]) is never equal to an id and an id can't be ordered against it. So `neq 3` owns every id but
+// 3, `neq [3]` / `neq "3"` own every id, `eq 3` owns 3, `eq [3]` owns none. Without a universe a
+// non-`in` pop owns none — never the ids it leaves out.
+const CMP: Record<string, (x: number, v: unknown) => boolean> = {
+  eq: (x, v) => typeof v === 'number' && x === v,
+  neq: (x, v) => !(typeof v === 'number' && x === v),
+  gt: (x, v) => typeof v === 'number' && x > v,
+  gte: (x, v) => typeof v === 'number' && x >= v,
+  lt: (x, v) => typeof v === 'number' && x < v,
+  lte: (x, v) => typeof v === 'number' && x <= v,
+}
+export function clusterPopIds(filter: { fun?: string | null; values?: unknown } | null | undefined,
+                              universe?: readonly number[]): number[] {
+  if (!filter) return []
+  const f = filter.fun, v = filter.values
+  if (f == null || f === '' || f === 'in') return Array.isArray(v) ? v.map(Number) : []
+  const cmp = CMP[f]
+  if (!cmp || v == null) return []
+  if (!universe) return f === 'eq' && typeof v === 'number' ? [v] : []
+  return universe.filter(id => cmp(id, v))
+}
+
 // A cluster population picked on an EARLIER run under the same name: its `runAt` (the run it was picked
 // on, Julia `Population.run_at`) differs from the run's own stamp (`clusterRunAt` from /api/gating/channels).
 // A re-run renumbers the clusters, so the ids it holds may now be other groups. Either stamp missing — a

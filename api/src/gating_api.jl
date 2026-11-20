@@ -643,6 +643,7 @@ function api_gating_channels(req::HTTP.Request)
         pt    = get(q, "popType", "track")
         tsfx  = _cluster_suffixes(tobs, pt)                      # trackclust runs in the track table
         tfam  = Cecelia._cluster_measure_family(pt)
+        tmem  = _same_run_members(get(q, "projectUid", ""), img, scope_vn, pt, _clust_members(tpath, tsfx, tfam))
         # WHICH of this image's segmentations actually have tracks. Every track surface needs this and
         # none of them could get it: a track view defaulting to "default" or to the ACTIVE segmentation
         # picks an UNTRACKED one on any image where tracking ran on a named label set — on the
@@ -669,13 +670,13 @@ function api_gating_channels(req::HTTP.Request)
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
             clusterSuffixes = tsfx,
             clusterFeatures = _clust_features(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
-            clusterMembers  = _clust_members(tpath, tsfx, tfam),  # uIDs clustered together (partOf)
+            clusterMembers  = tmem,         # uIDs clustered together (partOf) that still carry the run
             clusterRunAt    = _clust_run_at(tpath, tsfx, tfam),   # when each run ran — a cluster pop's staleness
             clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
             clusterAxes     = _clust_axes(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn),
                                           own_uid = img.uid),     # diffusion axis names (track runs)
             clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, scope_vn,
-                                tsfx, _clust_members(tpath, tsfx, tfam), true, pt) : Dict{String,Any}(),
+                                tsfx, tmem, true, pt) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
             valueName = scope_vn,
             popType = pt,
@@ -720,7 +721,7 @@ function api_gating_channels(req::HTTP.Request)
     csfx  = _cluster_suffixes(cobs, cpt)
     cfam  = Cecelia._cluster_measure_family(cpt)
     cpath = img_label_props_path(img, scope_vn; version = pin)
-    cmem  = _clust_members(cpath, csfx, cfam)
+    cmem  = _same_run_members(get(q, "projectUid", ""), img, scope_vn, cpt, _clust_members(cpath, csfx, cfam))
     chansPerVnF = do_intersect ? Dict{String,Any}(
         v => something(channel_names(img; value_name = v), String[]) for v in multi_vns
     ) : Dict{String,Any}()
@@ -738,7 +739,7 @@ function api_gating_channels(req::HTTP.Request)
         temporalColumns = temporal_columns(lp),          # ["centroid_t"] — groupable + a gateable time axis
         clusterSuffixes = csfx,         # clust runs (`clusters.*`) / region runs (`regions.*`) in the cell table
         clusterFeatures = _clust_features(cpath, csfx, cfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
-        clusterMembers  = cmem,         # uIDs clustered together (partOf)
+        clusterMembers  = cmem,         # uIDs clustered together (partOf) that still carry the run
         clusterRunAt    = _clust_run_at(cpath, csfx, cfam),   # when each run ran — a cluster pop's staleness
         clusterFeatureLabels = _clust_feature_labels(cpath, csfx, cfam),
         clusterIds      = _cluster_ids(get(q, "projectUid", ""), cpath, scope_vn, csfx, cmem, false, cpt),
@@ -1644,6 +1645,10 @@ function api_gating_pop_set_cluster_pops(body_bytes::Vector{UInt8})
                 has_pop(m, e.path) || return _pop_not_found(m, e.path)
                 cluster_pop_suffix(m.pops[e.path]) == run ||
                     return _gerr(422, "\"$(e.path)\" is not a population of $pt run \"$run\"")
+                # a `neq`/`gt` population doesn't hold its values: an id list written into it keeps the fun
+                # and would hold every cluster BUT those (Cecelia._claims_values)
+                (e.clusters === nothing || Cecelia._claims_values(m.pops[e.path])) ||
+                    return _gerr(422, "\"$(e.path)\" is a filter population, not a set of clusters — its clusters can't be regrouped")
                 sub, refusal = _own_subtree(m, e.path); refusal === nothing || return refusal
                 combos, refusal = _own_combinations(m, e.path, sub); refusal === nothing || return refusal
                 refusal = _unread_subtree(ti, vn, [sub; combos]); refusal === nothing || return refusal
@@ -1736,8 +1741,7 @@ function _cluster_run_images(proj::AbstractString, img::CciaImage, vn::AbstractS
     for u in members
         u == img.uid && continue
         mi = try init_object(proj, u) catch; nothing end
-        ok = mi isa CciaImage && vn in versioned_keys(mi.label_props) && _same_cluster_run(img, mi, vn, pt, run)
-        ok ? push!(targets, (u, mi)) : push!(skipped, u)
+        _in_same_cluster_run(img, mi, vn, pt, run) ? push!(targets, (u, mi)) : push!(skipped, u)
     end
     (targets, skipped)
 end
@@ -1753,6 +1757,22 @@ function _same_cluster_run(img::CciaImage, other::CciaImage, vn::AbstractString,
         return false
     a, b = cluster_run_at(p_img, run; family = fam), cluster_run_at(p_oth, run; family = fam)
     a === nothing || b === nothing || a == b
+end
+_in_same_cluster_run(img::CciaImage, mi, vn::AbstractString, pt, run::AbstractString)::Bool =
+    mi isa CciaImage && vn in versioned_keys(mi.label_props) && _same_cluster_run(img, mi, vn, pt, run)
+
+# `_clust_members` (the anchor's own `partOf`, per run) narrowed to the members that still carry the SAME
+# run — the rule `_cluster_run_images` applies for Claude's routes. The GUI replays every cluster-pop
+# tick to these images (`g.mirrorUids`), so a member re-clustered alone under the same suffix must drop
+# out here too, or the anchor run's ids land on its renumbered clusters. An empty list (a run from before
+# `partOf`) stays empty; without a project uid the members can't be opened and pass unfiltered.
+function _same_run_members(project_uid::AbstractString, img::CciaImage, vn::AbstractString, pt,
+                           members::AbstractDict)
+    isempty(project_uid) && return members
+    cache = Dict{String,Any}()
+    member(u) = get!(() -> (try init_object(project_uid, u) catch; nothing end), cache, u)
+    Dict{String,Any}(s => String[u for u in us if u == img.uid || _in_same_cluster_run(img, member(u), vn, pt, s)]
+                     for (s, us) in members)
 end
 
 # The `groups` of an add-cluster-pops request → (groups, nothing) or (nothing, the 422). Each group:
@@ -1781,17 +1801,20 @@ end
 # → the 409 naming them, or `nothing`. A cluster belongs to at most one population of a run: the manager's
 # tick moves it (off the holder first, then on), so a request that would put it in two is refused here
 # rather than silently double-counting its cells. Ids the population already held are not re-checked, so a
-# legacy overlap never blocks an unrelated edit.
+# legacy overlap never blocks an unrelated edit. A population that doesn't select its values (`neq 3`:
+# Cecelia._claims_values) adds none of them, so it is never refused for them.
 function _cluster_ids_taken(m::PopulationTree, path::AbstractString, new_values, old_values = nothing)
-    sfx = cluster_pop_suffix(m.pops[String(path)])
-    sfx === nothing && return nothing
+    p = m.pops[String(path)]
+    sfx = cluster_pop_suffix(p)
+    (sfx === nothing || !Cecelia._claims_values(p)) && return nothing
     _cluster_taken_refusal(cluster_id_owners(m, sfx; except = String(path)), _value_cluster_ids(new_values);
                            had = _value_cluster_ids(old_values), hint = " Take it out of there first.")
 end
 
-# The cluster ids in a filter's values (3, 3.0, "3" alike; anything else dropped) / a population's filter.
+# The cluster ids in a filter's values (3, 3.0, "3" alike; anything else dropped) / the ids a population
+# HOLDS — none for one that doesn't claim its values (`neq`/`gt`: Cecelia._claims_values).
 _value_cluster_ids(values) = Set{Int}(filter(!isnothing, map(as_cluster_id, Cecelia._as_value_vec(values))))
-_cluster_ids_of(p) = _value_cluster_ids(p.filter_values)
+_cluster_ids_of(p) = Cecelia._claims_values(p) ? _value_cluster_ids(p.filter_values) : Set{Int}()
 
 # The 409 `cluster_taken` for the ids of `ids` that another population holds (`held`, `cluster_id_owners`)
 # — ids in `had`, the population's own before this write, are not re-checked — or `nothing`. `image` names
