@@ -10,7 +10,7 @@ _settings_dir_for_project(project_uid::String) = joinpath(projects_dir(), projec
 # NOT base64 inside analysisBoards.json — so the board JSON stays small (autosave-friendly) and the
 # images are transparent on disk. See docs/todo/ANIMATION_PLAN.md.
 _board_assets_dir(project_uid::String) = joinpath(_settings_dir_for_project(project_uid), "board-assets")
-_valid_asset_id(id::AbstractString) = occursin(r"^[A-Za-z0-9_-]+$", id)   # guard against path traversal
+_valid_asset_id(id::AbstractString) = Cecelia.valid_uid(id)   # guard against path traversal — one rule with the app
 
 # Rendered movies (single-image / animation / batch recordings) live under {proj}/movies/ as .mp4.
 # The movie player (/movies page) lists and streams them from here. This mirrors `_movies_dir(img)`

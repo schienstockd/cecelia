@@ -57,6 +57,50 @@
     end
 end
 
+# Security audit F3: the cookie is SameSite=Lax and every localhost port is one site, so a page from
+# any other local web server carried it. The stream handler now refuses a browser request that did
+# not come from this backend's own page — fetch, binary route and WebSocket alike.
+@testset "API token gate — another localhost page is refused, cookie or not" begin
+    old = _API_TOKEN[]
+    _API_TOKEN[] = "t0ken"
+    srv = HTTP.listen!(handle_stream, "127.0.0.1", 0)
+    try
+        host = "127.0.0.1:$(HTTP.port(srv))"
+        base = "http://$host"
+        cookie = "Cookie" => "$(Cecelia.api_cookie_name(PORT))=t0ken"
+        req(m, path, h) = HTTP.request(m, base * path, h, m == "POST" ? "{}" : "";
+                                       status_exception = false, redirect = false, retry = false, cookies = false)
+        other = [cookie, "Origin" => "http://localhost:3000", "Sec-Fetch-Site" => "same-site", "Sec-Fetch-Mode" => "cors"]
+        own   = [cookie, "Origin" => base, "Sec-Fetch-Site" => "same-origin", "Sec-Fetch-Mode" => "cors"]
+
+        @test req("GET", "/api/diagnostics", own).status == 200
+        r = req("GET", "/api/diagnostics", other)
+        @test r.status == 403 && occursin("another site", String(r.body))
+        @test req("POST", "/api/plugins/install", other).status == 403          # the XSS → code sink
+        @test req("POST", "/api/repl/config", other).status == 403 && req("POST", "/api/repl", other).status == 403
+        @test req("GET", "/api/viewer/slab?projectUid=x", other).status == 403  # a binary route
+        # an old browser (no Sec-Fetch-*) is judged by Origin alone
+        @test req("GET", "/api/diagnostics", [cookie, "Origin" => "http://localhost:3000"]).status == 403
+        @test req("GET", "/api/diagnostics", [cookie, "Origin" => base]).status == 200
+        @test req("GET", "/api/health", other).status == 200                    # the launcher probe stays
+
+        ws_try(headers) = try
+            HTTP.WebSockets.open("ws://$host/ws"; headers, cookies = false) do ws end
+            nothing
+        catch e
+            e
+        end
+        refused = ws_try([cookie, "Origin" => "http://localhost:3000", "Sec-Fetch-Site" => "same-site",
+                          "Sec-Fetch-Mode" => "websocket"])
+        @test refused !== nothing && occursin("403", sprint(showerror, refused))
+        @test ws_try([cookie, "Origin" => base, "Sec-Fetch-Site" => "same-origin", "Sec-Fetch-Mode" => "websocket"]) === nothing
+        @test ws_try(["Authorization" => "Bearer t0ken"]) === nothing            # programmatic client
+    finally
+        close(srv)
+        _API_TOKEN[] = old
+    end
+end
+
 # The AI switch (AI_TOGGLE_PLAN D1, app/src/ai/ai_switch.jl): with AI off every request marked
 # `X-Cecelia-Client: claude` is refused in the stream handler — JSON routes, the binary routes that skip
 # `handle_http`, and the WebSocket upgrade — while the app's own requests go through.

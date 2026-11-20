@@ -10,7 +10,10 @@
 #   • a programmatic client (MCP, runner, preview worker, console, launchers) sends
 #     `Authorization: Bearer <token>` — it runs as you, so it reads the file (or is handed it in env);
 #   • the browser gets an HttpOnly, SameSite=Lax cookie once, from the launch link `/api/auth?token=…`
-#     that `app.py` / `api/dev.jl` open. Lax: a cross-site page's fetch / WebSocket never carries it.
+#     that `app.py` / `api/dev.jl` open. Lax keeps it off a cross-SITE page's fetch, but every
+#     `localhost` port is the SAME site — another local web server's page would carry it. So the
+#     server also refuses a browser request that did not come from its own page
+#     (`request_origin_ok`; security audit F3).
 # The cookie is named per backend port, because cookies ignore ports and two instances (dev + the
 # installed app) on one browser must not overwrite each other.
 #
@@ -97,6 +100,40 @@ function token_authorized(tok::AbstractString, authorization::AbstractString,
     end
     c = _cookie_value(cookie, api_cookie_name(port))
     c !== nothing && _token_eq(c, tok)
+end
+
+"""
+    request_origin_ok(method, path, sec_fetch_site, sec_fetch_mode, origin, host) -> Bool
+
+Did this request come from a page this backend served (or from no page at all)? The token cookie is
+`SameSite=Lax`, and to a browser every port on `localhost` is one site — so a page from any other
+local web server (a notebook, a docs preview, a dev server for something else) would send the cookie
+with its fetch, form post or WebSocket. Pure check on the raw headers:
+
+  • `Sec-Fetch-Site` (set by the browser, a page cannot forge it): `same-origin` / `none` (typed URL,
+    bookmark, launcher) pass; `same-site` / `cross-site` fail — except a plain navigation (GET/HEAD,
+    mode `navigate`) to the frontend, which loads our own page and is harmless.
+  • No `Sec-Fetch-Site` (a programmatic client, or an old browser): an `Origin`, if sent, must be this
+    host (`origin`'s authority == the `Host` header); no `Origin` passes — a non-browser client holds
+    the token itself.
+
+Vite's dev proxy forwards `Host`, `Origin` and `Sec-Fetch-Site` unchanged (`changeOrigin: false`),
+so the dev frontend is same-origin here too.
+"""
+function request_origin_ok(method::AbstractString, path::AbstractString,
+                           sec_fetch_site::AbstractString, sec_fetch_mode::AbstractString,
+                           origin::AbstractString, host::AbstractString)::Bool
+    site = lowercase(strip(sec_fetch_site))
+    site in ("same-origin", "none") && return true
+    if site in ("same-site", "cross-site")
+        api = startswith(path, "/api/") || path == "/ws"
+        return !api && method in ("GET", "HEAD") && lowercase(strip(sec_fetch_mode)) == "navigate"
+    end
+    o = strip(origin)
+    isempty(o) && return true
+    m = match(r"^[A-Za-z][A-Za-z0-9+.-]*://([^/?#]+)/?$", o)
+    m === nothing && return false                      # `null` (sandboxed frame, file://) or junk
+    lowercase(m.captures[1]) == lowercase(strip(host))
 end
 
 """

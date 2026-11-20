@@ -301,7 +301,7 @@ function bundle_info(bundle::AbstractString)
     isfile(mpath) || return nothing
     m = try JSON3.read(read(mpath, String)) catch; return nothing end
     uid = String(get(m, :projectUid, ""))
-    isempty(uid) && return nothing
+    valid_uid(uid) || return nothing
     (; uid, name = String(get(m, :projectName, uid)), exists = ispath(joinpath(projects_dir(), uid)))
 end
 
@@ -331,6 +331,13 @@ function _localise_owners!(pj::AbstractString)
     write_json_atomic(pj, d)
 end
 
+# A manifest's packed-store path: relative, no `..` segment (either separator — the bundle may come
+# from Windows), and a packed zarr store — nothing else is unpacked or deleted by import.
+_valid_packed_store(rel::AbstractString) =
+    !isempty(rel) && !isabspath(rel) && !startswith(rel, "/") && !startswith(rel, "\\") &&
+    !occursin(':', rel) && !any(==(".."), split(rel, r"[/\\]")) &&
+    endswith(rel, ".zarr" * PACKED_STORE_EXT)
+
 """
     import_project(bundle; mode, task_id, on_log, on_progress, concurrency) -> String
 
@@ -359,7 +366,17 @@ function import_project(bundle::AbstractString;
         on_log("[ERROR] system 'tar' not found — it's required to unpack the bundle."); return ""
     end
     manifest = JSON3.read(read(manifest_path, String))
-    uid    = String(manifest.projectUid)
+    uid    = String(get(manifest, :projectUid, ""))
+    packed = String.(collect(get(manifest, :packedStores, String[])))
+    # The manifest is the bundle author's text: its uid becomes a directory under projects_dir() and
+    # each packed path is unpacked then deleted, so neither may reach outside (security audit F1).
+    if !valid_uid(uid)
+        on_log("[ERROR] Bundle manifest has an invalid project id: $(repr(uid))"); return ""
+    end
+    bad = filter(!_valid_packed_store, packed)
+    if !isempty(bad)
+        on_log("[ERROR] Bundle manifest lists invalid store path(s): $(join(repr.(bad), ", "))"); return ""
+    end
     exists = ispath(joinpath(projects_dir(), uid))
     if exists && mode == "error"
         on_log("[ERROR] A project '$uid' already exists — use Replace, or remove it first."); return ""
@@ -367,7 +384,6 @@ function import_project(bundle::AbstractString;
     # "copy" → NEW uid (keep both); else the bundle's own uid.
     dest_uid = (exists && mode == "copy") ? gen_uid() : uid
     target   = joinpath(projects_dir(), dest_uid)
-    packed   = String.(collect(get(manifest, :packedStores, String[])))
     tmp = target * ".import_tmp"
     ispath(tmp) && rm(tmp; recursive = true, force = true)
 

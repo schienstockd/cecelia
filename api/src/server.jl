@@ -859,6 +859,13 @@ _request_authorized(req::HTTP.Request)::Bool =
     Cecelia.token_authorized(_API_TOKEN[], HTTP.header(req, "Authorization", ""),
                              HTTP.header(req, "Cookie", ""), PORT)
 
+# A browser request must come from a page this backend served — the Lax cookie alone does not show
+# that, because every localhost port is one site (security audit F3). Pure check in api_token.jl.
+_request_from_own_page(req::HTTP.Request, path::AbstractString)::Bool =
+    Cecelia.request_origin_ok(req.method, path, HTTP.header(req, "Sec-Fetch-Site", ""),
+                              HTTP.header(req, "Sec-Fetch-Mode", ""), HTTP.header(req, "Origin", ""),
+                              HTTP.header(req, "Host", ""))
+
 # Where `/api/auth` may redirect: a path on this server, never `//elsewhere` or a full URL.
 _safe_next(next::AbstractString)::String =
     (startswith(next, "/") && !startswith(next, "//") && !occursin('\\', next)) ? String(next) : "/"
@@ -914,6 +921,11 @@ function handle_stream(stream::HTTP.Stream)
         read(stream)
         return _write_unauthorized!(stream, path)
     end
+    if !_auth_exempt(req.method, path) && !_request_from_own_page(req, path)
+        read(stream)
+        return _write_response!(stream, 403, JSON3.write((; error = "Request from another site's page refused")),
+                                "Content-Type" => "application/json")
+    end
     # AI off ⇒ refuse every request from Claude (AI_TOGGLE_PLAN D1). Here, beside the token check,
     # because the WS upgrade and the binary routes below never reach `handle_http`.
     if _from_claude(req) && !_auth_exempt(req.method, path)
@@ -926,7 +938,7 @@ function handle_stream(stream::HTTP.Stream)
 
     if HTTP.WebSockets.isupgrade(req)
         _with_request_author(req) do
-            HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin) -> true)
+            HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(r, _) -> _request_from_own_page(r, path))
         end
         return
     end

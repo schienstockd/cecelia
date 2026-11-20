@@ -8,6 +8,15 @@ const UID_CHARS  = collect("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 gen_uid(n::Int=UID_LENGTH) = String(rand(UID_CHARS, n))
 
+"""
+    valid_uid(uid) -> Bool
+
+A uid that is safe to `joinpath` onto a directory: letters, digits, `_`, `-` only — no separator, no
+`..`, not absolute, not empty. Every uid `gen_uid` mints passes. Use it wherever a uid arrives from
+outside the process (a bundle manifest, a request) before it becomes a path. Same rule as the API's
+`_valid_asset_id`."""
+valid_uid(uid::AbstractString) = occursin(r"^[A-Za-z0-9_-]+\z", uid)
+
 # ── The websocket frame cap on both resident-Python legs — ONE number ─────────
 # Every message to/from the napari bridge and the preview worker is ONE JSON frame carrying a whole
 # payload: a label block, a set of AF-corrected channels, a contact sheet of PNGs. Both ends cap the

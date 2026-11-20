@@ -3,11 +3,13 @@
 // so the module dynamic-imports it lazily). Kept out of the SFC so the pure logic is testable
 // (frontend rule: pure logic in `utils/*.ts`).
 //
-// Trusted source — same as WhatNewCard.vue. A blackboard entry is written by (a) Claude via MCP into
-// this user's own project on this user's own machine and (b) the user editing the textarea. No third
-// party writes it, so we don't sanitize; if a `.ccbundle` from an untrusted source ever becomes a
-// distribution surface, revisit this call site.
+// UNTRUSTED source — sanitized. A blackboard entry is written by Claude via MCP (which can be steered
+// by text it read: image notes, OME-XML, another entry), by the user, or arrives inside an imported
+// `.ccbundle` (import copies `blackboard/` verbatim). Script running in this origin carries the API
+// cookie, and the API can install a plugin or enable the debug REPL — so the HTML goes through
+// `sanitizeHtml` before it reaches `v-html`. Security audit F2 (docs/todo/SECURITY_AUDIT.md).
 
+import { sanitizeHtml } from './sanitizeHtml'
 import { marked, Marked, type Tokens } from 'marked'
 
 marked.setOptions({ gfm: true, breaks: false })
@@ -72,7 +74,7 @@ function makeMarkedFor(titleById: Map<string, string>): Marked {
   })
 }
 
-/** Render a blackboard entry's markdown to HTML for `v-html`. Mermaid fences are left as
+/** Render a blackboard entry's markdown to SANITIZED HTML for `v-html`. Mermaid fences are left as
  *  `<pre><code class="language-mermaid">…</code></pre>` — the SFC finds them via `mermaidBlocks`
  *  and replaces them with rendered SVG after a dynamic mermaid import. `titleById` is optional
  *  and used ONLY to resolve `[[bb-…]]` cross-references; omit it and those render as raw text. */
@@ -81,11 +83,15 @@ export function renderBlackboardMarkdown(
   titleById?: Map<string, string>,
 ): string {
   if (!md) return ''
+  let html: string
   try {
-    if (titleById) return makeMarkedFor(titleById).parse(md, { async: false }) as string
-    return marked.parse(md, { async: false }) as string
-  } catch { return md }
+    html = titleById
+      ? makeMarkedFor(titleById).parse(md, { async: false }) as string
+      : marked.parse(md, { async: false }) as string
+  } catch { return escapeHtml(md) }
+  return sanitizeHtml(html)
 }
+
 
 /** Return the source text of every ```mermaid fence in a markdown string, in document order. Used to
  *  decide whether to dynamic-import mermaid at all — no fences ⇒ no ~1 MB paid. */
