@@ -119,7 +119,8 @@ export function channelList(acq: AcquisitionSettings | null | undefined, names?:
     id: String(c.order), order: c.order, name: chName(c, names),
     ex: c.excitationFilter ?? (c.laserLines?.length ? c.laserLines.map(l => `${fmtNum(l.wavelengthNm)} nm`).join(', ') : c.laser) ?? '—',
     em: c.emissionFilter ?? '—',
-    detector: join([c.detector, c.exposureMs != null && `${fmtNum(c.exposureMs)} ms`, c.hv != null && `HV ${fmtNum(c.hv)}`,
+    detector: join([c.detector, c.exposureMs != null && `${fmtNum(c.exposureMs)} ms`,
+                    acq?.autoHV !== true && c.hv != null && `HV ${fmtNum(c.hv)}`,
                     c.gain != null && `gain ${fmtNum(c.gain)}`]) || '—',
   }))
 }
@@ -131,24 +132,38 @@ export function filterChannelList(rows: ChannelListRow[], q: string): ChannelLis
 // ── summarised stages ───────────────────────────────────────────────────────────────────────────
 
 /** What a stage's per-channel lines add up to, by stage key. */
-function stageSummary(key: string, chans: AcquisitionChannel[]): LightPathItem[] {
+function stageSummary(key: string, acq: AcquisitionSettings | null | undefined): LightPathItem[] {
+  const chans = acq?.channels ?? []
   const file = (text: string): LightPathItem[] => (text ? [{ text, source: 'file' }] : [])
   const count = (k: number, one: string, many: string) => (k > 0 ? `${k} ${k === 1 ? one : many}` : null)
   const gain = range(chans.map(c => c.gain))
   switch (key) {
-    case 'illumination':
-      return file(count(distinct(chans.map(c => c.excitationFilter)).length, 'excitation band', 'excitation bands') ?? '')
+    case 'illumination': {
+      const int = range(chans.map(c => c.illuminationIntensity))
+      return file(join([count(distinct(chans.map(c => c.excitationFilter)).length, 'excitation band', 'excitation bands'),
+                        int && `intensity ${int}`]))
+    }
+    case 'pinhole': {
+      const au = range(chans.map(c => c.pinholeAiry)), um = range(chans.map(c => c.pinholeUm))
+      return file(join([au && `${au} AU`, um && `${um} µm`]))
+    }
     case 'filters': {
+      // Per-channel beam splitters (a `.czi` with no shared dichroic slots) are channel lines in the
+      // full stage, so the summary names the distinct ones — the same set the card's track groups show
+      // (same gate as the full stage: no shared dichroic slot, and no widefield cubes replacing the stage)
+      const splitters = (acq?.dichroics ?? []).length > 0 || chans.some(c => c.filterCube) ? [] : distinct(chans.flatMap(c => c.beamSplitters ?? []))
       const text = join([count(distinct(chans.map(c => c.filterCube)).length, 'filter set', 'filter sets'),
                          count(distinct(chans.map(c => c.emissionFilter)).length, 'emission band', 'emission bands')])
-      return text ? file(text) : [{ text: 'Emission filters not recorded', source: 'missing' }]
+      return [...(splitters.length ? file(`Beam splitters: ${splitters.join(' · ')}`) : []),
+              ...(text ? file(text) : [{ text: 'Emission filters not recorded', source: 'missing' as const }])]
     }
     case 'camera': {
       const exp = range(chans.map(c => c.exposureMs))
       return file(join([exp && `exposure ${exp} ms`, gain && `gain ${gain}`]))
     }
     case 'detectors': {
-      const hv = range(chans.map(c => c.hv))
+      // under Auto HV the recorded HV is not a setting (FV4000 records 0); the stage's Auto HV line says so
+      const hv = acq?.autoHV === true ? null : range(chans.map(c => c.hv))
       return file(join([count(distinct(chans.map(c => c.detector)).length, 'detector', 'detectors'), hv && `HV ${hv}`, gain && `gain ${gain}`]))
     }
     case 'processing':
@@ -165,12 +180,11 @@ function stageSummary(key: string, chans: AcquisitionChannel[]): LightPathItem[]
  */
 export function summariseStages(stages: LightPathStage[], acq: AcquisitionSettings | null | undefined,
                                 selected: number | null): LightPathStage[] {
-  const chans = acq?.channels ?? []
   return stages.map(s => {
     const perChannel = s.items.filter(i => i.channel != null)
     if (perChannel.length === 0) return s
     const own = s.items.filter(i => i.channel == null)
-    const summary = stageSummary(s.key, chans)
+    const summary = stageSummary(s.key, acq)
     const measured: LightPathItem[] = perChannel.some(i => i.source === 'measured') && selected == null
       ? [{ text: 'Measured per channel: select one below', source: 'measured' }] : []
     return { ...s, items: [...own, ...summary, ...measured, ...perChannel.filter(i => i.channel === selected)] }
