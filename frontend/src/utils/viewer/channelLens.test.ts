@@ -133,6 +133,14 @@ describe('lensPopCounts', () => {
       pops: [{ key: 'cyto|/T', name: 'T', colour: '#f00', n: 2 }, { key: 'cyto|/B', name: 'B', colour: '#00f', n: 1 }],
     })
   })
+  it('a cell on an integer voxel z counts on that plane at a 0.7 µm z step', () => {
+    // 3 × 0.7 / 0.7 is 2.999… in doubles: a bare floor counted the cell on plane 2, where it is not drawn.
+    const l = layer()
+    l.payload.cells.z = [3 * 0.7, 3 * 0.7, 3 * 0.7, 3 * 0.7, 0]
+    const vox07: [number, number, number] = [0.5, 0.5, 0.7]
+    expect(lensPopCounts([l], circle, vox07, 0, [3, 3]).cells).toBe(3)
+    expect(lensPopCounts([l], circle, vox07, 0, [2, 2]).cells).toBe(0)
+  })
   it('a hidden population is left out; the cell total still counts its cells', () => {
     const got = lensPopCounts([layer(['/B'])], circle, vox, 0, [0, 1])
     expect(got.pops.map(p => p.name)).toEqual(['T'])

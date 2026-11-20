@@ -220,6 +220,21 @@ export const branchTypeColour = (type: number): string => BRANCH_TYPE_COLOURS[ty
  *  (`_BRANCH_TYPE_POP_NAME`, pinned to this JSON by the API suite). */
 export const BRANCH_TYPE_NAMES: readonly string[] = palettesJson.branchTypeNames
 
+/**
+ * The z PLANE a µm z coordinate sits on: plane k covers [k, k+1) voxels, the convention the slab
+ * route indexes with and the movie renderer floors native voxel z by. Not a bare
+ * `Math.floor(zUm / vz)`: centroids arrive as `voxel z × voxelUm[2]` (`scale_centroids!`), and
+ * dividing back is not exact — `(3 × 0.7) / 0.7` is 2.9999…, which floors one plane low, so a cell
+ * on plane 3 drew on plane 2 in the viewer and on plane 3 in a recorded movie. A quotient within
+ * `PLANE_SNAP` of an integer is that integer; anything else floors.
+ */
+const PLANE_SNAP = 1e-3
+export function zPlaneOf(zUm: number, vz: number): number {
+  const q = zUm / (vz || 1)
+  const k = Math.round(q)
+  return Math.abs(q - k) < PLANE_SNAP ? k : Math.floor(q)
+}
+
 /** Floats per point instance: x, y, z (µm), r, g, b, plane. */
 export const POINT_STRIDE = 7
 
@@ -334,9 +349,9 @@ export function buildPointBufferLayers(
     data[o + 4] = cols[i * 3 + 1]
     data[o + 5] = cols[i * 3 + 2]
     // Which z PLANE this centroid sits on, so the 2D view can match it against the plane on screen.
-    // Floor, not round: a plane covers [k, k+1) in voxel units, which is the same convention the slab
-    // route indexes with.
-    data[o + 6] = z && z.length ? Math.floor(z[r] / vz) : 0
+    // Floor, not round — a plane covers [k, k+1) voxels — through `zPlaneOf`, which undoes the µm
+    // round trip first.
+    data[o + 6] = z && z.length ? zPlaneOf(z[r], vz) : 0
     const k = tp(i)
     if (k !== cur) { cur = k; ranges.set(k, [n, 0]) }
     const range = ranges.get(k)!
@@ -617,7 +632,7 @@ export function buildTrackBuffer(
     data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
     // The plane of the segment's END, so the 2D view keeps a tail that arrives on the plane you are
     // looking at. Judging by the start instead would drop the segment that brought the cell here.
-    data[o + 9] = z && z.length ? Math.floor(z[b] / vz) : 0
+    data[o + 9] = z && z.length ? zPlaneOf(z[b], vz) : 0
     data[o + 10] = segs[n].end
   }
 
@@ -798,7 +813,7 @@ export function buildMultiTrackBuffer(
     data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
     data[o + 3] = b.x; data[o + 4] = b.y; data[o + 5] = b.z
     data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
-    data[o + 9] = Math.floor(b.z / vz)   // plane of segment END — the tail arrives on the plane you see
+    data[o + 9] = zPlaneOf(b.z, vz)   // plane of segment END — the tail arrives on the plane you see
     data[o + 10] = s.end                 // end timepoint, for the tail fade
     sourceCounts[s.source]++
     perSource[s.source]++
