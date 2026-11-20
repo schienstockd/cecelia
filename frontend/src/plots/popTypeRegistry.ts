@@ -14,7 +14,7 @@ export interface PopTypeInfo {
   name: string
   label: string                         // user-facing name in plot pickers
   suffix: string | null                 // own gating sidecar suffix; null = no own file
-  mapType: string | null                // the stored map its pops live in (live → flow)
+  treeType: string | null                // the stored map its pops live in (live → flow)
   gating: boolean                       // hand-drawn gates (undo/redo, copy-to-images)
   cluster: boolean                      // a filter on a per-run cluster column
   clusterPrefix: string                 // that column's family prefix, else ''

@@ -10,13 +10,13 @@
 #
 # `pop_df` is the single accessor for the cells of any population, across ALL pop_types
 # (flow, live, clust, transient — docs/POPULATION.md), pooling across populations and
-# value_names. It lives here with the pop-map infrastructure (generic, pop_type-neutral),
+# value_names. It lives here with the pop-tree infrastructure (generic, pop_type-neutral),
 # NOT in the gating engine — gating is only one membership source. It builds on the gate-
 # evaluation internals (`recompute!`, `cells_in_pop`) defined in gating_engine.jl (resolved
 # at call time) and reads cell tables via `label_props`.
 #
 # Image-owned data-access API (functions dispatching on ::CciaImage): `label_props` (H5AD
-# tables), `pop_df` (population cells), `load_pop_map`/`save_pop_map!` (population maps) —
+# tables), `pop_df` (population cells), `load_pop_tree`/`save_pop_tree!` (population trees) —
 # mirroring the R cciaImage accessors but kept in subsystem files, not a single god-object.
 
 # THE population-ref grammar — split a (possibly value-name-prefixed) pop ref into (value_name, path).
@@ -62,7 +62,7 @@ function _drop_na_rows(df::DataFrame, pop_cols)::DataFrame
 end
 
 # core pop_df over injectable providers (testable headless):
-#   load_map(vn)            -> PopulationMap for value_name vn
+#   load_map(vn)            -> PopulationTree for value_name vn
 #   fetch(vn, cols)         -> DataFrame(label + cols) for value_name vn
 function _pop_df(load_map::Function, fetch::Function, pop_type::PopTypeArg, pops;
                  default_vn::AbstractString="default", pop_cols=nothing,
@@ -262,7 +262,7 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
     get_tp(vn) = get!(tp_cache, vn) do
         track_props(img; value_name=vn, cell_measures=cm_for(vn), categorical=categorical)
     end
-    load_map = vn -> _hooked(load_pop_map(img; value_name=vn, pop_type=pop_type), map_hook)
+    load_map = vn -> _hooked(load_pop_tree(img; value_name=vn, pop_type=pop_type), map_hook)
     fetch = function (vn, cols)
         tp = get_tp(vn)
         isempty(tp) && return DataFrame(label=Int[])
@@ -302,7 +302,7 @@ _track_read_measures(img::CciaImage, vn::AbstractString, cell_measures, pop_cols
 # ── Membership data source + the gate-plot read ──────────────────────────────────
 
 # apply a caller's map edit (e.g. the API's transient pick-selection pop) to a freshly-loaded map
-_hooked(m::PopulationMap, hook::Union{Function,Nothing}) = (hook === nothing || hook(m); m)
+_hooked(m::PopulationTree, hook::Union{Function,Nothing}) = (hook === nothing || hook(m); m)
 
 # The pop_type whose map FILE a read loads: a derived pop_type (`live`) has no file of its own and
 # reads `flow`'s; every other pop_type its own (`gating_path` picks the suffix). Compared as strings so
@@ -317,11 +317,11 @@ _derived_pop_names(pop_type)::Vector{String} =
 # (`live`), the `flow` map with those pops layered on (they are never stored). `derived_paths` names
 # which (`pop_df` passes the requested paths); `nothing` layers each derived pop under the root and
 # every population, for a caller that needs the whole map. Then the caller's `map_hook`.
-function _read_pop_map(img::CciaImage, value_name::AbstractString, pop_type::PopTypeArg;
-                       derived_paths=nothing, map_hook::Union{Function,Nothing}=nothing)::PopulationMap
+function _read_pop_tree(img::CciaImage, value_name::AbstractString, pop_type::PopTypeArg;
+                       derived_paths=nothing, map_hook::Union{Function,Nothing}=nothing)::PopulationTree
     names_ = _derived_pop_names(pop_type)
-    isempty(names_) && return _hooked(load_pop_map(img; value_name=value_name, pop_type=pop_type), map_hook)
-    m = load_pop_map(img; value_name=value_name, pop_type=_stored_pop_type(pop_type))
+    isempty(names_) && return _hooked(load_pop_tree(img; value_name=value_name, pop_type=pop_type), map_hook)
+    m = load_pop_tree(img; value_name=value_name, pop_type=_stored_pop_type(pop_type))
     paths = derived_paths !== nothing ? derived_paths :
             [string(is_root(p) ? "" : p, "/", n) for p in vcat(ROOT, pop_paths(m)) for n in names_]
     _hooked(_inject_derived_pops!(m, paths, pop_type), map_hook)
@@ -396,16 +396,16 @@ end
 
 `missing_gate_columns(m, available)` against `img`'s own table for `m`'s pop_type — the table
 `pop_membership_fetch` hands `recompute!`, checked by column NAME only (`pop_membership_cols`), so it
-is cheap enough for the pop-tree payload (`GET /api/gating/popmap`) as well as the gating copy.
+is cheap enough for the pop-tree payload (`GET /api/gating/pop-tree`) as well as the gating copy.
 """
-missing_gate_columns(m::PopulationMap, img::CciaImage; value_name::AbstractString,
+missing_gate_columns(m::PopulationTree, img::CciaImage; value_name::AbstractString,
                      labels_version::Union{AbstractString,Nothing}=nothing) =
     missing_gate_columns(m, pop_membership_cols(img, value_name, m.pop_type, _needed_columns(m);
                                                 labels_version=labels_version))
 
 """
-    computed_pop_map(img; value_name, pop_type="flow", labels_version=nothing, map_hook=nothing)
-        -> PopulationMap
+    computed_pop_tree(img; value_name, pop_type="flow", labels_version=nothing, map_hook=nothing)
+        -> PopulationTree
 
 Load `pop_type`'s map for `value_name` and evaluate its membership over `pop_membership_fetch` —
 ready for `cells_in_pop`/`pop_stats`/`has_pop`. Derived pops (`live`'s `_tracked`) are layered under
@@ -414,10 +414,10 @@ the root and every population, exactly as `pop_df` resolves them. `map_hook(m)` 
 and is recorded on the map (`pinned_labels_version`). For a population's DATA use `pop_df`; this is
 for a caller that needs the map itself (counts, parent, the tree).
 """
-function computed_pop_map(img::CciaImage; value_name::AbstractString, pop_type::PopTypeArg="flow",
+function computed_pop_tree(img::CciaImage; value_name::AbstractString, pop_type::PopTypeArg="flow",
                           labels_version::Union{AbstractString,Nothing}=nothing,
-                          map_hook::Union{Function,Nothing}=nothing)::PopulationMap
-    m = _read_pop_map(img, value_name, pop_type; map_hook=map_hook)
+                          map_hook::Union{Function,Nothing}=nothing)::PopulationTree
+    m = _read_pop_tree(img, value_name, pop_type; map_hook=map_hook)
     m.pinned_labels_version = labels_version === nothing ? nothing : String(labels_version)
     recompute!(m, pop_membership_fetch(img, value_name, pop_type; labels_version=labels_version))
 end
@@ -456,7 +456,7 @@ function pop_plot_cols(img::CciaImage, pop_type::PopTypeArg, pop::AbstractString
     # into the gates' unit: the same predicate + conversion `recompute!` evaluates with (`df` is
     # `pop_df`'s copy, so scaling it in place cannot reach the cache)
     if any(is_spatial_axis, want)
-        m = load_pop_map(img; value_name=vn, pop_type=_stored_pop_type(pop_type))
+        m = load_pop_tree(img; value_name=vn, pop_type=_stored_pop_type(pop_type))
         gates_in_um(m) && scale_centroids!(df, m.physical_sizes)
     end
     [c in names(df) ? Float64.(df[!, c]) : Float64[] for c in cols]
@@ -567,7 +567,7 @@ function _tracked_pop_parents(img::CciaImage, vn::AbstractString,
     end
     isempty(tid) && return out
     # No stored gates (or an unreadable map) → the root is the only population there is.
-    m = try; load_pop_map(img; value_name=vn, pop_type=pop_type); catch; nothing; end
+    m = try; load_pop_tree(img; value_name=vn, pop_type=pop_type); catch; nothing; end
     (m === nothing || isempty(pop_paths(m))) && (push!(out, ""); return out)
     try
         recompute!(m, pop_membership_fetch(img, vn, pop_type))

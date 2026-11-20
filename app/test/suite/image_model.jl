@@ -1231,11 +1231,11 @@ end
     write(joinpath(img._dir, "labelProps", "$(src_vn).clustfeatures.json"),       "{}")
     write(joinpath(img._dir, "labelProps", "$(src_vn)__tracks.clustfeatures.json"), "{}")
     img.label_props = Dict("$(src_vn)"=>"$(src_vn).h5ad", "_active"=>"$(src_vn)")
-    # gating sidecars — real save_pop_map!, so we can verify the internal value_name swings too
+    # gating sidecars — real save_pop_tree!, so we can verify the internal value_name swings too
     mkpath(joinpath(img._dir, "gating"))
     for pt in ("flow", "track", "clust", "trackclust", "region", "branch")
-        m = Cecelia.PopulationMap(; pop_type=pt, value_name=src_vn)
-        Cecelia.save_pop_map!(m, img._dir)
+        m = Cecelia.PopulationTree(; pop_type=pt, value_name=src_vn)
+        Cecelia.save_pop_tree!(m, img._dir)
     end
     # an ROI set scored on this segmentation records it as `valueName`; another one does not
     mkpath(img_rois_dir(img))
@@ -1310,7 +1310,7 @@ end
         @test !isfile(Cecelia.gating_path(img._dir, src_vn; pop_type=pt))
         p = Cecelia.gating_path(img._dir, dst_vn; pop_type=pt)
         @test isfile(p)
-        m = Cecelia.load_pop_map(img._dir, dst_vn; pop_type=pt)
+        m = Cecelia.load_pop_tree(img._dir, dst_vn; pop_type=pt)
         @test m.value_name == dst_vn
     end
 

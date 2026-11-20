@@ -20,10 +20,10 @@
         thr  = sort(full.mean_intensity_0)[cld(nrow(full), 2)]      # ~median → partial selection
         want = sort(Int.(full.label[full.mean_intensity_0 .>= thr]))
 
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "pos"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
                                               thr, 1e12, -1e12, 1e12), colour="#ef4444")
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
 
         layers = resolve_pops(img, "flow"; value_name="B")
         @test length(layers) == 1
@@ -57,10 +57,10 @@ end
 
         # Broad gate: every measured cell (0 → 1e12 on both axes) → includes the tracked ones. A
         # `resolve_pops` layer for this flow pop should carry `has_tracks == true`.
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
                                               -1e12, 1e12, -1e12, 1e12), colour="#3b82f6")
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
 
         layers = resolve_pops(img, "flow"; value_name="B")
         @test length(layers) == 1
@@ -85,11 +85,11 @@ end
         cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
         img = CciaImage(uid="KDIeEm", dir=td)
         img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
-        m = PopulationMap(pop_type="track", value_name="B")
+        m = PopulationTree(pop_type="track", value_name="B")
         add_pop!(m, "any"; gate=RectangleGate("live.track.speed", "live.track.speed",
                                               -1e12, 1e12, -1e12, 1e12))      # stored is_track=false
         @test m.pops["/any"].is_track === false
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         layers = resolve_pops(img, "track"; value_name="B")
         @test length(layers) == 1 && layers[1].is_track === true
     end

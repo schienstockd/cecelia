@@ -142,7 +142,7 @@ function _tracks_list(img)
             k = something(src, "")
             n[k] = get(n, k, 0) + 1
         end
-        m = try; load_pop_map(img; value_name = vn, pop_type = "flow"); catch; nothing; end
+        m = try; load_pop_tree(img; value_name = vn, pop_type = "flow"); catch; nothing; end
         for k in sort(collect(keys(n)))
             push!(out, AnalysisRun(; kind = "tracks", key = k, value_name = vn,
                                      label = vn * _track_source_label(k, m),

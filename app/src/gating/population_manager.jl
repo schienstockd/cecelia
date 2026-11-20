@@ -9,7 +9,7 @@ using JSON3
 #
 #   types.jl              — path helpers + PopType / BoolMembership / FilterFun / FilterCondition.
 #   registry.jl           — the pop-type registry (one row per type; every pop-type list derives here).
-#   population.jl         — Population + PopulationMap (tree per value_name + traversal).
+#   population.jl         — Population + PopulationTree (tree per value_name + traversal).
 #   boolean.jl            — Boolean populations (Decision 16 combinators — filter, not stored).
 #   mutations.jl          — the write API (add/rename/move/remove/gate/filter/colour swaps).
 #   persistence.jl        — nested-tree (de)serialisation + `gating/{value_name}[__tracks].json` I/O.

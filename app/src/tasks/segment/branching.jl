@@ -119,7 +119,7 @@ end
 function _ref_pop_cell_labels(img::CciaImage, ref::AbstractString, default_vn::AbstractString)
     vn, path = _split_pop_ref(ref, default_vn)
     pt = resolve_pop_type(img, vn, path)
-    m = try; _read_pop_map(img, vn, pt; derived_paths = [path]); catch; nothing; end
+    m = try; _read_pop_tree(img, vn, pt; derived_paths = [path]); catch; nothing; end
     (m !== nothing && (is_root(path) || has_pop(m, path))) ||
         return (nothing, "Population not found for refPops='$ref' (value_name=$vn, pop_type=$pt)")
     df = pop_df_multi(img, [ref]; value_name = default_vn, pop_cols = ["label"], restrict_to = vn)
@@ -200,7 +200,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     end
 
     # Resolve refPops in Julia (Decision 7): Python receives a plain list of label IDs, never a
-    # pop map. resolve_pop_type discovers which map to load (any pop type a ref names).
+    # pop tree. resolve_pop_type discovers which map to load (any pop type a ref names).
     label_ids = nothing
     if p.refPops != "NONE"
         label_ids, err = _ref_pop_cell_labels(img, p.refPops, p.valueName)
@@ -298,7 +298,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         end
     end
 
-    # Decision 3: auto-create one filter pop per unique branch-type at the branch pop map's root.
+    # Decision 3: auto-create one filter pop per unique branch-type at the branch pop tree's root.
     # Idempotent (ensure_filter_pop! replaces an existing name), so re-runs stay clean.
     for bt in branch_types
         name = get(_BRANCH_TYPE_POP_NAME, bt, "branch-type-$(bt)")

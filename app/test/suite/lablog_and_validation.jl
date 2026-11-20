@@ -263,15 +263,15 @@ end
     @test capture_context!(proj; date=d1) === nothing
 
     # add a gated pop on d1 → "added: CD3" (net vs the day baseline)
-    m = PopulationMap(; pop_type="flow", value_name="default")
+    m = PopulationTree(; pop_type="flow", value_name="default")
     cd3 = add_pop!(m, "CD3"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-    save_pop_map!(m, img1)
+    save_pop_tree!(m, img1)
     bg = capture_context!(proj; date=d1)
     @test bg !== nothing && occursin("Gating — ", bg) && occursin("added: CD3", bg)
 
     # editing that gate the SAME day still nets to "added: CD3": the digest line is unchanged, so
     # the block is a no-op rewrite (returns nothing) and the log still reads "added", never "gate changed"
-    set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0)); save_pop_map!(m, img1)
+    set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0)); save_pop_tree!(m, img1)
     @test capture_context!(proj; date=d1) === nothing
     ll = read_lab_log(proj)
     @test occursin("added: CD3", ll) && !occursin("gate changed", ll)
@@ -279,14 +279,14 @@ end
     # roll into d2: first capture seeds the new day's baseline (CD3 as-is) and reports nothing new
     @test capture_context!(proj; date=d2) === nothing
     # NOW change the gate on d2 → "gate changed: CD3" (CD3 is in the day baseline, so it's an edit)
-    set_gate!(m, cd3, RectangleGate("c1", "c2", 0.3, 1.0, 0.0, 1.0)); save_pop_map!(m, img1)
+    set_gate!(m, cd3, RectangleGate("c1", "c2", 0.3, 1.0, 0.0, 1.0)); save_pop_tree!(m, img1)
     bg3 = capture_context!(proj; date=d2)
     @test bg3 !== nothing && occursin("gate changed: CD3", bg3) && !occursin("added: CD3", bg3)
 
     # filter/membership pop (cluster tracks): a DEFINITION change is caught generically, not just gates
-    mt = PopulationMap(; pop_type="trackclust", value_name="default")
+    mt = PopulationTree(; pop_type="trackclust", value_name="default")
     add_pop!(mt, "clust_a"; filter_measure="clusters.x", filter_values=[0, 1])
-    save_pop_map!(mt, img1)
+    save_pop_tree!(mt, img1)
     bd = capture_context!(proj; date=d2)
     @test bd !== nothing && occursin("added: clust_a", bd)
 
@@ -303,9 +303,9 @@ end
     proj = create_project!(name="labctx-seed-$(rand(1000:9999))")
     s    = add_set!(proj; name="set-A")
     img  = add_image!(s; name="imgB", meta=Dict{String,Any}("ori_path"=>"/tmp/c.tif"))
-    m    = PopulationMap(; pop_type="flow", value_name="default")
+    m    = PopulationTree(; pop_type="flow", value_name="default")
     add_pop!(m, "preexisting"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-    save_pop_map!(m, img)
+    save_pop_tree!(m, img)
 
     # gating already present at first capture → baseline seeded, NOT reported (no retro dump).
     # Both captures on ONE date: a new day re-seeds the baseline.
@@ -314,9 +314,9 @@ end
     @test isempty(parse_lab_log(read_lab_log(proj)))
 
     # a subsequent addition IS reported
-    m2 = load_pop_map(img; value_name="default", pop_type="flow")
+    m2 = load_pop_tree(img; value_name="default", pop_type="flow")
     add_pop!(m2, "newpop"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-    save_pop_map!(m2, img)
+    save_pop_tree!(m2, img)
     b = capture_context!(proj; date=day)
     @test b !== nothing && occursin("added: newpop", b)
 

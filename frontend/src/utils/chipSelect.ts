@@ -7,6 +7,7 @@
 // These helpers operate on the multi-select array form; single-select is a trivial assign in the SFC.
 
 import { toggleSelected } from './selection'
+import { matchesQuery } from './textQuery'
 
 /** Toggle `value` in an ordered selection array. Adding appends to the end (preserving pick order);
  *  removing drops it in place. Returns a NEW array (never mutates the input).
@@ -150,9 +151,8 @@ export const CHIP_COLLAPSE_ABOVE = 12
 export function visibleChips<O extends { value: string; label?: string; path?: readonly string[] }>(
   options: readonly O[], selected: readonly string[], view: { expanded: boolean; filter: string },
 ): O[] {
-  const q = view.filter.trim().toLowerCase()
-  if (q) return options.filter(o =>
-    [o.label ?? '', o.value, ...(o.path ?? [])].some(s => s.toLowerCase().includes(q)))
+  if (view.filter.trim()) return options.filter(o =>
+    matchesQuery([o.label ?? '', o.value, ...(o.path ?? [])], view.filter))
   if (view.expanded) return options.slice()
   const sel = new Set(selected)
   return options.filter(o => sel.has(o.value))

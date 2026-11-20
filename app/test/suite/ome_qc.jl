@@ -1958,7 +1958,7 @@ end
         # This fixture used to say `Dict("B/qc" => "flow")` and expect `live::B/qc`, on the reasoning
         # that "a flow gate is legitimately usable as a live pop". That was a misreading of why the real
         # project stores `live::B/qc/_tracked`: it stores live because the PICKER TAGS those pops live
-        # (`load_pop_map(img, vn, "live")` returns the gate tree, and the derived `_tracked` pops are
+        # (`load_pop_tree(img, vn, "live")` returns the gate tree, and the derived `_tracked` pops are
         # injected under live). Checked against the real project — its families are live (B/qc, T/qc,
         # and their `_tracked` children), labels, region and trackclust; nothing is tagged flow. A
         # genuinely flow-tagged population is NOT reachable on track_measures, which offers only
@@ -2410,9 +2410,9 @@ end
         open(joinpath(lp1, "A__tracks.clustfeatures.json"), "w") do f
             JSON3.write(f, Dict("movement" => Dict("features" => ["live.track.speed"], "partOf" => ["i1"])))
         end
-        g1 = PopulationMap(; pop_type = "flow", value_name = "A")
+        g1 = PopulationTree(; pop_type = "flow", value_name = "A")
         add_pop!(g1, "CD3"; gate = RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-        save_pop_map!(g1, i1)
+        save_pop_tree!(g1, i1)
         append_run_log!(i1, "importImages.omezarr", "default", "done")
         append_run_log!(i1, "segment.cellpose", "A", "done")
         append_run_log!(i1, "segment.cellpose", "B", "done")
@@ -2499,12 +2499,12 @@ end
         img = CciaImage(; uid = "i1", dir = mktempdir())
         img.label_props = Dict("A" => "A.h5ad")
         # a flow gate on A (CD3) + a cluster pop filtering clusters.movement
-        mf = PopulationMap(; pop_type = "flow", value_name = "A")
+        mf = PopulationTree(; pop_type = "flow", value_name = "A")
         add_pop!(mf, "CD3"; gate = RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-        save_pop_map!(mf, img)
-        mc = PopulationMap(; pop_type = "trackclust", value_name = "A")
+        save_pop_tree!(mf, img)
+        mc = PopulationTree(; pop_type = "trackclust", value_name = "A")
         add_pop!(mc, "Directed"; filter_measure = "clusters.movement", filter_fun = "in", filter_values = [3])
-        save_pop_map!(mc, img)
+        save_pop_tree!(mc, img)
         push!(s._images, img); push!(s.image_uids, img.uid)
 
         out = populations_summary(proj)
@@ -2533,7 +2533,7 @@ end
 
         # AUTO-SHARED cluster pops are reported for the borrowing segmentation too. Cluster pops are
         # global to a run: the names are authored under ONE co-clustered value_name (A) and every
-        # sibling in the run (B) carries the same `clusters.movement` column, so `load_pop_map` lends
+        # sibling in the run (B) carries the same `clusters.movement` column, so `load_pop_tree` lends
         # them relabeled. The observer used to skip any value_name with no sidecar FILE, so B looked
         # unclustered — and a board authored from that covered half the run's data.
         img.label_props["B"] = "B.h5ad"
@@ -2604,9 +2604,9 @@ end
             k = length(areas) ÷ 3
             cut = (areas[k] + areas[k + 1]) / 2
             @test areas[k] < cut < areas[k + 1]
-            m = PopulationMap(pop_type = "flow", value_name = "B")
+            m = PopulationTree(pop_type = "flow", value_name = "B")
             add_pop!(m, "big"; gate = RectangleGate("area", "mean_intensity_0", cut, 1e12, -1e12, 1e12))
-            save_pop_map!(m, img)
+            save_pop_tree!(m, img)
             g = measure_summary(proj).images[1].summaries
             @test !any(x -> x.population == "all cells", g)          # gated → the base fallback is gone
             ph = only(filter(x -> x.population == "/big" && x.kind == "phenotype", g))

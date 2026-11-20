@@ -28,7 +28,7 @@ ParamRenderer (popSelection) → TaskRunner (task:run)
   `filterValues`) and the post-track `minDisplacement`/`maxMeanTurningAngle` filters are
   **dropped** — they only existed because the old stack couldn't track gated cells.
 - **Gated membership is resolved in Julia, in-process.** The handler calls
-  `cells_in_pop(load_pop_map(img; value_name, pop_type="flow") |> recompute!, pop)` and
+  `cells_in_pop(load_pop_tree(img; value_name, pop_type="flow") |> recompute!, pop)` and
   passes the **label-ID list** to Python. Julia is the sole gate evaluator (see
   `docs/POPULATION.md`); Python never evaluates gates, and there is **no CSV handoff** and
   **no HTTP callback**.
@@ -173,7 +173,7 @@ un-gated run. Four rules turn that marker into the guarantees the viewer + batch
    cleared them), or `trackSourceForce=true` (plumbed through the Julia handler, not exposed as a
    widget — for the intentional pop→pop refinement idiom).
 
-3. **Retired UID set (P2).** `PopulationMap` carries `retired_uids::Set{String}`, appended by
+3. **Retired UID set (P2).** `PopulationTree` carries `retired_uids::Set{String}`, appended by
    `_del_paths!` and consulted by `_fresh_pop_uid`. A UID freed by pop deletion can never be
    reissued; a `track_source` value in the h5ad outlives the pop that stamped it, so reuse would
    silently inherit the deleted pop's lineage. Persisted in the gating JSON; only emitted when
@@ -815,7 +815,7 @@ Phase 3 shipped 2026-08-20.
   `granularity=:track`, which gates *cells* then aggregates to tracks. See `docs/POPULATION.md`.
   Verified on KDIeEm B (gate on `live.track.speed`; track rows ↔ expanded cells).
 - **Gate-map storage.** `gating_path(task_dir, vn; pop_type="track")` →
-  `gating/{vn}__tracks.json`; `save_pop_map!`/`load_pop_map` route by `pop_type`.
+  `gating/{vn}__tracks.json`; `save_pop_tree!`/`load_pop_tree` route by `pop_type`.
 - **Gating API is track-aware.** `is_track_grained(pop_type)` (package, `popmanager/types.jl`) routes
   `popType ∈ ("track","trackclust")` at every gating endpoint: channels list motility + cell-
   aggregate columns, pop CRUD persists to `{vn}__tracks.json`, plots read from the per-track

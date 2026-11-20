@@ -38,6 +38,8 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { splitXYL, splitXYZL } from '../../plots/valueColour'
 import { UNASSIGNED_POP, PAPER } from '../../plots/fixedColours'
+import SearchSelect from '../../components/SearchSelect.vue'
+import { measurePickGroups } from '../../utils/searchSelect'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -418,6 +420,10 @@ function buildCsv(): string {
 // pairs picker, the population manager and the clustering feature picker.
 const axisGroups = computed(() => measureGroups({
   columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
+// The same groups for the searchable axis pickers — a multiplex panel lists 40+ channels per axis.
+const axisPickGroups = computed(() => measurePickGroups(axisGroups.value, c => g.colLabel(c)))
+const colourPickGroups = computed(() =>
+  measurePickGroups(axisGroups.value, c => g.colLabel(c), [{ value: '', label: 'density' }]))
 
 function ensureChannels() {
   const cols = g.columns
@@ -484,11 +490,8 @@ watch(() => props.reloadToken, fetchPlot)
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl" data-guide="gate.axes">
         <label class="ax-row cc-muted"><span class="ax-lbl">X</span>
-          <select class="ax-chan" v-model="xChan" v-tooltip.bottom="'Measure on the X axis'">
-            <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
-              <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
-            </optgroup>
-          </select>
+          <SearchSelect class="ax-chan" v-model="xChan" :groups="axisPickGroups"
+                        :aria-label="'Measure on the X axis'" v-tooltip.bottom="'Measure on the X axis'" />
           <select class="tsel" :class="{ 'cc-auto-override': !!xOverride }" v-model="xtSel"
                   v-tooltip.bottom="overrideTooltip(xOverride, transformTip('x'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
@@ -499,11 +502,8 @@ watch(() => props.reloadToken, fetchPlot)
           <i v-if="xOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(xOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
-          <select class="ax-chan" v-model="yChan" v-tooltip.bottom="'Measure on the Y axis'">
-            <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
-              <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
-            </optgroup>
-          </select>
+          <SearchSelect class="ax-chan" v-model="yChan" :groups="axisPickGroups"
+                        :aria-label="'Measure on the Y axis'" v-tooltip.bottom="'Measure on the Y axis'" />
           <select class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"
                   v-tooltip.bottom="overrideTooltip(yOverride, transformTip('y'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
@@ -514,13 +514,9 @@ watch(() => props.reloadToken, fetchPlot)
           <i v-if="yOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">colour</span>
-          <select class="ax-chan" v-model="zChan"
-                  v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'">
-            <option value="">density</option>
-            <optgroup v-for="grp in axisGroups" :key="grp.title" :label="grp.title">
-              <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
-            </optgroup>
-          </select>
+          <SearchSelect class="ax-chan" v-model="zChan" :groups="colourPickGroups"
+                        aria-label="Colour the dots by"
+                        v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'" />
           <select class="tsel" :class="{ 'cc-auto-override': !!zOverride }" v-model="ztSel" :disabled="!colourOn"
                   v-tooltip.bottom="overrideTooltip(zOverride, 'Colour scale')">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>

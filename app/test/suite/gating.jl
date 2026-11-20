@@ -192,7 +192,7 @@ end
     @test pop_display_labels(["/"]) == Dict("/" => "/")
     @test pop_display_labels(["/_t", "/qc/_t"]) == Dict("/_t" => "_t", "/qc/_t" => "qc/_t")
 
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10), colour="#f00")
     add_pop!(m, "cd8"; parent="/cd4", gate=PolygonGate("x", "y", [(0.,0.),(0.,5.),(5.,5.),(5.,0.)]))
     @test pop_paths(m) == ["/cd4", "/cd4/cd8"]
@@ -201,11 +201,11 @@ end
 
     # save/load round-trip (tree + gate)
     td = mktempdir()
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     @test isfile(gating_path(td, "B"))
     # atomic write: the temp file is renamed into place, never left behind
     @test !isfile(gating_path(td, "B") * ".tmp")
-    m2 = load_pop_map(td, "B")
+    m2 = load_pop_tree(td, "B")
     @test pop_paths(m2) == pop_paths(m)
     @test pop_at(m2, "/cd4").colour == "#f00"
     @test pop_at(m2, "/cd4").gate isa RectangleGate
@@ -226,7 +226,7 @@ end
 # deleting the whole branch and redrawing it. The pop keeps its gate, name, colour and children; what
 # changes is its PARENT, and with it its membership (a pop is its own gate ∩ its parent's).
 @testset "move_pop! re-parents a population and its subtree" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
     add_pop!(m, "B";  parent="/qc", gate=RectangleGate("x", "y", 0.0, 100.0, 0.0, 100.0), colour="#0f0")
     add_pop!(m, "mem+"; parent="/qc/B", gate=RectangleGate("x", "y", 0.0, 100.0, 0.0, 100.0))
@@ -258,8 +258,8 @@ end
     @test move_pop!(m, "/qc/B", "/qc") == "/qc/B"            # already there → no-op, not an error
 
     # the move survives a save/load round-trip (the tree is nested, so the parent IS the position)
-    td = mktempdir(); save_pop_map!(m, td)
-    @test Set(pop_paths(load_pop_map(td, "B"))) == Set(["/qc", "/qc/B", "/qc/B/mem+"])
+    td = mktempdir(); save_pop_tree!(m, td)
+    @test Set(pop_paths(load_pop_tree(td, "B"))) == Set(["/qc", "/qc/B", "/qc/B/mem+"])
 end
 
 # ── Pop UIDs — the stable id every outside reference (obs columns, external notes) points at ─────
@@ -268,7 +268,7 @@ end
 # and are pinned here: UID survives rename_pop!/move_pop! (rename ≠ new pop), and a legacy sidecar
 # without any UIDs is one-shot-backfilled at load and saved so the next load gets the SAME uids.
 @testset "population UIDs survive rename + move + save/load round-trips" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
     add_pop!(m, "cd8"; parent="/cd4", gate=RectangleGate("x", "y", 0, 10, 0, 10))
     uid4 = pop_uid(m, "/cd4"); uid8 = pop_uid(m, "/cd4/cd8")
@@ -288,8 +288,8 @@ end
     @test pop_uid(m, "/qc/tcell") == uid4
     @test pop_path_by_uid(m, uid4) == "/qc/tcell"
     # save/load round-trip preserves uids AS-IS (no reroll)
-    td = mktempdir(); save_pop_map!(m, td)
-    m2 = load_pop_map(td, "B")
+    td = mktempdir(); save_pop_tree!(m, td)
+    m2 = load_pop_tree(td, "B")
     @test pop_uid(m2, "/qc/tcell") == uid4
     @test pop_uid(m2, "/qc/tcell/cd8") == uid8
     # delete drops the reverse-lookup entry so a stale uid resolves to nothing rather than a valid path
@@ -317,10 +317,10 @@ end
     ]}
     """)
     # first load backfills + saves; a second load reads back the SAME uids (stable across sessions)
-    m1 = load_pop_map(td, "B")
+    m1 = load_pop_tree(td, "B")
     u4a = pop_uid(m1, "/cd4"); u8a = pop_uid(m1, "/cd4/cd8")
     @test length(u4a) == 6 && length(u8a) == 6
-    m2 = load_pop_map(td, "B")
+    m2 = load_pop_tree(td, "B")
     @test pop_uid(m2, "/cd4") == u4a
     @test pop_uid(m2, "/cd4/cd8") == u8a
     @test m2._uid_backfilled == false                 # nothing to backfill this time
@@ -336,8 +336,8 @@ end
     # The sidecar has no UIDs, so this load will backfill. While another task holds the lock (a
     # locked gate edit mid-cycle), that save must wait, and must not write back the stale tree.
     local t
-    with_popmap_lock() do
-        t = @async load_pop_map(td, "B")
+    with_pop_tree_lock() do
+        t = @async load_pop_tree(td, "B")
         for _ in 1:50; yield(); end
         @test !istaskdone(t)                                  # blocked on the lock, not saved
         @test !occursin("\"uid\"", read(p, String))           # file untouched so far
@@ -357,7 +357,7 @@ end
 # rows to the new pop on its first tracking run. `_del_paths!` retires the UID; `_fresh_pop_uid`
 # refuses to reissue it; the set round-trips through the sidecar so retirement survives sessions.
 @testset "deleted pop's UID is retired and never reissued" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
     uid_a = pop_uid(m, "/a")
     @test uid_a ∉ m.retired_uids                       # live pops don't belong in the set
@@ -381,15 +381,15 @@ end
 
 @testset "retired UIDs round-trip through the sidecar" begin
     td = mktempdir()
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
     add_pop!(m, "b"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
     uid_a = pop_uid(m, "/a"); uid_b = pop_uid(m, "/b")
     del_pop!(m, "/a")
     del_pop!(m, "/b")
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
 
-    m2 = load_pop_map(td, "B")
+    m2 = load_pop_tree(td, "B")
     @test uid_a in m2.retired_uids
     @test uid_b in m2.retired_uids
     # The guard still applies AFTER a load — the retired set is authoritative in the fresh session.
@@ -408,28 +408,28 @@ end
                "x_min":0,"x_max":1,"y_min":0,"y_max":1},"children":[]}
     ]}
     """)
-    m = load_pop_map(td, "B")
+    m = load_pop_tree(td, "B")
     @test isempty(m.retired_uids)                      # legacy → empty, no exception
     @test pop_uid(m, "/a") == "abc123"                 # live UID untouched by the P2 path
 end
 
 @testset "retired_uids only appears in the sidecar when non-empty (visual cleanliness)" begin
     td = mktempdir()
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10))
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     # No deletions → no `retired_uids` key emitted. Byte-visible on the JSON.
     raw = read(joinpath(td, "gating", "B.json"), String)
     @test !occursin("retired_uids", raw)
 
     del_pop!(m, "/a")
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     raw2 = read(joinpath(td, "gating", "B.json"), String)
     @test occursin("retired_uids", raw2)
 end
 
 @testset "move_pop! rejects a cycle, a collision and an unknown target" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
     add_pop!(m, "B";  parent="/qc", gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
     add_pop!(m, "mem+"; parent="/qc/B", gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
@@ -450,7 +450,7 @@ end
 # The other half of del_pop! (⋯ → "Delete N below it"): re-gating from a gate you want to keep,
 # without redrawing that gate. One call, so one undo step.
 @testset "del_children! prunes the subtree and keeps the pop" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
     add_pop!(m, "B";  parent="/qc", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0))
     add_pop!(m, "mem+"; parent="/qc/B", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0))
@@ -473,7 +473,7 @@ end
 # CD169-Kat+" — combinations no single 2D gate can express. One form covers all of it: included
 # terms combined with AND or OR, minus every excluded term, still ∩ the parent like any other pop.
 @testset "boolean populations combine other populations" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     # three gates on the same axes, each admitting a different slice of the four cells below
     add_pop!(m, "gfp+"; parent=ROOT, gate=RectangleGate("g", "t", 1.0, 100.0, -100.0, 100.0))
     add_pop!(m, "tom+"; parent=ROOT, gate=RectangleGate("g", "t", -100.0, 100.0, 1.0, 100.0))
@@ -516,8 +516,8 @@ end
     @test Set(cells_in_pop(m, "/chained")) == Set([2])
 
     # round-trips through the sidecar, references and all
-    td = mktempdir(); save_pop_map!(m, td)
-    m2 = load_pop_map(td, "B")
+    td = mktempdir(); save_pop_tree!(m, td)
+    m2 = load_pop_tree(td, "B")
     @test pop_at(m2, "/dp not kat").boolean_op == Cecelia.BOOL_AND
     @test pop_at(m2, "/dp not kat").boolean_pops == ["/gfp+", "/tom+"]
     @test pop_at(m2, "/dp not kat").boolean_not == ["/kat+"]
@@ -529,7 +529,7 @@ end
     # boolean_op is stored as a `BoolMembership` enum (BOOL_AND / BOOL_OR); string kwargs at the
     # add_pop!/set_boolean!/JSON-load boundaries are coerced through `_normalise_boolean`, and the
     # sidecar's `"boolean.op"` writes the lowercase wire string via `Base.string(::BoolMembership)`.
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "a"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 1.0, 0.0, 1.0))
     add_pop!(m, "b"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 1.0, 0.0, 1.0))
 
@@ -544,7 +544,7 @@ end
     @test pop_at(m, "/enum_pop").boolean_op === Cecelia.BOOL_OR
 
     # sidecar serialises the wire string, not the enum name (`"or"`, not `"BOOL_OR"`)
-    td = mktempdir(); save_pop_map!(m, td)
+    td = mktempdir(); save_pop_tree!(m, td)
     raw = JSON3.read(read(gating_path(td, "B"), String))
     ops = String[]
     walk = node -> begin
@@ -561,7 +561,7 @@ end
     @test all(o in ("and", "or") for o in ops)   # no "BOOL_AND"/"BOOL_OR" leaking to disk
 
     # and read back — the loader must coerce the sidecar string into the enum
-    m2 = load_pop_map(td, "B")
+    m2 = load_pop_tree(td, "B")
     @test pop_at(m2, "/and_pop").boolean_op === Cecelia.BOOL_AND
     @test pop_at(m2, "/or_pop").boolean_op  === Cecelia.BOOL_OR
 
@@ -575,7 +575,7 @@ end
 end
 
 @testset "boolean references follow rename/move, and refuse to loop" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "qc"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
     add_pop!(m, "gfp+"; parent="/qc", gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
     add_pop!(m, "tom+"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
@@ -625,7 +625,7 @@ end
 # survive; only the geometry and the derived membership change. Without this the only way to redraw
 # a rectangle as a polygon is delete + redraw, which takes the children with it.
 @testset "set_gate! swaps the gate KIND in place" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
     add_pop!(m, "cd8"; parent="/cd4", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0), colour="#0f0")
 
@@ -652,8 +652,8 @@ end
 
     # the swap survives a save/load round-trip (the sidecar carries "kind")
     td = mktempdir()
-    set_gate!(m, "/cd4", PolygonGate("x", "y", corners)); save_pop_map!(m, td)
-    @test pop_at(load_pop_map(td, "B"), "/cd4").gate isa PolygonGate
+    set_gate!(m, "/cd4", PolygonGate("x", "y", corners)); save_pop_tree!(m, td)
+    @test pop_at(load_pop_tree(td, "B"), "/cd4").gate isa PolygonGate
 end
 
 # ── P3b — authored_labels_version breadcrumb round-trip ──────────────────────
@@ -662,43 +662,43 @@ end
 # image's current `_latest` labels version and renders the banner when they differ. Round-trip on
 # disk + legacy-file (absent-field) load are the invariants this testset guards.
 @testset "P3b breadcrumb: authored_labels_version round-trips + absent on legacy files" begin
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
 
     # A freshly-built map has no breadcrumb — a caller that never stamps it (a hand-built map in a
     # test, or the task_dir save form with no image to resolve against) writes a sidecar with no
     # `authored_labels_version` key.
-    td = mktempdir(); save_pop_map!(m, td)
+    td = mktempdir(); save_pop_tree!(m, td)
     raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
     @test !haskey(raw, "authored_labels_version")
-    @test load_pop_map(td, "B").authored_labels_version === nothing
+    @test load_pop_tree(td, "B").authored_labels_version === nothing
 
     # Explicit stamp + round-trip
     m.authored_labels_version = "v3"
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
     @test raw["authored_labels_version"] == "v3"
-    @test load_pop_map(td, "B").authored_labels_version == "v3"
+    @test load_pop_tree(td, "B").authored_labels_version == "v3"
 
     # Legacy file (predates the breadcrumb): no key on disk ⇒ nothing after load, and every downstream
     # drift check sees `authored === nothing` and skips the banner. Confirms the schema stays additive.
     write(gating_path(td, "B"), """{"value_name":"B","pop_type":"flow","spatial_unit":"px","populations":[]}""")
-    @test load_pop_map(td, "B").authored_labels_version === nothing
+    @test load_pop_tree(td, "B").authored_labels_version === nothing
 end
 
-# ── P3b — save_pop_map!(m, img) stamps the current _latest labels version ────
+# ── P3b — save_pop_tree!(m, img) stamps the current _latest labels version ────
 # Guardrail: an autonomous run that bumps labels vN must leave a breadcrumb-current gating file
 # UNTOUCHED (the write path is separate). But if a user *edits* gates after the bump, the next save
 # advances the breadcrumb — the drift banner disappears on that image because the gate now belongs
 # to the new vN by author's decision. This tests the *forward-advance on save* mechanic in isolation.
-@testset "P3b breadcrumb: save_pop_map!(m, img) stamps from image's current _latest labels vN" begin
+@testset "P3b breadcrumb: save_pop_tree!(m, img) stamps from image's current _latest labels vN" begin
     td = mktempdir()
     img = CciaImage(uid="X", dir=td)
     # legacy bare scalar ⇒ implicit v1
     img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0), colour="#f00")
-    save_pop_map!(m, img)
+    save_pop_tree!(m, img)
     @test m.authored_labels_version == "v1"                     # legacy → implicit v1
 
     # Simulate a labels bump — the writer path is separate (P2 infra), we just emulate the on-disk
@@ -710,14 +710,14 @@ end
 
     # A subsequent gate edit + save advances the breadcrumb — the user has now authored against v2.
     add_pop!(m, "cd8"; parent="/cd4", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0), colour="#0f0")
-    save_pop_map!(m, img)
+    save_pop_tree!(m, img)
     @test m.authored_labels_version == "v2"
     raw = JSON3.read(read(gating_path(td, "B"), String), Dict{String,Any})
     @test raw["authored_labels_version"] == "v2"
 
     # A value_name with no label_props yet ⇒ save leaves the breadcrumb alone (nothing to resolve).
-    m2 = PopulationMap(pop_type="flow", value_name="NEW")
-    save_pop_map!(m2, img)
+    m2 = PopulationTree(pop_type="flow", value_name="NEW")
+    save_pop_tree!(m2, img)
     @test m2.authored_labels_version === nothing
 end
 

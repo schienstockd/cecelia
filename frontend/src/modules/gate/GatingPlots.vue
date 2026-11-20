@@ -316,7 +316,7 @@ watch([() => props.imageUid, projectUid, activeIsPopsView, activeFamily, activeG
 // gating, tracking and correction all change which populations EXIST — the one refresh chokepoint, so
 // the global autoRefreshOnTask setting governs this list like every plot on the page.
 useDataRefresh(() => (props.imageUid ? [props.imageUid] : []), loadSegPops)
-// a population the user gates by hand appears on the popmap broadcast, not on a task completion
+// a population the user gates by hand appears on the pop tree broadcast, not on a task completion
 watch(() => g.flat.length, () => { if (activeIsPopsView.value) loadSegPops() })
 
 // The ticked series, obeying the canvas's existing global/local scope: one set for every panel, or the
@@ -485,7 +485,7 @@ watchPopRenames(() => g.flat, remap => {
   // mid-edit.
   remapStaged(remap)
 })
-// Live pushes (`gating:popmap`) and the WS-reconnect resync — which drops a transient viewer
+// Live pushes (`gating:pop-tree`) and the WS-reconnect resync — which drops a transient viewer
 // selection a backend restart wiped, so the prune watch above clears its dangling highlight — are
 // the store's own (stores/gating.ts), like every other owner's.
 onMounted(load)

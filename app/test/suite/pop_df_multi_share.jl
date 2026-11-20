@@ -20,9 +20,9 @@
         full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
         thr = sort(full.mean_intensity_0)[cld(nrow(full), 2)]
         truth = sum(full.mean_intensity_0 .>= thr)
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "pos"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", thr, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
 
         # a flow gate resolves + returns the SAME cells as an explicit pop_df("flow", …)
         direct = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area"])
@@ -78,9 +78,9 @@ end
         img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
         spd = Float64.(collect(skipmissing(track_props(img; value_name="B")[!, "live.track.speed"])))
         thr = sort(spd)[cld(length(spd), 2)]
-        m = PopulationMap(pop_type="track", value_name="B")
+        m = PopulationTree(pop_type="track", value_name="B")
         add_pop!(m, "fast"; gate=RectangleGate("live.track.speed", "live.track.speed", thr, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         imgs, uids = [img], ["KDIeEm"]
 
         # :cell (the behaviour tasks): the HMM/motif columns arrive on the gated tracks' cells
@@ -230,11 +230,11 @@ end
                       if t isa Real && isfinite(t) && t > 0)
         # /all takes every cell, /pos half of them — so /all's tracks ARE the segmentation's tracks
         # and /pos's are (verified below) fewer.
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
         add_pop!(m, "pos"; parent="/all",
                  gate=RectangleGate("mean_intensity_0", "mean_intensity_1", thr, 1e12, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         pos_tracks = Set(trk_of[Int(l)] for l in pop_df(img, "flow", ["/all/pos"]; value_name="B").label
                          if haskey(trk_of, Int(l)))
         @test 0 < length(pos_tracks) < length(Set(values(trk_of)))   # a genuine subset of the tracks
@@ -261,7 +261,7 @@ end
         n_before = length(Cecelia._TRACKED_PARENTS_CACHE)
         tracked_pop_parents(img; value_name="B")
         @test length(Cecelia._TRACKED_PARENTS_CACHE) == n_before     # second ask hit, no new entry
-        del_pop!(m, "/all/pos"); sleep(0.01); save_pop_map!(m, img)
+        del_pop!(m, "/all/pos"); sleep(0.01); save_pop_tree!(m, img)
         @test tracked_pop_parents(img; value_name="B") == Set(["/all"])
         rm(td; recursive=true)
     end
@@ -278,10 +278,10 @@ end
         end
     end
     # named trackclust pops authored ONLY under B (filter the shared clusters.movement column)
-    bm = PopulationMap(pop_type="trackclust", value_name="B")
+    bm = PopulationTree(pop_type="trackclust", value_name="B")
     add_pop!(bm, "Directed"; filter_measure="clusters.movement", filter_fun="in", filter_values=[3], colour="#c061cb")
     add_pop!(bm, "Scanning"; filter_measure="clusters.movement", filter_fun="in", filter_values=[0], colour="#62a0ea")
-    save_pop_map!(bm, td)
+    save_pop_tree!(bm, td)
 
     img = CciaImage(; dir=td)
     img.label_props = Dict("B" => "B.h5ad", "T" => "T.h5ad", "C" => "C.h5ad", "_active" => "B")
@@ -290,31 +290,31 @@ end
     @test Set(Cecelia.co_clustered_value_names(img, "movement"; granularity=:track)) == Set(["B", "T"])
 
     # B has its OWN sidecar → loaded verbatim
-    mb = load_pop_map(img; value_name="B", pop_type="trackclust")
+    mb = load_pop_tree(img; value_name="B", pop_type="trackclust")
     @test Set(keys(mb.pops)) == Set(["/Directed", "/Scanning"]) && mb.value_name == "B"
 
     # T has NO sidecar but IS co-clustered → BORROWS B's named pops, relabeled to T so
     # membership resolves over T's own track table
-    mt = load_pop_map(img; value_name="T", pop_type="trackclust")
+    mt = load_pop_tree(img; value_name="T", pop_type="trackclust")
     @test Set(keys(mt.pops)) == Set(["/Directed", "/Scanning"])
     @test mt.value_name == "T" && all(p.value_name == "T" for p in values(mt.pops))
     @test mt.pops["/Directed"].filter_measure == "clusters.movement"
 
     # C was NOT part of the run (no clustfeatures suffix) → no borrow (empty map)
-    mc = load_pop_map(img; value_name="C", pop_type="trackclust")
+    mc = load_pop_tree(img; value_name="C", pop_type="trackclust")
     @test isempty(mc.pops)
 
     # `has_stored_pops` (the viewer's "which pop types does this image have"): a borrower counts — the
     # isfile skip would have hidden T — a non-member does not, and a gate type with no sidecar is false
     @test has_stored_pops(img, "B", "trackclust") && has_stored_pops(img, "T", "trackclust")
     @test !has_stored_pops(img, "C", "trackclust")
-    @test stored_pop_map(img, "B", "flow") === nothing && !has_stored_pops(img, "B", "flow")
-    fm = PopulationMap(pop_type="flow", value_name="C")
+    @test stored_pop_tree(img, "B", "flow") === nothing && !has_stored_pops(img, "B", "flow")
+    fm = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(fm, "Sel"; transient=true)
-    save_pop_map!(fm, td)
-    @test stored_pop_map(img, "C", "flow") !== nothing && !has_stored_pops(img, "C", "flow")  # transient only
+    save_pop_tree!(fm, td)
+    @test stored_pop_tree(img, "C", "flow") !== nothing && !has_stored_pops(img, "C", "flow")  # transient only
     add_pop!(fm, "CD8")
-    save_pop_map!(fm, td)
+    save_pop_tree!(fm, td)
     @test has_stored_pops(img, "C", "flow")
 
     # BARE cluster-pop ref expands across ALL co-clustered segmentations (R popDT parity)

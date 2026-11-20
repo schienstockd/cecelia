@@ -1349,9 +1349,9 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
         Int[label]
     end
     _set_pick_selection!(img._dir, vn, labs)
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    m = load_pop_tree(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(pu, iu, vn, pt, m, img)
+    _broadcast_pop_tree(pu, iu, vn, pt, m, img)
     200, JSON3.write((; label, nSelected = length(labs)))
 end
 
@@ -1477,15 +1477,15 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
         labels_uniq
     end
     _set_pick_selection!(img._dir, vn, labs)
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    m = load_pop_tree(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(pu, iu, vn, pt, m, img)
+    _broadcast_pop_tree(pu, iu, vn, pt, m, img)
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
 end
 
 # ── POST /api/viewer/overlay-legend (P9) ──────────────────────────────────────────
 # Legend content for a captured viewState (analysis-board strip + movie title card). Replaces
-# `/api/viewer/overlay-legend` — the computation itself is pure Julia (walks pop maps, resolves
+# `/api/viewer/overlay-legend` — the computation itself is pure Julia (walks pop trees, resolves
 # colour-by categories against populations), no viewer canvas required, so this reuses the same
 # `overlay_legend_content` the legacy route did.
 #
@@ -1523,7 +1523,7 @@ function api_viewer_pick_set(body_bytes::Vector{UInt8})
     raw  = get(body, "labels", Any[])
     raw isa AbstractVector || return 400, JSON3.write((; error = "labels must be an array"))
     # Cap the list. A cockpit click strip won't approach this; anything larger is a client bug
-    # or a probe, and we don't want to broadcast a million-entry popmap because a POST asked us
+    # or a probe, and we don't want to broadcast a million-entry pop tree because a POST asked us
     # to. `pick-rect` already caps its rectangle read by pixels, so this is the analogue for the
     # explicit-list path.
     length(raw) > 50_000 && return 400, JSON3.write((; error = "too many labels (max 50000)"))
@@ -1534,9 +1534,9 @@ function api_viewer_pick_set(body_bytes::Vector{UInt8})
         v in labs || push!(labs, v)
     end
     _set_pick_selection!(img._dir, vn, labs)
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    m = load_pop_tree(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(pu, iu, vn, pt, m, img)
+    _broadcast_pop_tree(pu, iu, vn, pt, m, img)
     200, JSON3.write((; nSelected = length(labs)))
 end
 
@@ -1556,9 +1556,9 @@ function api_viewer_pick_clear(body_bytes::Vector{UInt8})
     err === nothing || return err
     vn   = _resolve_vn(img, _wstr(body, "valueName"))
     _set_pick_selection!(img._dir, vn, Int[])
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
+    m = load_pop_tree(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)                               # no-op now (selection gone)
-    _broadcast_popmap(pu, iu, vn, pt, m, img)
+    _broadcast_pop_tree(pu, iu, vn, pt, m, img)
     200, JSON3.write((; nSelected = 0))
 end
 

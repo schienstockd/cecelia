@@ -489,9 +489,9 @@ end
 # drifting between rename and delete. Symmetric with `api_images_delete_labels`, which walks the same
 # families (labels/branchLabels + prefix scan of labelProps + registered ccid.json entries).
 #
-# JSON sidecars in `gating/` need a load→mutate→save, not a plain `mv`: each `PopulationMap` and every
+# JSON sidecars in `gating/` need a load→mutate→save, not a plain `mv`: each `PopulationTree` and every
 # `Population` inside it embeds its `value_name`; the on-disk `value_name` field must match the filename
-# or `load_pop_map` returns a map whose `m.value_name` disagrees with what every reader assumes.
+# or `load_pop_tree` returns a map whose `m.value_name` disagrees with what every reader assumes.
 
 _rename_move(src, dst) = (ispath(src) && (mkpath(dirname(dst)); mv(src, dst; force = false)); nothing)
 
@@ -546,7 +546,7 @@ function _rename_label_props_dir!(img::CciaImage, from::String, to::String, on_l
 end
 
 # gating/{from}[__…].json — load, rewrite the map's own value_name plus every population's, save under
-# the new path, remove the old file. `save_pop_map!(m, task_dir)` uses `m.pop_type` to pick the suffix,
+# the new path, remove the old file. `save_pop_tree!(m, task_dir)` uses `m.pop_type` to pick the suffix,
 # so the load pop_type must match the file's suffix; we walk every stored type (`STORED_POP_TYPES`).
 
 function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_log)
@@ -554,15 +554,15 @@ function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_l
     isdir(dir) || return nothing
     # under the gating lock (gating/popmanager/copy.jl): an edit landing mid-rename would otherwise be
     # overwritten, or rewrite the old path after it was removed
-    with_popmap_lock() do; for pt in STORED_POP_TYPES
+    with_pop_tree_lock() do; for pt in STORED_POP_TYPES
         old_path = gating_path(img._dir, from; pop_type = pt)
         isfile(old_path) || continue
-        m = load_pop_map(img._dir, from; pop_type = pt)
+        m = load_pop_tree(img._dir, from; pop_type = pt)
         m.value_name = to
         for p in values(m.pops)
             p.value_name = to
         end
-        # save_pop_map!(m, task_dir) writes to gating_path(dir, m.value_name; pop_type=m.pop_type) —
+        # save_pop_tree!(m, task_dir) writes to gating_path(dir, m.value_name; pop_type=m.pop_type) —
         # i.e. under the new name. The image form would stamp authored_labels_version off the loaded
         # image, but the sidecar's existing breadcrumb already reflects when the pops were authored;
         # a rename must not pretend the pops were re-authored just now. So use the task_dir form.
@@ -570,7 +570,7 @@ function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_l
         old_hist = gating_history_path(img._dir, from; pop_type = pt)
         new_hist = gating_history_path(img._dir, to; pop_type = pt)
         (isfile(old_hist) && old_hist != new_hist) && mv(old_hist, new_hist; force = true)
-        save_pop_map!(m, img._dir; history_kind = "rename")
+        save_pop_tree!(m, img._dir; history_kind = "rename")
         on_log("[INFO] Rewrote sidecar: $(old_path) → $(gating_path(img._dir, to; pop_type = pt))")
         old_path == gating_path(img._dir, to; pop_type = pt) || rm(old_path; force = true)
     end; end
@@ -728,7 +728,7 @@ end
 # Guard: does any clustering run on this image co-cluster {from} with images OTHER than this one? If
 # so, renaming here would leave the sibling images spelling it as `{from}` while this image now says
 # `{to}` — the shared `clusters.{suffix}` column no longer resolves for downstream borrow logic. See
-# `co_clustered_value_names` + `_borrow_cluster_pop_map` for the read side that would go inconsistent.
+# `co_clustered_value_names` + `_borrow_cluster_pop_tree` for the read side that would go inconsistent.
 function _rename_would_break_cross_image_clustering(img::CciaImage, from::String)::Bool
     for (granularity, family) in ((:cell, "clusters"), (:track, "clusters"), (:cell, "regions"))
         props = granularity === :track ? img_track_props_path(img, from) : img_label_props_path(img, from)

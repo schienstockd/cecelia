@@ -707,7 +707,7 @@ def run(params: dict):
         else 0.0
     )
     # Unique branch-type codes present in the output → Julia auto-creates one filter pop per code
-    # via ensure_filter_pop! (BRANCHING_PLAN Decision 3). Sort so pop-map order is stable across runs.
+    # via ensure_filter_pop! (BRANCHING_PLAN Decision 3). Sort so pop-tree order is stable across runs.
     branch_types = sorted({int(v) for v in paths_df["branch-type"].unique()}) \
         if "branch-type" in paths_df.columns and len(paths_df) else []
 

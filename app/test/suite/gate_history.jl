@@ -1,6 +1,6 @@
 # ── Gate history + content hashes: a run can be tied to the gate it read ───────────────────────────
 # docs/todo/CECELIA_STRUCTURE_PLAN.md → Record (gates overwritten in place; GUI gate edits leave no
-# record). `save_pop_map!` appends the previous state to `gating/{vn}.history.jsonl`; each population has
+# record). `save_pop_tree!` appends the previous state to `gating/{vn}.history.jsonl`; each population has
 # a content hash (`pop_gate_hashes`); the scheduler stamps the hashes of the pops a run reads as the
 # run-log entry's `gates`. See app/src/gating/popmanager/history.jl.
 
@@ -10,39 +10,39 @@ _gh_rect(x0, x1) = RectangleGate("x", "y", x0, x1, 0.0, 10.0)
     td = mktempdir()
     @test read_gating_history(td, "B") == Any[]                 # no history = unknown, not an error
 
-    m = PopulationMap(pop_type = "flow", value_name = "B")
+    m = PopulationTree(pop_type = "flow", value_name = "B")
     add_pop!(m, "cd4"; parent = ROOT, gate = _gh_rect(0.0, 10.0), colour = "#f00")
     add_pop!(m, "cd8"; parent = "/cd4", gate = _gh_rect(0.0, 5.0), colour = "#0f0")
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     h = read_gating_history(td, "B")
     @test length(h) == 1 && h[1]["kind"] == "add" && h[1]["previous"] === nothing
     @test sort([String(c["path"]) for c in h[1]["changes"]]) == ["/cd4", "/cd4/cd8"]
     @test haskey(h[1], "author") && String(h[1]["valueName"]) == "B" && String(h[1]["popType"]) == "flow"
-    h0 = pop_gate_hashes(load_pop_map(td, "B"))
+    h0 = pop_gate_hashes(load_pop_tree(td, "B"))
 
     # cosmetic writes (colour, show) and a no-op save record nothing
-    m.pops["/cd4"].colour = "#00f"; save_pop_map!(m, td)
-    save_pop_map!(m, td)
+    m.pops["/cd4"].colour = "#00f"; save_pop_tree!(m, td)
+    save_pop_tree!(m, td)
     @test length(read_gating_history(td, "B")) == 1
 
     # a moved parent gate: one `change` for the parent, the previous tree kept whole; the child's own
     # record did not change, but its hash did (membership is ∩ parent)
-    set_gate!(m, "/cd4", _gh_rect(1.0, 10.0)); save_pop_map!(m, td)
+    set_gate!(m, "/cd4", _gh_rect(1.0, 10.0)); save_pop_tree!(m, td)
     h = read_gating_history(td, "B")
     @test length(h) == 2 && h[2]["kind"] == "change"
     c = only(h[2]["changes"])
     @test c["path"] == "/cd4" && c["previousHash"] == h0["/cd4"] && c["hash"] != h0["/cd4"]
     @test h[2]["previous"]["populations"][1]["gate"]["x_min"] == 0.0
-    h1 = pop_gate_hashes(load_pop_map(td, "B"))
+    h1 = pop_gate_hashes(load_pop_tree(td, "B"))
     @test h1["/cd4/cd8"] != h0["/cd4/cd8"]
 
     # a rename keeps the cells, so it keeps the hash: one `move`, not a delete plus an add
-    rename_pop!(m, "/cd4/cd8", "cd8a"); save_pop_map!(m, td)
+    rename_pop!(m, "/cd4/cd8", "cd8a"); save_pop_tree!(m, td)
     c = only(read_gating_history(td, "B")[3]["changes"])
     @test c["kind"] == "move" && c["previousPath"] == "/cd4/cd8" && c["path"] == "/cd4/cd8a"
     @test c["hash"] == c["previousHash"] == h1["/cd4/cd8"]
 
-    del_pop!(m, "/cd4/cd8a"); save_pop_map!(m, td)
+    del_pop!(m, "/cd4/cd8a"); save_pop_tree!(m, td)
     e = read_gating_history(td, "B")[4]
     @test e["kind"] == "delete" && only(e["changes"])["path"] == "/cd4/cd8a"
 
@@ -57,16 +57,16 @@ _gh_rect(x0, x1) = RectangleGate("x", "y", x0, x1, 0.0, 10.0)
 
     # the history file is invisible to the sidecar readers: the map loads as before
     @test isfile(gating_history_path(td, "B")) && endswith(gating_history_path(td, "B"), "B.history.jsonl")
-    @test pop_paths(load_pop_map(td, "B")) == ["/cd4"]
+    @test pop_paths(load_pop_tree(td, "B")) == ["/cd4"]
 
     # a torn last line (a kill mid-append) is skipped, and the next entry starts on a fresh line
     open(io -> write(io, "{\"at\":"), gating_history_path(td, "B"), "a")
-    set_gate!(m, "/cd4", _gh_rect(2.0, 10.0)); save_pop_map!(m, td)
+    set_gate!(m, "/cd4", _gh_rect(2.0, 10.0)); save_pop_tree!(m, td)
     @test length(read_gating_history(td, "B")) == 5
 end
 
 @testset "Gate hash: same definition, same hash; boolean terms and spatial unit count" begin
-    mk(x1) = (m = PopulationMap(pop_type = "flow", value_name = "B");
+    mk(x1) = (m = PopulationTree(pop_type = "flow", value_name = "B");
               add_pop!(m, "a"; parent = ROOT, gate = _gh_rect(0.0, x1));
               add_pop!(m, "b"; parent = ROOT, gate = _gh_rect(5.0, 9.0));
               add_pop!(m, "a_not_b"; parent = ROOT); set_boolean!(m, "/a_not_b"; op = "and", pops = ["/a"], nots = ["/b"]);
@@ -79,13 +79,13 @@ end
     # the unit is part of a POSITION gate, and only of one: an intensity gate is unit-free
     m = mk(10.0); m.spatial_unit = "um"
     @test pop_gate_hashes(rt(m))["/b"] == ha["/b"]
-    pos(unit) = (m = PopulationMap(pop_type = "flow", value_name = "B", spatial_unit = unit);
+    pos(unit) = (m = PopulationTree(pop_type = "flow", value_name = "B", spatial_unit = unit);
                  add_pop!(m, "left"; parent = ROOT, gate = RectangleGate("centroid_x", "centroid_y", 0.0, 50.0, 0.0, 50.0));
                  pop_gate_hashes(rt(m))["/left"])
     @test pos("um") != pos("px")
     # a px → µm restamp of an intensity-only map (the image form of load does it) is no change: no entry
-    td = mktempdir(); m = mk(10.0); save_pop_map!(m, td); n = length(read_gating_history(td, "B"))
-    m.spatial_unit = "um"; save_pop_map!(m, td)
+    td = mktempdir(); m = mk(10.0); save_pop_tree!(m, td); n = length(read_gating_history(td, "B"))
+    m.spatial_unit = "um"; save_pop_tree!(m, td)
     @test length(read_gating_history(td, "B")) == n
     # a copy of the gate on another image is the same gate
     m2 = mk(10.0); m2.value_name = "C"
@@ -99,20 +99,20 @@ end
     try
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
         img = init_object("testpr", "KDIeEm")
-        m = PopulationMap(pop_type = "flow", value_name = "B")
+        m = PopulationTree(pop_type = "flow", value_name = "B")
         add_pop!(m, "qc"; parent = ROOT, gate = _gh_rect(0.0, 10.0))
-        save_pop_map!(m, img._dir)
-        hq = pop_gate_hashes(load_pop_map(img._dir, "B"))["/qc"]
+        save_pop_tree!(m, img._dir)
+        hq = pop_gate_hashes(load_pop_tree(img._dir, "B"))["/qc"]
 
         cp_params = Dict{String,Any}("valueName" => "B", "popsA" => ["B/qc/_tracked"], "popsB" => ["B/"])
         p = run_provenance("spatialAnalysis.cellContacts", img, cp_params)
         @test p.gates == Any[Dict{String,Any}("valueName" => "B", "path" => "/qc", "hash" => hq)]
         # a TRACK analysis on `B/qc/_tracked` reads the cell gate `/qc` too; a track gate is found in
         # the track sidecar; a cluster pop (trackclust) is not a gate
-        tm = PopulationMap(pop_type = "track", value_name = "B")
+        tm = PopulationTree(pop_type = "track", value_name = "B")
         add_pop!(tm, "fast"; parent = ROOT, gate = RectangleGate("speed", "y", 1.0, 9.0, 0.0, 10.0))
-        save_pop_map!(tm, img._dir)
-        hf = pop_gate_hashes(load_pop_map(img._dir, "B"; pop_type = "track"))["/fast"]
+        save_pop_tree!(tm, img._dir)
+        hf = pop_gate_hashes(load_pop_tree(img._dir, "B"; pop_type = "track"))["/fast"]
         g = run_gates("clustTracks.cluster", img,
                       Dict{String,Any}("valueName" => "B", "popsToCluster" => ["B/qc/_tracked", "B/fast", "B/Scanning"]))
         @test g == Any[Dict{String,Any}("valueName" => "B", "path" => "/qc", "hash" => hq),
@@ -137,7 +137,7 @@ end
         @test g["path"] == "/qc" && g["hash"] == hq
 
         # the gate is edited after the run: the entry still names the gate it read, via the history
-        set_gate!(m, "/qc", _gh_rect(3.0, 10.0)); save_pop_map!(m, img._dir)
+        set_gate!(m, "/qc", _gh_rect(3.0, 10.0)); save_pop_tree!(m, img._dir)
         s = gate_state_for_hash(img._dir, String(g["valueName"]), String(g["hash"]))
         @test !s.current && s.definition["gate"]["x_min"] == 0.0
 
@@ -167,10 +167,10 @@ end
     try
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir
         img = init_object("testpr", "KDIeEm")
-        m = PopulationMap(pop_type = "flow", value_name = "B")
+        m = PopulationTree(pop_type = "flow", value_name = "B")
         add_pop!(m, "qc"; parent = ROOT, gate = _gh_rect(0.0, 10.0))
-        save_pop_map!(m, img._dir)
-        hq = pop_gate_hashes(load_pop_map(img._dir, "B"))["/qc"]
+        save_pop_tree!(m, img._dir)
+        hq = pop_gate_hashes(load_pop_tree(img._dir, "B"))["/qc"]
         # a real task through `run_task`; whatever its outcome, the entry was opened (and stamped) first
         tid = "ghs-$(rand(1000:9999))"
         task = Cecelia._task_from_fun_name("spatialAnalysis.cellContacts")
@@ -188,9 +188,9 @@ end
 @testset "Gate history: which of a record's gate files changed since it was made" begin
     root = mktempdir()
     td = joinpath(root, "1", "imgA")
-    m = PopulationMap(pop_type = "flow", value_name = "B")
+    m = PopulationTree(pop_type = "flow", value_name = "B")
     add_pop!(m, "cd4"; parent = ROOT, gate = _gh_rect(0.0, 10.0), colour = "#f00")
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     rel = replace(relpath(Cecelia.gating_path(td, "B"), root), '\\' => '/')
     at(e) = DateTime(string(e["at"]))
     first_at = at(only(read_gating_history(td, "B")))
@@ -199,14 +199,14 @@ end
     @test edits(first_at - Dates.Minute(1))["status"] == "edited"
     @test edits(first_at)["status"] == "unchanged"                      # nothing AFTER since
     sleep(1.1)
-    set_gate!(m, "/cd4", _gh_rect(2.0, 10.0)); save_pop_map!(m, td)
+    set_gate!(m, "/cd4", _gh_rect(2.0, 10.0)); save_pop_tree!(m, td)
     e = edits(first_at)
     @test e["status"] == "edited" && e["edits"] == 1 && endswith(e["lastAt"], "Z")
     # history `at` is local: with local = UTC+2 the same wall times are two hours earlier in UTC,
     # so both edits fall before `first_at` read as UTC
     @test only(gate_file_edits(root, [rel], first_at; local_offset = Dates.Hour(2)))["status"] == "unchanged"
     # cosmetic writes don't count
-    m.pops["/cd4"].colour = "#00f"; save_pop_map!(m, td)
+    m.pops["/cd4"].colour = "#00f"; save_pop_tree!(m, td)
     @test edits(at(read_gating_history(td, "B")[end]))["status"] == "unchanged"
     # gone, outside the project, not a gating file: answered, never read
     rm(Cecelia.gating_path(td, "B"))

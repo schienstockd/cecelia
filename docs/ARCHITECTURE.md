@@ -446,7 +446,7 @@ Design record: `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` (P1+P2) and
 ```
 Draw a region on the viewer's cell-selection layer
   → viewer POSTs /api/viewer/pick-rect {labels:[…], zLo, zHi, …}
-  → Julia stores as transient "Viewer selection" pop; broadcast_ws gating:popmap
+  → Julia stores as transient "Viewer selection" pop; broadcast_ws gating:pop-tree
   → frontend ws.ts → every gating store on that document: tree gains the transient pop → flow plots highlight those cells
 ```
 
@@ -651,7 +651,7 @@ Lives in Julia, operates on H5AD files written by Python tasks.
 - **Population hierarchy**: tree; each node is a named population with a boolean mask over its parent
 - **Gate coordinates**: always in transformed space (logicle/biex first, gates drawn on top — same convention as FlowJo)
 - **Storage**: per-segmentation sidecar `gating/{value_name}.json` (NOT `ccid.json`); population tree = `{name, gate, children: [...]}`
-- **Viewer integration**: *linked brushing*, not gate-drawing — the viewer draws an image region → POSTs the inside cells' label IDs to `/api/viewer/pick-rect` → Julia mirrors them as a transient population and broadcasts `gating:popmap` (see flow above + `docs/POPULATION.md`)
+- **Viewer integration**: *linked brushing*, not gate-drawing — the viewer draws an image region → POSTs the inside cells' label IDs to `/api/viewer/pick-rect` → Julia mirrors them as a transient population and broadcasts `gating:pop-tree` (see flow above + `docs/POPULATION.md`)
 - **logicle transform**: port Logicle.cpp (Parks et al. 2006); Python implementations available as reference
 
 ---

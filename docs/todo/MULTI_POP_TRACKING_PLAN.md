@@ -114,7 +114,7 @@ Concrete scenario (the maintainer, `fXgbTl`, 2026-09-01):
 ### P0 — pop UID (Julia)
 
 - `app/src/gating/population_manager.jl`: add `uid::String` to `Population` (generated via
-  `gen_uid` at construction), a `uid → path` lookup on `PopulationMap`, and a `pop_uid(m, path)`
+  `gen_uid` at construction), a `uid → path` lookup on `PopulationTree`, and a `pop_uid(m, path)`
   / `pop_by_uid(m, uid)` pair. Persist `uid` in the gating JSON serializer
   (`to_json`/`from_json`); on read, assign a fresh UID to any legacy pop lacking one and mark the
   map dirty so it saves on the next `save!`. `_repath!` no-ops on UID (it's already stable).

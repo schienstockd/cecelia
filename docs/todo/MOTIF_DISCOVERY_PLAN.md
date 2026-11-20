@@ -165,7 +165,7 @@ Decision N`).
     (see `docs/todo/CLUSTERING_PLAN.md` + `docs/todo/CLUSTER_POOLING_PLAN.md`):
 
     ```
-    {proj}/1/{uid}/gating/{vn}__motifs.json             # new POP_MAP_SUFFIX, mirror __clust.json
+    {proj}/1/{uid}/gating/{vn}__motifs.json             # new POP_TREE_SUFFIX, mirror __clust.json
     {proj}/1/{uid}/labelProps/{props}.motiffeatures.json # mirror {props}.clustfeatures.json
                                                         # keyed {suffix} → { params, medoids,
                                                         # centroidVectors, partOf,

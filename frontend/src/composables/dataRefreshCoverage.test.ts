@@ -50,7 +50,7 @@ const EXEMPT: Record<string, string> = {
   'components/canvas/SeriesPicker.vue':
     'renders the population list its host passes in; holds no fetched state',
   'stores/gating.ts':
-    'live-updates from the `gating:popmap` broadcast, which is finer-grained than task completion',
+    'live-updates from the `gating:pop-tree` broadcast, which is finer-grained than task completion',
   'utils/viewer/colourByColumns.ts':
     'colour-by options for the viewer and its panel; refetched when the image or its version changes — viewer reload is a SEPARATE opt-in toggle (viewerAutoUpdate)',
   'tasks/ParamRenderer.vue': 'a form; its options come from image metadata, not from task output',

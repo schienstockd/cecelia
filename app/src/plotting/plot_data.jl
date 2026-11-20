@@ -436,14 +436,26 @@ end
 # is only for `obs` columns (hmm.state, clusters, generation — written as anndata categoricals). So the
 # measure type of a var column is always numeric; only an obs measure defers to detection. This is the
 # structural rule that replaces the old R `config.yml parameters.labelStats` per-column map.
+#
+# A channel measure arrives by NAME (`_named_measure`), so the set carries each intensity column's name
+# beside its raw form — otherwise a named channel would fall through to the categorical heuristic, and a
+# marker whose cells sit on a few integer levels would plot as category fractions.
 function _var_measure_set(img::CciaImage, value_name)::Set{String}
     vn = resolve_value_name(img, value_name)
     try
-        Set(String.(col_names(label_props(img; value_name=vn); data_type=:vars)))
+        raw = String.(col_names(label_props(img; value_name=vn); data_type=:vars))
+        Set(vcat(raw, canonical_channel_columns(raw, channel_names(img; value_name=vn); shadow=raw)))
     catch
         Set{String}()
     end
 end
+
+# The plotted measure with an intensity column as its channel NAME — what `pop_df` hands back (it renames
+# intensity columns), so a raw request (`mean_intensity_3`: a notebook, a saved panel) finds its column, and
+# on a multi-image plot each image reads the marker by name rather than by an index that may differ. A
+# channel an image lacks or holds twice throws, the same message a heatmap row gives.
+_named_measure(imgs, value_name, measure) =
+    measure === nothing ? nothing : only(_named_plot_cols(imgs, value_name, [String(measure)]))
 _var_measure_set(imgs::AbstractVector{<:CciaImage}, value_name)::Set{String} =
     isempty(imgs) ? Set{String}() : _var_measure_set(first(imgs), value_name)
 
@@ -1251,10 +1263,10 @@ function _cluster_category_names(imgs, keys, value_names, measure, granularity::
         entry = isfile(props) ? _clustfeatures_entry(props, suffix; family=family) : nothing
         # the SEGMENTATION is part of the run: two segmentations clustered separately share image uids
         # but not clusters (segmentations clustered TOGETHER already share names on one image through
-        # `load_pop_map`'s co-clustered borrow)
+        # `load_pop_tree`'s co-clustered borrow)
         rid = vn * "@" * join(sort!(unique!(vcat(_clustfeatures_part_of(entry, img.uid), [String(img.uid)]))), ",")
         run_of[(String(key), vn)] = rid
-        pm = load_pop_map(img; value_name=vn, pop_type=pt, backfill_save=false)   # a plot read never writes
+        pm = load_pop_tree(img; value_name=vn, pop_type=pt, backfill_save=false)   # a plot read never writes
         names_ = pop_label_overrides(pm, m)
         isempty(names_) && continue
         own[(String(key), vn)] = names_
@@ -1456,6 +1468,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
     fit = _hmm_profile_fit([img], [eff_vn], chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
     chart_type == "matrix" && (measures = _named_plot_cols([img], eff_vn, measures))
+    measure = _named_measure([img], eff_vn, measure)
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category, matrix_mode)
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
@@ -1520,6 +1533,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     fit = _hmm_profile_fit(imgs, [eff_vn], chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
     chart_type == "matrix" && (measures = _named_plot_cols(imgs, eff_vn, measures))
+    measure = _named_measure(imgs, eff_vn, measure)
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category, matrix_mode)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
@@ -1691,6 +1705,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     fit = _hmm_profile_fit([img], unique(first.(targets)), chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
     chart_type == "matrix" && !isempty(targets) && (measures = _named_plot_cols([img], first(targets)[1], measures))
+    isempty(targets) || (measure = _named_measure([img], first(targets)[1], measure))
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     # expand_cluster_pops=false: each target IS a (segmentation, population) pair the user ticked in
     # the picker, so a bare cluster/region path must resolve under THAT segmentation only. With the
@@ -1744,6 +1759,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     fit = _hmm_profile_fit(imgs, unique(first.(targets)), chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
     chart_type == "matrix" && !isempty(targets) && (measures = _named_plot_cols(imgs, first(targets)[1], measures))
+    isempty(targets) || (measure = _named_measure(imgs, first(targets)[1], measure))
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     # see the single-image form above — a picked (segmentation, population) pair is explicit
     df = _targets_frame(targets, (vn, pops) -> chart_type == "matrix" ?

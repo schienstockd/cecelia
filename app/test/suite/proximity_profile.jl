@@ -88,12 +88,12 @@ end
         @test img_is_calibrated(img)
         full = label_props(img; value_name = "B") |> select_cols(["mean_intensity_0"]) |> as_df
         v = sort(full.mean_intensity_0); t1 = v[cld(nrow(full), 3)]; t2 = v[cld(2 * nrow(full), 3)]
-        m = PopulationMap(pop_type = "flow", value_name = "B")
+        m = PopulationTree(pop_type = "flow", value_name = "B")
         band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
         add_pop!(m, "lo"; gate = band(-1e12, t1)); add_pop!(m, "mid"; gate = band(t1, t2))
         add_pop!(m, "hi"; gate = band(t2, 1e12))
         add_pop!(m, "one"; gate = band(-1e12, v[1]))   # the dimmest cell(s) only
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
 
         params = Dict{String,Any}("structurePops" => ["B/hi"], "pops" => ["B/lo", "B/mid", "B/hi", "B/one"],
                                   "bandWidth" => 10.0, "nBands" => 2, "proximitySuffix" => "gc")

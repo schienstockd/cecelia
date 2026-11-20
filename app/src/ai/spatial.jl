@@ -124,7 +124,7 @@ end
 function _region_composition(img::CciaImage, vn::AbstractString, suffix::AbstractString)
     pt = "clust"
     isfile(gating_path(img._dir, vn; pop_type = pt)) || return nothing
-    pops = pop_paths(load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false))
+    pops = pop_paths(load_pop_tree(img; value_name = vn, pop_type = pt, backfill_save = false))
     isempty(pops) && return nothing
     m = try
         plot_summary_data(img, pt, [(String(vn), p) for p in pops], "matrix";

@@ -75,7 +75,7 @@
     # — the family picker existed but these specs never opted into it. `pop_df` has always
     # supported `track`/`trackclust` at either granularity (`_pop_df_track_gating` expands track
     # membership to its member cells), so this was a spec omission, not a capability gap.
-    BEHAVIOUR = ("cell_properties.json", "hmm_state_frequency.json", "state_signature.json",
+    BEHAVIOUR = ("hmm_state_frequency.json", "state_signature.json",
                  "transition_matrix.json", "track_measures.json", "motif_class_frequency.json")
     for f in BEHAVIOUR
         ds = specs[f]["dataSource"]
@@ -88,6 +88,20 @@
         want = f == "track_measures.json" ? "track" : "cell"
         @test all(g == want for g in values(fams))
     end
+
+    # CELL PROPERTIES is every family's per-cell measure plot — a marker, shape or speed per population —
+    # so it is offered for all six, each at CELL granularity (a track family expands to its member cells),
+    # and each page keeps its own families, as the population summary does.
+    cp = specs["cell_properties.json"]
+    @test !haskey(cp, "module") && !haskey(cp["dataSource"], "popType")
+    cpf = Dict(String(p["popType"]) => String(p["granularity"]) for p in cp["dataSource"]["popTypes"])
+    @test Set(keys(cpf)) == Set(["flow", "clust", "region", "live", "track", "trackclust"])
+    @test all(==("cell"), values(cpf))
+    cpo = Dict(String(k) => Set(String(x) for x in v) for (k, v) in cp["modules"])
+    @test cpo == Dict("phenotype" => Set(["flow", "clust"]),
+                      "behaviourAnalysis" => Set(["live", "track", "trackclust"]),
+                      "spatialAnalysis" => Set(["region"]))
+    @test cp["dataSource"]["channelMeasures"] == true
 
     # A plot's family list is CURATED in its spec (not derived from the data), because "which family
     # can this measure be sliced by" is a judgement the data can't make. The cost of curation is

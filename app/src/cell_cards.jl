@@ -244,8 +244,8 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
     feats = _card_features(img, value_name, suffix, family)
     cluster_col = "$(family).$(suffix)"
 
-    # Resolve the pop map ONCE — we need each pop's colour + name + count.
-    m = load_pop_map(img._dir, String(value_name); pop_type="trackclust")
+    # Resolve the pop tree ONCE — we need each pop's colour + name + count.
+    m = load_pop_tree(img._dir, String(value_name); pop_type="trackclust")
 
     cards = @NamedTuple{path::String, name::String, colour::String, n::Int,
                         medoid::@NamedTuple{uid::String, value_name::String, track_id::Int},

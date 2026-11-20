@@ -29,6 +29,7 @@ export interface ColumnSets {
   channels: string[]          // var: the intensity subset
   obsColumns: string[]        // obs: live.cell.*, cluster ids, the spatial readouts
   temporalColumns: string[]   // obsm temporal col(s) — groupable, not in obs
+  channelNames: string[]      // display names by channel index (resolve a column via channelLabel)
 }
 
 /**
@@ -51,6 +52,8 @@ export function mergeColumnSets(parts: Partial<ColumnSets>[]): ColumnSets {
   return {
     columns: key('columns'), channels: key('channels'),
     obsColumns: key('obsColumns'), temporalColumns: key('temporalColumns'),
+    // by channel INDEX, so never unioned: the first segmentation that names its channels names them
+    channelNames: parts.find(p => p.channelNames?.length)?.channelNames ?? [],
   }
 }
 

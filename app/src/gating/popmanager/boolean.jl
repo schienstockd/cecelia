@@ -55,7 +55,7 @@ boolean_spec(p) = p.boolean_op === nothing ? nothing :
 
 """Populations `path` needs before its own membership can be derived: its parent, plus (boolean) the
 populations it combines. The edge set `topo_order` sorts over."""
-function _pop_deps(m::PopulationMap, path::AbstractString)::Vector{String}
+function _pop_deps(m::PopulationTree, path::AbstractString)::Vector{String}
     p = m.pops[String(path)]
     deps = String[]
     is_root(p.parent) || push!(deps, p.parent)
@@ -66,7 +66,7 @@ end
 
 """Would referencing `refs` from `path` close a dependency loop (`A = not B`, `B = not A`, or a
 reference to one of `path`'s own descendants, which depend on it through their parent)?"""
-function boolean_cycle(m::PopulationMap, path::AbstractString, refs)::Bool
+function boolean_cycle(m::PopulationTree, path::AbstractString, refs)::Bool
     target = String(path)
     seen = Set{String}()
     stack = String[String(r) for r in refs]
@@ -82,7 +82,7 @@ end
 
 """Populations OUTSIDE `targets` whose boolean definition references something inside it — i.e. what
 would be left dangling by deleting `targets`. Returns `dependent path => referenced paths`."""
-function boolean_dependents(m::PopulationMap, targets)::Vector{Pair{String,Vector{String}}}
+function boolean_dependents(m::PopulationTree, targets)::Vector{Pair{String,Vector{String}}}
     tset = Set(String[String(t) for t in targets])
     out = Pair{String,Vector{String}}[]
     for path in m.order
@@ -104,7 +104,7 @@ boolean-term edges: its descendants, every combination referencing it or one of 
 under each, in map order. `boolean_dependents` is the one-hop question ("what would deleting this
 orphan"); this is "whose cells change when this one's do" (Claude's set-own-gate asks it).
 """
-pops_depending_on(m::PopulationMap, path::AbstractString)::Vector{String} =
+pops_depending_on(m::PopulationTree, path::AbstractString)::Vector{String} =
     [q for q in m.order if q != path && boolean_cycle(m, path, _pop_deps(m, q))]
 
 """
@@ -115,7 +115,7 @@ cycle (only reachable by hand-editing a sidecar) is appended as-is rather than r
 degrades a pop with an unresolved reference to empty + a warning, and a broken file must not take the
 whole map down.
 """
-function topo_order(m::PopulationMap)::Vector{String}
+function topo_order(m::PopulationTree)::Vector{String}
     base = sort(m.order; by = p -> count(==('/'), p), alg = MergeSort)
     any(m.pops[p].boolean_op !== nothing for p in base) || return base
     done = Set{String}()

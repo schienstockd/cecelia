@@ -167,7 +167,7 @@ async function setViewer(pops: FlatPop[], on: boolean) {
     const sw = on ? popTypeSwitch(g.popType) : null, su = sw ? projectStore.setUidOfImage(uid) : null
     if (sw && su) settings.setPopVisible(su, sw, true)
   }
-  // sequential: each update rewrites the same popmap file server-side
+  // sequential: each update rewrites the same pop tree file server-side
   for (const p of pops) await g.updatePop(p.path, { show: on })
   g.refreshOverlays()
 }

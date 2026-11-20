@@ -1,10 +1,10 @@
-# Mutations — the write API for a PopulationMap: add/rename/remove/move, gate/filter updates,
+# Mutations — the write API for a PopulationTree: add/rename/remove/move, gate/filter updates,
 # colour swaps, child-parent moves, path-recompute on rename. Every write is applied through here
 # so persistence.jl's save-on-change can trigger from one place and boolean-pop dependents stay
 # consistent (an operand rename cascades through descendant filters, not just the renamed pop).
 
 # ── Mutations ────────────────────────────────────────────────────────────────────
-function add_pop!(m::PopulationMap, name::AbstractString;
+function add_pop!(m::PopulationTree, name::AbstractString;
                   parent::AbstractString=ROOT, gate::Union{Gate,Nothing}=nothing,
                   colour::AbstractString="#ffffff", show::Bool=true,
                   filter_measure=nothing, filter_fun=nothing, filter_values=nothing,
@@ -70,14 +70,14 @@ _stamp_dict(s) = s === nothing ? nothing : Dict{String,Any}(String(k) => v for (
 Record the request's `author_stamp()` as `updated_by` on a population that carries an author stamp
 (a Claude proposal); a plain GUI gate is left alone, so its sidecar keeps its shape. `true` if stamped.
 """
-function stamp_edit!(m::PopulationMap, path::AbstractString)::Bool
+function stamp_edit!(m::PopulationTree, path::AbstractString)::Bool
     p = get(m.pops, String(path), nothing)
     (p === nothing || p.created_by === nothing) && return false
     p.updated_by = author_stamp()
     true
 end
 
-function set_gate!(m::PopulationMap, path::AbstractString, gate::Gate)
+function set_gate!(m::PopulationTree, path::AbstractString, gate::Gate)
     has_pop(m, path) || error("set_gate!: not found: $path")
     m.pops[String(path)].gate = gate
     _invalidate!(m)
@@ -90,7 +90,7 @@ end
 Rewrite (or, with `op=nothing`, clear) a population's boolean definition — the edit counterpart of
 `set_gate!`. Same guards as `add_pop!`: known references, no self-reference, no dependency loop.
 """
-function set_boolean!(m::PopulationMap, path::AbstractString; op=nothing, pops=nothing, nots=nothing)
+function set_boolean!(m::PopulationTree, path::AbstractString; op=nothing, pops=nothing, nots=nothing)
     has_pop(m, path) || error("set_boolean!: not found: $path")
     path = String(path)
     bop, bpops, bnot = _normalise_boolean(op, pops, nots; self = path)
@@ -110,7 +110,7 @@ function set_boolean!(m::PopulationMap, path::AbstractString; op=nothing, pops=n
 end
 
 """Rename a population, cascading the path change to all descendants."""
-function rename_pop!(m::PopulationMap, path::AbstractString, newname::AbstractString)::String
+function rename_pop!(m::PopulationTree, path::AbstractString, newname::AbstractString)::String
     has_pop(m, path) || error("rename_pop!: not found: $path")
     !is_reserved_pop_name(newname) ||
         error("rename_pop!: names beginning with \"$DERIVED_POP_PREFIX\" are reserved for " *
@@ -135,7 +135,7 @@ the tree changes, and with it its MEMBERSHIP: a pop's cells are its own gate ∩
 Rejects a move into the pop's own subtree (a cycle: a pop cannot be its own ancestor) and one whose
 target path is already taken. Same cascade as `rename_pop!` — both are one path rewrite.
 """
-function move_pop!(m::PopulationMap, path::AbstractString, newparent::AbstractString)::String
+function move_pop!(m::PopulationTree, path::AbstractString, newparent::AbstractString)::String
     has_pop(m, path) || error("move_pop!: not found: $path")
     path = String(path)
     newparent = is_root(newparent) ? ROOT : String(newparent)
@@ -157,7 +157,7 @@ end
 
 # Rewrite `path` and every descendant to sit at `newpath` — the cascade shared by rename (the leaf
 # name changes) and move (the parent does). Callers own the guards; this one only rewrites.
-function _repath!(m::PopulationMap, path::AbstractString, newpath::AbstractString)::String
+function _repath!(m::PopulationTree, path::AbstractString, newpath::AbstractString)::String
     affected = [path; descendants(m, path)]
     for old in affected
         np = _replace_prefix(old, path, newpath)
@@ -187,7 +187,7 @@ function _repath!(m::PopulationMap, path::AbstractString, newpath::AbstractStrin
 end
 
 """Delete a population and all its descendants (cascade)."""
-function del_pop!(m::PopulationMap, path::AbstractString)
+function del_pop!(m::PopulationTree, path::AbstractString)
     has_pop(m, path) || error("del_pop!: not found: $path")
     path = String(path)
     _del_paths!(m, Set([path; descendants(m, path)]))
@@ -200,12 +200,12 @@ Delete everything UNDER `path` — its whole subtree — and keep the population
 of `del_pop!`: pruning a strategy back to a gate you want to re-gate from, without redrawing that
 gate. Membership of `path` is unaffected (nothing below it feeds into it).
 """
-function del_children!(m::PopulationMap, path::AbstractString)
+function del_children!(m::PopulationTree, path::AbstractString)
     has_pop(m, path) || error("del_children!: not found: $path")
     _del_paths!(m, Set(descendants(m, String(path))))
 end
 
-function _del_paths!(m::PopulationMap, targets::Set{String})
+function _del_paths!(m::PopulationTree, targets::Set{String})
     for t in targets
         # drop the reverse-lookup entry first so `uid_index` never points at a deleted path, then
         # RETIRE the UID so `_fresh_pop_uid` can never reissue it — a `track_source` obs value in the
@@ -223,5 +223,5 @@ function _del_paths!(m::PopulationMap, targets::Set{String})
     m
 end
 
-_invalidate!(m::PopulationMap) = (m._labels = nothing; m._membership = nothing; m)
+_invalidate!(m::PopulationTree) = (m._labels = nothing; m._membership = nothing; m)
 

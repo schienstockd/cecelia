@@ -7,7 +7,7 @@
 // Two-pass resolution per captured entry:
 //   PASS 1 — UID match. If a captured pop UID is non-empty AND the CURRENT segPops has a
 //     population with that same UID, emit the tkey for that pop. UIDs are stable across
-//     pop RENAMES / MOVES within the same image (see `PopulationMap._fresh_pop_uid`), so this is
+//     pop RENAMES / MOVES within the same image (see `PopulationTree._fresh_pop_uid`), so this is
 //     the strongest identity match. Pop UIDs are per-image — a match across images doesn't happen
 //     by coincidence.
 //   PASS 2 — path fallback. UID didn't match (renamed since capture beyond the current image, or
