@@ -4,7 +4,8 @@ import { tkey, parseTkey } from '../../plots/series'
 import { resolvePopType } from '../../plots/popTypes'
 import { PLOT_CATEGORY_IDS, PLOT_SKETCH_KINDS } from '../../plots/plotPicker'
 import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, isPluginView, popTypesFor,
-         VIEW_ALIASES, migrateViewKey } from './interactiveViews'
+         VIEW_ALIASES, migrateViewKey, familiesElsewhere } from './interactiveViews'
+import { popTypeLabel } from '../../plots/popTypes'
 import { CLUSTER_PANELS, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 
 // the two PICKER HOSTS, read as source: each must derive its options from the registry rather than
@@ -243,5 +244,22 @@ describe('a picked population survives the trip to the request', () => {
     const p = cohortParams({ imageUids: ['i'], compareMode: 'image', popType: 'live',
                              series: [{ popType: 'track', valueName: 'memTom', pop: '/T cells' }] })
     expect(p.get('pops')).toBeNull()
+  })
+})
+
+describe('familiesElsewhere — what a page leaves out, and where it is', () => {
+  it('Spatial lists regions only; the positions plot says where gates and clusters are', () => {
+    const out = familiesElsewhere('popPositions', 'spatialAnalysis')
+    const label = (popType: string) => popTypeLabel({ popType, granularity: 'cell' })
+    expect(out).toContainEqual({ label: label('flow'), pages: ['Phenotype'] })
+    expect(out).toContainEqual({ label: label('clust'), pages: ['Phenotype'] })
+    expect(out).toContainEqual({ label: label('live'), pages: ['Behaviour'] })
+    expect(out.map(f => f.label)).not.toContain(label('region'))
+  })
+  it('a family on no other page is not offered as elsewhere; no page → nothing', () => {
+    expect(familiesElsewhere('popPositions', 'behaviourAnalysis').map(f => f.pages.join()))
+      .toEqual(expect.arrayContaining(['Phenotype']))
+    expect(familiesElsewhere('popPositions', null)).toEqual([])
+    expect(familiesElsewhere('motifCards', 'spatialAnalysis')).toEqual([])
   })
 })

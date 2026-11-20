@@ -3,6 +3,8 @@ import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import { popTypeLabel, type PopTypeOption, type PopTypeSpecLike } from '../../plots/popTypes'
 import { TRACK_FAMILY_POP_TYPES, CELL_PLOT_POP_TYPES } from '../../plots/popTypeRegistry'
 import type { VisControl } from '../../plots/plotControls'
+import { moduleRouteFor } from '../../utils/moduleRoute'
+import { NAV_GROUPS, navLabelFor } from '../../lib/navGroups'
 import ClusterMapView from '../plots/ClusterMapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
@@ -259,6 +261,23 @@ export const popTypesFor = (key: string, module?: string | null): PopTypeOption[
   const all = INTERACTIVE_VIEWS[key]?.popTypes ?? []
   const page = module ? INTERACTIVE_VIEWS[key]?.modules?.[module] : undefined
   return page ? all.filter(o => page.includes(o.popType)) : all
+}
+
+/**
+ * The families a view can slice by that THIS module page does not offer, each with the pages that do
+ * ("Gates → Phenotype"). A page curates its families (`modules`), and the rail lists only the active
+ * plot's family — so without this a page offering one family reads as a plot that can do no other.
+ * Empty off a module page, or for a view no page curates.
+ */
+export function familiesElsewhere(key: string, module?: string | null): { label: string; pages: string[] }[] {
+  const v = INTERACTIVE_VIEWS[key]
+  if (!module || !v?.modules?.[module]) return []
+  const here = v.modules[module]!
+  return (v.popTypes ?? []).filter(o => !here.includes(o.popType)).map(o => ({
+    label: popTypeLabel(o),
+    pages: Object.entries(v.modules!).filter(([m, fams]) => m !== module && fams.includes(o.popType))
+      .map(([m]) => { const r = moduleRouteFor(m); return r ? navLabelFor(NAV_GROUPS, r) : m }),
+  })).filter(f => f.pages.length)
 }
 
 /** The built-in views a SUMMARY module page offers (their `modules` names it), by key. */
