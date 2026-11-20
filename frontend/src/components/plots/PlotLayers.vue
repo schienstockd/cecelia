@@ -17,8 +17,9 @@
   Subsets come from the server (plotdata?pop=…), so Julia still owns membership; we only colour.
 -->
 <script setup lang="ts">
-import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { watch, onMounted, onBeforeUnmount, useTemplateRef, toRaw } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
+import { resizePaint } from '../../utils/resizePaint'
 import { densityGrid, pointDensities, outlierPoints, valueGrid, DENSITY_GRID, CONTOUR_LEVELS, DOT_R,
          VALUE_GRID, type Ext } from '../../plots/density'
 import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
@@ -76,9 +77,14 @@ function ink(): string {
 // is an image ROW coordinate, which grows downward; the points, the density raster, the contour rings
 // and the gate outlines drawn over them all take it from the same place, so they cannot disagree.
 const box = (): PxBox => ({ ...size(), flipY: props.flipY })
-const toPx = (vx: number, vy: number) => dataToPx(props.viewExtents, box(), vx, vy)
+// The maps are BUILT once per layer and then called per point: the box (two layout reads) and the
+// extents (a reactive proxy) are captured, not re-read for each of 35k dots × 9 tiles — re-reading them
+// was most of a repaint's cost, and every resize step paid it.
+const pxMap = () => { const e = toRaw(props.viewExtents), b = box()
+                      return (vx: number, vy: number) => dataToPx(e, b, vx, vy) }
 // d3-contour ring coord (grid space [0,G], col=x row=y) → px
-const ringToPx = (gx: number, gy: number) => gridToPx(props.viewExtents, box(), G, gx, gy)
+const ringMap = () => { const e = toRaw(props.viewExtents), b = box()
+                        return (gx: number, gy: number) => gridToPx(e, b, G, gx, gy) }
 
 // FlowJo/OMIQ pseudocolour DOT plot: each point drawn at its position, coloured by its LOCAL density
 // via the blue-heat ramp — point resolution, no blocky cells. Bucketed by colour so we set fillStyle
@@ -98,11 +104,16 @@ const POP_R = 1.5, OUTLIER_R = 1.3
 // the served whole-dataset range, so the colours don't re-map as you walk the population tree), else
 // the point's own local density. One source of `t` → one paint loop for both modes, on screen and in
 // both export paths; the colour bar reads the same normalisation. NaN = the measure is missing there.
+// Size-independent, so the last one is kept: a resize repaint reuses it instead of re-binning.
+let rampMemo: { points: Float32Array; key: string; vals: Float32Array | null; t: Float32Array } | null = null
 function dotRamp(points: Float32Array): Float32Array {
-  const v = props.baseValues, ext = props.valueExtent
-  return v && ext && v.length === points.length / 2
-    ? normValues(v, ext)
-    : pointDensities(points, props.viewExtents)
+  const v = props.baseValues, ext = props.valueExtent, e = props.viewExtents
+  const byValue = !!(v && ext && v.length === points.length / 2)
+  const key = byValue ? `v:${ext}` : `d:${e.xMin},${e.xMax},${e.yMin},${e.yMax}`
+  if (rampMemo?.points === points && rampMemo.key === key && (!byValue || rampMemo.vals === v)) return rampMemo.t
+  const t = byValue ? normValues(v!, ext!) : pointDensities(points, e)
+  rampMemo = { points, key, vals: v ?? null, t }
+  return t
 }
 const haveValues = () => {
   const v = props.baseValues, pts = props.basePoints
@@ -115,7 +126,7 @@ const binnedMode = () => props.renderMode === 'binned' && haveValues()
 const showBar = () => colourBy() && props.valueLegend !== false
 function paintDensityDots(points: Float32Array) {
   const c = ctx!
-  const t = dotRamp(points)
+  const t = dotRamp(points), toPx = pxMap()
   const r = baseR(), n = points.length / 2
   const groups: number[][] = Array.from({ length: DOT_BUCKETS }, () => [])
   const missing: number[] = []                       // no value for this cell — NOT the ramp's floor
@@ -152,11 +163,12 @@ function paintValueCells() {
   const G = VALUE_GRID
   const { mean, count } = valueGrid(pts, vals, props.viewExtents, G)
   const t = normValues(mean, ext)
+  const e = toRaw(props.viewExtents), b = box()
   for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) {
     const k = gy * G + gx
     if (count[k] < 1 || !isFinite(t[k])) continue
-    const [x0, y0] = gridToPx(props.viewExtents, box(), G, gx, gy)
-    const [x1, y1] = gridToPx(props.viewExtents, box(), G, gx + 1, gy + 1)
+    const [x0, y0] = gridToPx(e, b, G, gx, gy)
+    const [x1, y1] = gridToPx(e, b, G, gx + 1, gy + 1)
     c.fillStyle = heatCss(t[k])
     c.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0) + 0.5, Math.abs(y1 - y0) + 0.5)
   }
@@ -183,7 +195,7 @@ function drawDensityDots(points: Float32Array, alpha = 1) {
 function drawContours(points: Float32Array, colour: string) {
   const c = ctx!
   const grid = densityGrid(points, props.viewExtents, G)
-  const levels = densityContours(grid, G, LEVELS)
+  const levels = densityContours(grid, G, LEVELS), ringToPx = ringMap()
   c.strokeStyle = colour; c.lineWidth = 1.2; c.lineJoin = 'round'; c.lineCap = 'round'
   levels.forEach((lvl, i) => {
     c.globalAlpha = 0.5 + 0.5 * (i / Math.max(1, LEVELS.length - 1))
@@ -201,7 +213,7 @@ function drawContours(points: Float32Array, colour: string) {
 
 function drawDots(points: Float32Array, colour: string, r = POP_R * dotK()) {
   const c = ctx!; c.fillStyle = colour
-  const n = points.length / 2
+  const n = points.length / 2, toPx = pxMap()
   c.beginPath()                                  // one path for the whole layer — see paintDensityDots
   for (let i = 0; i < n; i++) {
     const [px, py] = toPx(points[2 * i], points[2 * i + 1])
@@ -332,7 +344,7 @@ function renderBaseRasterUrl(scale = 4): string | null {
 // contour rings of `points` as vector <path>s (outer faint → inner solid), same levels/opacity as canvas
 function contoursSvg(points: Float32Array, colour: string): string {
   const grid = densityGrid(points, props.viewExtents, G)
-  const levels = densityContours(grid, G, LEVELS)
+  const levels = densityContours(grid, G, LEVELS), ringToPx = ringMap()
   let out = ''
   levels.forEach((lvl, i) => {
     const op = 0.5 + 0.5 * (i / Math.max(1, LEVELS.length - 1))
@@ -349,7 +361,7 @@ function contoursSvg(points: Float32Array, colour: string): string {
 }
 // a set of points as a true-vector circle group (child-pop dots + the outlier tail)
 function dotsSvg(points: Float32Array, colour: string, r: number, opacity = 1): string {
-  const n = points.length / 2, pxs: [number, number][] = new Array(n)
+  const n = points.length / 2, pxs: [number, number][] = new Array(n), toPx = pxMap()
   for (let i = 0; i < n; i++) pxs[i] = toPx(points[2 * i], points[2 * i + 1])
   return svgCircles(pxs, { fill: colour, r, opacity })
 }
@@ -362,11 +374,12 @@ function valueCellsSvg(): string {
   const { mean, count } = valueGrid(pts, vals, props.viewExtents, G)
   const t = normValues(mean, ext)
   let out = ''
+  const e = toRaw(props.viewExtents), b = box()
   for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) {
     const k = gy * G + gx
     if (count[k] < 1 || !isFinite(t[k])) continue
-    const [x0, y0] = gridToPx(props.viewExtents, box(), G, gx, gy)
-    const [x1, y1] = gridToPx(props.viewExtents, box(), G, gx + 1, gy + 1)
+    const [x0, y0] = gridToPx(e, b, G, gx, gy)
+    const [x1, y1] = gridToPx(e, b, G, gx + 1, gy + 1)
     out += svgRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0) + 0.5, Math.abs(y1 - y0) + 0.5,
                    { fill: heatCss(t[k]), opacity: props.showPops ? 0.4 : 1 })
   }
@@ -395,16 +408,19 @@ function exportSvgContent(): string {
 }
 defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 
+// a content change paints at once; a resize stretches the old bitmap until it settles when painting is
+// slow (utils/resizePaint.ts)
+const painter = resizePaint(draw)
 watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick,
              props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel, props.valueLegend,
              props.dotSize],
-      draw, { deep: true })
+      () => painter.paint(), { deep: true })
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')
-  draw()
-  ro = observeBoxChanges(canvasEl.value!, draw)
+  painter.paint()
+  ro = observeBoxChanges(canvasEl.value!, () => painter.resized())
 })
-onBeforeUnmount(() => { ro?.disconnect(); ro = null })
+onBeforeUnmount(() => { ro?.disconnect(); ro = null; painter.cancel() })
 </script>
 
 <template>
