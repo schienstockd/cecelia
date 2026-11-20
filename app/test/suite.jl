@@ -122,6 +122,7 @@ include(joinpath(@__DIR__, "suite", "qc_af.jl"))
 # scope, so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "spatial_neighbours.jl"))
+include(joinpath(@__DIR__, "suite", "region_lens_query.jl"))   # lens → region query helpers (LENS_QUERY_PLAN)
 include(joinpath(@__DIR__, "suite", "result_review_preceded.jl"))
 include(joinpath(@__DIR__, "suite", "aggregate_runs_boundaries.jl"))
 

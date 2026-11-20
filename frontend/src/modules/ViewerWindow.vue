@@ -27,7 +27,7 @@
   per several seconds instead of once per frame.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, shallowRef, toRaw, onMounted, onUnmounted } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
@@ -90,13 +90,14 @@ import {
   playHealthSummary, trimSamples, type PlayHealthSample,
 } from '../utils/playHealth'
 import { distinctChannelHexes } from '../utils/viewerColormap'
-import { captureViewState, applyViewState, loadViewerProps, saveViewerProps, channelHexFrom } from '../utils/viewerProps'
+import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import {
   screenToImagePx, cameraViewL0, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES, screenToL0, type L0Rect,
 } from '../utils/viewerPick'
 import { placeBox } from '../utils/anchorPosition'
 import { peekPoint, fmtPosition, fmtMeasure, rulerLength, labelPopIndex, readoutChannels, READOUT_CHANNEL_ROWS } from '../utils/viewer/cursorReadout'
-import { lensUniform, lensFetchChannels, lensForRecording, lensCircleL0, lensChipCounts, type LensCountLayer, lensRadiusRangeUm, lensRadiusUm, lensRadiusWheel, lensScreenAt, lensRadiusCss, lensFocusView } from '../utils/viewer/channelLens'
+import { lensFetchChannels, lensChipCounts, lensCountLayer, type LensCountLayer, lensRadiusWheel, lensFocusView } from '../utils/viewer/channelLens'
+import { useVwLens } from '../composables/useVwLens'
 import { BOX_HANDLES, resizeBox, drawnBox, squareBox, previewBoxNeeded, type BoxHandle, type BoxLimits } from '../utils/viewer/previewBox'
 import { cropTaskBox, type CropPick } from '../utils/viewer/cropPick'
 import ViewerCropBar from '../components/ViewerCropBar.vue'
@@ -134,7 +135,7 @@ import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL
 import { plotHostToImageURL, loadImg, downloadDataUrl, fitPngLongSide } from '../plots/export'
 import { screenshotFilename, isScreenshotChrome } from '../utils/viewerScreenshot'
 import DrawSurface from '../components/DrawSurface.vue'
-import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
+import VwLensChip from '../components/viewerWindow/VwLensChip.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
@@ -1352,7 +1353,7 @@ const kiwiViewRef = computed(() => viewerRefFor({
   imageUid, t: t.value, z: zPlane.value, plane: mode.value === 'plane',
   tracks: viewerStore.trackHighlight, cells: viewerStore.pickHighlight,
   lens: lensPin.value ? lensCircle.value : null,   // a pinned lens: "look at the lens"
-  lensChannels: lensPin.value ? (meta.value?.channels ?? []).slice(0, MAX_CHANNELS).filter(ch => ch.lens).map(ch => ch.name) : [],
+  lensChannels: lensPin.value ? lensChannelNames() : [],
 }))
 /** Cache hits and misses since the last (re)allocation, and how long the last miss took end to end.
  *  The plan's headline scrub number was measured with capacity larger than the movie, i.e. with
@@ -4325,112 +4326,48 @@ const hoverAt = ref<{ cx: number; cy: number } | null>(null)
 interface PeekKey { x: number; y: number; t: number; z: number; labels: string; vn: string }
 const peeked = ref<{ key: PeekKey; values: number[]; label: number | null; note: string | null } | null>(null)
 const readoutOn = computed(() => settings.viewerCursorReadout && mode.value === 'plane' && !!meta.value)
-// The channel lens (`utils/viewer/channelLens.ts`): 2D only, like the readout. It follows the pointer
-// (`lensPointer`, KEPT when the pointer leaves — a lens parked on a spot stays there while the Record
-// button is reached) until a click PINS it to the tissue (`lensPin`, level-0 px): then a pan or zoom
-// carries it, the chip beside it takes clicks (unpin, @ Kiwi, Draw and note), and a click unpins.
-const lensOn = computed(() => settings.viewerLens && mode.value === 'plane' && !!meta.value)
-const lensPointer = ref<{ cx: number; cy: number } | null>(null)
-const lensPin = ref<{ x: number; y: number } | null>(null)
-/** Where the lens is on the canvas, CSS px — the pin through the camera, else the pointer. */
-const lensAt = computed(() => {
-  const m = meta.value, { w, h } = canvasSize.value
-  return lensPin.value && m ? lensScreenAt(lensPin.value, cam.value, m, w, h) : lensPointer.value
-})
-/** The radius lives on the tissue, µm (`settings.viewerLensRadiusUm`, held in this image's slider
- *  range), so it scales with zoom as the population dots do; `lensRadiusPx` is how big it draws now. */
-const lensRange = computed(() => meta.value ? lensRadiusRangeUm(meta.value) : null)
-const lensRadiusUmNow = computed(() => lensRange.value ? lensRadiusUm(settings.viewerLensRadiusUm, lensRange.value) : 0)
-const lensRadiusPx = computed(() => {
-  const m = meta.value, { w, h } = canvasSize.value
-  if (!m || !lensRange.value) return 0
-  return lensRadiusCss(lensRadiusUmNow.value / (m.voxelUm[0] > 0 ? m.voxelUm[0] : 1), cam.value, m, w, h)
-})
-/** The lens on the tissue now (level-0 px), or null — what the chip counts, Kiwi gets and MCP reports. */
-const lensCircle = computed(() => {
-  const m = meta.value, { w, h } = canvasSize.value
-  return lensOn.value && m ? lensCircleL0(lensAt.value, lensRadiusPx.value, w, h, cam.value, m) : null
-})
-function trackLens(e: PointerEvent) {
-  if (!lensOn.value || !canvas.value) return
-  const rect = canvas.value.getBoundingClientRect()
-  lensPointer.value = { cx: e.clientX - rect.left, cy: e.clientY - rect.top }
-}
-/** A click with the lens on: pin it where it is, or unpin it back onto the pointer. */
-function toggleLensPin(e: PointerEvent) {
-  if (lensPin.value) { lensPin.value = null; trackLens(e); return }
-  const c = lensCircle.value
-  if (c) lensPin.value = { x: c.x, y: c.y }
-}
-watch(lensOn, on => { if (!on) lensPin.value = null })
-/** Hand the lens to whichever renderer is alive, then redraw. Device px: the canvas's own backing
- *  scale, not `devicePixelRatio` — the drawing buffer is what the shader's positions count. */
-function applyLens() {
-  const c = canvas.value
-  const k = c && c.clientWidth > 0 ? c.width / c.clientWidth : 1
-  const l = lensOn.value ? lensUniform(lensAt.value, lensRadiusPx.value, k) : null
-  renderer.value?.setLens(l)
-  tileRenderer.value?.setLens(l)
-  frame.redraw()
-}
-watch([lensOn, lensAt, lensRadiusPx], applyLens)
-// Switching the lens on/off changes the tile fetch set (`tileChannels`) — refetch for the lens ones.
-watch(lensOn, () => pushChannels())
-/** The chip beside the lens: what it draws (its channels, or "Spotlight") and what it holds — the
- *  drawn populations' cells inside it, on the frame and planes the markers show, cell pops, track
- *  clusters and regions each a group of its own (`lensChipCounts`). */
-const lensChip = computed(() => {
-  const m = meta.value, { w, h } = canvasSize.value
-  if (!lensOn.value || !m) return null
-  const circle = lensCircle.value
-  if (!circle || w <= 0 || h <= 0) return null
-  const picked = m.channels.slice(0, MAX_CHANNELS).filter(ch => ch.lens)
-    .map(ch => ({ name: ch.name, colour: channelHexFrom(ch.lut) }))
-  // the frame and planes the markers are drawn for — the tile view's own (t, z), else the loaded ones
-  const tiled = !!tileRenderer.value
-  const tt = Math.max(0, Math.round(tiled ? t.value : shownT.value))
-  const planes = overlayPlaneWindow(tiled ? [zPlane.value, zPlane.value] : zLoaded.value, spec.pointZTol, 'plane')
-  const layer = (l: PopLayer) => ({ vn: l.vn, payload: l.payload, hidden: layerHidden(l) })
-  const isRegion = (l: PopLayer) => popTypeInfo(l.popType)?.category === 'region'
-  const counts = lensChipCounts({ pops: popLayers.value.filter(l => !isRegion(l)).map(layer),
-                                  regions: popLayers.value.filter(isRegion).map(layer), tracks: lensTrackLayers() },
-                                circle, m.voxelUm, tt, planes)
-  return { picked, pinned: !!lensPin.value, ...counts }
+// The channel lens: state, pin, renderers' copy and MCP surface in `useVwLens`; the chip is
+// `VwLensChip`. The window supplies what the chip counts — the drawn populations' cells inside it, on
+// the frame and planes the markers show, cell pops, track clusters and regions each a group of its own.
+const {
+  lensOn, lensPin, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
+  trackLens, toggleLensPin, applyLens, lensChannelNames, recordedLens, savedPin: lensSavedPin,
+  restorePin: restoreLensPin, lensReport, placeLens,
+} = useVwLens({
+  meta: () => meta.value,
+  mode: () => mode.value,
+  canvas: () => canvas.value,
+  canvasSize: () => canvasSize.value,
+  cam: () => cam.value,
+  renderers: () => [renderer.value, tileRenderer.value],
+  redraw: () => frame.redraw(),
+  pushChannels: () => pushChannels(),
+  counts: circle => {
+    const m = meta.value!
+    // the frame and planes the markers are drawn for — the tile view's own (t, z), else the loaded ones
+    const tiled = !!tileRenderer.value
+    const tt = Math.max(0, Math.round(tiled ? t.value : shownT.value))
+    const planes = overlayPlaneWindow(tiled ? [zPlane.value, zPlane.value] : zLoaded.value, spec.pointZTol, 'plane')
+    const layer = (l: PopLayer) => lensCountLayer(l.vn, l.payload, layerHidden(l))
+    const isRegion = (l: PopLayer) => popTypeInfo(l.popType)?.category === 'region'
+    return lensChipCounts({ pops: popLayers.value.filter(l => !isRegion(l)).map(layer),
+                            regions: popLayers.value.filter(isRegion).map(layer), tracks: lensTrackLayers() },
+                          circle, m.voxelUm, tt, planes)
+  },
 })
 /** The track clusters the lens counts — as drawn: the ribbons (their eyes, their colours), else the
  *  mask coloured by track clusters (the point eyes, the pops' colours). */
 function lensTrackLayers(): LensCountLayer[] {
   if (spec.popVisible.trackclust && trackclustPayloads.value.size) {
     const overrides = spec.trackSourceColours
-    return [...trackclustPayloads.value].map(([vn, p]) => ({ vn,
-      payload: { cells: p.cells, pops: p.pops.map(x => ({ ...x,
+    return [...trackclustPayloads.value].map(([vn, p]) => lensCountLayer(vn,
+      { cells: toRaw(p.cells), pops: p.pops.map(x => ({ ...x, labels: toRaw(x.labels),
         colour: overrides[trackPopSourceKey(vn, 'trackclust', x.path)] ?? x.colour })) },
-      hidden: new Set(p.pops.filter(x => !popEyeOn(ribbonEyes.value, vn, 'trackclust', x.path, x.show)).map(x => x.path)) }))
+      new Set(p.pops.filter(x => !popEyeOn(ribbonEyes.value, vn, 'trackclust', x.path, x.show)).map(x => x.path))))
   }
   const tc = maskTrackclust.value, ml = maskPopLayers.value[0]
-  return spec.maskColour === 'trackclust' && tc && ml ? [{ vn: tc.vn, payload: tc.payload, hidden: ml.hidden ?? new Set<string>() }] : []
+  return spec.maskColour === 'trackclust' && tc && ml ? [lensCountLayer(tc.vn, tc.payload, ml.hidden ?? new Set<string>())] : []
 }
-/** The lens chip lists its channels one per row, this many, then "+n more" — a 20-channel aperture
- *  otherwise widened the chip across the image. */
-const LENS_CHIP_CHANNELS = 4
-const lensChannelsAll = ref(false)
-const lensChipSize = ref({ width: 0, height: 0 })
-function measureLensChip(el: unknown) {
-  if (!(el instanceof HTMLElement)) return
-  const { offsetWidth: width, offsetHeight: height } = el
-  if (width !== lensChipSize.value.width || height !== lensChipSize.value.height) lensChipSize.value = { width, height }
-}
-/** Beside the lens, never over it: right of its circle, flipping left at the canvas edge. */
-const lensChipStyle = computed(() => {
-  const a = lensAt.value, { w, h } = canvasSize.value
-  if (!a) return undefined
-  const r = lensRadiusPx.value
-  const p = placeBox({
-    anchor: { left: a.cx - r, top: a.cy - r, width: 2 * r, height: 2 * r }, box: lensChipSize.value,
-    viewport: { width: w, height: h }, placement: 'right-start', gap: 8, margin: 4,
-  })
-  return { left: p.left + 'px', top: p.top + 'px' }
-})
 /** The mask the readout names a cell in: the one drawn, never a preview / live store (no cell ids yet). */
 const readoutMaskVn = computed(() =>
   previewVn.value || liveVn.value ? '' : drawnMaskVn(labelName.value, maskHidden.value))
@@ -5140,7 +5077,7 @@ const propsSink = debouncedSave(async () => {
     meta: m, channels: m.channels, cam: cam.value,
     mode: mode.value, zPlane: zPlane.value, zRange: zRange.value,
     zWindow: { on: zWindowOn.value, half: zWindowHalf.value },
-    t: t.value, valueName: valueName.value,
+    t: t.value, valueName: valueName.value, lensPin: lensSavedPin.value,
   })
   await saveViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined }, vs)
 }, { wait: 800 })
@@ -5229,6 +5166,8 @@ async function loadVersion(refit: boolean) {
           zWindowOn.value = on
           zWindowHalf.value = zWindowDraft.value = Math.max(1, Math.min(half, Math.floor(m.nZ / 2) || 1))
         },
+        // level-0 px on the tissue — no pipeline effect, but tile mode has no post-alloc restore
+        applyLensPin: restoreLensPin,
         applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
       })
     })
@@ -5288,6 +5227,7 @@ watch(zRange,    () => propsSink.schedule())
 watch([zWindowOn, zWindowHalf], () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
+watch(lensSavedPin, () => propsSink.schedule())
 
 // `settings.setShow3D` (QuickMovie's 3D option, or another window via the `cc.viewerSetPrefs` bag sync —
 // see `utils/viewerBagChannel.ts`) drives THIS viewer's mode: watch the setter's derived value here. Guarded on a real change to
@@ -5397,9 +5337,7 @@ function liveViewState(atT: number = t.value): ViewerViewState | null {
     ndisplay: mode.value === 'plane' ? 2 : 3,
     canvasW: Math.max(1, c.clientWidth), canvasH: Math.max(1, c.clientHeight), viewHalfAngle: VIEW_HALF_ANGLE,
     perspective: settings.viewerVolumeProjection === 'persp',
-    lens: lensOn.value
-      ? lensForRecording(lensAt.value, lensRadiusPx.value, c.clientWidth, c.clientHeight, cam.value, m, m.channels)
-      : null,
+    lens: recordedLens(),
   })
 }
 const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
@@ -6372,43 +6310,6 @@ async function renderIdle(ms = 20000) {
   await awaitIdle(() => busy.value || shownT.value < 0, { timeoutMs: ms })
   for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(() => r(null)))
 }
-/** The lens for an MCP answer: where it is (level-0 px), pinned or on the pointer, what it draws (its
- *  channels; none = the spotlight) and what it holds — the chip's numbers, every group
- *  (`trackClusters`, `regions` only when the chip lists them). */
-function lensReport(): Record<string, unknown> | null {
-  const c = lensCircle.value, chip = lensChip.value
-  if (!c || !chip) return null
-  return { pinned: !!lensPin.value, x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.r),
-           channels: chip.picked.map(p => p.name), cells: chip.cells,
-           pops: chip.shown.map(p => ({ name: p.name, n: p.n, share: p.share })), morePops: chip.more,
-           ...Object.fromEntries(chip.groups.map(g => [g.kind === 'tracks' ? 'trackClusters' : 'regions', {
-             ...(g.kind === 'tracks' ? { tracks: g.of } : {}),
-             pops: g.shown.map(p => ({ name: p.name, n: p.n, share: p.share })), morePops: g.more }])) }
-}
-/** `set_viewer_view`'s `lens`: `false` switches it off; `{x, y, r?, channels?}` (level-0 px, channel
- *  names) pins it there. The same lens the screenshot's view reported is left as it is, so a view read
- *  and sent back whole does not pin a lens the user is moving. */
-function placeLens(l: unknown, live: ViewerViewState | null) {
-  if (l === false) { settings.viewerLens = false; return }
-  if (!l || typeof l !== 'object') return
-  const m = meta.value
-  if (!m) return
-  if (JSON.stringify(l) === JSON.stringify(live?.lens ?? null)) return
-  if (mode.value !== 'plane') throw new Error('the lens is 2D only — set dims.ndisplay to 2 first')
-  const o = l as { x?: unknown; y?: unknown; r?: unknown; channels?: unknown }
-  const x = Number(o.x), y = Number(o.y)
-  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('lens needs x and y (level-0 px)')
-  settings.viewerLens = true
-  settings.viewerCursorReadout = false   // the pointer tools are exclusive
-  if (Array.isArray(o.channels)) {
-    const want = new Set(o.channels.map(String))
-    for (const ch of m.channels.slice(0, MAX_CHANNELS)) ch.lens = want.has(ch.name)
-    pushChannels()
-  }
-  if (Number.isFinite(Number(o.r)) && Number(o.r) > 0)
-    settings.viewerLensRadiusUm = lensRadiusUm(Number(o.r) * (m.voxelUm[0] > 0 ? m.voxelUm[0] : 1), lensRadiusRangeUm(m))
-  lensPin.value = { x, y }
-}
 async function onViewerRequest(data: Record<string, unknown>) {
   if (String(data.imageUid ?? '') !== imageUid || String(data.projectUid ?? '') !== projectUid) return
   const requestId = String(data.requestId ?? '')
@@ -6548,55 +6449,9 @@ onUnmounted(() => {
       </div>
       <div v-if="measureMode && !ruler && mode === 'plane'" class="cc-hud-chip vw-status-chip vw-pbox-hint">Drag to measure</div>
       <!-- Cursor readout (Annotations → Readout): beside the pointer, never over it -->
-      <div v-if="lensChip" :ref="measureLensChip" :class="['cc-card vw-readout', { 'vw-lens-pinned': lensChip.pinned }]"
-           :style="lensChipStyle">
-        <span class="cc-row cc-row-tight vw-readout-head">
-          <span class="vw-readout-cell">{{ lensChip.picked.length ? 'Lens' : 'Spotlight' }}</span>
-          <!-- pinned: the chip holds still, so it takes clicks — unpin, ask Kiwi, note it for Kiwi or a Claude session -->
-          <span v-if="lensChip.pinned" class="cc-row cc-row-tight vw-lens-actions">
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-btn-on" @click.stop="lensPin = null"
-                    v-tooltip.bottom="'Unpin — follow the pointer'" aria-label="Unpin the lens">
-              <i class="pi pi-thumbtack" />
-            </button>
-            <AddToKiwiButton :kiwi-ref="() => kiwiViewRef.ref" :project-uid="projectUid" tip="Add the lens to Kiwi" />
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click.stop="beginDraw"
-                    v-tooltip.bottom="'Draw and note — to Kiwi or a Claude session'" aria-label="Draw and note on the lens">
-              <i class="pi pi-pencil" />
-            </button>
-          </span>
-        </span>
-        <span v-for="ch in lensChip.picked.slice(0, lensChannelsAll ? undefined : LENS_CHIP_CHANNELS)" :key="ch.name" class="vw-readout-row">
-          <span class="cc-dot" :style="{ background: ch.colour }" /><span class="vw-readout-name">{{ ch.name }}</span>
-        </span>
-        <!-- the cut-off: a pinned chip takes clicks, so there it opens the rest -->
-        <button v-if="lensChip.pinned && lensChip.picked.length > LENS_CHIP_CHANNELS"
-                class="cc-btn cc-btn-bare cc-btn-micro vw-lens-more" @click.stop="lensChannelsAll = !lensChannelsAll">
-          {{ lensChannelsAll ? 'Fewer' : `+${lensChip.picked.length - LENS_CHIP_CHANNELS} more` }}
-        </button>
-        <span v-else-if="lensChip.picked.length > LENS_CHIP_CHANNELS" class="vw-readout-dim">
-          +{{ lensChip.picked.length - LENS_CHIP_CHANNELS }} more
-        </span>
-        <template v-if="lensChip.cells !== null">
-          <span class="vw-readout-dim">{{ lensChip.cells }} {{ lensChip.cells === 1 ? 'cell' : 'cells' }}</span>
-          <span v-for="p in lensChip.shown" :key="p.key" class="vw-readout-row">
-            <span class="cc-dot" :style="{ background: p.colour }" />
-            <span class="vw-readout-name">{{ p.name }}</span><span class="vw-readout-val vw-lens-count">{{ p.n }}</span>
-            <span class="vw-readout-val vw-lens-share">{{ p.share }}</span>
-          </span>
-          <span v-if="lensChip.more" class="vw-readout-dim">+{{ lensChip.more }} more</span>
-        </template>
-        <!-- track clusters, then regions: their own groups, so each share column means one thing -->
-        <template v-for="g in lensChip.groups" :key="g.kind">
-          <span class="vw-readout-dim vw-lens-group">{{ g.kind === 'tracks' ? `${g.of} ${g.of === 1 ? 'track' : 'tracks'}` : 'Regions' }}</span>
-          <span v-for="p in g.shown" :key="p.key" class="vw-readout-row">
-            <span class="cc-dot" :style="{ background: p.colour }" />
-            <span class="vw-readout-name">{{ p.name }}</span><span class="vw-readout-val vw-lens-count">{{ p.n }}</span>
-            <span class="vw-readout-val vw-lens-share">{{ p.share }}</span>
-          </span>
-          <span v-if="g.more" class="vw-readout-dim">+{{ g.more }} more</span>
-        </template>
-        <span v-if="!lensChip.pinned" class="vw-readout-dim">Click to pin</span>
-      </div>
+      <VwLensChip v-if="lensChip" :chip="lensChip" :at="lensAt" :radius-px="lensRadiusPx"
+                  :canvas-w="canvasSize.w" :canvas-h="canvasSize.h" :kiwi-ref="() => kiwiViewRef.ref"
+                  :project-uid="projectUid" @unpin="lensPin = null" @draw="beginDraw" />
       <div v-if="readout" :ref="measureReadout" class="cc-card vw-readout" :style="readoutStyle">
         <span v-if="readout.cell" class="cc-row cc-row-tight vw-readout-head">
           <span class="vw-readout-cell">{{ readout.cell }}</span>
@@ -7421,6 +7276,7 @@ onUnmounted(() => {
   </div>
 </template>
 
+<style scoped src="../components/viewerWindow/vwReadout.css"></style>
 <style scoped>
 .vw-page { display: flex; flex-direction: column; height: 100vh; }
 .vw { display: flex; flex: 1; min-height: 0; background: var(--cc-surface-1); overflow: auto; }
@@ -7532,31 +7388,9 @@ onUnmounted(() => {
 .vw-ruler circle { fill: var(--cc-accent-strong); }
 .vw-ruler-label { position: absolute; transform: translate(-50%, calc(-100% - 6px)); white-space: nowrap; }
 /* Cursor readout: a HUD chip stacked in lines, placed beside the pointer (`readoutStyle`) */
-.vw-readout {
-  position: absolute; pointer-events: none; z-index: 40;
-  display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem; white-space: nowrap;
-  /* the readout and the lens chip hold a table, not a status line: a `.cc-card` that follows the
-     scheme (not the fixed-dark `.cc-hud-chip`), so their bare icon buttons read in either */
-  padding: 0.3rem 0.55rem; font-size: var(--cc-fs-xs); color: var(--cc-text);
-  box-shadow: 0 6px 18px var(--cc-shadow);
-}
-.vw-readout-head { column-gap: 0.6rem; }
-.vw-readout-cell { font-weight: 600; }
 .vw-readout-pop { display: inline-flex; align-items: center; gap: 0.3rem; }
 /* channels fill a column to READOUT_CHANNEL_ROWS, then start the next */
 .vw-readout-grid { display: grid; grid-auto-flow: column; column-gap: 1rem; row-gap: 0.05rem; }
-.vw-readout-row { display: flex; align-items: center; gap: 0.35rem; }
-/* the lens chip's share column: right-aligned, so the percentages line up under each other */
-/* a pinned lens's chip holds still, so it takes the pointer (its buttons) */
-.vw-lens-pinned { pointer-events: auto; }
-.vw-lens-actions { margin-left: auto; padding-left: 0.6rem; }
-.vw-lens-more { align-self: flex-start; padding: 0; font-size: var(--cc-fs-2xs); }
-.vw-lens-count { min-width: 3ch; margin-left: 0.6rem; text-align: right; }
-.vw-lens-share { min-width: 4ch; text-align: right; opacity: 0.7; }
-.vw-readout-name { flex: 1; opacity: 0.8; }
-.vw-readout-dim { opacity: 0.65; font-size: var(--cc-fs-2xs); }
-.vw-readout-val { font-variant-numeric: tabular-nums; }
-.vw-lens-group { margin-top: 0.3rem; }
 /* Rubber-band rectangle overlay for a select-mode drag. Bright enough to see over any content,
    but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
    the pointerup that ends the gesture (that would strand the drag). */

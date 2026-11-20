@@ -437,6 +437,7 @@ include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")
 include("tasks/clustRegions/graph.jl")
 include("tasks/clustRegions/cluster.jl")
+include("region_lens_query.jl")   # "find regions like this one" from a lens (LENS_QUERY_PLAN)
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")
 include("rois.jl")            # ROI sets + reviews (ROI_TRIAGE_PLAN); pure guard logic for /api/rois

@@ -133,6 +133,24 @@ describe('applyViewState', () => {
     expect(got).toBeNull()
   })
 
+  it('round-trips a pinned lens; an unpinned one saves nothing and restores nothing', () => {
+    const vs = captureViewState({
+      meta, channels: ch, cam: CAM, mode: 'plane', zPlane: 0, zRange: [0, 0], t: 0, valueName: '',
+      lensPin: { x: 1200.5, y: 340 },
+    })
+    let got: { x: number; y: number } | null = null
+    const { target } = mkTarget()
+    applyViewState(JSON.parse(JSON.stringify(vs)), meta, { ...target, applyLensPin: p => { got = p } })
+    expect(got).toEqual({ x: 1200.5, y: 340 })
+    const none = captureViewState({
+      meta, channels: ch, cam: CAM, mode: 'plane', zPlane: 0, zRange: [0, 0], t: 0, valueName: '',
+    })
+    expect(none.webgpu?.lensPin).toBeUndefined()
+    got = null
+    applyViewState(none, meta, { ...target, applyLensPin: p => { got = p } })
+    expect(got).toBeNull()
+  })
+
   it('falls back to viewer layers matched by channel name', () => {
     const vs: ViewerViewState = {
       layers: {
