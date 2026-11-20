@@ -142,7 +142,7 @@ class TestFigureLookOverlays(unittest.TestCase):
         spec.update(extra)
         rf.render_figure(spec)
         import json
-        with open(os.path.join(out, 'figure.json')) as f:
+        with open(os.path.join(out, 'figure.json'), encoding='utf-8') as f:
             resolved = json.load(f)
         return np.asarray(Image.open(os.path.join(out, 'figure.png')).convert('RGB')).astype(int), resolved
 
