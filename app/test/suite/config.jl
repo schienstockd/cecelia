@@ -632,4 +632,22 @@ end
     @test !Cecelia.token_authorized("", "Bearer ", "", 8090)    # no token → nothing passes
     @test Cecelia.api_launch_url("http://localhost:5183/", "t") == "http://localhost:5183/api/auth?token=t"
     @test Cecelia.api_auth_header("t") == ("Authorization" => "Bearer t")
+
+    # Security audit F3: every localhost port is one SITE, so the Lax cookie rides along with a page
+    # from any other local web server. Only our own page (or no page) gets through.
+    oo(site, origin; method = "POST", path = "/api/plugins/install", mode = "cors", host = "127.0.0.1:8090") =
+        Cecelia.request_origin_ok(method, path, site, mode, origin, host)
+    @test oo("same-origin", "http://127.0.0.1:8090")
+    @test oo("none", "")                                                    # typed URL / launcher
+    @test !oo("same-site", "http://localhost:3000")                         # another local web server
+    @test !oo("same-site", "http://localhost:3000"; path = "/ws", method = "GET", mode = "websocket")
+    @test !oo("cross-site", "https://evil.example")
+    @test !oo("same-site", ""; method = "GET", path = "/api/projects", mode = "navigate")  # API: never
+    @test oo("same-site", ""; method = "GET", path = "/", mode = "navigate")              # a link to the app
+    @test !oo("same-site", ""; method = "POST", path = "/", mode = "navigate")            # form post
+    # no Sec-Fetch-Site: a programmatic client (no Origin) or an old browser (Origin must be us)
+    @test oo("", "")
+    @test oo("", "http://127.0.0.1:8090") && oo("", "http://127.0.0.1:8090/")
+    @test oo("", "http://LOCALHOST:5173"; host = "localhost:5173")         # dev: Vite forwards Host
+    @test !oo("", "http://127.0.0.1:3000") && !oo("", "null") && !oo("", "http://127.0.0.1:8090.evil")
 end

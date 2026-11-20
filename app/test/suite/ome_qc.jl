@@ -2916,6 +2916,52 @@ end
     end
 end
 
+# Security audit F1: a bundle's manifest is its author's text. Its uid becomes a directory under the
+# projects dir and each packed path is unpacked then deleted — a `../` or absolute value used to put
+# the project (or a Replace) anywhere the user can write. Import must refuse, before touching disk.
+@testset "project import refuses a hostile manifest" begin
+    prev_env = get(ENV, "CECELIA_DEV_DIR", nothing)
+    mktempdir() do tmp
+        ENV["CECELIA_DEV_DIR"] = tmp
+        try
+            init_cecelia!()
+            projroot = joinpath(tmp, "projects"); mkpath(projroot)
+            set_projects_dir!(projroot)
+            function hostile(uid, packed = String[])
+                b = mktempdir(tmp)
+                write(joinpath(b, Cecelia.BUNDLE_MANIFEST), JSON3.write(Dict(
+                    "formatVersion" => Cecelia.BUNDLE_FORMAT_VERSION, "projectUid" => uid,
+                    "projectName" => "x", "packedStores" => packed)))
+                write(joinpath(b, "project.json"), JSON3.write(Dict("uid" => uid, "name" => "x")))
+                b
+            end
+            escape = joinpath(tmp, "escaped")
+            for uid in ("../escaped", escape, "a/b", "", "..")
+                b = hostile(uid)
+                @test isempty(import_project(b; mode = "replace", on_log = _ -> nothing))
+                @test Cecelia.bundle_info(b) === nothing
+            end
+            @test !ispath(escape) && !ispath(escape * ".import_tmp")
+            @test readdir(projroot) == String[]
+
+            for rel in ("../../x.zarr.tar", "/etc/x.zarr.tar", "0/../../x.zarr.tar",
+                        "0\\..\\..\\x.zarr.tar", "C:x.zarr.tar", "0/notes.tar", "")
+                @test !Cecelia._valid_packed_store(rel)
+                @test isempty(import_project(hostile("okUid1", [rel]); on_log = _ -> nothing))
+            end
+            @test Cecelia._valid_packed_store("0/img1/data.ome.zarr.tar")
+            @test Cecelia._valid_packed_store("1/img1/labels/labels.zarr.tar")
+            @test readdir(projroot) == String[]
+
+            @test all(Cecelia.valid_uid(Cecelia.gen_uid()) for _ in 1:200)
+        finally
+            prev_env === nothing ? delete!(ENV, "CECELIA_DEV_DIR") :
+                                   (ENV["CECELIA_DEV_DIR"] = prev_env)
+            init_cecelia!()
+        end
+    end
+end
+
 # The tar invocation must never hand a Windows drive letter to `-f`. GNU tar reads an archive
 # path as `host:path` when a colon precedes any separator, so `-f D:\a\...\x.tar` becomes a
 # connection attempt to host `D` and the pack silently produces nothing — which is how `.ccbundle`

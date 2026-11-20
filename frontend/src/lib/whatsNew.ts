@@ -15,6 +15,7 @@
 // a placeholder until STATS_ANNOTATIONS_PLAN.md lands content.
 import { computed, ref, type ComputedRef } from 'vue'
 import { marked } from 'marked'
+import { sanitizeHtml } from '../utils/sanitizeHtml'
 import { useAppControlStore, type MergedPr } from '../stores/appControl'
 
 export type WhatNewKind = 'update' | 'tip' | 'fix' | 'about'
@@ -80,11 +81,12 @@ export function closeWhatsNew() {
 
 marked.setOptions({ gfm: true, breaks: false })
 
-/** Render markdown → HTML for `v-html` in `WhatNewCard`. Sync helper (marked has a sync API). */
+/** Render markdown → sanitised HTML for `v-html` in `WhatNewCard`. Sync helper (marked has a sync
+ *  API). Sanitised: the body is a GitHub release's, whose generated notes carry contributors' PR titles. */
 export function renderMarkdown(md: string | undefined | null): string {
   if (!md) return ''
-  try { return marked.parse(md, { async: false }) as string }
-  catch { return md }
+  try { return sanitizeHtml(marked.parse(md, { async: false }) as string) }
+  catch { return '' }
 }
 
 /** One feature an update brings, written by hand in that feature's PR: the PR's number, its title and

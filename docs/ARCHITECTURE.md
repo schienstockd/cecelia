@@ -828,8 +828,11 @@ REPL. So every port answers only requests carrying the **API token** (`app/src/a
   (`CECELIA_API_TOKEN_FILE`), never the secret, because Claude's config is not owner-only.
 - **The browser** signs in once through the launch link `/api/auth?token=…`, which `app.py` opens and
   `pixi run dev` prints. It sets an HttpOnly, `SameSite=Lax` cookie named per backend port
-  (`cecelia_auth_<port>`), valid for a year. Lax: a cross-site page's fetch or WebSocket never carries
-  it. The link lives under `/api/` so Vite's dev proxy forwards it.
+  (`cecelia_auth_<port>`), valid for a year. Lax keeps it off a cross-site page's fetch, but every
+  `localhost` port is the same site, so `handle_stream` also refuses a browser request that did not
+  come from its own page (`request_origin_ok`: `Sec-Fetch-Site`, else `Origin` vs `Host`; a plain
+  navigation to the frontend passes). The link lives under `/api/` so Vite's dev proxy forwards it,
+  with `Host` and `Origin` unchanged.
 - **Gated everywhere:** the backend checks in `handle_stream` (router, static frontend, binary routes and
   WS upgrade alike). Only `/api/health` (launcher polling) and `/api/auth` are open. The runner gates
   every route but `/ping`, and refuses a POST with `ok = false`, so the task runs in-process. The
