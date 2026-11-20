@@ -19,6 +19,8 @@ Parameter contract (JSON written by Julia):
   resultPath - absolute path to write the result JSON to
   photonsUntestable - optional {"<channel index>": reason}: channels the source file says were
                processed before writing, so their noise no longer counts photons (no photon fit)
+  notPhotonCounting - optional {"<channel index>": reason}: channels a camera recorded (it cannot
+               count photons; "*": every channel), so their floor is not read as photon-counted
 
 Result JSON: `cecelia.utils.data_path.measure_store` — {"channels": [{"index", "saturated",
 "topValue", …, "containerBits", "range", "floor", "noise", "profile", "photons"}, …], "sampling",
@@ -44,7 +46,8 @@ def run(params):
     try:
         # the bar moves per channel of the histogram pass, the long part on a slide scan
         result = data_path.measure_store(im_path, log=log.log, on_progress=log.progress,
-                                         photons_untestable=params.get('photonsUntestable'))
+                                         photons_untestable=params.get('photonsUntestable'),
+                                         not_photon_counting=params.get('notPhotonCounting'))
     except Exception as e:
         # Advisory QC on a store that already converted successfully: report and move on. A
         # non-integer dtype (channel_histograms raises) or an unreadable OME is not an import failure.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dataPathChannels, dataPathNotes, firstDataPathChannel, hasDataPath, sparkPath } from './acquisitionDataPath'
+import { cameraChannel, dataPathChannels, dataPathNotes, firstDataPathChannel, hasDataPath, sparkPath } from './acquisitionDataPath'
 import type { LightPathImage } from './acquisitionLightPath'
 import REAL from './acquisitionLightPath.fixture.json'
 
@@ -182,5 +182,25 @@ describe('dataPathChannels — a camera has no photon-counted floor', () => {
     const t = dataPathChannels(img(false))[0].items.map(i => i.text).join(' ')
     expect(t).toContain('photon-counted')
     expect(t).toContain('photons per non-zero voxel')
+  })
+
+  it('a mixed-mode image (.czi) keeps the reading on its laser-scanning channel', () => {
+    // czi_meta sets `camera` when any channel is WideField
+    const mixed = { cleanupFacts: { channels: [ch, { ...ch, index: 1 }] },
+      acquisition: { camera: { name: 'Axiocam 705' }, channels: [
+        { order: 1, acquisitionMode: 'WideField' }, { order: 2, acquisitionMode: 'LaserScanningConfocalMicroscopy' }] },
+    } as unknown as LightPathImage
+    const [wf, lsm] = dataPathChannels(mixed).map(c => c.items.map(i => i.text).join(' '))
+    expect(wf).not.toContain('photon')
+    expect(lsm).toContain('photons per non-zero voxel')
+  })
+
+  it('cameraChannel: a channel with no mode counts only when no channel records another', () => {
+    const acq = (modes: (string | undefined)[]) => ({ camera: {},
+      channels: modes.map((m, i) => ({ order: i + 1, acquisitionMode: m })) }) as unknown as LightPathImage['acquisition']
+    expect(cameraChannel(acq([undefined, undefined]), 1)).toBe(true)
+    expect(cameraChannel(acq(['WideField', undefined]), 1)).toBe(true)
+    expect(cameraChannel(acq(['LaserScanningConfocalMicroscopy', undefined]), 1)).toBe(false)
+    expect(cameraChannel({ channels: [] } as unknown as LightPathImage['acquisition'], 0)).toBe(false)
   })
 })
