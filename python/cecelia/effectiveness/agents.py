@@ -50,7 +50,7 @@ _SLOTS_FILE = "badge_slots.json"
 
 def _hash_slot(session_id: str) -> int:
     """The colour for a session no slot is known for (no `/proc` to tell who is live)."""
-    return int(hashlib.sha1(session_id.encode("utf-8")).hexdigest(), 16) % len(BADGE_COLOURS)
+    return int(hashlib.sha256(session_id.encode("utf-8")).hexdigest(), 16) % len(BADGE_COLOURS)
 
 
 def badge_slots(live_ids: _t.Sequence[str], folder: pathlib.Path | None = None) -> dict[str, int]:

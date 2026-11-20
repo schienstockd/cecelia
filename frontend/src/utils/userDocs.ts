@@ -7,8 +7,7 @@ import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { guideById, RECIPES, isWanted, type WrittenRecipe } from '../lib/guides'
 import { TIER_LABEL } from '../lib/guides/tiers'
 import { pageTier, badged } from './maturity'
-
-const cell = (s: string) => s.replace(/\|/g, '\\|')
+import { cell } from './docPage'
 
 export function sidebarSection(): string {
   const out = [

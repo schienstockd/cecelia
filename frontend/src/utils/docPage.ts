@@ -33,8 +33,9 @@ export interface DocHeader {
   ends: string
 }
 
-/** A table cell: no pipes, no line breaks. */
-export const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+/** A table cell: backslashes and pipes escaped, no line breaks. */
+export const cell = (s: string): string =>
+  s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ')
 
 /** The page's first line, naming the module that writes it and how to refresh it. */
 export const generatedBy = (module: string, test: string): string =>

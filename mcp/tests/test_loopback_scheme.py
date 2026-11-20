@@ -63,6 +63,7 @@ def _serve(tls: bool, certdir: Path | None = None) -> ThreadingHTTPServer:
     srv = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     if tls:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.load_cert_chain(*_self_signed(certdir))
         srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -154,6 +155,7 @@ class LoopbackSchemeTest(unittest.TestCase):
 
         async def run():
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.load_cert_chain(*_self_signed(Path(self._tmp.name)))
             async with wss.serve(handler, "127.0.0.1", 0, ssl=ctx) as server:
                 port = server.sockets[0].getsockname()[1]
@@ -182,6 +184,7 @@ class LoopbackSchemeTest(unittest.TestCase):
         ctx = None
         if tls:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.load_cert_chain(*_self_signed(Path(self._tmp.name)))
         with serve(handler, "127.0.0.1", 0, ssl=ctx) as server:
             threading.Thread(target=server.serve_forever, daemon=True).start()
