@@ -115,3 +115,4 @@ describe('attribute groups — the attribute-order strip', () => {
     expect(orderedAttrGroups(['10', '2', '1'], undefined)).toEqual(['1', '2', '10'])
   })
 })
+

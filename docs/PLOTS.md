@@ -169,7 +169,10 @@ Four rules make this work; each one was a bug before it was a rule.
    lives on the plot (persisted in panel state); both hosts pass `activeSpecId` + `activePopType` into
    `useSummaryData`, so the manager lists that family. There is deliberately no second selector on the
    manager, and a plot deliberately cannot mix families: the manager shows one family at a time, so
-   cross-family selections would be invisible and impossible to un-tick.
+   cross-family selections would be invisible and impossible to un-tick. The manager's head names the
+   family it lists, and on a module page the active plot's other families with the pages that offer
+   them (`familiesElsewhere` in `interactiveViews.ts`): a page curates its families, so a one-family
+   list otherwise reads as a plot that can do no other.
 4. **Selections are kept across families, so requests must filter.** Keys are family-tagged
    (`popType::valueName/pop`) and are *not* pruned when the family changes — that is what stops
    switching family from wiping other plots' selections (commit `4c8e677`). The flip side: a panel can
@@ -249,14 +252,17 @@ DATA order and never touches pixels; `gridToPx` converts those back through the 
 `popPositions` (`components/plots/PopPositionsView.vue`, an interactive view) draws every cell of the
 segmentations the picked populations live on (a co-clustered run or a multi-segmentation pick draws
 each; with nothing picked, the active one) at its centroid — µm when calibrated, y downward like the image — in the gate plot's
-density colours (dimmed once populations are shown), with each picked population's cells in its colour, one square tile per selected image, at one frame (a slider)
+density colours (dimmed once populations are shown), with each picked population's cells in its colour, one tile per selected image, at one frame (a slider)
 or all frames at once. It is the old R version's read-only gating plot of X/Y with populations on top.
 Any population type: a track family (behaviour clusters, tracked cells) resolves to its member cells
 in every frame, so a behaviour cluster is coloured along its tracks and a region shows the cells it
 holds at each timepoint. One family per plot, like every plot here. A cell in several picked
 populations takes the colour of the deepest (a child picked after its parent stays visible). An image
 the picked populations are not on draws no tile, rather than another segmentation's cells. Captions are
-image uids (the name on hover): names run to two lines and push the maps down.
+image uids (the name on hover): names run to two lines and push the maps down. The DOTS take the
+image's shape — equal µm per pixel on x and y — through `GateScatterCell`'s `aspect`, and the tile is
+those dots plus the cell's axis room (`tileBox`, `GATE_CELL_PAD` in `plots/popPositions.ts`); sizing
+the whole tile at the image's shape left that room as a blank band under a portrait map.
 
 It is offered on the Analysis board, on the Cluster and Region pages (`clusterPage` — there it draws
 the populations the page's manager has switched on, the way the UMAP does) and on the Phenotype,

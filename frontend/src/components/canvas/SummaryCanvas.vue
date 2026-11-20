@@ -26,14 +26,14 @@ import { useSummaryData } from '../../composables/useSummaryData'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isPluginView, railFor, viewControls, popTypesFor, popTypeSpecFor, singlePopFor, viewOption, moduleViewKeys } from './interactiveViews'
+import { INTERACTIVE_VIEWS, familiesElsewhere, isPluginView, railFor, viewControls, popTypesFor, popTypeSpecFor, singlePopFor, viewOption, moduleViewKeys } from './interactiveViews'
 import PlotPicker from './PlotPicker.vue'
 import { specOption, type PlotOption } from '../../plots/plotPicker'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType, MatrixMode, MatrixNormalize } from '../../plots/types'
-import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
+import { migrateSpecId, isPrecomputedSpec, popTypeLabel } from '../../plots/popTypes'
 import { emptyReadout, declaredReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
@@ -117,7 +117,7 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, panelReloadToken, localSelRemap, reload,
+  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
@@ -239,6 +239,16 @@ const activeIsPrecomputed = computed(() => {
   const id = activePanel.value?.state.specId
   const spec = id ? specById.value[id] : null
   return !!spec && isPrecomputedSpec(spec)
+})
+// WHICH FAMILY the rail is listing, and where the active plot's other families live: a page curates its
+// families, so a list of only regions otherwise reads as "this plot can't do gates".
+const familyNote = computed(() => {
+  const k = activePanel.value?.state.kind
+  const elsewhere = k ? familiesElsewhere(String(k), props.module) : []
+  const byPage = new Map<string, string[]>()
+  for (const f of elsewhere) for (const pg of f.pages) byPage.set(pg, [...(byPage.get(pg) ?? []), f.label])
+  return { listed: popTypeLabel({ popType: listedPopType.value, granularity: listedGranularity.value }),
+           elsewhere: [...byPage].map(([pg, fams]) => `${fams.join(', ')}: ${pg}`) }
 })
 function removePanel(id: number) { remove(id); delete readouts.value[id] }
 
@@ -597,7 +607,7 @@ watch(segPops, () => {
           <!-- Floating population picker: `position: absolute` on the undocked CanvasSidePanel
                anchors it to the nearest positioned ancestor, so it stays in the overlay slot
                (inside `.floating-canvas`) alongside the share chip — not below the host. -->
-          <SeriesPicker v-if="showManager" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
+          <SeriesPicker v-if="showManager" :family-note="familyNote" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"

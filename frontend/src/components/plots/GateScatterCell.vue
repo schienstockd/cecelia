@@ -63,6 +63,8 @@ const props = withDefaults(defineProps<{
   hideAxisLabels?: boolean                       // drop the x/y axis-name labels (pairs matrix — the
                                                  // diagonal names each channel, so per-tile labels only
                                                  // clutter/clip); also reclaims their padding
+  aspect?: number                                // dots width / height (default 1, square); a map whose
+                                                 // x and y are both image distance passes the image's
   fontSize?: number                              // base axis font size (px) — the vis slider; scales the
                                                  // tick labels + axis names (--gate-font). Default 11.
   // BIDIR PR #4b point-out plotId — the stable id (panel `persistKey`) Claude addresses this cell by
@@ -341,7 +343,7 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
 <template>
   <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }"
        :style="{ '--gate-font': `${fontSize}px` }">
-    <div ref="panelPlotEl" class="panel-plot">
+    <div ref="panelPlotEl" class="panel-plot" :style="aspect ? { aspectRatio: String(aspect) } : undefined">
       <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :flip-y="flipY"

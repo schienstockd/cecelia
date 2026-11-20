@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { containBox, framesIn, popWireToken, positionLayers, positionPops, resolveFrame } from './popPositions'
+import { containBox, tileBox, GATE_CELL_PAD, framesIn, popWireToken, positionLayers, positionPops, resolveFrame } from './popPositions'
 import { POPULATION_PALETTE } from './plot'
 
 // [x, y, t, popIdx] per cell — the /api/plots/pop-positions wire (api/src/gating_api.jl)
@@ -86,5 +86,17 @@ describe('population positions — tile size', () => {
   it('unmeasured → nothing; a bad aspect → square', () => {
     expect(containBox(0, 100, 1)).toEqual({ w: 0, h: 0 })
     expect(containBox(100, 100, NaN)).toEqual({ w: 100, h: 100 })
+  })
+  it('a tile is the dots at the image shape plus the axis room, inside its cell', () => {
+    const pad = { x: 100, y: 60 }
+    const t = tileBox(500, 460, 0.8, pad)                       // portrait: height-bound
+    expect(t.dots).toEqual({ w: 320, h: 400 })
+    expect(t).toMatchObject({ w: 420, h: 460 })
+    const l = tileBox(500, 460, 2, pad)                         // landscape: width-bound
+    expect(l.dots).toEqual({ w: 400, h: 200 })
+    expect(l).toMatchObject({ w: 500, h: 260 })
+  })
+  it('no room for the axes → nothing', () => {
+    expect(tileBox(80, 40, 1, GATE_CELL_PAD.full)).toMatchObject({ w: 0, h: 0 })
   })
 })
