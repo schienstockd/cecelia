@@ -86,9 +86,10 @@ describe('ChipSelect layout', () => {
     expect(shown()).toEqual(['Chip 5'])
     await userEvent.click(chip('+'))
     expect(shown().length).toBe(30)
-    await userEvent.fill(host.querySelector<HTMLInputElement>('.chip-filter')!, 'Chip 2')
+    // every word must appear somewhere (textQuery's rule), so 'chip 2' also keeps Chip 12 — but not Chip 13
+    await userEvent.fill(host.querySelector<HTMLInputElement>('.chip-filter')!, 'chip 2')
     await frames()
-    expect(shown().every(t => t?.startsWith('Chip 2'))).toBe(true)
+    expect(shown()).toEqual(['Chip 2', 'Chip 12', ...Array.from({ length: 10 }, (_, i) => `Chip ${20 + i}`)])
   })
 })
 

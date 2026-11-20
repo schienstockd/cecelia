@@ -26,6 +26,8 @@ import { downloadDataUrl, downloadText } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
+import SearchSelect from '../../components/SearchSelect.vue'
+import { measurePickGroups } from '../../utils/searchSelect'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { UNASSIGNED_POP, PAPER } from '../../plots/fixedColours'
@@ -115,6 +117,8 @@ function clearChannels() { channels.value = [] }
 // the same. `groupedCols` is the flat universe the selection is reconciled against.
 const pickGroups = computed(() => measureGroups({
   columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
+const colourPickGroups = computed(() =>
+  measurePickGroups(pickGroups.value, c => g.colLabel(c), [{ value: '', label: 'density' }]))
 
 // Keep the selection valid for the current segmentation: a value_name switch changes the columns, so
 // prune any channel that no longer exists (reseeding if that empties it) — the pure reconcileChannels,
@@ -235,13 +239,9 @@ useVisualPanel(
            v-tooltip.bottom="overrideTooltip(pairsOverride, '')" />
       </div>
       <label class="ax-row"><span class="ax-lbl">colour</span>
-        <select class="ax-chan" v-model="zChan"
-                v-tooltip.bottom="'Colour every tile\'s dots by a third measure (points / binned)'">
-          <option value="">density</option>
-          <optgroup v-for="grp in pickGroups" :key="grp.title" :label="grp.title">
-            <option v-for="c in grp.cols" :key="c" :value="c">{{ g.colLabel(c) }}</option>
-          </optgroup>
-        </select>
+        <SearchSelect class="ax-chan" v-model="zChan" :groups="colourPickGroups"
+                      aria-label="Colour every tile's dots by"
+                      v-tooltip.bottom="'Colour every tile\'s dots by a third measure (points / binned)'" />
         <select class="tsel" v-model="zt" :disabled="!zChan" v-tooltip.bottom="'Colour scale'">
           <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
       </label>
