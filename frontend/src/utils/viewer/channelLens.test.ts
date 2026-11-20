@@ -52,6 +52,10 @@ describe('the lens radius, µm on the tissue', () => {
     expect(lensRadiusUm(1e6, range)).toBe(500)
     expect(lensRadiusUm(3, range)).toBe(10)
     expect(lensRadiusUm(250, range)).toBe(250)
+    // a radius placed in px on another image lands on this image's steps, not as a float
+    expect(lensRadiusUm(64.94104863725161, { min: 3, max: 131, step: 1, def: 26 })).toBe(65)
+    expect(lensRadiusUm(64.94104863725161, { min: 10, max: 500, step: 5, def: 100 })).toBe(65)
+    expect(lensRadiusUm(0.7000000001, { min: 0.1, max: 5, step: 0.1, def: 1 })).toBe(0.7)
   })
   it('Alt+wheel moves 10% a notch on the slider steps, at least one step, inside the range', () => {
     expect(lensRadiusWheel(100, true, range)).toBe(110)
@@ -140,6 +144,11 @@ describe('lensPopCounts', () => {
   })
   it('two pop types of one segmentation count its cells once', () => {
     expect(lensPopCounts([layer(), layer()], circle, vox, 0, [0, 1]).cells).toBe(3)
+  })
+  it('t < 0 counts every frame: cells inside on any frame', () => {
+    const l = layer(); l.payload.cells.t = [0, 1, 2, 0, 0]
+    expect(lensPopCounts([l], circle, vox, 0, [0, 1]).cells).toBe(1)
+    expect(lensPopCounts([l], circle, vox, -1, [0, 1]).cells).toBe(3)
   })
 })
 

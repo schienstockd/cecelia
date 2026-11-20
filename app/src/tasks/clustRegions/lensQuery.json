@@ -1,0 +1,82 @@
+{
+  "task": "lensQuery",
+  "fun_name": "clustRegions.lensQuery",
+  "label": "Find regions like the lens",
+  "purpose": "Score every cell by how much its neighbourhood mix is like a pinned lens's",
+  "useWhen": [
+    "Finding more places like one you pinned the channel lens on"
+  ],
+  "notWhen": [
+    "No region clustering yet: the lens reads its composition"
+  ],
+  "category": "Spatial analysis",
+  "env": [
+    "local"
+  ],
+  "hidden": true,
+  "resource_pool": "cpu",
+  "scope": "set",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "text",
+      "default": "default",
+      "tip": "The segmentation the region run is on"
+    },
+    {
+      "key": "regionSuffix",
+      "label": "Region run",
+      "type": "text",
+      "default": "default",
+      "tip": "The region clustering run whose composition the lens reads"
+    },
+    {
+      "key": "lensX",
+      "label": "Lens x",
+      "type": "float",
+      "default": null,
+      "required": true,
+      "tip": "Lens centre, level-0 px"
+    },
+    {
+      "key": "lensY",
+      "label": "Lens y",
+      "type": "float",
+      "default": null,
+      "required": true,
+      "tip": "Lens centre, level-0 px"
+    },
+    {
+      "key": "lensR",
+      "label": "Lens radius",
+      "type": "float",
+      "default": null,
+      "required": true,
+      "min": 1,
+      "tip": "Level-0 px"
+    },
+    {
+      "key": "outputName",
+      "label": "Name",
+      "type": "text",
+      "default": "lens",
+      "tip": "Writes spatial.lens.<name>"
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "lensT",
+          "label": "Frame",
+          "type": "int",
+          "default": -1,
+          "tip": "The frame whose cells form the lens; -1 = all"
+        }
+      ]
+    }
+  ]
+}

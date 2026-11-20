@@ -149,6 +149,10 @@ function _spec_path(::ClustRegions)
     joinpath(@__DIR__, "clustRegions", "cluster.json")
 end
 
+function _spec_path(::LensQuery)
+    joinpath(@__DIR__, "clustRegions", "lensQuery.json")
+end
+
 function _spec_path(::AfCorrect)
     joinpath(@__DIR__, "cleanupImages", "af_correct.json")
 end
@@ -299,6 +303,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "spatialAnalysis.contactsMeshes"    => ContactsMeshes(),
         "spatialAnalysis.aggregatesMeshes"  => AggregatesMeshes(),
         "clustRegions.cluster"              => ClustRegions(),
+        "clustRegions.lensQuery"            => LensQuery(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "segment.coastalMeasure"            => CompositeTask("segment.coastalMeasure"),
         "segment.importLabelsMeasure"       => CompositeTask("segment.importLabelsMeasure"),

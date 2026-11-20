@@ -56,11 +56,15 @@ export function lensRadiusRangeUm(meta: Pick<ViewerMeta, 'nX' | 'nY' | 'voxelUm'
   return { min, max, step, def: Math.min(max, Math.max(min, snap(Math.min(short / 10, LENS_UM_CAPS.def)))) }
 }
 
-/** The radius in µm for this image: the setting held in its range, or the image's default while the
- *  setting is unset (≤ 0). The setting is shared by every image, so it is clamped, never rewritten. */
+/** The radius in µm for this image: the setting held in its range and on its steps, or the image's
+ *  default while the setting is unset (≤ 0). The setting is shared by every image, so it is clamped and
+ *  snapped here, never rewritten — a radius placed from px on another image (`placeLens`, 64.941… µm)
+ *  reads as a slider value, not a float. */
 export function lensRadiusUm(setting: number, range: LensRadiusRange): number {
   if (!(setting > 0) || !Number.isFinite(setting)) return range.def
-  return Math.min(range.max, Math.max(range.min, setting))
+  const decimals = Math.max(0, -Math.floor(Math.log10(range.step) + 1e-9))
+  const snapped = Number((Math.round(setting / range.step) * range.step).toFixed(decimals))
+  return Math.min(range.max, Math.max(range.min, snapped))
 }
 
 /** One Alt+wheel notch: ±10% of the radius, on the slider's steps, inside its range. */
@@ -221,10 +225,10 @@ export function lensPopCounts(
   for (const l of layers) {
     const { label, x, y, z, t: tt } = l.payload.cells
     if (!label || !x || !y) continue
-    // inside = on this frame, on the drawn planes, within the circle — by label
+    // inside = on this frame (t < 0: any frame), on the drawn planes, within the circle — by label
     const inside = new Set<number>()
     for (let i = 0; i < label.length; i++) {
-      if (tt && tt.length && Math.round(tt[i]) !== t) continue
+      if (t >= 0 && tt && tt.length && Math.round(tt[i]) !== t) continue
       if (lo >= 0 && z && z.length) {
         const pl = Math.floor(z[i] / vz)
         if (pl < lo || pl > hi) continue

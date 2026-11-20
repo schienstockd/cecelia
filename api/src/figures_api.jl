@@ -23,22 +23,114 @@ function _figure_filename(dir::AbstractString, img::CciaImage, name::AbstractStr
     basename(_numbered_if_taken(joinpath(dir, "$base.png"), !replace))
 end
 
+# ── The viewer look's overlays on a figure (FIGURES_PLAN, overlay phase) ──────────────────────────
+# A spec may carry `look` — the `BatchMovieCfg` the viewer's Record banks (`readViewerLook`). Resolved
+# here by the movies' own readers and authors (`_look_keyframe_mask`, `_overlays_raw_from_config`,
+# `_resolve_movie_overlays_mask`, `_overlays3d_state`, `_mask_params!`, `_plane_window`), so a figure
+# tile draws what a movie frame of the same look draws — one overlay pipeline (recording parity).
+
+"""
+    figure_look_overlays(img, spec; on_log) -> Union{Nothing,Dict}
+
+The renderer's `lookOverlays` for `spec`'s `look` (`render_figure.py`): `params` (the mask and the
+overlay style, as `_view_render_params` sends a movie's), `frames` (`"<t>" => overlays3d` for each frame
+the figure shows) and `planeFilters` (`"<zLo>:<zHi>" => planeFilter` for each column's planes — one plane
+± the look's z tolerances, a range exactly). `nothing` without a look, or when it draws nothing here.
+"""
+function figure_look_overlays(img::CciaImage, spec::AbstractDict; on_log::Function = line -> nothing)
+    look = _cfg_maybe(spec, "look")
+    look isa AbstractDict || return nothing
+    vn = _spec_value_name(spec)
+    zp = img_filepath(img, vn)
+    zp === nothing && return nothing
+    arr, caxes = open_level0(zp)
+    # the one mask the look shows and its outline (the viewer's mask picker; a keyframe record's reader)
+    mask = _look_keyframe_mask(look)
+    # read by either key spelling: a request's look is JSON3 (symbols), a REPL caller's a String dict
+    contour = clamp(_to_int(something(_cfg_maybe(look, "labelContour"), 0)), 0, LABEL_CONTOUR_MAX)
+    ov_raw = _overlays_raw_from_config(_single_record_look(look, contour), mask !== nothing)
+    ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, ov_raw,
+                                      mask === nothing ? vn : mask.name;
+                                      mask_value_name = mask === nothing ? nothing : mask.name,
+                                      on_log = on_log)
+    (ov.overlays3d_for === nothing && ov.mask === nothing) && return nothing
+    st = ov.style
+    params = Dict{String,Any}("pointSizePx" => st.point_size_px, "pointBorderPx" => st.point_border_px,
+                              "segmentWidthPx" => st.segment_width_px, "overlaySizeUnit" => st.size_unit)
+    _mask_params!(params, ov.mask)
+    d  = axis_dims(caxes, ndims(arr))
+    nz = haskey(d, "z") ? size(arr, d["z"]) : 1
+    zh = Int(something(_cfg_maybe(spec, "zHalf"), 0))
+    zstack = _cfg_maybe(spec, "kind") == "zstack"
+    # a malformed frame list is left for the renderer's validation, which names the field
+    t0 = _cfg_maybe(spec, "t")
+    ts = zstack ? (t0 isa Real ? Int[Int(t0)] : Int[]) :
+                  Int[Int(t) for t in something(_cfg_maybe(spec, "frames"), Int[]) if t isa Real]
+    centres = zstack ? Int[Int(p) for p in something(_cfg_maybe(spec, "planes"), Int[]) if p isa Real] :
+                       Int[Int(round(something(_cfg_maybe(spec, "z"), 0)))]
+    frames = Dict{String,Any}()
+    for t in unique(ts)
+        o = _overlays3d_state(ov.overlays3d_for, t)
+        o === nothing || (frames[string(t)] = o)
+    end
+    # keyed as render_figure.py's `_columns` writes a column's window: centre ± zHalf, unclamped
+    filters = Dict{String,Any}()
+    for c in unique(centres)
+        lo, hi = c - zh, c + zh
+        _, filt = _plane_window(lo == hi ? lo : max(0, lo):hi, nz, st)
+        filt === nothing || (filters["$lo:$hi"] = filt)
+    end
+    Dict{String,Any}("params" => params, "frames" => frames, "planeFilters" => filters)
+end
+
+"""
+    figure_look_segmentations(img, look) -> Vector{String}
+
+The segmentations a look's overlays read — its mask, its pops' segmentation, the ones whose pop / ribbon
+eyes it sets, its shown track sources and skeletons — that the image has. What a figure's source stamps
+(`Cecelia.figure_source(...; segmentations)`), so a re-run segmentation or an edited population marks
+the figure out of date.
+"""
+function figure_look_segmentations(img::CciaImage, look)::Vector{String}
+    look isa AbstractDict || return String[]
+    out = String[]
+    m = _look_keyframe_mask(look)
+    m === nothing || push!(out, m.name)
+    pvn = _cfg_str(look, "popValueName", "")
+    (_cfg_bool(look, "showPopulations") && !isempty(pvn)) && push!(out, pvn)
+    keys_of(k) = (v = _cfg_maybe(look, k); v isa AbstractDict ? [String(string(x)) for x in keys(v)] : String[])
+    _cfg_bool(look, "showPopulations") && append!(out, keys_of("popEyes"))
+    append!(out, keys_of("ribbonEyes"))
+    append!(out, keys_of("skeletons"))
+    if _cfg_bool(look, "showTracks")
+        ts = _cfg_maybe(look, "trackSources")
+        if ts isa AbstractDict
+            for (k, v) in ts
+                vis = v isa AbstractDict ? _cfg_maybe(v, "visible") : nothing
+                vis === false || push!(out, String(string(k)))
+            end
+        end
+    end
+    sort!(unique!(filter!(vn -> haskey(img.labels, vn), out)))
+end
+
 """
     make_figure!(project_uid, img, spec; name = "", replace = false, dry_run = false, tags, on_log)
         -> (; name, png, resolved)   # `png` = the preview (≤ 1600 px a side), not the print figure
 
-Render `spec` on `img`. `dry_run` renders into a temp dir and keeps nothing — `png` is the bytes, for a
+Render `spec` on `img` — with its `look`'s overlays when it carries one (`figure_look_overlays`). `dry_run` renders into a temp dir and keeps nothing — `png` is the bytes, for a
 preview. Otherwise the figure is moved into the figures dir as `name` (see `_figure_filename`) and
 registered (`producedBy = "figure"`, the authored `spec` and the as-rendered `resolved` spec as its
 config, `author_stamp()` as `createdBy`/`updatedBy`).
 """
 function make_figure!(project_uid::AbstractString, img::CciaImage, spec::AbstractDict;
                       name::AbstractString = "", replace::Bool = false, dry_run::Bool = false,
-                      tags = String[],
+                      tags = String[], lens = nothing,
                       on_log::Function = line -> nothing)
     tmp = mktempdir()
     try
-        r = render_figure(img, spec; out_dir = tmp, on_log = on_log)
+        r = render_figure(img, spec; out_dir = tmp, on_log = on_log,
+                          look_overlays = figure_look_overlays(img, spec; on_log = on_log))
         png = read(isfile(r.preview) ? r.preview : r.figure)
         resolved = JSON3.read(read(r.spec, String))
         dry_run && return (; name = "", png, resolved)
@@ -52,8 +144,11 @@ function make_figure!(project_uid::AbstractString, img::CciaImage, spec::Abstrac
                         channels = filter(!isempty, shown),
                         config = FigureConfig(imageUid = img.uid, spec = spec, resolved = resolved,
                                               source = figure_source(img, _spec_value_name(spec);
-                                                                     spec_style = get(spec, "style", nothing))),
-                        config_kind = "figure", author = author_stamp(), auto_tags = figure_auto_tags(spec, tags))
+                                                                     spec_style = get(spec, "style", nothing),
+                                                                     segmentations = figure_look_segmentations(
+                                                                         img, get(spec, "look", nothing)))),
+                        config_kind = "figure", author = author_stamp(), auto_tags = figure_auto_tags(spec, tags),
+                        lens = lens)
         _movies_changed(project_uid)
         (; name = fname, png, resolved)
     finally
@@ -111,7 +206,9 @@ function _figure_own_check(project_uid::AbstractString, filename::AbstractString
                                             "save a new one instead"))
 end
 
-# POST /api/figures/render {projectUid, imageUid, spec, name?, replace?, dryRun?, roiSuffix?}
+# POST /api/figures/render {projectUid, imageUid, spec, name?, replace?, dryRun?, roiSuffix?, lens?}
+#   `lens` = Find similar's lens (`_clean_lens`): the figure is a lens figure — tagged `lens`, listed with
+#   it, opened re-pinned, and deleting it deletes its score column.
 #   → {ok, name, png (base64), resolved}. A spec error is a 400 whose `error` names the field.
 function api_figures_render(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -129,10 +226,16 @@ function api_figures_render(body_bytes::Vector{UInt8})
         isfile(joinpath(dir, target)) && (denied = _figure_own_check(pu, target); denied === nothing || return denied)
     end
     try
+        lens = _clean_lens(get(body, :lens, nothing), img.uid)
+        # the images its scores are on — the region run's, so the delete cleans every one
+        lens === nothing || (lens["images"] = unique!(vcat(lens["images"],
+                                 Cecelia.lens_run_images(img, lens["valueName"], lens["regionSuffix"]))))
+        haskey(body, :lens) && lens === nothing && return 400, JSON3.write((; ok = false, error = "lens: needs x, y, r ≥ 1 and a spatial.lens.* column"))
         r = make_figure!(pu, img, Dict{String,Any}(String(k) => v for (k, v) in spec);
-                         name = _wstr(body, :name), replace = repl, dry_run = dry,
+                         name = _wstr(body, :name), replace = repl, dry_run = dry, lens = lens,
                          # an ROI figure (the viewer's Save as figure → ROIs) is tagged as its movies are
-                         tags = haskey(body, :roiSuffix) ? roi_movie_tags(_wstr(body, :roiSuffix), false) : String[])
+                         tags = vcat(haskey(body, :roiSuffix) ? roi_movie_tags(_wstr(body, :roiSuffix), false) : String[],
+                                     lens === nothing ? String[] : ["lens"]))
         200, JSON3.write((; ok = true, name = r.name, png = base64encode(r.png), resolved = r.resolved))
     catch e
         msg = sprint(showerror, e)

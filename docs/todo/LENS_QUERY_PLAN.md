@@ -1,7 +1,8 @@
 # LENS_QUERY_PLAN
 
-Status: **planning** (2026-11-20) — P0 in progress on `lens-pops-prompt`. Post-0.3.0 apart from P0
-(hardening: refactor + pin persistence).
+Status: **in progress** (2026-11-20) — P0 in review (#2392); P2 built on `feat/lens-query` (score column +
+Find similar on the chip, similarity score on a fixed 0–1 scale, lens figures in Movies & figures, Show scores, score
+colouring on Population positions), first run seen live; lens figures and plot colouring not yet.
 
 ## Goal
 
@@ -51,10 +52,16 @@ the 10th percentile of the lens cells' own scores — the lens defines how tight
 chip shows the number it picked ("Auto · 0.82"). One slider overrides it. Normalised fractions keep the
 score from tracking cell count; a window run's density column is excluded from the signature.
 
-### Decision 4 — the result is transient first
+### Decision 4 — the result is a per-cell score column (REVISED 2026-11-20)
 
-Matches are shown as a transient population (the pick-selection path: highlighted on the viewer,
-counted, offered to plots), not saved. Saving is P5.
+Not a transient population, not a pop type, not a region run. A query writes one numeric obs column,
+`spatial.lens.<name>` (`lens_score_col`), on every image of the region run: the cosine to the lens's
+signature above the run's average cell, 0–1 (`lens_similarity_scores`; a per-cell z against random
+lenses until 2026-11-20 — see *Scoring*). The viewer's colour-by shows
+it (the score map); an existing filter population on it saves "places like this"; plots and MCP read
+it like any cell column. A pop type was rejected (a score is not a membership; ~10 touchpoints for
+less), and so were regions (a lens query does not recluster; it would muddle the region heatmap).
+New names are `lens1`, `lens2`, … — a query never overwrites another.
 
 ### Decision 5 — UX lives on the lens chip
 
@@ -105,14 +112,53 @@ project with a region run. Dominik picks 2–3 lenses he'd call distinct and jud
   random lens would also pass ~5% of cells); edge-of-tissue truncation not fully excluded. Next: a
   score map + ranking with a per-cell z against the null, Dominik judging retrieval by eye.
 
-### P2 — Find similar on the image (one PR)
+### P2 — Find similar (one PR) — BUILT on `feat/lens-query`, not seen live
 
-Route (e.g. `POST /api/regions/lens-query`: image, value name, region suffix, lens, threshold) →
-transient population via the pick-selection path; chip UX per Decision 5.
+Task `clustRegions.lensQuery` (hidden, set-scope; `app/src/tasks/clustRegions/lensQuery.jl`) writes
+the column (Decision 4) across the run's images (`_clustfeatures_part_of`), banks QC (`nScored`,
+`nStrong` ≥ 0.8, `coherence`; warn `lensQuery.average_mix` / `lensQuery.mixed_lens`). The chip's **Find similar** (`composables/useVwLensQuery.ts`)
+sends it over the task rail, then colours the view by the new column. Region run picker only when the
+image has more than one.
+
+Seen live once (2026-11-20): the min–max ramp put the lens's own cells (the highest z) at the pink top
+and most of a matching follicle at yellow — read as "the lens is not coloured". Hence the **fixed scale**
+(z 0–5, `fixed_colour_range`, viewer and movie). And "where are my lenses?" had no answer — the colour-by
+list is every column, nobody finds a lens there. A viewer Lenses section was built and dropped the same
+day for **lens figures**: "in the end they really are figures" (the maintainer) — Find similar saves a
+still of the lens to Movies & figures carrying the lens, which gives rename / tags / star / the board for
+free; Open re-pins it with its scores *offered* (Show scores, off until asked — locating a lens must not
+recolour the view); Delete takes the score column with it. And **Population positions → Colour** (the
+score on every image of the run, one scale) covers most of P3's "which images have matches".
+
+**Scoring — z dropped for similarity (2026-11-20, the maintainer's call).** A lens with a real lift (0.17)
+in the dominant tissue scored 0 cells at z ≥ 3, and an intravital lens topped out at z 1.13. The z
+has a ceiling of about √((1−p)/p) for a lens whose tissue covers a share p of the run (measured: 0.97
+VNvvA8, 1.94 lens5, 2.94 lens6; only rare-tissue lenses reached 5), and it ranked the lens's own cells
+at the 64th–77th percentile — it measured *distinctive*, not *similar*. Compared on three real images
+(six lenses): a stratified null (random lenses in the lens's own region) inverted lens5 (Spearman
+−0.43); "% random lenses beaten" was bimodal; a centred cosine tracked the region label (η² 0.70). Plain
+cosine above the average cell ranked the lens's cells at the 90th–93rd percentile, passed the region
+kill test (η² 0.27 / 0.12), and on lens6 lit two lymphoid aggregates at 0.95–1.0 and nothing else. The
+z-era lens columns were deleted, not migrated (unreleased). One guard: coherence (the lens cells' median
+cosine to their signature) < 0.8 warns `mixed_lens` — set from six lenses, five at 0.97–1.00 and one
+straddling three regions at 0.65.
+
+### Queued — chip readiness line (after #2392 merges and the maintainer has used the lens live)
+
+From LENS_CONTEXT_LAYERS_PROMPT.md (archived on `docs/lens-context-layers-archive`), cut to one item.
+`lensChipCounts` counts the layers DRAWN, not what was run — so "no regions" is usually "the Regions
+layer is off". When a layer adds nothing to the count, the chip shows one dim line: *not drawn*
+("Regions not shown · Show" — switches the existing layer on) or *not run* ("No regions · Cluster
+regions" — opens the task form, never starts it). Only layers that apply to the image (no track
+clusters on a still). Logic in `useVwLens`, one row type in `VwLensChip`; a unit test per state + a
+browser test; the same two states on the lens's Kiwi/MCP surface. Mock: `~/Downloads/TMP/lens_readiness_mock.png`
+panel 1. Out of scope: a (?) popover, schematic, readiness endpoint, missing≠zero / provenance /
+comparisons.
 
 ### P3 — set-wide
 
-Per-image match counts across the run; open an image with its matches. Consider writing the result
+Mostly covered by Population positions → Colour (above). Left: per-image match counts as a sort order
+on those tiles; open an image with its matches. Consider writing the result
 as an ROI set so the Find ROIs list reviews it.
 
 ### P4 — Kiwi + MCP

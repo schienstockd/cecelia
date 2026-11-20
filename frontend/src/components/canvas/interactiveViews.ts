@@ -203,7 +203,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
       behaviourAnalysis: ['live', 'track', 'trackclust', 'region'],
       spatialAnalysis: ['region'],
     },
-    visControls: ['pointSize', 'fontSize'] },
+    visControls: ['legend', 'pointSize', 'fontSize'] },
   trackScheme: {
     label: 'Track timeline',
     answers: 'Which tracks overlap in time, to join or split them?',

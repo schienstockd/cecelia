@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { containBox, framesIn, popWireToken, positionLayers, positionPops, resolveFrame } from './popPositions'
+import { colourByGroups, containBox, framesIn, popWireToken, positionLayers, positionPops, resolveFrame,
+         sharedValueScale } from './popPositions'
 import { POPULATION_PALETTE } from './plot'
 
-// [x, y, t, popIdx] per cell — the /api/plots/pop-positions wire (api/src/gating_api.jl)
+// [x, y, t, popIdx, value] per cell — the /api/plots/pop-positions wire (api/src/gating_api.jl)
 const WIRE = Float32Array.from([
-  1, 2, 0, 0,     // frame 0, pop 0
-  3, 4, 0, -1,    // frame 0, in none
-  5, 6, 1, 1,     // frame 1, pop 1
-  7, 8, 1, 0,     // frame 1, pop 0
-  9, 10, 1, 5,    // frame 1, an index past the requested pops → base only
+  1, 2, 0, 0, 0.5,      // frame 0, pop 0
+  3, 4, 0, -1, NaN,     // frame 0, in none, no value
+  5, 6, 1, 1, 4,        // frame 1, pop 1
+  7, 8, 1, 0, -2,       // frame 1, pop 0
+  9, 10, 1, 5, 9,       // frame 1, an index past the requested pops → base only
 ])
 
 describe('population positions — layers', () => {
@@ -22,6 +23,7 @@ describe('population positions — layers', () => {
     expect([...l.base]).toEqual([5, 6, 7, 8, 9, 10])
     expect([...l.pops[0]!]).toEqual([7, 8])
     expect([...l.pops[1]!]).toEqual([5, 6])
+    expect([...l.values]).toEqual([4, -2, 9])          // one value per base point, in base order
   })
 
   it('all frames: nothing filtered', () => {
@@ -86,5 +88,30 @@ describe('population positions — tile size', () => {
   it('unmeasured → nothing; a bad aspect → square', () => {
     expect(containBox(0, 100, 1)).toEqual({ w: 0, h: 0 })
     expect(containBox(100, 100, NaN)).toEqual({ w: 100, h: 100 })
+  })
+})
+
+describe('population positions — colour by a value', () => {
+  it('offers the populations, then the lens scores by name, then every other column', () => {
+    const g = colourByGroups(['area', 'spatial.lens.lens1', 'regions.default', 'spatial.lens.crypt'])
+    expect(g.map(x => x.title)).toEqual([undefined, 'Lens scores', 'Cell measures'])
+    expect(g[0]!.options).toEqual([{ value: '', label: 'Populations' }])
+    expect(g[1]!.options).toEqual([{ value: 'spatial.lens.lens1', label: 'lens1' },
+                                   { value: 'spatial.lens.crypt', label: 'crypt' }])
+    expect(g[2]!.options.map(o => o.value)).toEqual(['area', 'regions.default'])
+    expect(colourByGroups(['area']).map(x => x.title)).toEqual([undefined, 'Cell measures'])
+  })
+  it('a renamed lens is listed by the name it was given', () => {
+    const g = colourByGroups(['spatial.lens.lens1', 'spatial.lens.lens2'], { 'spatial.lens.lens1': 'test1' })
+    expect(g[1]!.options).toEqual([{ value: 'spatial.lens.lens1', label: 'test1' }, { value: 'spatial.lens.lens2', label: 'lens2' }])
+  })
+  it('one scale over every tile: the span of their ranges, ticks inside it once', () => {
+    const s = sharedValueScale([
+      { valueRange: [0, 10], valueTicks: [{ pos: 0, label: '0' }, { pos: 10, label: '10' }] },
+      { valueRange: null },
+      { valueRange: [-5, 4], valueTicks: [{ pos: -5, label: '-5' }, { pos: 0, label: '0' }] },
+    ])
+    expect(s).toEqual({ extent: [-5, 10], ticks: [{ pos: -5, label: '-5' }, { pos: 0, label: '0' }, { pos: 10, label: '10' }] })
+    expect(sharedValueScale([{ valueRange: null }, {}])).toBeNull()
   })
 })

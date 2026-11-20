@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import {
+import { effectiveMaskColour,
   maskPopTable, trackclustMaskLayer, colourByMaskLayer, maskColourKeys, maskLayerShowsAny, isMaskColour, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
   type LabelTable, type MaskPopLayer,
 } from './maskPopTable'
+import { NO_VALUE_HEX, colourByValue, type OverlayPayload } from './viewerOverlays'
 import { mix, parseHex } from './colour'
 
 // The shader is the ground truth for where an id's colour lives, so the reader below is checked against
@@ -167,6 +168,34 @@ describe('trackclustMaskLayer', () => {
   })
 })
 
+describe('track clusters with a colour-by (`trackclustMaskLayer` + values) — clusters select, the column shades', () => {
+  // A lens score sets the colour-by; on *Colour: Track clusters* the mask ignored it, so only the dots
+  // took the scores. The movie's population mask does the same with `colour_by` (`mask_id_colours`:
+  // the pops' cells by value, the rest "no value").
+  const RED = '#ff0000', BLUE = '#0000ff'
+  const tc = (values: (number | null)[] | null): OverlayPayload => ({
+    nCells: 4, nDropped: 0, axes: [], hasT: false, cells: { label: [1, 2, 3, 4] },
+    pops: [{ path: '/c1', name: 'c1', colour: RED, labels: [1, 2], show: true },
+           { path: '/c2', name: 'c2', colour: BLUE, labels: [3], show: false }],
+    colourColumns: ['s'], colourBy: values ? 's' : null, valueKind: 'numeric', valueRange: [0, 5],
+    values: values ?? undefined,
+  } as unknown as OverlayPayload)
+  it('a shown cluster\'s cells by the column; a hidden cluster, an untracked cell or no value draw dim', () => {
+    const p = tc([0, 5, 5, null])
+    const t = maskPopTable([trackclustMaskLayer(p, undefined, ['#ffffff'])])!
+    const byValue = colourByValue(p)!
+    expect(colourOf(t, 1)).toEqual(byValue(0).map(v => Math.round(v * 255)))
+    expect(colourOf(t, 2)).toEqual(byValue(1).map(v => Math.round(v * 255)))
+    expect(colourOf(t, 3)).toEqual(rgb255(NO_VALUE_HEX))   // its cluster is hidden
+    expect(colourOf(t, 4)).toEqual(rgb255(NO_VALUE_HEX))   // untracked, no value
+  })
+  it('no colour-by: the cluster colours, as before', () => {
+    const t = maskPopTable([trackclustMaskLayer(tc(null), undefined, ['#ffffff'])])!
+    expect(colourOf(t, 1)).toEqual(rgb255(RED))
+    expect(colourOf(t, 4)).toEqual(rgb255(MASK_UNGATED_GREY))
+  })
+})
+
 describe('isMaskColour', () => {
   it('accepts the three sources and nothing else', () => {
     expect(['id', 'pops', 'trackclust'].every(isMaskColour)).toBe(true)
@@ -208,29 +237,43 @@ describe('the mask on Colour by (`colourByMaskLayer`) — every cell by the colu
     nCells: values.length, nDropped: 0, axes: [], hasT: false,
     cells: { label: values.map((_, i) => i + 1) }, pops: [], colourColumns: ['c'], colourBy: 'c',
     valueKind: kind, values, ...extra })
-  it('a category its palette slot by sorted level; a cell with no value stays grey', () => {
+  it('a category its palette slot by sorted level; a cell with no value draws dim (no data)', () => {
     const p = payload(['b', 'a', null, 'a'], 'categorical', { valueLevels: ['b', 'a'] })
     const t = maskPopTable([colourByMaskLayer(p, ['#ff0000', '#00ff00'])])!
     // levels sort to [a, b]: a → slot 0 (red), b → slot 1 (green)
     expect(colourOf(t, 2)).toEqual(rgb255('#ff0000'))
     expect(colourOf(t, 4)).toEqual(rgb255('#ff0000'))
     expect(colourOf(t, 1)).toEqual(rgb255('#00ff00'))
-    expect(colourOf(t, 3)).toEqual(rgb255(MASK_UNGATED_GREY))
+    expect(colourOf(t, 3)).toEqual(rgb255(NO_VALUE_HEX))
   })
-  it('a number on the ramp; NaN stays grey; no column = no pops, so the caller keeps the palette', () => {
+  it('a number on the ramp; NaN draws dim; no column = no pops, so the caller keeps the palette', () => {
     const p = payload([0, 10, Number.NaN], 'numeric', { valueRange: [0, 10] })
     const t = maskPopTable([colourByMaskLayer(p)])!
     expect(colourOf(t, 1)).not.toEqual(colourOf(t, 2))
-    expect(colourOf(t, 3)).toEqual(rgb255(MASK_UNGATED_GREY))
+    expect(colourOf(t, 3)).toEqual(rgb255(NO_VALUE_HEX))
+    const none = maskPopTable([colourByMaskLayer({ ...p, colourBy: null })])!
     expect(colourByMaskLayer({ ...p, colourBy: null }).payload.pops).toEqual([])
+    expect(colourOf(none, 3)).toEqual(rgb255(MASK_UNGATED_GREY))   // no column: nothing to call "no value"
   })
   it('the movie keys of each choice — one translation for the viewer look and a batch', () => {
     expect(maskColourKeys('id', true, 'c')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
     expect(maskColourKeys('pops', true, '')).toEqual({ maskAllCells: false, maskPopTypes: [], colourLabels: false })
     expect(maskColourKeys('pops', false, '')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
     expect(maskColourKeys('trackclust', false, '')).toEqual({ maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: false })
+    // track clusters with a colour-by: the clusters select, the column shades (`mask_id_colours`' gated)
+    expect(maskColourKeys('trackclust', false, 'c')).toEqual({ maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: true })
+    // Pops keeps its pop colours whatever the colour-by — only the points take it
+    expect(maskColourKeys('pops', true, 'c')).toEqual({ maskAllCells: false, maskPopTypes: [], colourLabels: false })
     expect(maskColourKeys('colourBy', false, 'c')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: true })
     expect(maskColourKeys('colourBy', false, '')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
     expect(isMaskColour('colourBy')).toBe(true)
+  })
+})
+
+describe('effectiveMaskColour', () => {
+  it('a stored Track clusters draws Pops on a still, as stored on a time-lapse; others untouched', () => {
+    expect(effectiveMaskColour('trackclust', false)).toBe('pops')
+    expect(effectiveMaskColour('trackclust', true)).toBe('trackclust')
+    expect(effectiveMaskColour('colourBy', false)).toBe('colourBy')
   })
 })

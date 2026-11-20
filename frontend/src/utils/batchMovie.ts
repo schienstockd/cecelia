@@ -296,12 +296,13 @@ export function batchTrackSources(cfg: BatchMovieCfg, trackedSegs: string[]): Tr
     ? resolveTrackSources(cfg.trackSources, trackedSegs) : undefined
 }
 
-/** The mask *Colour* a batch config shows: its own, else what a config saved before it drew — the
- *  old chip's colour-by, a viewer look's track clusters, the pops with pops on, else the palette. */
+/** The mask *Colour* a batch config shows: its own, else what a config saved before it drew — a
+ *  viewer look's track clusters (with a colour-by they carry `colourLabels` too, `maskColourKeys`), the
+ *  old chip's colour-by, the pops with pops on, else the palette. */
 export function batchMaskColour(cfg: BatchMovieCfg): MaskColour {
   if (cfg.maskColour) return cfg.maskColour
-  if (cfg.colourLabels) return 'colourBy'
   if (cfg.maskPopTypes?.includes('trackclust')) return 'trackclust'
+  if (cfg.colourLabels) return 'colourBy'
   return cfg.showPopulations && !cfg.maskAllCells ? 'pops' : 'id'
 }
 

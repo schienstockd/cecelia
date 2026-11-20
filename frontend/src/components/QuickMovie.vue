@@ -298,8 +298,11 @@ async function saveFigure() {
   const valueName = viewerStore.openImage?.valueName || undefined
   // the Record range, every Nth frame — a one-frame range is a single still
   const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
+  // the look on screen (mask, populations, tracks, graph edges) is drawn on the tiles, as a Record draws it
+  const look = vs ? readViewerLook(img, currentSetUid.value ?? '') : null
   const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value,
                                                                            grid: figureGrid.value,
+                                                                           look: look ? lookForRender(look) : null,
                                                                            ownCrop: recordingRois.value })
   if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
   if (recordingRois.value) { await saveRoiFigures(projectUid, img, r.spec); return }

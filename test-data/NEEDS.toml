@@ -41,3 +41,12 @@ budget = "a crop: ≤ 64 × 64 px, ≤ 5 frames, ≤ 4 channels, one resolution 
 opened = "2026-11-18"
 status = "open"
 synthetic = false
+
+[needs.still-with-region-run]
+properties = ["cells", "still", "regions", "real"]
+why = "The lens query (clustRegions.lensQuery) reads a region run's per-cell composition columns and writes spatial.lens.<name>; no fixture has a region run, so its end-to-end test skips."
+waiting = ["app/test/suite/region_lens_query.jl → clustRegions.lensQuery writes a score column on a region run"]
+budget = "labelProps table with a regions.<suffix> run (composition columns + clustfeatures sidecar), a few thousand cells; ≤ 1 MB per file"
+opened = "2026-11-20"
+status = "open"
+synthetic = false

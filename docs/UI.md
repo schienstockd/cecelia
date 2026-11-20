@@ -2793,9 +2793,14 @@ doi:10.1109/TVCG.2021.3114786); no code is taken from it.
   `settings.viewerLens`). The two pointer tools are exclusive — the one just switched on wins
   (`pointerToolChips`). 2D only, like the readout. Its radius is on the tissue, in µm, so it grows
   as you zoom in, like the population dots (`settings.viewerLensRadiusUm`; 0 = the image's default).
-  The Annotations slider spans 1% to half of the image's short side, starting at a tenth, capped at
-  10 µm / 500 µm / 100 µm (`LENS_UM_CAPS` — a whole slide no longer gets 60 µm to 3 mm), in round
-  steps (`lensRadiusRangeUm`); a value from another image is held in this one's range, not rewritten.
+  The switch and the radius are **per image**, saved with its view (`viewerProps.ts` → `lens`), not
+  preferences: a lens switched on in one image does not follow the pointer into the next, at a radius
+  sized for a different scale. The Annotations slider spans 1% to half of the image's short side,
+  starting at a tenth, capped at 10 µm / 500 µm / 100 µm (`LENS_UM_CAPS` — a whole slide no longer
+  gets 60 µm to 3 mm), in round steps (`lensRadiusRangeUm`); a radius set in px (a ref, a lens
+  figure) snaps to them (`lensRadiusUm`). A pending view left in storage longer than a handoff takes
+  (`freshSeed`, 2 min) is dropped when a viewer starts, so a lens meant for another window never pins
+  itself into one opened later.
   Alt+wheel over the image moves it 10% a notch (`lensRadiusWheel`).
 - **Pinning**: a click (no drag) pins the lens to the tissue (`lensPin`, level-0 px; `lensScreenAt`
   places it through the camera, so a pan or zoom carries it); a click unpins it back onto the
@@ -2806,6 +2811,44 @@ doi:10.1109/TVCG.2021.3114786); no code is taken from it.
   those channels — `pointTarget` → `pendingViewState.lens` → `lensFocusView` + `placeLens`; 2D only)
   and **Draw and note** (a capture to Kiwi
   and/or the paired Claude session, the DrawSurface switches). Select mode keeps the click for picking.
+- **Readiness line**: the chip counts the layers DRAWN, not what was run, so a missing Regions /
+  Track clusters group gets one dim line saying which (`lensReadiness`, `utils/viewer/lensReadiness.ts`,
+  from `/api/viewer/pop-types` + `spec.popVisible`): *not drawn* — "Regions not shown · Show" (turns the
+  layer on) — or *not run* — "No regions · Cluster regions" (opens that task's form in the main window,
+  `openTaskInMainWindow`; never starts it). Track clusters only on a time-lapse — a still never counts
+  them. The MCP / Kiwi lens report carries the same as `missingLayers`. Clickable once pinned.
+- **Find similar** (pinned chip): runs `clustRegions.lensQuery` on the image's region run (a picker
+  when there are several) — every cell of the run's images gets a score column, `spatial.lens.lensN`,
+  how alike its neighbourhood mix is to the lens's, above the run's average cell (0 = no more than the
+  average cell, 1 = identical) — and the view is coloured by it. A filter population on the column keeps "places like this". Disabled without a
+  region run. The run picker, when there is one, sits on its own row above the button. `composables/useVwLensQuery.ts`, `utils/viewer/lensQuery.ts`; `docs/todo/LENS_QUERY_PLAN.md`.
+  The score is drawn on a **fixed scale, 0–1** (Julia `fixed_colour_range`, read by `_cb_scale_of`, so
+  viewer and movie agree): one colour is one score on every image and every lens, and an image with no
+  matches stays dark. A lens across two tissues warns (QC `lensQuery.mixed_lens`): its averaged mix
+  matches the boundary between them, not either.
+- **Lens figures**: each Find similar also saves a still of the lens to **Movies & figures** — cropped to
+  the lens (`lensFigureSpec`: its diameter, outlined by the spec's `circles`), tagged `lens`, the figure
+  spec carrying the viewer's recorded `look`, whose mask, populations and tracks it draws on the merge row (FIGURES_PLAN → Overlays) — and its
+  registry entry carries the lens (`lens`: image, x/y/r, frame, region run, score column, the run's
+  images, and the **look** toggled at the click — `LensLook`: the view, the segmentation shown, population
+  types and eyes, tracks, graphs; `_clean_lens`, `api/src/movies_api.jl`). Movies & figures is where a
+  lens is renamed, tagged, starred, put on the board. **Open** (there, or Go to here) restores the view and
+  the look and re-pins the lens (`lensOpenPending` → `pendingViewState.lens` → `applyLensLook`); it never
+  turns scores on. **Delete** removes the figure and its score column on every image it scored
+  (`_drop_lens_scores!`, the `lensScores` run kind).
+- **Lenses** section (panel, `VwLensesSection.vue`, shown once a lens figure has scores on this image —
+  `lensFiguresFor`): per lens its name (the figure's display name, else `lensN` — click to rename, the same
+  display name Movies & figures sets), **Show scores** (colour by its column; off = no colour-by), Go to
+  (centred on the lens: the saved view's channels and zoom, re-centred by `lensFocusView`), delete. The chip only says `✓ lensN` once its figure is saved.
+  Scores land wherever colour-by does — the dots; a mask on *Colour by*, or on *Track clusters* (the shown
+  clusters' cells by value, `trackclustMaskLayer`); ribbons in the Tracks *colour by* mode, track-cluster
+  ribbons included. Unscored cells (no value — e.g. untracked) draw `NO_VALUE_HEX`, a dark grey below the
+  ramp's floor, so they never outshine a low score; a movie draws the same (`NO_VALUE_COLOUR`).
+- **On a time-lapse** the chip counts the frame on screen (cells inside at that frame; tracks with a cell
+  inside at that frame), like everything it draws — or, with the pinned chip's **this frame / all frames**
+  switch, every frame (`lensAllFrames`, `t` -1 to `lensPopCounts`: cells inside at any frame, cell-frames
+  for the track-cluster group). Find similar follows it (all frames = the lens's cells from every frame,
+  `lensT` -1). Per image, saved with the lens (`viewerProps.ts` → `lens.allFrames`).
 - **For Claude**: `get_viewer_screenshot` answers a `lens` beside the view — where, pinned or not, its
   channels, the cells and populations inside (the chip's numbers, `trackClusters` and `regions` as
   their own groups); `set_viewer_view` `{lens: {x, y,

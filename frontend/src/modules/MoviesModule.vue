@@ -14,6 +14,7 @@ import { useTaskStore } from '../stores/tasks'
 import { usePushStore } from '../stores/push'
 import { useViewerStore } from '../stores/viewer'
 import { openViewerWindow } from '../utils/viewerWindow'
+import { lensOpenPending } from '../utils/viewer/lensQuery'
 import { figureViewState } from '../utils/figureSpec'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { formatBytes } from '../utils/storage'
@@ -462,6 +463,12 @@ const toggleStar = (r: MovieRow) => patchMeta([r.name], { starred: !r.starred })
 const viewer = useViewerStore()
 async function openSource(r: MovieRow) {
   if (!projectUid.value || !r.imageUid) return
+  // a lens figure opens its image with the lens pinned again; its scores are offered, not shown
+  if (r.lens) {
+    viewer.setPendingViewState(lensOpenPending(r.lens))
+    openViewerWindow({ projectUid: projectUid.value, imageUid: r.lens.sourceUid })
+    return
+  }
   let entry: Record<string, unknown> = { imageUid: r.imageUid }
   try { entry = { imageUid: r.imageUid, ...(await fetchMovieEntry(projectUid.value, r.name)) } }
   catch { /* no entry — open the image anyway */ }
@@ -481,7 +488,8 @@ async function openSource(r: MovieRow) {
   openViewerWindow({ projectUid: projectUid.value, imageUid: src.imageUid, valueName: src.valueName })
 }
 const styleDialog = ref(false)       // the project's figure style editor
-const sourceTip = (r: MovieRow) => r.kind === 'figure'
+const sourceTip = (r: MovieRow) => r.lens ? 'Open the image with this lens pinned'
+  : r.kind === 'figure'
   ? 'Open the image in the viewer at this figure\'s view'
   : r.configKind === ROI_CONFIG_KIND ? 'Open the image in the viewer at this ROI'
   : r.configKind === 'keyframes' ? 'Open the image in the viewer at the first keyframe'
@@ -533,6 +541,8 @@ const saveTags = (r: MovieRow) =>
 // to, and `playing` is the one movie in the player, set by its eye. Conflating them is what made a
 // single-select list unable to delete or categorise more than one at a time.
 const checked = ref<string[]>([])
+// a lens figure among them: deleting it deletes its scores too (the server's cascade) — say so
+const checkedLens = computed(() => allRows.value.some(r => r.lens && checked.value.includes(r.name)))
 // a filter (or a delete) can take a checked movie off the list; it must not stay in the selection,
 // where it would be acted on invisibly
 watch(movieTableRows, rows => {
@@ -716,7 +726,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                    ConfirmButton, because a child's DOM can't take this file's scoped styles. -->
               <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, press }">
                 <button class="cc-btn cc-btn-micro" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost mov-danger'" @click="press"
-                        v-tooltip.bottom="armed ? 'Click again — permanently delete these files' : `Delete the selected ${nouns.many}`">
+                        v-tooltip.bottom="armed ? (checkedLens ? 'Click again — delete these files and their lens scores' : 'Click again — permanently delete these files') : `Delete the selected ${nouns.many}`">
                   <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete {{ checked.length }}
                 </button>
               </ConfirmButton>

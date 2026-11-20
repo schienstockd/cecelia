@@ -277,13 +277,14 @@ end
             @test all(==(green), values(dict_parent))
             # a look's pop types (`pop_types`) are the layers, not `pop_type`
             @test mask_id_colours(img; value_name = "B", pop_type = "clust", pop_types = ["flow"]) == dict_tree
-            # colour-by recolours the pops' cells only: the grey complement stays grey
+            # colour-by recolours the pops' cells only — the pops select, the column shades; the complement
+            # is "no data" (`NO_VALUE_COLOUR`, the viewer's `shadeByValue`), not the bright ungated grey
             lpt = as_df(label_props(img; value_name = "B"))
             ov_half = Dict{String,String}(string(Int(round(Float64(v)))) => "#ff00ff" for v in lpt.centroid_t
                                           if v isa Real && isfinite(Float64(v)))
             dict_hcb = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all/half"],
                                        colour_by = "centroid_t", colour_overrides = ov_half)
-            @test all(id -> dict_hcb[id] == (id in half ? hex_to_rgb("#ff00ff") : hex_to_rgb(OVERLAY_GREY)),
+            @test all(id -> dict_hcb[id] == (id in half ? hex_to_rgb("#ff00ff") : NO_VALUE_COLOUR),
                       keys(dict_hcb))
 
             # colour_labels — recolour every id in the mask by an obs column. Total overrides

@@ -10,6 +10,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
 import { SPEC_POP_TYPES, trackableValueNames } from '../overlayAutoShow'
 import type { ViewerLookInput } from './viewerLook'
+import { effectiveMaskColour } from '../maskPopTable'
 
 /** The pop manager's current (segmentation, popType) for one image, as published to
  *  `cc.gatingCurrent` by the gating store. Empty strings = nothing selected yet. */
@@ -27,6 +28,7 @@ export interface LookImage {
   uid: string
   channelNames?: string[]
   sizeZ?: number | null
+  sizeT?: number | null
   labels?: Record<string, unknown>
   branchLabels?: Record<string, unknown>
   /** the neighbour graphs, by run suffix (the image payload's `spatialGraphs`) */
@@ -79,6 +81,8 @@ export interface DrawSpecSource {
   spatialGraphNames: string[]
   channelNames: string[]
   nZ: number
+  /** frames; a still (≤ 1) never colours its mask by track clusters (`effectiveMaskColour`). Absent = unknown, as stored */
+  nT?: number
   version: string
   viewState: ViewerLookInput['viewState']
   gating: { valueName: string; popType: string }
@@ -133,7 +137,7 @@ export function drawSpecOf(src: DrawSpecSource): ViewerDrawSpec {
     get tailWidth() { return settings.viewerTailWidth },
     get tailLength() { return settings.viewerTailLength },
     get labelContour() { return settings.viewerLabelContour },
-    get maskColour() { return settings.viewerMaskColour },
+    get maskColour() { return src.nT === undefined ? settings.viewerMaskColour : effectiveMaskColour(settings.viewerMaskColour, src.nT > 1) },
     get trackColourMode() { return perSet(su => settings.getTrackColorMode(su), 'track') },
     get colourBy() { return perSet(su => settings.getColourBy(su), '') },
     get colourOverrides() {
@@ -176,6 +180,7 @@ export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): Vi
     spatialGraphNames: open?.spatialGraphNames ?? Object.keys(img.spatialGraphs ?? {}),
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
+    nT: img.sizeT ?? undefined,
     version: open?.valueName || img.activeValueName || '',
     viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
     gating: readGatingCurrent(img.uid),

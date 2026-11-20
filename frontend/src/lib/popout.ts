@@ -30,6 +30,8 @@
 // `/setup` is deliberately NOT here. It is bare but it is not a popout: it is the main window on a
 // first launch, and it navigates to `/` when the wizard finishes — a window that started there must
 // end up with the whole shell running.
+import { taskLanding } from '../utils/kiwiTurn'
+import { profileStorage } from '../utils/profileStorage'
 
 /** The popout routes and the window name each one owns. One map, so a route can never be opened into
  *  the wrong window (or into an unnamed one, which is how you get two copies stacked on top). */
@@ -233,5 +235,17 @@ export function toggleSideBySide(
   const was: WinRect = { x: win.screenX, y: win.screenY, w: win.outerWidth, h: win.outerHeight }
   try { store?.setItem(SIDE_BY_SIDE_KEY, JSON.stringify(was)) } catch { /* no way back, still placed */ }
   place(win, rightHalf(area))
+  return true
+}
+
+/** Open a task's form on its page in the MAIN window, from a popout — the task selected, never started.
+ *  The selection rides the TaskRunner's own remembered pick (`cc-fn:<module>`, `taskLanding`); a page
+ *  already showing picks it up from the storage event (TaskRunner). Call it from a click. */
+export function openTaskInMainWindow(funName: string, def?: { task: string }): boolean {
+  const land = taskLanding(funName, def)
+  if (!land) return false
+  profileStorage.setItem(`cc-fn:${land.module}`, land.task)
+  const w = window.open(`${location.origin}${location.pathname}#${land.path}`, MAIN_WINDOW_NAME)
+  try { w?.focus() } catch { /* opened; raising it is the browser's call */ }
   return true
 }

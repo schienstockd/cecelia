@@ -24,6 +24,13 @@
     # a token that does not resolve contributes nothing; its index is still reserved
     r2 = pop_positions(img, vn, ["flow~/no such pop", "live~$vn/_tracked"])
     @test r2.pop == [t ? 1 : -1 for t in tracked]
+    # colour by a cell column: each cell's own value, NaN where it has none; a column the table lacks,
+    # or no colour-by, → NaN everywhere (the plot then draws populations only)
+    want = Float32[(v isa Real && !ismissing(v)) ? Float32(v) : NaN32 for v in raw.track_id]
+    got = pop_positions(img, vn, String[]; colour_by = "track_id").value
+    @test isequal(got, want) && any(isnan, got) && any(isfinite, got)
+    @test all(isnan, pop_positions(img, vn, String[]; colour_by = "spatial.lens.nosuch").value)
+    @test all(isnan, r.value) && length(r.value) == length(r.x)
     # no populations → every cell in none (the grey background)
     @test all(==(-1), pop_positions(img, vn, String[]).pop)
 

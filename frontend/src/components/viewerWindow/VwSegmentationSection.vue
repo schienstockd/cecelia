@@ -11,7 +11,7 @@ import ColourPicker from '../ColourPicker.vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { computed } from 'vue'
-import { maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
+import { effectiveMaskColour, maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
 
 const props = defineProps<{
   /** the mask on screen ('' = none) */
@@ -36,7 +36,9 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
 
-const colourOptions = computed(() => maskColourOptions(props.timecourse, settings.viewerMaskColour))
+// the colour drawn — a still shows Pops for a stored Track clusters (`effectiveMaskColour`)
+const shownColour = computed(() => effectiveMaskColour(settings.viewerMaskColour, props.timecourse))
+const colourOptions = computed(() => maskColourOptions(props.timecourse, shownColour.value))
 </script>
 
 <template>
@@ -91,7 +93,7 @@ const colourOptions = computed(() => maskColourOptions(props.timecourse, setting
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
         <ChipSelect
-          :options="colourOptions" :model-value="settings.viewerMaskColour"
+          :options="colourOptions" :model-value="shownColour"
           variant="segmented" aria-label="Colour mask by" v-tooltip.bottom="'What colours the mask'"
           @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
         />

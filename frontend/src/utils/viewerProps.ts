@@ -53,7 +53,15 @@ export interface WebgpuBlock {
   valueName: string
   /** A pinned channel lens, level-0 px (`useVwLens`). Absent = not pinned. */
   lensPin?: LensPin
+  /** The lens on/off and its radius (µm, 0 = the image's default) — per image, not a preference.
+   *  Absent in older snapshots: on when a pin was saved. */
+  lens?: LensState
 }
+
+/** The channel lens's per-image switch and radius. */
+export interface LensState { on: boolean; rUm: number
+  /** a time-lapse lens counting every frame. Absent = the frame on screen */
+  allFrames?: boolean }
 
 /** Where a pinned lens sits on the tissue, level-0 px. */
 export interface LensPin { x: number; y: number }
@@ -84,11 +92,12 @@ export interface CaptureInput {
   t: number
   valueName: string
   lensPin?: LensPin
+  lens?: LensState
 }
 
 /** Build the JSON to write. Never throws. */
 export function captureViewState(input: CaptureInput): ViewerViewState {
-  const { meta, channels, cam, mode, zPlane, zRange, zWindow, t, valueName, lensPin } = input
+  const { meta, channels, cam, mode, zPlane, zRange, zWindow, t, valueName, lensPin, lens } = input
   const webgpu: WebgpuBlock = {
     channels: channels.map(ch => ({
       hex: channelHexFrom(ch.lut),
@@ -103,6 +112,8 @@ export function captureViewState(input: CaptureInput): ViewerViewState {
     t,
     valueName,
     ...(lensPin ? { lensPin: { x: lensPin.x, y: lensPin.y } } : {}),
+    ...(lens ? { lens: { on: !!lens.on, rUm: Number.isFinite(lens.rUm) && lens.rUm > 0 ? lens.rUm : 0,
+                         ...(lens.allFrames ? { allFrames: true } : {}) } } : {}),
   }
   const layers: Record<string, ViewerLayerProps> = {}
   for (let c = 0; c < channels.length; c++) {
@@ -130,6 +141,8 @@ export interface ApplyTarget {
   applyZ(zPlane: number, zRange: [number, number]): void
   /** Optional — only the viewer that owns the window control restores it. */
   applyZWindow?(on: boolean, half: number): void
+  /** Optional — only the viewer that owns the lens restores its switch and radius (before the pin). */
+  applyLensState?(lens: LensState): void
   /** Optional — only the viewer that owns the lens restores its pin. */
   applyLensPin?(pin: LensPin): void
   applyT(t: number): void
@@ -158,7 +171,9 @@ export function applyViewState(
     }
     const zw = w.zWindow
     if (zw && Number.isFinite(zw.half) && zw.half >= 1) target.applyZWindow?.(!!zw.on, Math.round(zw.half))
-    const lp = w.lensPin
+    const lp = w.lensPin, ls = w.lens
+    target.applyLensState?.({ on: ls ? !!ls.on : !!lp, rUm: ls && Number.isFinite(ls.rUm) && ls.rUm > 0 ? ls.rUm : 0,
+                              allFrames: !!ls?.allFrames })
     if (lp && Number.isFinite(lp.x) && Number.isFinite(lp.y)) target.applyLensPin?.({ x: lp.x, y: lp.y })
     if (Number.isFinite(w.t)) target.applyT(w.t)
     return

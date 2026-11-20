@@ -350,6 +350,31 @@ function _contacts_delete!(img, run; on_log = _ -> nothing)
     on_log("[INFO] contacts $(run.label): dropped")
 end
 
+# Lens score columns — one run per name (`clustRegions.lensQuery` → `spatial.lens.<name>`, `lens_score_col`),
+# joint across the segmentations that carry it. A filter population on the column stays (gating is never
+# deleted; it applies again on a re-run under the same name).
+_lens_scores_list(img) = _cross_seg_runs("lensScores",
+    [(vn, n) for vn in _run_segs(img) for n in _obs_suffixes(_run_obs_cols(img_label_props_path(img, vn)), LENS_SCORE_PREFIX)])
+
+function _lens_scores_delete!(img, run; on_log = _ -> nothing)
+    col = LENS_SCORE_PREFIX * run.key
+    for vn in run.value_names
+        p = img_label_props_path(img, vn)
+        col in _run_obs_cols(p) || continue
+        label_props(p) |> drop_obs([col]) |> save!
+        on_log("[INFO] lens score $(run.key): dropped $col from $(basename(p))")
+    end
+end
+
+"""
+    drop_lens_scores!(img, key, value_name; on_log) -> nothing
+
+Drop one lens's score column (`spatial.lens.<key>`) from ONE segmentation — a lens figure's delete: its
+query scored that segmentation only, so another segmentation's lens of the same name keeps its scores.
+"""
+drop_lens_scores!(img, key::AbstractString, value_name::AbstractString; on_log::Function = _ -> nothing) =
+    (_lens_scores_delete!(img, (; key = String(key), value_names = [String(value_name)]); on_log); nothing)
+
 # Aggregate runs — one per (segmentation, pt, name): `{pt}.cell.is.aggregate#{name}` and the rest of
 # the run's family (`aggregate_run_cols`). A column without `#{name}` predates named runs and lists as
 # the unnamed run. Its auto-created filter pops stay (gating is never deleted — they apply again on a
@@ -457,6 +482,7 @@ const RUN_KINDS = RunKind[
     RunKind("aggregates", "Aggregates", ["spatialAnalysis.detectAggregates", "spatialAnalysis.aggregatesMeshes"],
             _aggregates_list, _aggregates_delete!),
     RunKind("branching", "Branching", ["segment.branching"], _branching_list, _branching_delete!),
+    RunKind("lensScores", "Lens scores", ["clustRegions.lensQuery"], _lens_scores_list, _lens_scores_delete!),
 ]
 
 """

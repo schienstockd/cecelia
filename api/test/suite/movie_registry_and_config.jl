@@ -473,3 +473,62 @@ end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end
 end
+
+# A lens figure (Find similar, docs/todo/LENS_QUERY_PLAN.md): the figure carries its lens, lists with it,
+# and deleting it deletes the score column it found on every image — never a column that is not a lens score.
+@testset "API: a lens figure lists its lens and takes its scores with it" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        good = Dict("x" => 10.5, "y" => 20, "r" => 30, "t" => -1, "column" => "spatial.lens.lens1",
+                    "valueName" => "B", "regionSuffix" => "default", "images" => ["OTHER"])
+        l = _clean_lens(good, "SRC")
+        @test l["sourceUid"] == "SRC" && l["images"] == ["SRC", "OTHER"] && (l["x"], l["y"], l["r"]) == (10.5, 20.0, 30.0)
+        @test _clean_lens(merge(good, Dict("column" => "regions.default")), "SRC") === nothing   # never another column
+        @test _clean_lens(merge(good, Dict("column" => "spatial.lens.")), "SRC") === nothing
+        @test _clean_lens(merge(good, Dict("r" => 0.5)), "SRC") === nothing
+        @test _clean_lens(Dict("x" => 1), "SRC") === nothing && _clean_lens(nothing, "SRC") === nothing
+        # the look rides along as an object; anything else, or one past the cap, is dropped
+        look = Dict("popVisible" => Dict("flow" => true))
+        @test _clean_lens(merge(good, Dict("look" => look)), "SRC")["look"] == look
+        @test !haskey(_clean_lens(merge(good, Dict("look" => "x")), "SRC"), "look")
+        @test !haskey(_clean_lens(merge(good, Dict("look" => Dict("v" => repeat("a", LENS_LOOK_MAX_BYTES)))), "SRC"), "look")
+
+        h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+        if !api_have_fixture(h5)
+            @test_skip "lens figure delete (fixture missing)"
+        else
+            proj = create_project!(name = "api-lens-fig"); uid = proj.uid
+            s = add_set!(proj; name = "s"); img = add_image!(s; name = "a")
+            img.label_props = Dict("B" => "B.h5ad", "C" => "C.h5ad"); save!(img)
+            props = Cecelia.img_label_props_path(img, "B"); mkpath(dirname(props)); cp(h5, props)
+            other = Cecelia.img_label_props_path(img, "C"); cp(h5, other)   # another segmentation, its own lens1
+            labs = (label_props(props) |> select_cols(["label"]) |> as_df).label
+            for p in (props, other)
+                label_props(p) |> add_obs(Cecelia.DataFrames.DataFrame("label" => labs, "spatial.lens.lens1" => zeros(length(labs)),
+                                                    "spatial.lens.keep" => ones(length(labs)))) |> save!
+            end
+            fdir = joinpath(tmp, uid, "figures"); mkpath(fdir)
+            write(joinpath(fdir, "lens1.png"), "x"); write(joinpath(fdir, "plain.png"), "x")
+            register_movie!(uid, "lens1.png"; produced_by = "figure", image_uid = img.uid,
+                            lens = _clean_lens(merge(good, Dict("images" => String[])), img.uid), auto_tags = ["lens"])
+            register_movie!(uid, "plain.png"; produced_by = "figure", image_uid = img.uid)
+            # a remake (no lens passed) keeps the lens
+            register_movie!(uid, "lens1.png"; produced_by = "figure", image_uid = img.uid)
+            row(n) = only(filter(m -> m.name == n, movies_with_meta(uid)))
+            @test row("lens1.png").lens["column"] == "spatial.lens.lens1" && "lens" in row("lens1.png").tags
+            @test row("plain.png").lens === nothing
+
+            obs() = col_names(label_props(props); data_type = :obs)
+            @test _post(api_movies_delete, Dict("projectUid" => uid, "name" => "plain.png"))[1] == 200
+            @test "spatial.lens.lens1" in obs()                         # a plain figure takes nothing
+            @test _post(api_movies_delete, Dict("projectUid" => uid, "name" => "lens1.png"))[1] == 200
+            @test !isfile(joinpath(fdir, "lens1.png"))
+            @test !("spatial.lens.lens1" in obs()) && "spatial.lens.keep" in obs()   # its column only
+            @test "spatial.lens.lens1" in col_names(label_props(other); data_type = :obs)   # in its segmentation only
+        end
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end

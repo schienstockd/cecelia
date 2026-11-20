@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextUpdateStamp } from './updateStamp'
+import { freshSeed, nextUpdateStamp, PENDING_SEED_MAX_AGE_MS } from './updateStamp'
 
 describe('nextUpdateStamp', () => {
   it('is strictly increasing within a load, even when the clock stands still', () => {
@@ -18,5 +18,15 @@ describe('nextUpdateStamp', () => {
     const after = nextUpdateStamp(0, t0 + 5_000)
     expect(before).not.toContain(after)
     expect(after).toBeGreaterThan(Math.max(...before))
+  })
+})
+
+describe('freshSeed', () => {
+  it('keeps a pending written moments ago and drops a straggler', () => {
+    const now = 1_700_000_000_000
+    expect(freshSeed({ updateId: now - 5_000 }, now)).toEqual({ updateId: now - 5_000 })
+    expect(freshSeed({ updateId: now - PENDING_SEED_MAX_AGE_MS - 1 }, now)).toBeNull()
+    expect(freshSeed({}, now)).toBeNull()
+    expect(freshSeed(null, now)).toBeNull()
   })
 })

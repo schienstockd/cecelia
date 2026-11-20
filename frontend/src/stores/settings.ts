@@ -31,7 +31,6 @@ const PROFILE_KEYS = [
   'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps', 'plotPickerPreviews',
   // Overlay preferences
   'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity', 'viewerCursorReadout',
-  'viewerLens', 'viewerLensRadiusUm',
   'viewerLandscape', 'viewerLandscapeLabels',
   'viewerScaleBarPx', 'viewerTimestampPx',
   'viewerPointSize', 'viewerPointBorder', 'viewerTailLength', 'viewerTailWidth',
@@ -193,10 +192,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // and off it sends nothing.
   const viewerCursorReadout = ref(localStorage.getItem('cc.viewerCursorReadout') === 'true')
   // Channel lens (a circle on the pointer that draws its own channel set — `utils/viewer/channelLens.ts`).
-  // The pointer tool beside the readout: the two are exclusive (`pointerToolChips`). Radius in CSS px.
-  const viewerLens = ref(localStorage.getItem('cc.viewerLens') === 'true')
-  // The lens radius on the tissue, µm — 0 = unset, each image's own default (`lensRadiusRangeUm`).
-  const viewerLensRadiusUm = ref(Math.max(0, Number(localStorage.getItem('cc.viewerLensRadiusUm') ?? 0) || 0))
+  // The pointer tool beside the readout: the two are exclusive (`pointerToolChips`). PER IMAGE, not a
+  // preference: this window's copy, saved with the image's view (`viewerProps.ts` → `lens`) — a lens
+  // switched on in one image must not follow the pointer, at its radius, into the next.
+  const viewerLens = ref(false)
+  // The lens radius on the tissue, µm — 0 = unset, the image's own default (`lensRadiusRangeUm`).
+  const viewerLensRadiusUm = ref(0)
   // Set-of-Mark grid overlay (`components/GridOverlay.vue`, `utils/gridOverlay.ts`). Default OFF —
   // it is an active tool for referring to viewport regions by cell name ("look at C4"), not
   // default chrome like the scale bar. Density persists so the user's chosen mesh survives a reload.
@@ -890,8 +891,6 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerScaleBar,           v => persistPref('viewerScaleBar',           String(v)))
   watch(viewerTimestamp,          v => persistPref('viewerTimestamp',          String(v)))
   watch(viewerCursorReadout,      v => persistPref('viewerCursorReadout',      String(v)))
-  watch(viewerLens,               v => persistPref('viewerLens',               String(v)))
-  watch(viewerLensRadiusUm,       v => persistPref('viewerLensRadiusUm',       String(v)))
   watch(viewerGrid,               v => persistPref('viewerGrid',               String(v)))
   watch(viewerGridDensity,        v => persistPref('viewerGridDensity',        String(v)))
   watch(viewerLandscape,          v => persistPref('viewerLandscape',          String(v)))
@@ -1012,7 +1011,6 @@ export const useSettingsStore = defineStore('settings', () => {
     autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, csvIncludeAttrs,
     importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, plotPickerPreviews,
     viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout,
-    viewerLens, viewerLensRadiusUm,
     viewerLandscape, viewerLandscapeLabels,
     viewerScaleBarPx, viewerTimestampPx,
     viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth,

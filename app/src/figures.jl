@@ -20,6 +20,9 @@ scale bar; without a recorded interval, frames are labelled `t<n>`. Raises when 
 """
 function figure_params(img::CciaImage, spec::AbstractDict)::Dict{String,Any}
     p = Dict{String,Any}(String(k) => v for (k, v) in spec)
+    # the viewer look a figure was saved with is resolved into `lookOverlays` by the API
+    # (`figure_look_overlays`, which needs the overlay authors) — the renderer never reads it
+    delete!(p, "look")
     vn = get(p, "valueName", nothing)
     vn = (vn === nothing || vn == "") ? nothing : String(vn)
     zp = img_filepath(img, vn)
@@ -75,6 +78,10 @@ a side) and `figure.json` (the spec as rendered — measured display ranges incl
 what to show; see `render_figure.py` for its fields (`kind`, `center`, `sizePx`, `z`, `zHalf`, `frames` or
 `t` + `planes`, `rows` (a channel's `c` is a name or a 0-based index), `display`, `interpolation`, `scaleBarUm`, `style`, `valueName`).
 
+`look_overlays` draws a viewer look's mask, points, tracks and graph edges on every tile: the API's
+`figure_look_overlays` resolves a spec's `look` into it through the movies' overlay authors (a figure
+tile is the movie frame of that look). Without it a figure draws pixels only.
+
 A bad spec fails with the renderer's message, which names the field.
 
 ```julia
@@ -85,9 +92,11 @@ render_figure(img, Dict("center" => [597, 361], "sizePx" => 90, "z" => 9, "zHalf
 ```
 """
 function render_figure(img::CciaImage, spec::AbstractDict; out_dir::AbstractString,
-                       task_dir::AbstractString = task_run_dir(img._dir), on_log::Function = println)
+                       task_dir::AbstractString = task_run_dir(img._dir), on_log::Function = println,
+                       look_overlays::Union{Nothing,AbstractDict} = nothing)
     params = figure_params(img, spec)
     params["outDir"] = abspath(out_dir)
+    look_overlays === nothing || (params["lookOverlays"] = look_overlays)
     mkpath(out_dir)
     errs = String[]
     log = line -> (startswith(line, "[ERROR]") && push!(errs, line); on_log(line))
@@ -98,26 +107,63 @@ function render_figure(img::CciaImage, spec::AbstractDict; out_dir::AbstractStri
 end
 
 # ── Staleness (FIGURES_PLAN P4) ───────────────────────────────────────────────────────────────────
-# A figure draws image pixels only, so it describes the data while the image version it was rendered
-# from is the same store. Recorded at render time; compared when the figure is listed.
+# A figure describes the data while the image version it was rendered from is the same store — and,
+# when it draws a viewer look's overlays, while the segmentations they come from are the same (labels,
+# cell table, populations). Recorded at render time; compared when the figure is listed.
+
+# A segmentation as a figure's overlays read it: its labels version and store, its cell table and its
+# population trees (`gating/{vn}[__type].json`) — `nothing` when the image has no such segmentation.
+function _segmentation_stamp(img::CciaImage, vn::AbstractString)
+    haskey(img.labels, String(vn)) || return nothing
+    mt(p) = ispath(p) ? mtime(p) : nothing
+    trees = filter(isfile, unique([gating_path(img._dir, String(vn); pop_type = t)
+                                   for t in union(["flow"], keys(POP_TREE_SUFFIX))]))
+    Dict{String,Any}("version" => resolve_version(img, :labels, String(vn)),
+                     "labelsMtime" => mt(img_labels_path(img, String(vn))),
+                     "propsMtime" => mt(img_label_props_path(img, String(vn))),
+                     "popsMtime" => isempty(trees) ? nothing : maximum(mtime, trees))
+end
+
+# Why the segmentation stamped `was` no longer is what the figure drew, or `nothing`.
+function _segmentation_stale(img::CciaImage, vn::AbstractString, was::AbstractDict)
+    now = _segmentation_stamp(img, vn)
+    now === nothing && return "segmentation $vn is gone"
+    w(k) = get(was, k, nothing)
+    newer(k) = (w(k) isa Real && now[k] isa Real && now[k] > w(k) + 1)
+    now["version"] == something(w("version"), now["version"]) ||
+        return "segmentation $vn is now $(now["version"]) (was $(w("version")))"
+    (newer("labelsMtime") || newer("propsMtime")) && return "segmentation $vn was re-run since"
+    (newer("popsMtime") || (w("popsMtime") === nothing && now["popsMtime"] !== nothing)) &&
+        return "the populations on $vn changed since"
+    nothing
+end
 
 """
     figure_source(img, value_name = nothing) -> Dict
 
 What a figure was rendered from: the image version's name (the active one when `nothing`), its
 version (`vN`) and the store's mtime. A re-process replaces the store (staged writes rename a new
-directory into place), so its mtime moves even when the version name does not.
+directory into place), so its mtime moves even when the version name does not. `segmentations` are the
+ones its overlays draw from (`figure_look_segmentations` in the API), each stamped with its labels
+version, label store / cell table mtimes and its population trees' newest mtime.
 """
 function figure_source(img::CciaImage, value_name::Union{AbstractString,Nothing} = nothing;
-                       spec_style = nothing)::Dict{String,Any}
+                       spec_style = nothing, segmentations = String[])::Dict{String,Any}
     # the IMAGE version (`filepath`), not `resolve_value_name` — that resolves a segmentation
     vn = value_name === nothing ? String(versioned_active(img.filepath)) : String(value_name)
     zp = img_filepath(img, vn)
-    Dict{String,Any}("valueName" => vn, "version" => resolve_version(img, :filepath, vn),
-                     "storeMtime" => (zp !== nothing && ispath(zp)) ? mtime(zp) : nothing,
-                     # the style it was drawn in beyond the house defaults — a project style change
-                     # then marks it out of date
-                     "style" => _effective_figure_style(img, spec_style))
+    segs = Dict{String,Any}()
+    for s in segmentations
+        st = _segmentation_stamp(img, s)
+        st === nothing || (segs[String(s)] = st)
+    end
+    src = Dict{String,Any}("valueName" => vn, "version" => resolve_version(img, :filepath, vn),
+                           "storeMtime" => (zp !== nothing && ispath(zp)) ? mtime(zp) : nothing,
+                           # the style it was drawn in beyond the house defaults — a project style
+                           # change then marks it out of date
+                           "style" => _effective_figure_style(img, spec_style))
+    isempty(segs) || (src["segmentations"] = segs)
+    src
 end
 
 """
@@ -139,6 +185,15 @@ function figure_stale_reason(img::CciaImage, source::AbstractDict; spec_style = 
     if haskey(source, "style")
         drawn = Dict{String,Any}(String(k) => v for (k, v) in source["style"])
         drawn == _effective_figure_style(img, spec_style) || return "the project's figure style changed since"
+    end
+    segs = get(source, "segmentations", nothing)
+    if segs isa AbstractDict
+        for s in sort!(collect(String(string(k)) for k in keys(segs)))
+            was = get(segs, s, get(segs, Symbol(s), nothing))
+            was isa AbstractDict || continue
+            why = _segmentation_stale(img, s, Dict{String,Any}(String(k) => v for (k, v) in was))
+            why === nothing || return why
+        end
     end
     nothing
 end
