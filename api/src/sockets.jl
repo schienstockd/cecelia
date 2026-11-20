@@ -229,6 +229,12 @@ parse_ws_msg_type(s::AbstractString)::WsMsgType =
     get(_WS_MSG_TYPE_PARSE, String(s), WS_UNKNOWN)
 
 function handle_message(ws, raw::AbstractString)
+    # Security audit F7: a project uid in any message must be a uid before a handler joins it to a path.
+    bad = Cecelia.bad_uid_in_json(raw)
+    if bad !== nothing
+        @warn "WS message refused: invalid project id" uid = bad
+        return
+    end
     data = JSON3.read(raw)
     type_str = String(get(data, :type, ""))
     kind = parse_ws_msg_type(type_str)

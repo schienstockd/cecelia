@@ -71,6 +71,22 @@ function _merge_meta_preserving_legacy(new_meta::AbstractDict, old_meta::Abstrac
     out
 end
 
+# The Rscript choice is stored in ccid.json (and can sit in a chain's params), and both travel in an
+# exported bundle — so it is someone else's text, and it names a program we RUN. A path is honoured
+# only if it is an Rscript and does not live inside the projects dir (where a bundle could have put
+# one); anything else falls back to the Rscript found on this machine (security audit F6).
+function _trusted_rscript(choice::AbstractString, on_log::Function = _ -> nothing)::String
+    c = strip(String(choice))
+    isempty(c) && return ""
+    name_ok = lowercase(basename(c)) in ("rscript", "rscript.exe")
+    isempty(dirname(c)) && return name_ok ? String(c) : ""       # a bare name: only Rscript itself
+    root    = rstrip(abspath(projects_dir()), ['/', '\\'])
+    inside  = startswith(abspath(c), root * Base.Filesystem.path_separator)
+    name_ok && !inside && return String(c)
+    on_log("[WARN] Ignoring stored Rscript path $(repr(c)) — using this machine's Rscript")
+    ""
+end
+
 function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -81,7 +97,7 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     mode     = p.mode
     # rscript: explicit task param (if set) → the one chosen at register (meta), resolved through
     # rscript_bin_path so a bare "Rscript" is upgraded to an absolute path where possible.
-    rscript  = rscript_bin_path(!isempty(p.rscript) ? p.rscript : string(get(img.meta, "legacyRscript", "")))
+    rscript  = rscript_bin_path(_trusted_rscript(!isempty(p.rscript) ? p.rscript : string(get(img.meta, "legacyRscript", "")), on_log))
 
     if isempty(src_proj) || isempty(src_uid)
         # Most likely cause: the image was migrated once on pre-2026-09-17 code that overwrote

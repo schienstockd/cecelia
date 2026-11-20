@@ -338,6 +338,21 @@ _valid_packed_store(rel::AbstractString) =
     !occursin(':', rel) && !any(==(".."), split(rel, r"[/\\]")) &&
     endswith(rel, ".zarr" * PACKED_STORE_EXT)
 
+# Remove every symlink under `root` (not following them); returns how many. A bundle's links point at
+# the exporting machine (legacy-migrated stores can be links) and are dead here at best — at worst a
+# crafted one sends the unpack, or a later write, outside the project (security audit, §6 item 1).
+function _drop_symlinks!(root::AbstractString)::Int
+    n = 0
+    for (dir, dirs, files) in walkdir(root; follow_symlinks = false)
+        for name in vcat(dirs, files)
+            p = joinpath(dir, name)
+            islink(p) || continue
+            rm(p; force = true); n += 1
+        end
+    end
+    n
+end
+
 """
     import_project(bundle; mode, task_id, on_log, on_progress, concurrency) -> String
 
@@ -397,6 +412,8 @@ function import_project(bundle::AbstractString;
             name == BUNDLE_MANIFEST && continue
             cp(joinpath(bundle, name), joinpath(tmp, name); force = true)
         end
+        # before the unpack: a linked folder would have tar extract (and the cleanup delete) outside
+        dropped = _drop_symlinks!(tmp)
 
         status = _parallel_stores(packed, task_id, concurrency, on_log, on_progress) do rel
             tar_path = joinpath(tmp, rel)
@@ -408,6 +425,8 @@ function import_project(bundle::AbstractString;
             ok && (rm(tar_path; force = true); on_log("  unpacked $(rel[1:end-length(PACKED_STORE_EXT)])"))
             ok
         end
+        dropped += _drop_symlinks!(tmp)                 # any a tar member made
+        dropped > 0 && on_log("  dropped $dropped symlink(s) — links from another machine don't import")
         if status !== :done
             rm(tmp; recursive = true, force = true)
             on_log(status === :cancelled ? "Cancelled." : "[ERROR] Import failed.")

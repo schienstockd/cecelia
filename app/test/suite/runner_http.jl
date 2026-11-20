@@ -170,6 +170,25 @@ end
     end
 end
 
+# Security audit F7: the runner has its own listener, so it runs the backend's uid door check too.
+@testset "runner refuses a body whose project uid is not a uid" begin
+    old_tok = Cecelia._RUNNER_TOKEN[]
+    Cecelia._RUNNER_TOKEN[] = "rtok"                 # an earlier runner test may have left its own
+    server = Cecelia.HTTP.listen!(Cecelia._runner_stream, "127.0.0.1", 0)
+    try
+        url = "http://127.0.0.1:$(Cecelia.HTTP.port(server))/submit-chain"
+        post(b) = Cecelia.HTTP.post(url, ["Content-Type" => "application/json",
+                                          "Authorization" => "Bearer rtok"], b;
+                                    status_exception = false, retry = false)
+        r = post("""{"projectUid":"/home/someone","chain":"c"}""")
+        @test r.status == 400 && occursin("Invalid project id", String(r.body))
+        @test post("""{"projectUid":"","chain":"c"}""").status == 400   # the handler's own check still answers
+    finally
+        try; close(server); catch; end
+        Cecelia._RUNNER_TOKEN[] = old_tok
+    end
+end
+
 # ── An empty response body must not corrupt the connection ────────────────────
 #
 # `write_http_body!` (utils.jl, where the mechanism is explained) exists for one wire-level reason:

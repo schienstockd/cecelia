@@ -86,8 +86,8 @@ session = Pluto.ServerSession(; options = opts)
 # `pluto_secret_path()` (app/src/config_dir.jl) — per config dir, because the secret is also how a
 # backend tells its own Pluto from another Cecelia's.
 let secret_file = get(ENV, "CECELIA_PLUTO_SECRET_FILE", pluto_secret_path())
-    mkpath(dirname(secret_file))
-    write(secret_file, session.secret)
+    # owner-only: with it, anyone can run Julia as you through Pluto (security audit F4)
+    write_secret(secret_file, session.secret)
 end
 
 @info "Starting Pluto Playground" port = PLUTO_PORT notebooks_dir env = @__DIR__

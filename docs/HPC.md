@@ -34,7 +34,7 @@ handler continues: register labels, QC, run log
 |---|---|---|---|
 | **Settings → HPC** | scheduler, host, port, internet queue; Cluster environment | `custom.toml` `[hpc]` | which cluster this machine reaches, and which of its queues can download, is not personal |
 | **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble, GPU CPUs per GPU | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
-| **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
+| **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` (travels in a bundle, so validated on read too) | billing follows the grant |
 
 Preferences opens from the avatar menu in the header, or from **Your HPC settings** on Settings → HPC. Test connection
 is on both; when it is disabled, the reason shows beside it. Each field saves on change and flashes **Saved**.

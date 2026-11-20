@@ -311,7 +311,15 @@ function read_hpc_project_settings(root::AbstractString)::Dict{String,Any}
     p = hpc_project_settings_path(root)
     d = isfile(p) ? (try json_native(JSON3.read(read(p, String))) catch; nothing end) : nothing
     d isa AbstractDict || (d = Dict{String,Any}())
-    Dict{String,Any}("account" => _hstr(d, "account"))
+    a = _hstr(d, "account")
+    # This file travels in an exported bundle, so it is someone else's text: validated on READ too.
+    # `strip` keeps inner newlines, and the account lands in `#SBATCH --account=` / `#PBS -A` — a
+    # newline would add a line to the job script (security audit F5).
+    if !isempty(_hpc_token!(String[], "Account", a))
+        @warn "Ignoring malformed HPC account in project settings" path = p
+        a = ""
+    end
+    Dict{String,Any}("account" => a)
 end
 
 """

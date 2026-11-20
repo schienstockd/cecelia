@@ -17,6 +17,27 @@ outside the process (a bundle manifest, a request) before it becomes a path. Sam
 `_valid_asset_id`."""
 valid_uid(uid::AbstractString) = occursin(r"^[A-Za-z0-9_-]+\z", uid)
 
+"""
+    bad_uid_in_json(text; keys = ("projectUid",)) -> Union{String,Nothing}
+
+The first value of a `"<key>": "…"` pair anywhere in a JSON text (any depth) that fails `valid_uid`,
+or `nothing`. A scan, not a parse, so the server can check every request body and WebSocket message
+at the door without parsing a multi-MB body twice. A value with a backslash escape never passes —
+no valid uid contains a backslash. Security audit F7: the handlers join these onto `projects_dir()`.
+"""
+function bad_uid_in_json(text::AbstractString; keys = ("projectUid",))::Union{String,Nothing}
+    isvalid(text) || return nothing          # a binary upload, not JSON — PCRE refuses invalid UTF-8
+    for k in keys
+        occursin(k, text) || continue
+        re = Regex("\"" * k * "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+        for m in eachmatch(re, text)
+            v = m.captures[1]
+            isempty(v) || valid_uid(v) || return String(v)
+        end
+    end
+    nothing
+end
+
 # ── The websocket frame cap on both resident-Python legs — ONE number ─────────
 # Every message to/from the napari bridge and the preview worker is ONE JSON frame carrying a whole
 # payload: a label block, a set of AF-corrected channels, a contact sheet of PNGs. Both ends cap the
@@ -146,13 +167,16 @@ end
 write_json_atomic(path, data)     # the JSON case
 ```
 """
-function write_atomic(f::Function, path::AbstractString)
+function write_atomic(f::Function, path::AbstractString; mode::Union{Integer,Nothing} = nothing)
     dir = dirname(path)
     isempty(dir) || isdir(dir) || mkpath(dir)
     # gen_uid (not tempname) so a leftover from a killed process is recognisably ours, and adjacent
     # to the file it was replacing
     tmp = string(path, ".tmp.", gen_uid())
     try
+        # `mode` (a secret: 0o600) is set on the empty file BEFORE the content goes in, as
+        # `write_secret` (config_dir.jl) does for a plain-text secret — never readable by others.
+        mode === nothing || (touch(tmp); chmod(tmp, mode))
         open(tmp, "w") do io
             f(io)
         end
@@ -179,7 +203,8 @@ step strips escapes from keys). That corruption is silent: `_read_bb_meta` and e
 `JSON3.write` for scalar/key emission — which does escape correctly — and hand-rolls the
 indentation.
 """
-write_json_atomic(path::AbstractString, data) = write_atomic(io -> _pretty_json(io, data), path)
+write_json_atomic(path::AbstractString, data; mode::Union{Integer,Nothing} = nothing) =
+    write_atomic(io -> _pretty_json(io, data), path; mode)
 
 """
     append_jsonl!(path, entries) -> nothing

@@ -102,6 +102,25 @@ function ensure_config_dir(dev_dir::Union{String,Nothing} = nothing)::String
     d
 end
 
+"""
+    write_secret(path, content) -> path
+
+Write a secret owner-only from the first byte: an empty temp file is made 0600 BEFORE the content goes
+in, then renamed into place — the umask default often lets other accounts on a shared machine read
+it, even for a moment (security audit F4/F12). Base-only, so the standalone loaders (Pluto's launcher,
+`api/dev.jl`) share it. On Windows the per-user profile ACL does the job; the chmod is harmless.
+"""
+function write_secret(path::AbstractString, content)::String
+    mkpath(dirname(path))
+    tmp = string(path, ".tmp")
+    rm(tmp; force = true)
+    touch(tmp)
+    chmod(tmp, 0o600)
+    write(tmp, content)
+    mv(tmp, path; force = true)
+    String(path)
+end
+
 # Where Pluto's session secret is published for this config dir — `pluto/launch.jl` writes it; the API
 # (`api/src/notebooks_api.jl`) and `pixi run stop*` / the dev supervisor (`api/portkill.jl`) read it.
 # Per config dir, never in the install: the secret is also how a backend tells its own Pluto from

@@ -105,7 +105,7 @@ function api_push_target_post(body_bytes::Vector{UInt8})
         "pairedFromPid" => _wstr(body, :pairedFromPid),
     )
     mkpath(dirname(_push_target_path(uid)))
-    write_json_atomic(_push_target_path(uid), record)
+    write_json_atomic(_push_target_path(uid), record; mode = 0o600)   # holds the inbox token (audit F12)
     # BIDIR Part 5 PR #3: broadcast so any open frontend flips the chip in real time
     # instead of waiting for the user's next Share click. Public payload only (no token).
     broadcast_ws(Dict{String,Any}(
