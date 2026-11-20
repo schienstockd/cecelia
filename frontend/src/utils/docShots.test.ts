@@ -4,7 +4,7 @@
 // figure geometry (figure.ts) that compose.mjs draws.
 import { describe, expect, it } from 'vitest'
 import { SHOT_SETS } from '../../../user-docs/shots/index.ts'
-import { checkShotSets, fillFacts, guideIds, imageFile, setImages, shotAnchors, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
+import { checkShotSets, fillFacts, guideIds, imageFile, setImages, shotAnchors, shotPicked, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
 import { IN_APP_SHOTS } from '../../../user-docs/shots/in-app.ts'
 import { TIPS } from '../lib/tips'
 import { FEATURE_CARDS, featureFor } from '../lib/whatsNew'
@@ -80,6 +80,32 @@ describe('doc shots', () => {
       .toEqual(['shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)'])
     expect(fillFacts('{{p.i.planes}} z-planes, {{p.i.G.pct}}%', { 'p.i.planes': 26 }))
       .toEqual({ text: '26 z-planes, ?%', missing: ['{{p.i.G.pct}}'] })
+  })
+})
+
+// `--only` picks the same shots in doc-shots and doc-images: a pair is one image, so picking either half
+// captures both, or compose draws a fresh half beside a stale (or missing) one
+describe('doc shots: --only', () => {
+  const pair = set({ id: 'readme', shots: [shot({ id: 'hero' }), shot({ id: 'side', beside: 'hero' }), shot({ id: 'lone' })] })
+  const picks = (only: string) => pair.shots.filter(x => shotPicked(pair, x, only)).map(x => x.id)
+
+  it('picking either half of a pair picks both; a lone shot only itself', () => {
+    expect(picks('side')).toEqual(['hero', 'side'])
+    expect(picks('hero')).toEqual(['hero', 'side'])
+    expect(picks('lone')).toEqual(['lone'])
+  })
+
+  it('no id or the set id picks every shot; an unknown id picks none', () => {
+    expect(picks('')).toEqual(['hero', 'side', 'lone'])
+    expect(picks('readme')).toEqual(['hero', 'side', 'lone'])
+    expect(picks('nope')).toEqual([])
+  })
+
+  it('capture and compose both select through shotPicked', () => {
+    const SCRIPTS = import.meta.glob('../../../scripts/docshots/{capture,compose}.mjs', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+    const names = Object.keys(SCRIPTS).map(p => p.split('/').pop())
+    expect(names.sort()).toEqual(['capture.mjs', 'compose.mjs'])
+    for (const [p, src] of Object.entries(SCRIPTS)) expect(src, p).toMatch(/\.shots\.filter\(\w+ => shotPicked\(/)
   })
 })
 

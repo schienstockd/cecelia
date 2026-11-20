@@ -198,6 +198,12 @@ export const imageStem = (file: string): string => file.replace(/\.(png|jpg)$/, 
 export const setImages = (set: ShotSet): string[] =>
   set.shots.filter(x => !x.beside).flatMap(x => shotThemes(set, x).map(t => imageFile(x, t)))
 
+/** Whether `--only <id>` (a shot or set id; empty = everything) picks shot `x` of `set`. A shot and the
+ *  one it sits beside are one image, so picking either picks both: capture (doc-shots) and compose
+ *  (doc-images) must agree, or `--only` captures one half and composes it with a stale or missing other. */
+export const shotPicked = (set: ShotSet, x: Shot, only: string): boolean =>
+  !only || only === set.id || x.id === only || x.beside === only || set.shots.some(o => o.beside === x.id && o.id === only)
+
 export interface ShotIssue { set: string; problem: string }
 
 /** What capture refuses before it starts. Pure, so it is unit-testable. */
