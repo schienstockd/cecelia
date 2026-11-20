@@ -77,6 +77,9 @@ export interface PlotSpec {
     // columns), not the static `measureOptions` — e.g. segmentation QC offers every regionprops/
     // intensity measure the segmentation has. `measure` stays the default (shown first if present).
     measuresFromData?: boolean
+    // a per-cell measure plot: offer the image's MARKERS (by channel name) and shape measures beside
+    // `measureOptions`, grouped and searchable (utils/measureGroups.ts → summaryMeasurePicks)
+    channelMeasures?: boolean
     // measures discovered from the OBS columns by substring, for readouts whose names embed the run and
     // so can't be listed here: the spatial ones (`…cell.min_distance#<target>`, `…cell.contact#<target>`,
     // `…cell.is.aggregate`, `spatial.comp.<basis>.<suffix>`). Complements `measuresFromData`, which

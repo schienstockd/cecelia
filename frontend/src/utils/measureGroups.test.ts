@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { measureGroups, groupedCols, isIntensityColumn, isTrackPopType, shortTrackMeasure } from './measureGroups'
+import { measureGroups, groupedCols, isIntensityColumn, isTrackPopType, shortTrackMeasure, summaryMeasurePicks } from './measureGroups'
 
 // The real payloads of `/api/gating/channels` for one image of "unimelb 3P spleen" (4kS67f/LUkCpP,
 // segmentation "B") — captured from the running backend, not invented, so the group boundaries are
@@ -133,5 +133,43 @@ describe('shortTrackMeasure', () => {
     expect(shortTrackMeasure('live.track.meanTurningAngle')).toBe('meanTurningAngle')
     expect(shortTrackMeasure('live.cell.hmm.state.movement.1')).toBe('live.cell.hmm.state.movement.1')
     expect(shortTrackMeasure('mean_intensity_0')).toBe('mean_intensity_0')
+  })
+})
+
+describe('summaryMeasurePicks — the measure picker of a per-cell summary plot', () => {
+  const NAMES = ['CD45', 'CD4', 'GFP', 'TOM']
+  const input = { columns: FLOW.columns, channels: FLOW.channels, obsColumns: FLOW.obsColumns,
+                  channelNames: NAMES, options: ['live.cell.speed', 'live.cell.angle'] }
+  const picks = summaryMeasurePicks(input)
+  const g = (t: string) => picks.find(x => x.title === t)?.options.map(o => o.value)
+
+  it('offers shape, markers and the spec measures, under their family headings', () => {
+    expect(picks.map(x => x.title)).toEqual(['Morphology', 'Channels', 'Behaviour'])
+  })
+
+  it('stores a marker by its channel NAME, in channel order', () => {
+    expect(g('Channels')).toEqual(NAMES)
+  })
+
+  it('takes only the spec measures from obs — not track ids, clusters or spatial readouts', () => {
+    expect(g('Behaviour')).toEqual(['live.cell.speed', 'live.cell.angle'])
+  })
+
+  it('drops a spec measure the data does not have', () => {
+    const still = summaryMeasurePicks({ ...input, obsColumns: [] })
+    expect(still.map(x => x.title)).toEqual(['Morphology', 'Channels'])
+  })
+
+  it('sorts morphology and hides bookkeeping columns', () => {
+    const m = summaryMeasurePicks({ ...input, columns: ['volume', 'bbox-0', 'label', 'centroid_x', 'area', ...FLOW.channels] })
+    expect(m.find(x => x.title === 'Morphology')?.options.map(o => o.value)).toEqual(['area', 'volume'])
+    expect(m.flatMap(x => x.options.map(o => o.value))).not.toContain('centroid_x')
+  })
+
+  it('keeps a channel raw when it has no name, or its name is taken by a real column', () => {
+    expect(summaryMeasurePicks({ ...input, channelNames: [] }).find(x => x.title === 'Channels')?.options
+      .map(o => o.value)).toEqual(FLOW.channels)
+    const clash = summaryMeasurePicks({ ...input, channelNames: ['area', 'CD4', 'GFP', 'TOM'] })
+    expect(clash.find(x => x.title === 'Channels')?.options[0].value).toBe('mean_intensity_0')
   })
 })
