@@ -133,7 +133,7 @@ matches how figures are actually made; F2 is the advanced follow-on.
   below each frame, from the snapshot + a read-only legend, toggled in the ⚙.
   - **~~Backbone (S1)~~ + ~~channel section~~:** the shared model `utils/viewLegend.ts` + `ViewLegend.vue`.
   - **~~Populations + colour-by sections~~:** captured with the screenshot via `POST /api/napari/overlay-legend`
-    (pure Julia, reuses `_colour_overrides_for`/`_pop_labels_for` + pop-map colours — no viewer touched):
+    (pure Julia, reuses `_colour_overrides_for`/`_pop_labels_for` + pop-tree colours — no viewer touched):
     populations = each shown point-pop's name+colour, colour-by = value→pop colour+name (clusters read as
     their pop names). Stored on the frame (durable). Sections stack bottom-left with **channels at the
     bottom, pops/colour-by above** (per the layout ask); timestamp top-left, scale bar bottom-right (E2).
@@ -277,7 +277,7 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
   in `BatchMoviesPanel.vue` (config + clamp in `utils/batchMovie.ts`, default ON), persisted per set.
   **Populations section:** `_config_overlay_pops(img, config)` lists the shown pops (point pops AND
   tracks, one list) via the SAME canonical resolvers the show-handlers use (`resolve_pops` for point
-  pops; the pop maps for track gates & clusters; `/_tracked` → a generic "tracks" row), fed through
+  pops; the pop trees for track gates & clusters; `/_tracked` → a generic "tracks" row), fed through
   `overlay_legend_content` → ONE **Populations** section (deduped by name), matching the strip /
   single-record card. Card content (batch) = title + channels + populations + colour-by + note.
 - **~~H3 — single record~~ — DONE** (`ViewerPanel.vue` → `api_napari_record_timelapse`). Single-record

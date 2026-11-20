@@ -169,7 +169,7 @@ cards from `/Population 1..3` — byte-identical to today. Extraction was clean 
   runner writes those obs columns today; medoid = the instance with the lowest mean
   `motif.distance`. Zero DTW re-computation; no re-run needed to see cards.
 - **No new `overlay_author` mode.** Trace is coloured via `render_medoid_filmstrip`'s
-  `trace_colour` arg — one `RGB{N0f8}` per card, resolved via `colour_by_palette(pop_map,
+  `trace_colour` arg — one `RGB{N0f8}` per card, resolved via `colour_by_palette(pop_tree,
   "motif.class", …)` so the palette matches whatever the frequency plot uses.
 - **`api/src/motif_cards_api.jl`** — `POST /api/motif_cards`. Body: `{ projectUid, rootUid,
   valueName?, maxPx?, padPx? }`. When `valueName` is omitted, server picks the first

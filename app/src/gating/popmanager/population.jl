@@ -1,5 +1,5 @@
-# Population + PopulationMap — the tree per value_name. Population is the leaf record (name,
-# gate, filter, pop_type, colour, children path); PopulationMap holds one image's tree with a
+# Population + PopulationTree — the tree per value_name. Population is the leaf record (name,
+# gate, filter, pop_type, colour, children path); PopulationTree holds one image's tree with a
 # path→Population lookup and the traversal primitives (`walk`, `descendants`, `siblings`,
 # `find_by_path`). Loaded after types.jl (embeds PopType) and before boolean/mutations/persistence,
 # which all mutate this tree.
@@ -65,8 +65,8 @@ mutable struct Population
     run_at::Union{String,Nothing}
 end
 
-# ── PopulationMap (a tree for one value_name) ────────────────────────────────────
-mutable struct PopulationMap
+# ── PopulationTree (a tree for one value_name) ────────────────────────────────────
+mutable struct PopulationTree
     pop_type::PopType             # see @enum PopType above
     value_name::String
     pops::Dict{String,Population}          # path → Population
@@ -85,7 +85,7 @@ mutable struct PopulationMap
     # set and marks the map dirty on the next mutation so the field appears on the next save.
     retired_uids::Set{String}
     # Load-time backfill flag: `true` if any pop's uid was auto-generated during `from_tree` because
-    # the source dict didn't carry one. `load_pop_map(task_dir, …)` uses this to `save_pop_map!`
+    # the source dict didn't carry one. `load_pop_tree(task_dir, …)` uses this to `save_pop_tree!`
     # immediately so the freshly-assigned uids become the STABLE ids across sessions rather than being
     # rerolled on every load. See MULTI_POP_TRACKING_PLAN.md Decision 0 (migration).
     _uid_backfilled::Bool
@@ -96,12 +96,12 @@ mutable struct PopulationMap
     # when this says "um". Non-spatial gates are unaffected — an intensity gate has no pixel scale.
     spatial_unit::String
     # µm/px for this map's image, `[sz, sy, sx]` (`img_physical_sizes`), stamped by
-    # `load_pop_map(img; …)`. NOT persisted: the scale belongs to the IMAGE, not the gate — storing it
+    # `load_pop_tree(img; …)`. NOT persisted: the scale belongs to the IMAGE, not the gate — storing it
     # would bake one image's pixel size into a gate and break copying it to another image (decision 2).
     # `nothing` = unknown (the task_dir form, or a hand-built map in a test) ⇒ no scaling.
     physical_sizes::Union{Vector{Float64},Nothing}
     # Labels vN that was current for this map's value_name at the last save (P3b breadcrumb, `docs/todo/
-    # VN_VERSIONING_PLAN.md`). Stamped by `save_pop_map!(m, img)` from `resolve_version(img, :label_props,
+    # VN_VERSIONING_PLAN.md`). Stamped by `save_pop_tree!(m, img)` from `resolve_version(img, :label_props,
     # m.value_name)`; persisted; `nothing` on legacy files and on the task_dir save form (no image →
     # nothing to resolve). Used by the API to detect drift against the image's current `_latest` and
     # surface the drift banner in the gating module.
@@ -120,13 +120,13 @@ end
 const SPATIAL_UNIT_PX = "px"
 const SPATIAL_UNIT_UM = "um"
 
-PopulationMap(; pop_type::Union{PopType,AbstractString}=POP_FLOW,
+PopulationTree(; pop_type::Union{PopType,AbstractString}=POP_FLOW,
               value_name::AbstractString="default",
               spatial_unit::AbstractString=SPATIAL_UNIT_PX,
               physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing,
               authored_labels_version::Union{AbstractString,Nothing}=nothing,
               pinned_labels_version::Union{AbstractString,Nothing}=nothing) =
-    PopulationMap(_coerce_pop_type(pop_type), String(value_name),
+    PopulationTree(_coerce_pop_type(pop_type), String(value_name),
                   Dict{String,Population}(), String[],
                   Dict{String,String}(), Set{String}(), false,
                   String(spatial_unit),
@@ -135,21 +135,21 @@ PopulationMap(; pop_type::Union{PopType,AbstractString}=POP_FLOW,
                   pinned_labels_version === nothing ? nothing : String(pinned_labels_version),
                   nothing, nothing)
 
-Base.length(m::PopulationMap) = length(m.order)
-pop_at(m::PopulationMap, path::AbstractString) = m.pops[String(path)]
-has_pop(m::PopulationMap, path::AbstractString) = haskey(m.pops, String(path))
-pop_paths(m::PopulationMap) = copy(m.order)
+Base.length(m::PopulationTree) = length(m.order)
+pop_at(m::PopulationTree, path::AbstractString) = m.pops[String(path)]
+has_pop(m::PopulationTree, path::AbstractString) = haskey(m.pops, String(path))
+pop_paths(m::PopulationTree) = copy(m.order)
 
 """The stable UID of the population at `path` (see the `Population.uid` docstring)."""
-pop_uid(m::PopulationMap, path::AbstractString) = m.pops[String(path)].uid
+pop_uid(m::PopulationTree, path::AbstractString) = m.pops[String(path)].uid
 
 """The path currently held by the population with the given UID, or `nothing` if unknown.
 Use this to resolve a UID stored in an outside table (an obs column, another sidecar) back to the
 currently-named pop after a rename/move."""
-pop_path_by_uid(m::PopulationMap, uid::AbstractString) = get(m.uid_index, String(uid), nothing)
+pop_path_by_uid(m::PopulationTree, uid::AbstractString) = get(m.uid_index, String(uid), nothing)
 
 """The `Population` with the given UID, or `nothing` if unknown."""
-function pop_by_uid(m::PopulationMap, uid::AbstractString)
+function pop_by_uid(m::PopulationTree, uid::AbstractString)
     p = pop_path_by_uid(m, uid)
     p === nothing ? nothing : m.pops[p]
 end
@@ -159,7 +159,7 @@ end
 # one lands. UIDs are 6-char `[A-Za-z0-9]` (see `gen_uid` in `app/src/utils.jl`); with the map's
 # active-pop counts (single- to low-hundreds), the birthday probability of ever needing a reroll is
 # vanishing — this exists so a hand-edited sidecar with two identical UIDs doesn't shadow one pop.
-function _fresh_pop_uid(m::PopulationMap; preferred::AbstractString="")::String
+function _fresh_pop_uid(m::PopulationTree; preferred::AbstractString="")::String
     # `preferred` (a UID from a sidecar being deserialised) is honoured when it collides with
     # neither a live pop nor a retired one. A conflict with `retired_uids` shouldn't happen on a
     # well-formed sidecar — the writer keeps a UID either in `uid_index` XOR in `retired_uids` — but
@@ -184,7 +184,7 @@ the predicate for "does copying this map to another image need that image to be 
 (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7). A map of intensity/morphology gates is portable
 regardless of calibration.
 """
-has_spatial_gate(m::PopulationMap)::Bool = any(path -> pop_has_spatial_gate(m.pops[path]), m.order)
+has_spatial_gate(m::PopulationTree)::Bool = any(path -> pop_has_spatial_gate(m.pops[path]), m.order)
 
 """`has_spatial_gate` for ONE population: its gate axes, filter measure or conditions name a spatial axis."""
 function pop_has_spatial_gate(p::Population)::Bool
@@ -197,10 +197,10 @@ function pop_has_spatial_gate(p::Population)::Bool
 end
 
 """Direct children of `parent` (insertion order)."""
-direct_children(m::PopulationMap, parent::AbstractString) =
+direct_children(m::PopulationTree, parent::AbstractString) =
     [p for p in m.order if m.pops[p].parent == String(parent)]
 
 """All descendants of `path` (any depth)."""
-descendants(m::PopulationMap, path::AbstractString) =
+descendants(m::PopulationTree, path::AbstractString) =
     [p for p in m.order if startswith(p, String(path) * "/")]
 

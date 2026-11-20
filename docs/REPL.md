@@ -49,7 +49,7 @@ anti-pattern — confirm the real names first, then use them directly.
 
 `pop_df` is the one unified accessor for population + cell/track tables (the same data the gating and
 analysis-board plots use). Population **paths and types are project-specific** — enumerate them via the
-observer MCP tool `get_populations` (or `load_pop_map(img, value_name, pop_type) |> pop_paths` in the
+observer MCP tool `get_populations` (or `load_pop_tree(img, value_name, pop_type) |> pop_paths` in the
 REPL).
 
 ```julia

@@ -324,12 +324,12 @@ include(joinpath(@__DIR__, "suite", "bidir_push_writer.jl"))
 include(joinpath(@__DIR__, "suite", "bidir_blackboard.jl"))
 include(joinpath(@__DIR__, "suite", "blackboard_run_review.jl"))
 
-# ── VN P3b popmap + BIDIR landscape testsets ──────────────────
-# Five testsets: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b — drift banner),
+# ── VN P3b pop tree + BIDIR landscape testsets ──────────────────
+# Five testsets: /api/gating/pop-tree breadcrumb + labelsVersion pin (VN P3b — drift banner),
 # _bin_centroids_to_tiles (BIDIR landscape P2a) + its Z filter (P6 — viewer plane/volume),
 # _pop_counts_from_label_map (BIDIR landscape P2b), _track_summary_from_binned (BIDIR
 # landscape P3 — per-tile track summary).
-include(joinpath(@__DIR__, "suite", "popmap_and_landscape.jl"))
+include(joinpath(@__DIR__, "suite", "pop_tree_and_landscape.jl"))
 
 # ── BIDIR plot registry testset (PR #8) ───────────────────────────────────────
 # One testset covering `api/src/plots_registry_api.jl`: register/deregister/list, last-writer-wins

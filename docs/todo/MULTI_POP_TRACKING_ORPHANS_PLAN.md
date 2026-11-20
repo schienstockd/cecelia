@@ -80,7 +80,7 @@ bug. Two structural gaps survived the ship, both trace-verified in the code as o
    user consciously started, not on every gating edit. The attribution guard in decision 1
    suppresses the ribbon meanwhile — the orphan is invisible, not just cleaned up eventually.
 
-4. **UID reuse is closed via a persisted `retired_uids` set.** `PopulationMap` gains
+4. **UID reuse is closed via a persisted `retired_uids` set.** `PopulationTree` gains
    `retired_uids::Set{String}`; `_del_paths!` inserts each dropped pop's UID; `_fresh_pop_uid`
    also refuses candidates in it. Serialised alongside `uid_index` in the gating JSON. Grows
    unbounded (6 chars per entry) — hundreds of deletions is bytes. Cheaper than lengthening the
@@ -125,7 +125,7 @@ Ordered by user-visible impact, each independently PR-able.
 ### P2 — retired UID set (Julia)
 
 - `app/src/gating/population_manager.jl`:
-  - `PopulationMap` field `retired_uids::Set{String}`, initialised empty.
+  - `PopulationTree` field `retired_uids::Set{String}`, initialised empty.
   - `_del_paths!` (`_del_paths!`, ~line 500): for each deleted pop, `push!(m.retired_uids,
     p.uid)`.
   - `_fresh_pop_uid`: `haskey(m.uid_index, candidate) || candidate ∈ m.retired_uids || return

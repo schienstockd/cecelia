@@ -72,7 +72,7 @@ CPU↔GPU ARI, pooled set-wide pop counts in the manager.
     → a GUI launch would not resolve. Corrected to `clustPops.cluster`.
   - Tests: dispatch + param-validation testsets for both tasks; `_is_categorical_col` name-rule cases.
 - **Step 3 — pop layer: DONE.** `clust` + `trackclust` pop_types registered. `gating_path` routes each
-  to its own sidecar (`{vn}__clust.json` / `{vn}__trackclust.json`, via `POP_MAP_SUFFIX`) — no collision
+  to its own sidecar (`{vn}__clust.json` / `{vn}__trackclust.json`, via `POP_TREE_SUFFIX`) — no collision
   with flow's `{vn}.json`. `pop_df`: `clust` rides the default cell path (loads the clust map; membership
   = filter on `clusters.{suffix}` cell obs); `trackclust` routes through a parametrised
   `_pop_df_track_gating` (data source `track_props`, `:track` + expand-to-cells). Cluster pops are

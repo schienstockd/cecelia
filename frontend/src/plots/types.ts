@@ -156,7 +156,7 @@ export interface SeriesTarget { valueName: string; pop: string; popType: string 
 // `popType` it must be fetched under (live | track | …).
 export interface SegmentationPops {
   valueName: string
-  // `uid` is the population's stable gating-map identity (see `PopulationMap._fresh_pop_uid`).
+  // `uid` is the population's stable gating-map identity (see `PopulationTree._fresh_pop_uid`).
   // Empty for synthetic pops that don't live in the map (`/labels`, the "all cells" root, derived
   // `_tracked` sets); callers fall back to `(popType, path)` matching in that case. Used by
   // `plots/reresolvePops` to keep a plot capture's populations selectable across a pop rename.

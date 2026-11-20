@@ -58,7 +58,7 @@ paths per segmentation. Set `flow_pop` below to the leaf name you want to pull.
 # ╔═╡ c1000000-0000-0000-0000-000000000000
 gated = img === nothing ? DataFrame() :
     DataFrame(value_name = segs,
-              pops = [join(pop_paths(load_pop_map(img; value_name = vn, pop_type = "flow")), ", ")
+              pops = [join(pop_paths(load_pop_tree(img; value_name = vn, pop_type = "flow")), ", ")
                       for vn in segs])
 
 # ╔═╡ c2000000-0000-0000-0000-000000000000
@@ -72,7 +72,7 @@ flow_pop = let
         ""
     else
         leaves = String[]
-        for vn in segs, p in pop_paths(load_pop_map(img; value_name = vn, pop_type = "flow"))
+        for vn in segs, p in pop_paths(load_pop_tree(img; value_name = vn, pop_type = "flow"))
             p == "/" || push!(leaves, pop_name(p))
         end
         isempty(leaves) ? "" : first(unique(leaves))

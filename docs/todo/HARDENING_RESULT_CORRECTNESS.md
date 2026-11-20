@@ -90,7 +90,7 @@ crash path), dd38e0d3 (crash/OOM), d4214f92 (perf/OOM; parity golden noted under
 | 89334434 | Autofluorescence / bleedthrough correction | wrong-default (estimator) | envelope alpha 0.0248 vs 0.113 → CH3 visibly carried into CH2 | visual on real data | YES `test_exclusive_recovers_the_WHOLE_leak_when_nothing_is_co_labelled`, `test_exclusive_is_the_default_…` | observed |
 | bbf5e2e7 | Autofluorescence correction (ratio era) | silent pedestal | every background voxel read 17/255 instead of 0 | visual (preview) | YES (current method) `test_correction_utils.py` `test_background_voxels_come_out_zero_without_dividing_by_zero`. Ran: OK | observed |
 | 51d0bb38 | Flip | wrong claim → misaligned overlay | doc said existing labels line up on flipped version; they are mirrored | doc review | PARTIAL `test_flip_runner.py` proves output is np.flip; nothing stops overlaying source labels on the flipped version | observed |
-| 0736e420 | MCP captures + landscape (out of area) | algorithm-error (normalisation scope) | tile channel means normalised per plane → not comparable across frames | review | YES `api/test/suite/popmap_and_landscape.jl` (+80 lines) | inferred (not opened) |
+| 0736e420 | MCP captures + landscape (out of area) | algorithm-error (normalisation scope) | tile channel means normalised per plane → not comparable across frames | review | YES `api/test/suite/pop_tree_and_landscape.jl` (+80 lines) | inferred (not opened) |
 
 #### Summary
 - Kept 47 rows (45 distinct fixes; 3 versioning commits grouped in one row) from 52 candidates + 9 sibling-search finds (cc584b5b, b84f326b, 1c95b48e, 082788f1, fd0d2a3f, f51fea6b, 51d0bb38, 59837ebe, 0736e420); 13 dropped as crashes/compliance.
@@ -405,7 +405,7 @@ crash path), dd38e0d3 (crash/OOM), d4214f92 (perf/OOM; parity golden noted under
 | 89334434 | Autofluorescence / bleedthrough correction | wrong-default (estimator) | envelope alpha 0.0248 vs 0.113 → CH3 visibly carried into CH2 | visual on real data | YES `test_exclusive_recovers_the_WHOLE_leak_when_nothing_is_co_labelled`, `test_exclusive_is_the_default_…` | observed |
 | bbf5e2e7 | Autofluorescence correction (ratio era) | silent pedestal | every background voxel read 17/255 instead of 0 | visual (preview) | YES (current method) `test_correction_utils.py` `test_background_voxels_come_out_zero_without_dividing_by_zero`. Ran: OK | observed |
 | 51d0bb38 | Flip | wrong claim → misaligned overlay | doc said existing labels line up on flipped version; they are mirrored | doc review | PARTIAL `test_flip_runner.py` proves output is np.flip; nothing stops overlaying source labels on the flipped version | observed |
-| 0736e420 | MCP captures + landscape (out of area) | algorithm-error (normalisation scope) | tile channel means normalised per plane → not comparable across frames | review | YES `api/test/suite/popmap_and_landscape.jl` (+80 lines) | inferred (not opened) |
+| 0736e420 | MCP captures + landscape (out of area) | algorithm-error (normalisation scope) | tile channel means normalised per plane → not comparable across frames | review | YES `api/test/suite/pop_tree_and_landscape.jl` (+80 lines) | inferred (not opened) |
 
 ## Summary
 - Kept 47 rows (45 distinct fixes; 3 versioning commits grouped in one row) from 52 candidates + 9 sibling-search finds (cc584b5b, b84f326b, 1c95b48e, 082788f1, fd0d2a3f, f51fea6b, 51d0bb38, 59837ebe, 0736e420); 13 dropped as crashes/compliance.

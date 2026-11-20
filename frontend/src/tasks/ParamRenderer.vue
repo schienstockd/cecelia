@@ -48,7 +48,7 @@ type GroupValues = Record<string, ParamValues>
 
 export interface ParamContext {
   images: CciaImage[]
-  projectUid?: string        // popSelection: needed to query the gating popmap
+  projectUid?: string        // popSelection: needed to query the gating pop tree
   values?: ParamValues       // sibling param values (popSelection reads valueName)
   params?: ParamDef[]        // the WHOLE task's params, so a widget can find a sibling by TYPE rather
                              // than by a hardcoded key. See `scopeValueName` in paramValues.ts —
@@ -283,7 +283,7 @@ const pickerSummary = computed(() => {
 })
 
 // popSelection — two modes:
-//  • single (default): a dropdown of ONE pop map's populations for ONE segmentation (the sibling
+//  • single (default): a dropdown of ONE pop tree's populations for ONE segmentation (the sibling
 //    `valueName`), plus "NONE (whole segmentation)" — the map named by the single `accepts` token
 //    (`singlePopType`; `live` → the flow gates). Used by e.g. tracking.bayesianTracking.
 //  • multi / acrossSegmentations: a chip multi-select listing populations from EVERY segmentation,
@@ -291,7 +291,7 @@ const pickerSummary = computed(() => {
 //    (the prefix names the segmentation), so behaviour/HMM fits tracked A, B, C across images at once.
 //    Source: /api/plots/populations (popType=live) — the same cross-segmentation picker the summary
 //    canvas uses, which injects the DERIVED `/_tracked` pop (track_id>0, not stored in a gating file)
-//    alongside the stored gates. The flat popmap endpoint would miss `_tracked`.
+//    alongside the stored gates. The flat pop tree endpoint would miss `_tracked`.
 interface PopNode { name: string; children?: PopNode[] }
 const popOptions = ref<{ label: string; value: string }[]>([{ label: 'NONE (whole segmentation)', value: 'NONE' }])
 // grouped chip list (Decision 14): [{ title: "Cells · Gated", opts: [...] }]. Legacy/ungrouped
@@ -313,7 +313,7 @@ function flattenPopTree(nodes: PopNode[] | undefined, parent: string, out: strin
 async function fetchPopPaths(img: CciaImage, projectUid: string, vn: string, popType: string): Promise<string[]> {
   try {
     const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(vn)}&popType=${popType}`
-    const res = await fetch(`/api/gating/popmap?${q}`)
+    const res = await fetch(`/api/gating/pop-tree?${q}`)
     if (!res.ok) return []
     const d = await res.json() as { tree?: { populations?: PopNode[] } }
     const paths: string[] = []

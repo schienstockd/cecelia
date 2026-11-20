@@ -572,7 +572,7 @@ end
 @testset "API: overlay legend — captured track rows name the colour the tails are drawn in" begin
     # Each "/_tracked" source is its own row, in the colour the snapshot says its tails ARE drawn
     # in — no swatch when coloured by track id / speed (null), as `_track_source_items` does.
-    # Blank colour-by → no pop maps walked, so `img` is never touched.
+    # Blank colour-by → no pop trees walked, so `img` is never touched.
     body = JSON3.read("""{"overlayPops": [
         {"valueName": "flowTom", "popType": "track", "path": "/_tracked", "colour": "#ff8800"},
         {"valueName": "cpSAM",   "popType": "track", "path": "/_tracked", "colour": null},
@@ -665,10 +665,10 @@ end
         label_props(h5) |> add_obs(Cecelia.DataFrames.DataFrame("label" => labs,
             "regions.r1" => [Float64(l % 3) for l in labs])) |> save!
         img, _ = _gating_image("testpr", "KDIeEm")
-        m = PopulationMap(; pop_type = "region", value_name = "B")
+        m = PopulationTree(; pop_type = "region", value_name = "B")
         add_pop!(m, "niche"; filter_measure = "regions.r1", filter_fun = "in", filter_values = [1],
                  colour = "#123456")
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         # region pops are gathered for the legend's names …
         @test _pop_labels_for(img, "regions.r1", COLOUR_BY_POP_TYPES) == Dict("1" => "niche")
         # … but never lend it their colour: a row's swatch is the value's own slot among the column's

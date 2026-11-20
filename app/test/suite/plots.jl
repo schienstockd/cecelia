@@ -734,10 +734,10 @@ end
                                   measure="clusters.movement")
         raw = req()
         @test raw["categories"] == ["0", "1", "2"] && !haskey(raw, "categoryMembers")
-        tc = PopulationMap(pop_type="trackclust", value_name="B")
+        tc = PopulationTree(pop_type="trackclust", value_name="B")
         add_pop!(tc, "Directed"; filter_measure="clusters.movement", filter_fun="in",
                  filter_values=[0, 2], colour="#c061cb")
-        save_pop_map!(tc, img)
+        save_pop_tree!(tc, img)
         r = req()
         @test r["categories"] == ["1", "Directed"]
         @test r["series"][1]["counts"] == [n(1), n(0) + n(2)]       # IDs 0 and 2 pooled
@@ -785,18 +785,18 @@ end
         @test Set(m2["categories"]) == Set(["1", "Directed"])
         @test m2["categoryMembers"]["KDIeE2|B"] == Dict("Directed" => ["0", "2"])
         # PER ID: image 2 now names ID 1 itself but not 0/2 — those still read the run's "Directed"
-        t2 = PopulationMap(pop_type="trackclust", value_name="B")
+        t2 = PopulationTree(pop_type="trackclust", value_name="B")
         add_pop!(t2, "Slow"; filter_measure="clusters.movement", filter_fun="in", filter_values=[1], colour="#111111")
-        save_pop_map!(t2, img2)
+        save_pop_tree!(t2, img2)
         m3 = plot_summary_data([img, img2], ["KDIeEm", "KDIeE2"], "live", ["B/_tracked"], "frequency";
                                scope=:per_image, granularity=:track, measure="clusters.movement")
         @test m3["categoryMembers"]["KDIeE2|B"] == Dict("Directed" => ["0", "2"], "Slow" => ["1"])
         # …and image 1, which never named ID 1, reads the run's "Slow" for it
         @test m3["categoryMembers"]["KDIeEm|B"] == Dict("Directed" => ["0", "2"], "Slow" => ["1"])
         # an image's OWN name is never widened by the run's: image 2 calls ID 1 "Directed" itself
-        t3 = PopulationMap(pop_type="trackclust", value_name="B")
+        t3 = PopulationTree(pop_type="trackclust", value_name="B")
         add_pop!(t3, "Directed"; filter_measure="clusters.movement", filter_fun="in", filter_values=[1], colour="#222222")
-        save_pop_map!(t3, img2)
+        save_pop_tree!(t3, img2)
         m4 = plot_summary_data([img, img2], ["KDIeEm", "KDIeE2"], "live", ["B/_tracked"], "frequency";
                                scope=:per_image, granularity=:track, measure="clusters.movement")
         @test m4["categoryMembers"]["KDIeE2|B"] == Dict("Directed" => ["1"])

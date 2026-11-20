@@ -6,7 +6,7 @@
 # The python-backed ones reuse `_label_import_project` from label_import.jl (included earlier).
 
 # The KDIeEm image with B and a DIFFERENT T (T's Directed tracks relabelled Scanning), both clustered in
-# the `movement` run, B's trackclust pop map shared to T.
+# the `movement` run, B's trackclust pop tree shared to T.
 function _kdieem_distinct_pair()
     src = fixture_path("testpr", "1", "KDIeEm")
     files = (joinpath("labelProps", "B.h5ad"), joinpath("labelProps", "B__tracks.h5ad"),

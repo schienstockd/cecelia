@@ -1,7 +1,7 @@
-# VN P3b popmap + BIDIR landscape testsets — extracted from api/test/runtests.jl.
+# VN P3b pop tree + BIDIR landscape testsets — extracted from api/test/runtests.jl.
 #
 # Six testsets:
-#  - `API: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b)` — VN_VERSIONING_PLAN
+#  - `API: /api/gating/pop-tree breadcrumb + labelsVersion pin (VN P3b)` — VN_VERSIONING_PLAN
 #    P3b guardrail feeding the drift banner (authoredLabelsVersion, currentLabelsVersion, pin).
 #  - `API: labelsVersion pin reaches /channels, /summary, /plot-image (VN P3b)` — those routes read
 #    the pinned labels version, over a two-version B built in the temp copy.
@@ -15,7 +15,7 @@
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
 
-# ── P3b — /api/gating/popmap returns breadcrumb pair; labelsVersion pin threads ──
+# ── P3b — /api/gating/pop-tree returns breadcrumb pair; labelsVersion pin threads ──
 # docs/todo/VN_VERSIONING_PLAN.md → P3b. Guardrail so the drift banner is fed a reliable pair:
 #   • authoredLabelsVersion       — the map's persisted breadcrumb (`nothing` on legacy/blank)
 #   • currentLatestLabelsVersion  — the image's current `_latest` labels vN for this value_name
@@ -23,7 +23,7 @@
 # it and doesn't error); its effect on the underlying `label_props(img; version=…)` read is unit-
 # tested where the reader lives (`app/test/suite/labelprops.jl`) — a positive-value assertion here
 # needs a fixture with two labels versions on disk, which the smoke fixture doesn't carry.
-@testset "API: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b)" begin
+@testset "API: /api/gating/pop-tree breadcrumb + labelsVersion pin (VN P3b)" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"
   else
@@ -34,16 +34,16 @@
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir
         common = "projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"
 
-        # Fresh fixture: `gating/B.json` may not exist yet → popmap returns an empty tree with no
+        # Fresh fixture: `gating/B.json` may not exist yet → pop tree returns an empty tree with no
         # breadcrumb (authored = nothing). The image *does* have label_props for B (implicit v1),
         # so currentLatestLabelsVersion resolves to "v1" (bare-scalar entries → LATEST_DEFAULT_VAL).
-        st, body = api_gating_popmap(HTTP.Request("GET", "/api/gating/popmap?" * common))
+        st, body = api_gating_pop_tree(HTTP.Request("GET", "/api/gating/pop-tree?" * common))
         @test st == 200
         d = JSON3.read(body, Dict{String,Any})
         @test isnothing(get(d, "authoredLabelsVersion", nothing))
         @test get(d, "currentLatestLabelsVersion", nothing) == "v1"
 
-        # A save (via any gating mutation → save_pop_map!(m, img)) stamps the breadcrumb. Add a pop
+        # A save (via any gating mutation → save_pop_tree!(m, img)) stamps the breadcrumb. Add a pop
         # so the save path fires — then re-read: authored = "v1", drift = false (matches current).
         base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
                                 "valueName" => "B", "popType" => "flow")
@@ -52,7 +52,7 @@
         api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
             Dict{String,Any}("name" => "qc", "gate" => gate)))))
 
-        st, body = api_gating_popmap(HTTP.Request("GET", "/api/gating/popmap?" * common))
+        st, body = api_gating_pop_tree(HTTP.Request("GET", "/api/gating/pop-tree?" * common))
         d = JSON3.read(body, Dict{String,Any})
         @test d["authoredLabelsVersion"] == "v1"
         @test d["currentLatestLabelsVersion"] == "v1"
@@ -61,8 +61,8 @@
         # image still returns 200 — the pin is a read directive, not a validation gate (a missing
         # inner version resolves via the composer to `nothing`, the caller handles empty data). We
         # assert 200 and shape here; the reader-level pin behaviour is pinned in the pkg suite.
-        st, body = api_gating_popmap(HTTP.Request("GET",
-            "/api/gating/popmap?" * common * "&labelsVersion=v1"))
+        st, body = api_gating_pop_tree(HTTP.Request("GET",
+            "/api/gating/pop-tree?" * common * "&labelsVersion=v1"))
         @test st == 200
         st, _ = api_gating_membership(HTTP.Request("GET",
             "/api/gating/membership?" * common * "&pops=/qc&labelsVersion=v1"))

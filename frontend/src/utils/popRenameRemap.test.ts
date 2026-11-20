@@ -33,7 +33,7 @@ describe('makePopPathRemap', () => {
   })
 
   it('falls back to path presence for an unknown key (first mount with persisted highlights)', () => {
-    // On first arrival of the popmap, oldItems is empty — every persisted highlight is unknown.
+    // On first arrival of the pop tree, oldItems is empty — every persisted highlight is unknown.
     // Pre-uid pruner behaviour: intersect with the new set. Preserved here.
     const remap = makePopPathRemap([], [P('/A', 'u1'), P('/B', 'u2')])
     expect(remap('/A')).toBe('/A')

@@ -109,7 +109,7 @@ end
 function _pop_defined(img::CciaImage, vn::AbstractString, pop_type::AbstractString, path::AbstractString)::Bool
     is_root(path) && return true
     try
-        has_pop(_read_pop_map(img, vn, pop_type; derived_paths = [path]), path)
+        has_pop(_read_pop_tree(img, vn, pop_type; derived_paths = [path]), path)
     catch
         false
     end

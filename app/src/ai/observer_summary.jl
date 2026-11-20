@@ -30,9 +30,9 @@ _observer_image_header(img::CciaImage) = (; uid = img.uid, name = img.name, incl
 # (definitions AND measures), so the "walk the gating maps" loop lives once.
 function _observer_each_population(f::Function, img::CciaImage)
     for v in sort(img_value_names(img)), pt in STORED_POP_TYPES
-        # `stored_pop_map` loads cluster maps even with no own sidecar — they are borrowed from a
+        # `stored_pop_tree` loads cluster maps even with no own sidecar — they are borrowed from a
         # co-clustered sibling; skipping on the file once reported "clusters exist for B only".
-        m = stored_pop_map(img, v, pt)
+        m = stored_pop_tree(img, v, pt)
         m === nothing && continue
         for path in pop_paths(m)
             p = pop_at(m, path); p.transient && continue

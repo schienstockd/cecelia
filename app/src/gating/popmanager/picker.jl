@@ -48,7 +48,7 @@ Build the summary-canvas picker list: populations available across `imgs`, group
 (value_name). Unioned across images (dedup by `(pop_type, path)`, first image wins name/colour) and
 across `pop_types`, with derived pops (`derived_pop_paths`) prepended per pop_type. Each population is
 tagged with the `pop_type` it must be fetched under. `value_names_for(img)` and `load_map(img, vn,
-pt)` are injected (the API passes `versioned_keys` / `load_pop_map` closures) so this is pure and
+pt)` are injected (the API passes `versioned_keys` / `load_pop_tree` closures) so this is pure and
 headless-testable. Returns `[(value_name, populations=[(path, name, colour, pop_type)])]` in
 first-appearance order; `load_map` returning `nothing`/throwing for a missing (vn, pop_type) is
 skipped.
@@ -197,8 +197,8 @@ function ensure_filter_pop!(img::CciaImage, pop_type::PopTypeArg, value_name::Ab
                             filter_measure::AbstractString, filter_fun::AbstractString,
                             filter_values, colour::AbstractString = "#7c93b8")::Vector{String}
     # the gating lock (copy.jl): a task writing here must not lose an edit the user makes meanwhile
-    with_popmap_lock() do
-        m = load_pop_map(img; value_name = value_name, pop_type = pop_type)
+    with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = value_name, pop_type = pop_type)
         created = String[]
         for parent in parents
             # a task passes its popSelection values, which are segmentation-prefixed (`"T/qc"`); the
@@ -213,7 +213,7 @@ function ensure_filter_pop!(img::CciaImage, pop_type::PopTypeArg, value_name::Ab
                      filter_values = filter_values, colour = colour, reserved_ok = true)
             push!(created, path)
         end
-        isempty(created) || save_pop_map!(m, img)
+        isempty(created) || save_pop_tree!(m, img)
         created
     end
 end

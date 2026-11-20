@@ -125,7 +125,7 @@ async function loadChannelsInner() {
 async function loadTreeInner() {
   if (!props.projectUid || !imageUid.value) { tree.value = null; return }
   try {
-    const d = await (await fetch(`/api/gating/popmap?${idQ()}`)).json() as { tree: PopTree }
+    const d = await (await fetch(`/api/gating/pop-tree?${idQ()}`)).json() as { tree: PopTree }
     tree.value = d.tree ?? null
   } catch { tree.value = null }
 }

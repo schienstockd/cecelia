@@ -22,7 +22,7 @@
     @test plot_pop_types("track", "track") == ["track"]          # no duplicate
 
     # flatten_pop_tree: pre-order paths + colours
-    fm = PopulationMap(pop_type="flow", value_name="C")
+    fm = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
     add_pop!(fm, "sub"; parent="/qc", gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#abc")
     flat = flatten_pop_tree(to_tree(fm))
@@ -34,10 +34,10 @@
     @test flat[1][4] != flat[2][4]                                   # distinct uids per pop
 
     # a track-gated map (pop_type "track") with one pop
-    tm = PopulationMap(pop_type="track", value_name="C")
+    tm = PopulationTree(pop_type="track", value_name="C")
     add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5, colour="#f59e0b")
 
-    # loaders injected (as the API passes versioned_keys/load_pop_map closures)
+    # loaders injected (as the API passes versioned_keys/load_pop_tree closures)
     names_for = _ -> ["C"]
     load = (_, vn, pt) -> vn == "C" ? (pt == "track" ? tm : (pt == "live" ? fm : nothing)) : nothing
 
@@ -118,14 +118,14 @@ end
 
     # maps: flow gates (/qc, /qc/sub), a per-track gate (/TEST), a cell cluster (/myeloid),
     # a track cluster (/clusterA)
-    fm = PopulationMap(pop_type="flow", value_name="C")
+    fm = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
     add_pop!(fm, "sub"; parent="/qc", gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#abc")
-    tm = PopulationMap(pop_type="track", value_name="C")
+    tm = PopulationTree(pop_type="track", value_name="C")
     add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5, colour="#f59e0b")
-    cm = PopulationMap(pop_type="clust", value_name="C")
+    cm = PopulationTree(pop_type="clust", value_name="C")
     add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2])
-    tcm = PopulationMap(pop_type="trackclust", value_name="C")
+    tcm = PopulationTree(pop_type="trackclust", value_name="C")
     add_pop!(tcm, "clusterA"; filter_measure="clusters.tracks", filter_fun="in", filter_values=[0])
     names_for = _ -> ["C"]
     load = (_, vn, pt) -> vn != "C" ? nothing :
@@ -178,17 +178,17 @@ end
     @test pop_category("live", "/qc/" * Cecelia.AGGREGATED_POP_NAME) == "aggregated"
 
     # same fixtures as the popScope testset above, plus a region map and an aggregated cell pop.
-    fm = PopulationMap(pop_type="flow", value_name="C")
+    fm = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
     add_pop!(fm, Cecelia.AGGREGATED_POP_NAME; parent="/qc", filter_measure="live.cell.is.aggregate",
              filter_fun="gt", filter_values=0, reserved_ok=true)   # auto-created aggregate pop
-    tm = PopulationMap(pop_type="track", value_name="C")
+    tm = PopulationTree(pop_type="track", value_name="C")
     add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5)
-    cm = PopulationMap(pop_type="clust", value_name="C")
+    cm = PopulationTree(pop_type="clust", value_name="C")
     add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2])
-    tcm = PopulationMap(pop_type="trackclust", value_name="C")
+    tcm = PopulationTree(pop_type="trackclust", value_name="C")
     add_pop!(tcm, "clusterA"; filter_measure="clusters.tracks", filter_fun="in", filter_values=[0])
-    rm_ = PopulationMap(pop_type="region", value_name="C")
+    rm_ = PopulationTree(pop_type="region", value_name="C")
     add_pop!(rm_, "r0"; filter_measure="regions.default", filter_fun="in", filter_values=[0])
     names_for = _ -> ["C"]
     load = (_, vn, pt) -> vn != "C" ? nothing :
@@ -232,12 +232,12 @@ end
 end
 
 # ── branch pop_type (BRANCHING_PLAN.md Decision 2) ────────────────────────────
-# Adding "branch" to the framework must extend POP_MAP_SUFFIX/ACCEPT_TOKENS/pop_category and
+# Adding "branch" to the framework must extend POP_TREE_SUFFIX/ACCEPT_TOKENS/pop_category and
 # route via population_accept_groups with granularity="branch". The framework was designed to
 # take a third pop_type; this guards the wiring.
 @testset "branch pop_type wiring" begin
-    # POP_MAP_SUFFIX resolves the gating file suffix.
-    @test Cecelia.POP_MAP_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
+    # POP_TREE_SUFFIX resolves the gating file suffix.
+    @test Cecelia.POP_TREE_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
     # build the expected tail with joinpath — a literal "gating/..." fails on Windows, where the
     # path is "\\gating\\stroma__branch.json" (the product is fine; the assertion wasn't portable)
     @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"),
@@ -251,12 +251,12 @@ end
 
     # population_accept_groups tags branch pops with granularity="branch" and only surfaces
     # them when "branch" is in accepts. A mixed request keeps cells + branches.
-    bm = PopulationMap(pop_type="branch", value_name="C")
+    bm = PopulationTree(pop_type="branch", value_name="C")
     add_pop!(bm, "endpoint-to-endpoint"; filter_measure="branch-type",
              filter_fun="eq", filter_values=0)
     add_pop!(bm, "junction-to-junction"; filter_measure="branch-type",
              filter_fun="eq", filter_values=2)
-    fm = PopulationMap(pop_type="flow", value_name="C")
+    fm = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1))
     names_for = _ -> ["C"]
     load = (_, vn, pt) -> vn != "C" ? nothing :
@@ -285,22 +285,22 @@ end
 @testset "ensure_filter_pop! auto-created population" begin
     td = mktempdir()
     img = CciaImage(; dir=td)
-    m = PopulationMap(; pop_type="flow", value_name="B")
+    m = PopulationTree(; pop_type="flow", value_name="B")
     add_pop!(m, "qc"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-    save_pop_map!(m, img)
+    save_pop_tree!(m, img)
 
     # a 0/1 flag column → aggregated pop under /qc (the generalisable `> 0`, not a baked TRUE/FALSE)
     created = ensure_filter_pop!(img, "flow", "B", ["/qc"], AGGREGATED_POP_NAME;
                  filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
     @test created == ["/qc/" * AGGREGATED_POP_NAME]
-    p = pop_at(load_pop_map(img; value_name="B", pop_type="flow"), "/qc/" * AGGREGATED_POP_NAME)
+    p = pop_at(load_pop_tree(img; value_name="B", pop_type="flow"), "/qc/" * AGGREGATED_POP_NAME)
     @test p.filter_measure == "flow.cell.is.aggregate" && p.filter_fun == Cecelia.FILTER_GT && p.filter_values == 0
     @test pop_category(p.pop_type, p.path) == "aggregated" && !is_track_pop(p.pop_type, p.path)
 
     # idempotent: re-running REDEFINES (a probability cutoff — measure-agnostic), never duplicates
     ensure_filter_pop!(img, "flow", "B", ["/qc"], AGGREGATED_POP_NAME;
                  filter_measure="flow.cell.aggregate.score", filter_fun="gte", filter_values=0.5)
-    m3 = load_pop_map(img; value_name="B", pop_type="flow")
+    m3 = load_pop_tree(img; value_name="B", pop_type="flow")
     @test count(pp -> endswith(pp, AGGREGATED_POP_NAME), pop_paths(m3)) == 1
     @test pop_at(m3, "/qc/" * AGGREGATED_POP_NAME).filter_fun == Cecelia.FILTER_GTE
 
@@ -322,14 +322,14 @@ end
     td = mktempdir()
     img = CciaImage(; dir=td)
     # one stored map per type on disk (routed by m.pop_type), all under value_name "B"
-    fm = PopulationMap(pop_type="flow", value_name="B")
-    add_pop!(fm, "qc"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0)); save_pop_map!(fm, img)
-    cm = PopulationMap(pop_type="clust", value_name="B")
-    add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2]); save_pop_map!(cm, img)
-    rmp = PopulationMap(pop_type="region", value_name="B")
-    add_pop!(rmp, "r0"; filter_measure="regions.default", filter_fun="in", filter_values=[0]); save_pop_map!(rmp, img)
-    tm = PopulationMap(pop_type="track", value_name="B")
-    add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5); save_pop_map!(tm, img)
+    fm = PopulationTree(pop_type="flow", value_name="B")
+    add_pop!(fm, "qc"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0)); save_pop_tree!(fm, img)
+    cm = PopulationTree(pop_type="clust", value_name="B")
+    add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2]); save_pop_tree!(cm, img)
+    rmp = PopulationTree(pop_type="region", value_name="B")
+    add_pop!(rmp, "r0"; filter_measure="regions.default", filter_fun="in", filter_values=[0]); save_pop_tree!(rmp, img)
+    tm = PopulationTree(pop_type="track", value_name="B")
+    add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5); save_pop_tree!(tm, img)
 
     # each path resolves to the map that CONTAINS it; _tracked → live; root/unknown → flow
     @test resolve_pop_type(img, "B", "/qc")           == "flow"
@@ -383,7 +383,7 @@ end
 
     # same-name guard: "/qc" now exists in BOTH the flow map (a gate) and the region map — an
     # ambiguous path. resolve by priority (flow first) AND @warn, never a silent mis-resolve.
-    add_pop!(rmp, "qc"; filter_measure="regions.default", filter_fun="in", filter_values=[1]); save_pop_map!(rmp, img)
+    add_pop!(rmp, "qc"; filter_measure="regions.default", filter_fun="in", filter_values=[1]); save_pop_tree!(rmp, img)
     @test (@test_logs (:warn,) match_mode=:any resolve_pop_type(img, "B", "/qc")) == "flow"
     rm(td; recursive=true)
 end

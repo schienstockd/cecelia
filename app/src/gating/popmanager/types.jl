@@ -1,6 +1,6 @@
 # Path helpers + the three population-shape enums (PopType, BoolMembership, FilterFun) and
 # FilterCondition. Loaded first because every other popmanager fragment references at least one:
-# Population/PopulationMap structs embed PopType, boolean-pop logic dispatches on BoolMembership,
+# Population/PopulationTree structs embed PopType, boolean-pop logic dispatches on BoolMembership,
 # and picker/allow-list rules gate on pop_type. The root-path convention (root = `"root"`, all
 # pop paths start with `/`) is fixed here so downstream code never re-derives it.
 

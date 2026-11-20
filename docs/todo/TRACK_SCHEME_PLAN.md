@@ -205,12 +205,12 @@ wrong for 300 frames. Follow its layout conventions, not its markup.
   called `pickCellAt` in `frontend/src/modules/ViewerWindow.vue` and reads the segmentation label
   itself (not a point cloud): it POSTs `/api/viewer/pick-cell` with `(t, z, x, y, level)` → the
   server opens `label_store_path` and `read_slab` at that voxel → returns `{ label, nSelected }`
-  and writes the label into the server-side transient pop, broadcast over `gating:popmap`. Label 0
+  and writes the label into the server-side transient pop, broadcast over `gating:pop-tree`. Label 0
   is background and leaves the selection alone. `pickRectAt` (rectangle drag) walks the same path
   over an inclusive `(x1,y1)-(x2,y2)` box, optionally with a `zLo/zHi` slice. `GET
   /api/tracking/selection` resolves the transient pick to tracks; the timeline already calls it in
   `readSelection()` behind a **Read** button, so the round trip works today as a two-click
-  gesture. What P5 owes is **auto-subscription** — the timeline listens for the popmap change and
+  gesture. What P5 owes is **auto-subscription** — the timeline listens for the pop tree change and
   re-fetches selection on its own, so a single click in the viewer highlights the lane without
   touching a button. Named "napari" in an earlier draft because napari was the viewer; retargeted
   to the browser viewer since `project_napari_being_dropped`.

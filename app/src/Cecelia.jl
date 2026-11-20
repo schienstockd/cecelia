@@ -125,7 +125,7 @@ export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, proje
 export Density2D, density_2d, axis_summary, grid_summary
 
 # ── Population manager ─────────────────────────────────────────────────────────
-export Population, PopulationMap, ROOT, PopType, PopTypeArg
+export Population, PopulationTree, ROOT, PopType, PopTypeArg
 export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
 export parse_pop_type
 export pop_parent, pop_name, pop_path, is_root, pop_display_labels
@@ -135,22 +135,22 @@ export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTE
        parse_filter_fun, FilterCondition
 export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, tracked_pop_parents
 export GATING_POP_TYPES, is_gating_pop_type, STORED_POP_TYPES, CLUSTER_POP_TYPES, TRACK_FAMILY_POP_TYPES
-export POP_TYPE_REGISTRY, POP_TYPE_PROBE_ORDER, PopTypeInfo, pop_type_info, pop_map_type
+export POP_TYPE_REGISTRY, POP_TYPE_PROBE_ORDER, PopTypeInfo, pop_type_info, pop_tree_type
 export SPATIAL_UNIT_PX, SPATIAL_UNIT_UM, is_spatial_axis, has_spatial_gate
 export flatten_pop_tree, plot_pop_types, plot_population_groups
 export is_track_pop, pop_category, population_scope_groups, population_accept_groups
 export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
-export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path, stored_pop_map, has_stored_pops
+export to_tree, from_tree, save_pop_tree!, load_pop_tree, gating_dir, gating_path, stored_pop_tree, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
-export copy_gating!, with_popmap_lock
+export copy_gating!, with_pop_tree_lock
 export co_clustered_value_names, cluster_run_at, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
        cluster_id_owners, as_cluster_id
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export category_colours, category_sort_key, pop_label_overrides, POPULATION_PALETTE
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops, missing_gate_columns, pop_membership_cols
-export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
+export pop_plot_cols, computed_pop_tree, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data

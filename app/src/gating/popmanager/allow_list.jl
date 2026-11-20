@@ -147,7 +147,7 @@ end
 # leaf is a registered derived pop for this `pop_type` (e.g. ".../_tracked" under `live`) becomes
 # a filtered child of its parent; recompute! then composes parent ∩ filter. Unknown/foreign-type
 # leaves are left untouched. No-op if the pop already exists or the parent is absent.
-function _inject_derived_pops!(m::PopulationMap, paths, pop_type::PopTypeArg)::PopulationMap
+function _inject_derived_pops!(m::PopulationTree, paths, pop_type::PopTypeArg)::PopulationTree
     for path in paths
         path = String(path)
         has_pop(m, path) && continue
@@ -252,9 +252,9 @@ labels (same semantics as flow/clust pops, so `filterPayloadByLabels` / label→
 function _resolve_track_family_pops(img::CciaImage, pt::AbstractString,
                                     value_name::AbstractString)::Vector{NamedTuple}
     m = try
-        load_pop_map(img; value_name = value_name, pop_type = pt)
+        load_pop_tree(img; value_name = value_name, pop_type = pt)
     catch e
-        @warn "resolve_pops (track-family): load_pop_map failed" value_name pop_type=pt exception=e
+        @warn "resolve_pops (track-family): load_pop_tree failed" value_name pop_type=pt exception=e
         return NamedTuple[]
     end
     meta = Dict{String,NamedTuple}()
@@ -376,7 +376,7 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
                   "/", _pop_df_mtime(img_label_props_path(img, value_name)))
     cached = get(img._pop_df_cache, ckey, nothing)
     cached === nothing || return cached::Vector{NamedTuple}
-    m = load_pop_map(img; value_name = value_name, pop_type = pt)
+    m = load_pop_tree(img; value_name = value_name, pop_type = pt)
     # `labels` are CELL labels, so membership is evaluated over the cell table — the shared source's
     # cell branch, whatever `pt` is (a `branch` map's ids are not cells). Raw column names. No transient
     # selection injection here — it must not enter the cached (pure on-disk) result.
@@ -594,12 +594,12 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
 
     # `branch` pop_type: gates on per-branch measurements (branch-type, length, tortuosity, …) in
     # the skeleton sidecar `{vn}__branch.h5ad`. `_pop_df` is generic over table location, so the
-    # only branch-specific pieces are the pop map (`gating/{vn}__branch.json`) and the fetch that
+    # only branch-specific pieces are the pop tree (`gating/{vn}__branch.json`) and the fetch that
     # reads the branch table. Membership is one row per skeleton path; there is no cell/track
     # duality within branches, so `granularity` is ignored (always one row per branch). See
     # docs/todo/BRANCHING_PLAN.md Decisions 1–3.
     if string(pop_type) == "branch"
-        branch_load = vn -> load_pop_map(img; value_name=vn, pop_type="branch")
+        branch_load = vn -> load_pop_tree(img; value_name=vn, pop_type="branch")
         branch_fetch = function (vn, cols)
             lp = label_props(img_branch_props_path(img, vn); value_name=vn)
             isempty(cols) || select_cols(lp, cols)
@@ -677,7 +677,7 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
     # Derived pop_types (e.g. `live`): gates are stored under `flow`; layer the derived pops
     # (e.g. _tracked) on top, transiently. Pop_types with no registered derived specs load normally.
     groups = _group_pops_by_value_name(pops, resolved_vn)
-    load_map = vn -> _read_pop_map(img, vn, pop_type; derived_paths=get(groups, vn, String[]),
+    load_map = vn -> _read_pop_tree(img, vn, pop_type; derived_paths=get(groups, vn, String[]),
                                    map_hook=map_hook)
 
     # :track → one row per track (features from `track_props`: motility ⊕ `cell_measures` aggregates),
