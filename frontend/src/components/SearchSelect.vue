@@ -100,7 +100,9 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ss-menu { display: flex; flex-direction: column; gap: 0.25rem; }   /* padding: TeleportPopover (flush) */
 .ss-filter { width: 100%; box-sizing: border-box; }
-.ss-list { max-height: 18rem; overflow-y: auto; display: flex; flex-direction: column; }
+/* Block flow, not a flex column: flex items with overflow:hidden shrink to 0 to fit max-height, so a
+   40-channel list collapsed into overlapping slivers. */
+.ss-list { max-height: 18rem; overflow-y: auto; }
 .ss-group { padding: 0.3rem 0.55rem 0.1rem; font-weight: 600; }
 .ss-item {
   display: block; width: 100%; padding: 0.25rem 0.55rem 0.25rem 0.9rem;
