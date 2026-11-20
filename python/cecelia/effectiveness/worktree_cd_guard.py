@@ -107,7 +107,7 @@ def blocking_reason(command: str, cwd: str, session_id: str,
         return None
     if not targets:
         return None
-    here = pathlib.Path(cwd)
+    here = pathlib.Path(cwd).resolve()   # physical, like each `_resolve`d target it is compared to
     own_root = checkout_root(here)
     live = None
     for target in targets:

@@ -379,13 +379,23 @@ def under(path: str, root: str) -> bool:
     return path == root or path.startswith(root + os.sep)
 
 
+def under_resolved(path: str, root: str) -> bool:
+    """`under`, by text first and then with symlinks resolved on both sides — for comparing a
+    path as recorded (may keep a symlinked prefix) against one that is physical, or vice versa."""
+    return under(path, root) or under(os.path.realpath(path), os.path.realpath(root))
+
+
 def sessions_in(root: str, sessions: _t.Iterable[Session]) -> list[Session]:
     """Every session that worked inside `root` recently — any of its recent folders, not only the
     newest: its shell may have been reset to the workspace root while the work is still in this
     worktree. Over-protecting is the safe failure. Used by `prune-worktrees`' in-use check and the
-    `worktree_cd_guard` hook."""
+    `worktree_cd_guard` hook.
+
+    Matched by text and, failing that, with symlinks resolved on both sides: the guard's `root`
+    is a physical path, and a recorded folder that kept a symlinked workspace path would
+    otherwise slip past it."""
     return [s for s in sessions
-            if any(under(c, root) for c in (s.recent_cwds or ((s.cwd,) if s.cwd else ())))]
+            if any(under_resolved(c, root) for c in (s.recent_cwds or ((s.cwd,) if s.cwd else ())))]
 
 
 def live_sessions(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib.Path("/proc"),
