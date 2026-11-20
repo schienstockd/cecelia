@@ -629,6 +629,12 @@ class TestStageBoards(unittest.TestCase):
             self.assertEqual(p[0][1][0][0]["pops"], ["T/_tracked"])
         self.assertEqual([p["plot"] for p in specs["HMM"]["candidates"][0]],
                          ["hmm_state_frequency", "state_signature", "transition_matrix", "hmmStateCards"])
+        # an HMM fitted jointly on several pops, across segmentations: every pop on the board, state
+        # cards for each segmentation
+        p = stage_boards._plots("hmm", [{"params": {"pops": ["T/qc", "B/", "T/qc/x"], "colName": "m"}}])
+        self.assertEqual(p[0][1][0][0]["pops"], ["T/qc/_tracked", "B/_tracked", "T/qc/x/_tracked"])
+        self.assertEqual(p[0][1][1][0]["pops"], ["T/qc", "B/", "T/qc/x"])
+        self.assertEqual([c["valueName"] for c in p[0][1][0] if c["plot"] == "hmmStateCards"], ["T", "B"])
         self.assertEqual({p["suffix"] for p in specs["Clusters"]["candidates"][0]}, {"mv"})
         # each slot attaches to its stage's section; the gating board to each image's LAST gate decision
         g = specs["Gating strategy"]
@@ -637,6 +643,28 @@ class TestStageBoards(unittest.TestCase):
         self.assertEqual(g["attach"], [gate_ids[2], gate_ids[1]])
         self.assertEqual(len(specs["HMM"]["attach"]), 4)
         self.assertTrue(all(s["name"].startswith("Run ST · ") for s in specs.values()))
+
+    def test_cluster_pop_views_checked_on_every_clustered_segmentation(self):
+        def run(pops, counts):
+            spec = {"candidates": [[{"plot": "clusterMap", "popType": "trackclust"},
+                                    {"plot": "hmmStates", "popType": "trackclust"}]], "attach": ["cl", "cl"]}
+            dec = {"sections": [{"id": "cl", "units": [{"params": {"popsToCluster": pops}}]}]}
+            asked = []
+            def fake(api, proj, img, vn, pt):
+                asked.append(vn)
+                return counts.get(vn, 0)
+            with mock.patch.object(stage_boards, "_cluster_pops", fake):
+                stage_boards._needs_cluster_pops("http://x", "p", [spec], dec, [{"imageUid": "i"}], lambda *a: None)
+            return [p["plot"] for p in spec["candidates"][0]], asked
+        # cluster pops exist on the SECOND segmentation only: the views stay
+        self.assertEqual(run(["A/x", "B/y"], {"B": 2})[0], ["clusterMap", "hmmStates"])
+        self.assertEqual(run(["A/x", "B/y"], {})[0], ["clusterMap"])
+        # a bare ref's segmentation is the image's active one, unknown here: keep, never ask for ""
+        plots, asked = run(["/qc"], {})
+        self.assertEqual(plots, ["clusterMap", "hmmStates"])
+        self.assertNotIn("", asked)
+        # an older run's string value is one ref, not a list of characters
+        self.assertEqual(run("NONE", {})[1], ["default"])
 
     def test_segmentation_board_names_the_output_not_the_image_version(self):
         # a run_task segmentation reading the image version `driftCorrected` and writing `gBTsmooth`:

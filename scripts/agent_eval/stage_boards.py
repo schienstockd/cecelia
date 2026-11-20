@@ -56,15 +56,25 @@ def _pops_tracked(vn: str, pop: str) -> list[list[str]]:
     return [[f"{vn}/{path}/_tracked"], [f"{vn}/{path}"]]
 
 
+def _split_ref(vn: str, ref: str) -> tuple[str, str]:
+    """A picker ref as (segmentation, path) — segmentation-prefixed (`"T/qc"`, all-cells `"T/"`) or, in
+    older runs, a bare path on `vn`."""
+    if ref == "root" or ref.startswith("/"):
+        return vn, ref
+    pvn, _, path = ref.partition("/")
+    return pvn, path or "root"
+
+
+def _pop_refs(raw) -> list[str]:
+    """A multi-select pop picker's saved value as its list of refs: a list, or (runs recorded before it
+    took one) a string — "NONE" and "" drop out, so empty is the whole segmentation."""
+    return [s for s in ([raw] if isinstance(raw, str) else (raw or [])) if s and s != "NONE"]
+
+
 def _pops_tracked_all(vn: str, pops: list[str]) -> list[list[str]]:
-    """`_pops_tracked` over several tracked pops: candidate i lists every pop's i-th candidate. A pop
-    is a picker ref — segmentation-prefixed (`"T/qc"`, all-cells `"T/"`) or, in older runs, a bare path."""
-    def split(ref: str) -> tuple[str, str]:
-        if ref == "root" or ref.startswith("/"):
-            return vn, ref
-        pvn, _, path = ref.partition("/")
-        return pvn, path or "root"
-    per_pop = [_pops_tracked(*split(pop)) for pop in pops]
+    """`_pops_tracked` over several tracked pops: candidate i lists every pop's i-th candidate (refs as
+    `_split_ref` reads them)."""
+    per_pop = [_pops_tracked(*_split_ref(vn, pop)) for pop in pops]
     return [sum((c[i] for c in per_pop), []) for i in range(2)]
 
 
@@ -83,21 +93,25 @@ def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
         vn, raw = p.get("valueName") or "default", p.get("popsToTrack")
         # a list since tracking takes several pops (empty = whole segmentation); a string ("NONE" or
         # one path) in runs recorded before that
-        tracked = [s for s in ([raw] if isinstance(raw, str) else (raw or [])) if s and s != "NONE"] or ["root"]
+        tracked = _pop_refs(raw) or ["root"]
         return [("Tracks", [[
             {"plot": "track_measures", "chart": "boxplot", "measure": "live.track.speed", "pops": c},
             {"plot": "track_measures", "chart": "boxplot", "measure": "live.track.straightness", "pops": c},
             {"plot": "trackPaths", "pops": c}] for c in _pops_tracked_all(vn, tracked)])]
     if stage == "hmm":
         col = p.get("colName") or "default"
-        raw = (p.get("pops") or ["default/"])[0]
-        vn, _, pop = raw.partition("/")
+        # one HMM is fitted jointly over every picked pop, possibly across segmentations: all on the board
+        pops = _pop_refs(p.get("pops")) or ["default/"]
+        # a bare ref ("/qc", an older run) is on the image's ACTIVE segmentation, which this can't know:
+        # left unprefixed so the board expander rejects it (a note), never guessed onto another one
+        vns = [vn for vn in dict.fromkeys(_split_ref("", s)[0] for s in pops) if vn]
         return [("HMM", [[
             {"plot": "hmm_state_frequency", "chart": "frequency", "measure": f"live.cell.hmm.state.{col}", "pops": c},
             {"plot": "state_signature", "pops": c},
             {"plot": "transition_matrix", "measure": f"live.cell.hmm.transitions.{col}", "pops": c},
-            {"plot": "hmmStateCards", "valueName": vn, "hmmCol": f"live.cell.hmm.state.{col}"}]
-            for c in _pops_tracked(vn, pop)])]
+            # state cards are per segmentation
+            *({"plot": "hmmStateCards", "valueName": vn, "hmmCol": f"live.cell.hmm.state.{col}"} for vn in vns)]
+            for c in _pops_tracked_all("", pops)])]
     if stage in ("trackclust", "clust"):
         run = {"suffix": p.get("valueNameSuffix") or "default", "popType": stage}
         plots = [{"plot": "clusterMap", **run}, {"plot": "heatmap", **run}]
@@ -150,8 +164,11 @@ def _needs_cluster_pops(api: str, project_uid: str, specs: list[dict], dec: dict
         plots = spec["candidates"][0]
         if not any(p["plot"] in CLUSTER_POP_VIEWS for p in plots):
             continue
-        vn = ((params.get(spec["attach"][0], {}).get("popsToCluster") or ["default/"])[0]).split("/")[0]
-        if _cluster_pops(api, project_uid, img, vn, plots[0]["popType"]) != 0:
+        # every segmentation the clustered pops are on; a bare ref's (the image's active one) is unknown
+        # here, and an unknown segmentation keeps the views, as an unreachable pop tree does
+        refs = _pop_refs(params.get(spec["attach"][0], {}).get("popsToCluster")) or ["default/"]
+        vns = list(dict.fromkeys(_split_ref("", s)[0] for s in refs))
+        if "" in vns or any(_cluster_pops(api, project_uid, img, vn, plots[0]["popType"]) != 0 for vn in vns):
             continue
         keep = [i for i, p in enumerate(plots) if p["plot"] not in CLUSTER_POP_VIEWS]
         spec["candidates"] = [[c[i] for i in keep] for c in spec["candidates"]]
