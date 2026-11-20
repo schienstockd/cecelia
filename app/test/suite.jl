@@ -381,6 +381,7 @@ include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_ramp_autohv.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_boundaries.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_sampling.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
