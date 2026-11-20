@@ -151,6 +151,24 @@ describe('applyViewState', () => {
     expect(got).toBeNull()
   })
 
+  it('keeps the lens switch and radius with the image: saved, restored, and off where never switched on', () => {
+    const base = { meta, channels: ch, cam: CAM, mode: 'plane' as const, zPlane: 0, zRange: [0, 0] as [number, number],
+                   t: 0, valueName: '' }
+    const seen: unknown[] = []
+    const { target } = mkTarget()
+    const t2 = { ...target, applyLensState: (l: unknown) => { seen.push(l) } }
+    const on = captureViewState({ ...base, lens: { on: true, rUm: 30 } })
+    applyViewState(JSON.parse(JSON.stringify(on)), meta, t2)
+    // a snapshot from before the switch was saved: off, unless it kept a pin (only a shown lens did)
+    applyViewState(captureViewState(base), meta, t2)
+    applyViewState(captureViewState({ ...base, lensPin: { x: 5, y: 6 } }), meta, t2)
+    expect(seen).toEqual([{ on: true, rUm: 30, allFrames: false }, { on: false, rUm: 0, allFrames: false },
+                          { on: true, rUm: 0, allFrames: false }])
+    seen.length = 0
+    applyViewState(JSON.parse(JSON.stringify(captureViewState({ ...base, lens: { on: true, rUm: 5, allFrames: true } }))), meta, t2)
+    expect(seen).toEqual([{ on: true, rUm: 5, allFrames: true }])
+  })
+
   it('falls back to viewer layers matched by channel name', () => {
     const vs: ViewerViewState = {
       layers: {

@@ -1192,11 +1192,14 @@ function api_plots_cluster_map(req::HTTP.Request)
 end
 
 # ── GET /api/plots/pop-positions → every cell at its position, tagged by population ──────────────────
-# ?projectUid&imageUid&valueName&pops=popType~vn/path,…[&popType=<default for a bare path>][&meta=1]
+# ?projectUid&imageUid&valueName&pops=popType~vn/path,…[&popType=<default for a bare path>][&colourBy=<col>][&meta=1]
 # The read behind the `popPositions` plot (`pop_positions`, app/src/plotting/pop_positions.jl).
-#   meta=1 → JSON { n, unit, extents{xMin,xMax,yMin,yMax}, xTicks, yTicks, frames:[t0,t1], valueNames } —
-#            the axes, over the same cells as the data (the populations decide the segmentations)
-#   else   → binary Float32 [x, y, t, popIdx] per cell; popIdx = index into `pops`, -1 = in none
+#   meta=1 → JSON { n, unit, extents{xMin,xMax,yMin,yMax}, xTicks, yTicks, frames:[t0,t1], valueNames,
+#            valueRange, valueTicks } — the axes, over the same cells as the data (the populations decide
+#            the segmentations); `valueRange` the colourBy scale (a column's own, `fixed_colour_range`,
+#            else its finite min–max here; null without colourBy or values)
+#   else   → binary Float32 [x, y, t, popIdx, value] per cell; popIdx = index into `pops`, -1 = in none;
+#            value = the colourBy column, NaN = none
 function api_plots_pop_positions(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -1204,21 +1207,27 @@ function api_plots_pop_positions(req::HTTP.Request)
     # the segmentations come from the populations (`pop_positions`); `valueName` only names the one to
     # draw when none are picked, and is NOT swapped for the active one when this image lacks it — that
     # would draw another segmentation's cells under populations that are not on it
+    cby = get(q, "colourBy", "")
     r = pop_positions(img, get(q, "valueName", ""), _query_list(q, "pops");
-                      default_pop_type = get(q, "popType", "flow"))
+                      default_pop_type = get(q, "popType", "flow"), colour_by = cby)
     if get(q, "meta", "") == "1"
         xr, yr = _finite_extrema(r.x), _finite_extrema(r.y)
         tr = isempty(r.t) ? (0.0, 0.0) : _finite_extrema(r.t, (0.0, 0.0))
         lin = Cecelia.LinearTransform()
+        vr = isempty(cby) || !any(isfinite, r.value) ? nothing :
+             something(Cecelia.fixed_colour_range(cby), _finite_extrema(r.value))
         return 200, JSON3.write((; n = length(r.x), unit = r.unit == SPATIAL_UNIT_UM ? "µm" : r.unit,
             extents = (; xMin = xr[1], xMax = xr[2], yMin = yr[1], yMax = yr[2]),
             xTicks = _axis_ticks(lin, xr...), yTicks = _axis_ticks(lin, yr...),
-            frames = [tr[1], tr[2]], valueNames = unique(r.value_name)))
+            frames = [tr[1], tr[2]], valueNames = unique(r.value_name),
+            valueRange = vr === nothing ? nothing : collect(vr),
+            valueTicks = vr === nothing ? [] : _axis_ticks(lin, vr...)))
     end
     n = length(r.x)
-    buf = Vector{Float32}(undef, 4n)
+    buf = Vector{Float32}(undef, 5n)
     @inbounds for i in 1:n
-        buf[4i - 3] = r.x[i]; buf[4i - 2] = r.y[i]; buf[4i - 1] = r.t[i]; buf[4i] = Float32(r.pop[i])
+        buf[5i - 4] = r.x[i]; buf[5i - 3] = r.y[i]; buf[5i - 2] = r.t[i]; buf[5i - 1] = Float32(r.pop[i])
+        buf[5i] = r.value[i]
     end
     200, collect(reinterpret(UInt8, buf))
 end

@@ -238,6 +238,16 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Look at the viewer ROIs section on real data')],
   }) },
+  { id: 'lens-query', title: 'Find regions like the lens', group: 'Explore', maturity: covering(['clustRegions.lensQuery'], {
+    tier: 'experimental', testedOn: 'Six real lenses on three images vs z nulls; hand-worked scores',
+    evidence: [
+      { path: 'app/test/suite/region_lens_query.jl', test: 'region lens query: saved score helpers',
+        failsIf: 'a cell’s similarity above the average cell differs from the hand-worked value' },
+      { path: 'app/test/suite/region_lens_query.jl', test: 'region lens query: pure helpers',
+        failsIf: 'a cell with no composition changes any other cell’s score' },
+    ],
+    next: [todo('Look at a Find similar score map on real data'), todo('A fixture with a region run (NEEDS still-with-region-run)')],
+  }) },
   { id: 'spatial-pattern', title: 'Spatial pattern', group: 'Explore', maturity: covering(['spatialAnalysis.spatialPattern'], {
     tier: 'experimental', testedOn: 'A real measured fixture; a real movie; synthetic',
     evidence: [

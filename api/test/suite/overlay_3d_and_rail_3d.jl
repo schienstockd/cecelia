@@ -280,6 +280,9 @@ end
     @test length(json_heat) == 5
     @test collect(_heat_stops()) == json_heat
 
+    # "No value": the JSON's `noValue` is the Julia constant, and its fallback literal agrees
+    @test NO_VALUE_COLOUR == _parity_rgb(String(doc.noValue)) == _NO_VALUE_FALLBACK
+
     # Track-mode acceptance: every mode name the browser knows is accepted by build_overlays3d_for
     # (no fall-through to the `"track"` default warning inside the function).
     json_modes = [String(m) for m in doc.trackColorModes]
@@ -344,6 +347,22 @@ end
             tc_only = Dict{String,Any}("showTrackclust" => true, "tailLength" => 5, "trackColourMode" => "pop")
             @test seg_colours(kf(tc_only)) == clusters
             @test seg_colours(rail(tc_only)) == clusters
+            # 'colour by' ribbons: the track clusters' take the column too (the viewer fetches their
+            # payload with it) — every hop the override's magenta; no column → their cluster colour
+            lpt = as_df(label_props(img; value_name = "B"))
+            all_t = Dict{String,String}(string(Int(round(Float64(v)))) => "#ff00ff" for v in lpt.centroid_t
+                                        if v isa Real && isfinite(Float64(v)))
+            tc_cell = merge(tc_only, Dict{String,Any}("trackColourMode" => "cell"))
+            tc_cb = merge(tc_cell, Dict{String,Any}("colourBy" => "centroid_t", "colourOverrides" => all_t))
+            @test seg_colours(kf(tc_cell)) == clusters
+            @test seg_colours(kf(tc_cb)) == Set([hex_to_rgb("#ff00ff")])
+            @test seg_colours(rail(tc_cb)) == Set([hex_to_rgb("#ff00ff")])
+            # the mask on track clusters with a colour-by: the clusters' cells by value, the rest dim
+            tracked = Set{Int}(Int(L) for p in Cecelia.resolve_pops(img, "trackclust"; value_name = "B") for L in p.labels)
+            mk = mask_id_colours(img; value_name = "B", pop_type = "trackclust", colour_by = "centroid_t",
+                                 colour_overrides = all_t)
+            @test !isempty(mk)
+            @test all(id -> mk[id] == (id in tracked ? hex_to_rgb("#ff00ff") : NO_VALUE_COLOUR), keys(mk))
             # a look's ribbon eyes decide each cluster's ribbon (the viewer draws trackclust by them,
             # not by `show`) — in both renderers and on the card
             scanning_off = Dict{String,Any}("ribbonEyes" => Dict("B" => Dict("trackclust::/Scanning" => false)))
@@ -528,4 +547,25 @@ end
     # "no value" entries (the payload's `nothing`) are not levels, and no finite value = no range
     @test _cb_scale_of(Any[Any["a", nothing]], "x").levels == ["a"]
     @test _cb_scale_of(Any[Any[nothing, 0.5]], "x"; kind_col = [0.5, 1.5]).range == (0.5, 0.5)
+end
+
+@testset "API: colour-by — a cell with no value is NO_VALUE_COLOUR, as the viewer's `colourByValue`" begin
+    # A lens score scores only tracked cells; the rest drew in their pop colour in a movie (a value, to
+    # the eye) and a bright grey in the viewer. Both now draw the one dim "no data" colour.
+    DataFrame = Cecelia.DataFrames.DataFrame
+    d = RGB{N0f8}(0, 1, 0)                                         # the pop colour a caller passes
+    num = DataFrame(var"live.cell.speed" = [0.5, NaN, 2.5])
+    r = _cb_prepare(num, "live.cell.speed", nothing)
+    @test r(d, 2) == NO_VALUE_COLOUR
+    @test r(d, 1) == _heat_ramp(0.0)
+    # an override for a value still wins; it cannot name a missing one
+    @test _cb_prepare(num, "live.cell.speed", Dict("0.5" => hex_to_rgb("#ff00ff")))(d, 1) == hex_to_rgb("#ff00ff")
+    cat = DataFrame(var"clusters.leiden" = Any["1", nothing, "2"])
+    rc = _cb_prepare(cat, "clusters.leiden", nothing)
+    @test rc(d, 2) == NO_VALUE_COLOUR
+    @test rc(d, 1) != NO_VALUE_COLOUR
+    # never lighter than the ramp's floor (relative luminance, linear light)
+    lin(c) = (v = Float64(c); v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055)^2.4)
+    lum(c) = 0.2126 * lin(red(c)) + 0.7152 * lin(green(c)) + 0.0722 * lin(blue(c))
+    @test lum(NO_VALUE_COLOUR) <= lum(_heat_ramp(0.0))
 end

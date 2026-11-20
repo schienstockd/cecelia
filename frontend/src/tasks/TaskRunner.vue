@@ -625,6 +625,14 @@ watch(selectedTask, (task) => {
   if (fallbackPick) { fallbackPick = false; return }
   profileStorage.setItem(`cc-fn:${props.module}`, task)
 })
+// Another window picked a function on this page (the viewer's lens chip → "Cluster regions",
+// `openTaskInMainWindow`): select it here too — selected, never run.
+function onFnPicked(e: StorageEvent) {
+  if (e.key !== `cc-fn:${props.module}` || !e.newValue || e.newValue === selectedTask.value) return
+  if (props.defs.some(d => d.task === e.newValue)) selectedTask.value = e.newValue
+}
+window.addEventListener('storage', onFnPicked)
+onUnmounted(() => window.removeEventListener('storage', onFnPicked))
 
 // Populate the form from remembered funParams: on function change, and on project/set switch
 // (setUid changes when the active set/project changes — this is what stops one project's params

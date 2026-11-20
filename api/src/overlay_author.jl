@@ -131,6 +131,8 @@ const _HEAT_STOPS_FALLBACK = (RGB{N0f8}(0x0B / 255, 0x1A / 255, 0x4D / 255),
                               RGB{N0f8}(0x04 / 255, 0xFA / 255, 0x00 / 255),
                               RGB{N0f8}(0xFF / 255, 0xA8 / 255, 0x05 / 255),
                               RGB{N0f8}(0xFF / 255, 0x38 / 255, 0x56 / 255))
+# The browser's `noValue` (`NO_VALUE_HEX`), likewise.
+const _NO_VALUE_FALLBACK = RGB{N0f8}(0x1A / 255, 0x1A / 255, 0x1A / 255)
 
 # Parse a single hex string in the JSON to `RGB{N0f8}`. Strict — an unparseable colour is a JSON
 # authoring error and should fail load, not fall back to white.
@@ -155,14 +157,16 @@ function _load_palettes()
         return (palette = collect(_CECELIA_TRACK_PALETTE_FALLBACK),
                 modes    = ["track", "speed", "solid", "pop", "cell"],
                 heat     = collect(_HEAT_STOPS_FALLBACK),
-                branch   = RGB{N0f8}[])
+                branch   = RGB{N0f8}[],
+                no_value = _NO_VALUE_FALLBACK)
     end
     doc = JSON3.read(read(_PALETTES_JSON_PATH, String))
     pal = [_hex_to_rgb_strict(String(h)) for h in doc.palettes.cecelia]
     modes = [String(m) for m in doc.trackColorModes]
     heat  = [_hex_to_rgb_strict(String(h)) for h in doc.heatRamp]
     branch = [_hex_to_rgb_strict(String(h)) for h in get(doc, :branchTypeColours, String[])]
-    (palette = pal, modes = modes, heat = heat, branch = branch)
+    no_value = _hex_to_rgb_strict(String(get(doc, :noValue, "#1A1A1A")))
+    (palette = pal, modes = modes, heat = heat, branch = branch, no_value = no_value)
 end
 
 const _PALETTES_DATA = _load_palettes()
@@ -174,6 +178,11 @@ const CECELIA_TRACK_PALETTE = _PALETTES_DATA.palette
 # The neutral grey for "every cell" / "every track" with no colour picked — the browser's
 # `ALL_TRACKS_GREY` / `TRACK_SOURCE_GREY`.
 const OVERLAY_GREY = "#9ca3af"
+
+# A cell a colour-by column has no value for — dots, ribbons and a mask coloured by it (`_cb_prepare`,
+# `mask_id_colours`). A dark grey no lighter than the ramp's floor, so "no data" never outshines a low
+# value — the browser's `NO_VALUE_RGB` (`palettes.json` → `noValue`).
+const NO_VALUE_COLOUR = _PALETTES_DATA.no_value
 
 # The track-colour-mode names accepted by `build_overlays3d_for(track_color_mode = ...)`. Read
 # from the JSON so a mode the browser knows is a mode this author accepts — no silent fallback to
@@ -289,7 +298,9 @@ function _cb_scale_of(cols::AbstractVector, cb_col::AbstractString; kind_col = n
     continuous = !Cecelia._is_categorical_col(something(kind_col, cols[1]), cb_col)
     if continuous
         vals = Float64[Float64(v) for c in cols for v in c if v isa Real && isfinite(Float64(v))]
-        return (; continuous, range = isempty(vals) ? nothing : (minimum(vals), maximum(vals)),
+        # a column with its own scale (the lens scores' z) keeps it — one colour, one value, every image
+        fixed = Cecelia.fixed_colour_range(cb_col)
+        return (; continuous, range = fixed !== nothing ? fixed : isempty(vals) ? nothing : (minimum(vals), maximum(vals)),
                   levels = Any[])
     end
     present(c) = (v for v in c if !(v === nothing || ismissing(v)))
@@ -339,7 +350,9 @@ end
 # `(default_col::RGB, i::Int) -> RGB`. `nothing` means colourBy is disabled OR the
 # column is absent — the caller falls back to the pop's own colour. Levels are coloured by
 # `category_colours` exactly as the viewer's `categoryColours` does. `scale` (`_cb_scale`) is the
-# one shared over every segmentation drawn; `nothing` = this table's own.
+# one shared over every segmentation drawn; `nothing` = this table's own. A row with no value (missing,
+# NaN, a level outside the scale) is `NO_VALUE_COLOUR` — the viewer's `colourByValue` — not
+# `default_col`: a pop colour there read as a value. An override for the value still wins.
 function _cb_prepare(df, cb_col::Union{Nothing,String},
                      cb_overrides::Union{Nothing,Dict{String,RGB{N0f8}}}; scale = nothing)
     cb_col === nothing && return nothing
@@ -352,7 +365,7 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
         span = hi - lo
         return (default, i) -> begin
             v = col[i]
-            (v isa Real && isfinite(Float64(v))) || return default
+            (v isa Real && isfinite(Float64(v))) || return NO_VALUE_COLOUR
             if cb_overrides !== nothing
                 # Try `string(v)` first, then `string(Int(v))` when v is an integer-valued Real.
                 # Frontend override maps come from user-typed values in the settings pane; a user
@@ -385,7 +398,7 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
                 end
             end
             haskey(palette, v) && return palette[v]
-            default
+            NO_VALUE_COLOUR
         end
     end
 end
@@ -705,8 +718,8 @@ order; source `i`'s fallback colour is the palette's `i`-th, as there.
   * "solid" — the source's colour (`solid`: its Tracks-legend colour), else the palette's `i`-th;
   * "pop"   — the source's population colour (`pop`), else the palette's `i`-th;
   * "cell"  — each hop's arriving-cell colour (a colour-by column: HMM states along a track); a
-    source read without a colour-by (`cb = false`: per-segmentation tracks, track clusters) takes
-    its "pop" colour, as the viewer's source without values does.
+    source read without a colour-by (`cb = false`: per-segmentation tracks; track clusters with no
+    column) takes its "pop" colour, as the viewer's source without values does.
 """
 function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
     pal = CECELIA_TRACK_PALETTE; n = length(pal)
@@ -914,7 +927,9 @@ voxel coordinates — the 2D rail and the keyframe renderer both draw through th
 `pop_type` / `pops_filter` are the one pop layer of a batch (and the segmentation a `""` track source
 means); a viewer look's `plan.pop_all_segs` draws every segmentation's pops of `plan.pop_types`
 instead. `colour_by` colours the pop DOTS, as the viewer's pop payload does — its ribbons, like every
-ribbon, are coloured by `track_color_mode` (`_colour_hops`).
+ribbon, are coloured by `track_color_mode` (`_colour_hops`); in "cell" the pops' and the track
+clusters' ribbons take the column (the viewer fetches both payloads with it), per-segmentation tracks
+their "pop" colour.
 """
 function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTypeArg = "flow",
                                 plan, show_pops::Bool = false,
@@ -992,7 +1007,11 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     # Track-cluster ribbons — every segmentation's, one source per pop whose ribbon eye is on (a look's
     # `ribbonEyes`, else the manager's `show`) — the viewer's trackclust loop.
     for tvn in tc_vns
-        parts = _overlay_parts(img; value_name = tvn, pop_type = "trackclust", include_tracks = true)
+        # with the column, as the viewer's trackclust payload (`fetchTrackclustPayload`) — the dots'
+        # scale where there are dots, else its own table's (`colourByValue` with no pooled scale)
+        tscale = cb_scale !== nothing ? cb_scale : _cb_scale(img, [tvn], colour_by)
+        parts = _overlay_parts(img; value_name = tvn, pop_type = "trackclust", include_tracks = true,
+                               colour_by, colour_overrides, cb_scale = tscale)
         has_t |= parts.hasT
         for L in _overlay_pops(img, tvn, "trackclust")
             look_eye_on(plan.ribbon_eyes, tvn, "trackclust", String(L.path), Bool(L.show)) || continue
@@ -1000,7 +1019,9 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
             isempty(hops) && continue
             key = "$(tvn)::trackclust::$(L.path)"
             push!(tc_srcs, (; hops, solid = rgb(get(plan.track_colours, key, String(L.colour))),
-                              pop = rgb(String(L.colour)), cb = false))
+                              pop = rgb(String(L.colour)),
+                              # a table without the column gives its hops the pop colour anyway
+                              cb = colour_by !== nothing && !isempty(String(colour_by))))
         end
     end
 
@@ -1292,7 +1313,8 @@ the shown pops of `pop_types` (default `[pop_type]`) on `value_name` — the vie
 deepest pop wins, parents pale, the rest of the cells grey — "shown" by `pop_eyes` (a look's point
 eyes on `value_name`, `"<popType>::<path>" => on`) where it has one, else the manager's `show`. `all_cells` paints every cell
 `all_cells_colour` instead. `colour_by` recolours the drawn cells by an obs column (a population mask:
-only its pops' cells — the grey complement stays grey). An id absent from the map is not drawn. The
+only its pops' cells — the pops select, the column shades); every other drawn cell, and one with no
+value, is `NO_VALUE_COLOUR` — the viewer's `shadeByValue` (`maskPopTable.ts`). An id absent from the map is not drawn. The
 shader takes it as its label colour table (`labelColours`, `render_animation_run.py`).
 """
 function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
@@ -1356,13 +1378,17 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
             cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb;
                                      scale = _cb_scale(img, [vn], cb_col))
             if cb_resolve !== nothing
+                # "no data" until a value says otherwise: the complement, a pop cell with no value
+                for k in keys(id_colours)
+                    id_colours[k] = NO_VALUE_COLOUR
+                end
                 @inbounds for i in 1:size(df, 1)
                     lab = df[i, :label]
                     (lab isa Real && isfinite(Float64(lab))) || continue
                     lid = Int(round(Float64(lab)))
                     haskey(id_colours, lid) || continue
                     (gated === nothing || lid in gated) || continue
-                    id_colours[lid] = cb_resolve(id_colours[lid], i)
+                    id_colours[lid] = cb_resolve(NO_VALUE_COLOUR, i)
                 end
             end
         end

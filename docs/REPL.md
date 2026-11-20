@@ -481,6 +481,10 @@ a side) and `figure.json` (the spec as rendered — measured display ranges incl
 what to show; see `render_figure.py` for its fields (`kind`, `center`, `sizePx`, `z`, `zHalf`, `frames` or
 `t` + `planes`, `rows` (a channel's `c` is a name or a 0-based index), `display`, `interpolation`, `scaleBarUm`, `style`, `valueName`).
 
+`look_overlays` draws a viewer look's mask, points, tracks and graph edges on every tile: the API's
+`figure_look_overlays` resolves a spec's `look` into it through the movies' overlay authors (a figure
+tile is the movie frame of that look). Without it a figure draws pixels only.
+
 A bad spec fails with the renderer's message, which names the field.
 
 ```julia

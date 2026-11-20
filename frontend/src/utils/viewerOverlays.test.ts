@@ -11,6 +11,7 @@ import {
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
 import { WHITE } from '../plots/fixedColours'
+import palettesJson from '../plots/palettes.json'
 
 const meta = (over: Partial<ViewerMeta> = {}): ViewerMeta => ({
   nT: 3, nC: 1, nZ: 4, nX: 10, nY: 8, bytesPerVoxel: 2, slabBytes: 10 * 8 * 4 * 2,
@@ -483,6 +484,16 @@ describe('colourByValue', () => {
     const f = colourByValue(num())!
     expect(f(3)).toEqual(NO_VALUE_RGB)
     expect(f(3)).not.toEqual(f(0))
+  })
+
+  it('draws "no value" DIMMER than the ramp floor, so it never outshines a scored cell', () => {
+    // A lens score scores only tracked cells: a bright grey for the 71% unscored read as more than the
+    // navy of a low score. No value must read as "no data" — darker than the lowest measured colour.
+    const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+    const lum = (c: readonly number[]) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+    expect(lum(NO_VALUE_RGB)).toBeLessThanOrEqual(lum(heatUnit(0)))
+    // and from the JSON the movie reads (`palettes.json` → `noValue`)
+    expect(NO_VALUE_RGB).toEqual(hexToUnit(palettesJson.noValue))
   })
 
   it('maps a categorical column onto the palette by LEVEL, and cycles', () => {

@@ -98,6 +98,7 @@ import { placeBox } from '../utils/anchorPosition'
 import { peekPoint, fmtPosition, fmtMeasure, rulerLength, labelPopIndex, readoutChannels, READOUT_CHANNEL_ROWS } from '../utils/viewer/cursorReadout'
 import { lensFetchChannels, lensChipCounts, lensCountLayer, type LensCountLayer, lensRadiusWheel, lensFocusView } from '../utils/viewer/channelLens'
 import { useVwLens } from '../composables/useVwLens'
+import { useVwLensQuery } from '../composables/useVwLensQuery'
 import { BOX_HANDLES, resizeBox, drawnBox, squareBox, previewBoxNeeded, type BoxHandle, type BoxLimits } from '../utils/viewer/previewBox'
 import { cropTaskBox, type CropPick } from '../utils/viewer/cropPick'
 import ViewerCropBar from '../components/ViewerCropBar.vue'
@@ -136,6 +137,13 @@ import { plotHostToImageURL, loadImg, downloadDataUrl, fitPngLongSide } from '..
 import { screenshotFilename, isScreenshotChrome } from '../utils/viewerScreenshot'
 import DrawSurface from '../components/DrawSurface.vue'
 import VwLensChip from '../components/viewerWindow/VwLensChip.vue'
+import { figureSpecFromView } from '../utils/figureSpec'
+import VwLensesSection from '../components/viewerWindow/VwLensesSection.vue'
+import { applyLensLook, lensLookOf, type LensLook } from '../utils/viewer/lensQuery'
+import { lookForRender, viewerLook } from '../utils/viewer/viewerLook'
+import { lensReadiness, type LensReadiness } from '../utils/viewer/lensReadiness'
+import { openTaskInMainWindow } from '../lib/popout'
+import { useTaskDefsStore } from '../stores/taskDefs'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
@@ -831,6 +839,8 @@ const trackPayloads = ref<Map<string, OverlayPayload>>(new Map())
  *  filtered-by-pop-labels source per trackclust pop with `pop.colour`. See
  *  VIEWER_CONTROLS_SPLIT_PLAN.md → P7 tail. */
 const trackclustPayloads = ref<Map<string, OverlayPayload>>(new Map())
+/** The colour-by column `trackclustPayloads` were fetched with (`fetchTrackclustPayload`). */
+let trackclustPayloadsCb = ''
 /** Per-source (per-vn) counts + palette hex from the last `buildMultiTrackBuffer` result. Feeds the
  *  Tracks legend so a viewer with several ticked eyes shows a swatch key rather than a rainbow with
  *  no reading. */
@@ -884,6 +894,7 @@ const specSource: DrawSpecSource = {
   get spatialGraphNames() { return meta.value?.spatialGraphNames ?? [] },
   get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
   get nZ() { return meta.value?.nZ ?? 0 },
+  get nT() { return meta.value ? meta.value.nT : undefined },
   get version() { return meta.value?.valueName ?? valueName.value ?? '' },
   get viewState() { return (viewerStore.viewState ?? null) as unknown as ViewerDrawSpec['viewState'] },
   get gating() { return gatingCurrent.value },
@@ -972,7 +983,8 @@ const pointBorder = computed({
  * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
  */
 const colourBy = computed(() => spec.colourBy)
-watch(colourBy, () => { void loadOverlays() })
+// the track-cluster payloads carry the column too (ribbons + mask), so they refetch with it
+watch(colourBy, () => { void loadOverlays(); if (spec.popVisible.trackclust) void loadTracks() })
 /**
  * Which segmentation's MASK is drawn, '' for none.
  *
@@ -1081,8 +1093,10 @@ const maskPopLayers = computed<MaskPopLayer[]>(() => {
     return cb?.vn === vn && cb.colourBy === colourBy.value ? [colourByMaskLayer(cb.payload, POPULATION_PALETTE)] : []
   }
   const tc = maskTrackclust.value
+  // a colour-by shades the shown clusters' cells (`trackclustMaskLayer`), as the movie (`colourLabels`)
+  const shade = tc?.payload.colourBy && tc.payload.colourBy === colourBy.value ? POPULATION_PALETTE : null
   return spec.maskColour === 'trackclust' && tc?.vn === vn
-    ? [trackclustMaskLayer(tc.payload, (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))] : []
+    ? [trackclustMaskLayer(tc.payload, (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show), shade)] : []
 })
 /** The trackclust pops last fetched per segmentation — the `prev` a reconcile tells a delete by. */
 const trackclustSeen = new Map<string, TrackclustEyePop[]>()
@@ -1105,27 +1119,31 @@ function reconcileTrackclustEyesFor(vn: string, payload: OverlayPayload) {
 const maskTable = computed(() => maskPopLayers.value.length ? maskPopTable(maskPopLayers.value) : null)
 watch(maskTable, () => frame.redraw())
 /** One segmentation's track-cluster pops (`popType=trackclust`) — the ribbons' and the mask's one
- *  fetch. `null` when it failed (no cell table); a segmentation without track clusters has `pops: []`. */
-async function fetchTrackclustPayload(vn: string): Promise<OverlayPayload | null> {
+ *  fetch. `null` when it failed (no cell table); a segmentation without track clusters has `pops: []`.
+ *  Carries the colour-by column's values, so the ribbons ('colour by' mode) and the mask shade by it as
+ *  the dots do; `trackclustPayloadsCb` is the column the cached ribbons' payloads were fetched with. */
+async function fetchTrackclustPayload(vn: string, cb: string): Promise<OverlayPayload | null> {
   if (!projectUid || !imageUid) return null
   try {
-    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust' }),
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust',
+                                          colourBy: cb || undefined }),
                             { cache: 'no-store' })
     return res.ok ? await res.json() as OverlayPayload : null
   } catch { return null }
 }
 async function loadMaskTrackclust() {
   const vn = spec.maskColour === 'trackclust' ? maskName.value : ''
+  const cb = colourBy.value
   if (!vn || !projectUid || !imageUid) { maskTrackclust.value = null; return }
-  // null = no cell table: the palette, as for pops
-  const cached = trackclustPayloads.value.get(vn)
-  const payload = cached ?? await fetchTrackclustPayload(vn)
+  // null = no cell table: the palette, as for pops. The ribbons' payload only when fetched with this column.
+  const cached = trackclustPayloadsCb === cb ? trackclustPayloads.value.get(vn) : undefined
+  const payload = cached ?? await fetchTrackclustPayload(vn, cb)
   if (payload && !cached) reconcileTrackclustEyesFor(vn, payload)
-  // a later mask / mode change has overtaken this fetch
-  if (spec.maskColour !== 'trackclust' || maskName.value !== vn) return
+  // a later mask / mode / column change has overtaken this fetch
+  if (spec.maskColour !== 'trackclust' || maskName.value !== vn || colourBy.value !== cb) return
   maskTrackclust.value = payload ? { vn, payload } : null
 }
-watch([() => spec.maskColour, maskName], () => { void loadMaskTrackclust() })
+watch([() => spec.maskColour, maskName, colourBy], () => { void loadMaskTrackclust() })
 // The shown mask's colour-by values, for *Colour: Colour by* — every cell of its segmentation with its
 // value of the column (a pop layer of it already carries them; else one fetch). No column, or no cell
 // table: the per-id palette, as the movie's (`movie_mask`). `maskColourBy` is declared beside
@@ -2358,9 +2376,10 @@ async function loadTracks() {
   if (trackclustOn) {
     const tcVns = names   // every trackable vn, not just the ticked-eyes set
     const tcNext = new Map<string, OverlayPayload>()
+    const cb = colourBy.value
     await Promise.all(tcVns.map(async vn => {
       // one vn's failure must not take the others down (`null`)
-      const payload = await fetchTrackclustPayload(vn)
+      const payload = await fetchTrackclustPayload(vn, cb)
       // an empty one too: its pops were all deleted, and their eyes go with them
       if (payload) reconcileTrackclustEyesFor(vn, payload)
       // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
@@ -2368,6 +2387,7 @@ async function loadTracks() {
       if (payload && (payload.pops ?? []).length) tcNext.set(vn, payload)
     }))
     trackclustPayloads.value = tcNext
+    trackclustPayloadsCb = cb
   } else if (trackclustPayloads.value.size) {
     // toggle-off drops the cache so a re-toggle-on refetches (a stale payload after a gating edit
     // would draw the wrong ribbons; the cost of the refetch is one small request per vn).
@@ -4326,11 +4346,13 @@ const hoverAt = ref<{ cx: number; cy: number } | null>(null)
 interface PeekKey { x: number; y: number; t: number; z: number; labels: string; vn: string }
 const peeked = ref<{ key: PeekKey; values: number[]; label: number | null; note: string | null } | null>(null)
 const readoutOn = computed(() => settings.viewerCursorReadout && mode.value === 'plane' && !!meta.value)
+const taskDefs = useTaskDefsStore()   // the lens chip's readiness line names the task it opens
+void taskDefs.ensureLoaded()
 // The channel lens: state, pin, renderers' copy and MCP surface in `useVwLens`; the chip is
 // `VwLensChip`. The window supplies what the chip counts — the drawn populations' cells inside it, on
 // the frame and planes the markers show, cell pops, track clusters and regions each a group of its own.
 const {
-  lensOn, lensPin, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
+  lensOn, lensPin, lensAllFrames, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
   trackLens, toggleLensPin, applyLens, lensChannelNames, recordedLens, savedPin: lensSavedPin,
   restorePin: restoreLensPin, lensReport, placeLens,
 } = useVwLens({
@@ -4346,15 +4368,47 @@ const {
     const m = meta.value!
     // the frame and planes the markers are drawn for — the tile view's own (t, z), else the loaded ones
     const tiled = !!tileRenderer.value
-    const tt = Math.max(0, Math.round(tiled ? t.value : shownT.value))
+    const tt = lensAllFrames.value ? -1 : Math.max(0, Math.round(tiled ? t.value : shownT.value))   // -1 = every frame
     const planes = overlayPlaneWindow(tiled ? [zPlane.value, zPlane.value] : zLoaded.value, spec.pointZTol, 'plane')
     const layer = (l: PopLayer) => lensCountLayer(l.vn, l.payload, layerHidden(l))
     const isRegion = (l: PopLayer) => popTypeInfo(l.popType)?.category === 'region'
     return lensChipCounts({ pops: popLayers.value.filter(l => !isRegion(l)).map(layer),
-                            regions: popLayers.value.filter(isRegion).map(layer), tracks: lensTrackLayers() },
+                            regions: popLayers.value.filter(isRegion).map(layer),
+                            tracks: nT.value > 1 ? lensTrackLayers() : [] },   // no track clusters on a still
                           circle, m.voxelUm, tt, planes)
   },
+  // a regions / track-cluster group the chip cannot show: the layer is off, or never run
+  readiness: () => lensReadiness({ present: presentPopTypes.value?.popTypes ?? null, visible: spec.popVisible,
+                                   timecourse: nT.value > 1, taskLabel: f => taskDefs.labelFor(f) }),
 })
+/** The chip's readiness line: Show turns the existing layer on; the task opens its form, never runs. */
+function onLensReady(r: LensReadiness) {
+  if (r.state === 'notDrawn') { if (setUid.value) settings.setPopVisible(setUid.value, r.popType, true); return }
+  void taskDefs.ensureLoaded().then(() => openTaskInMainWindow(r.fun, taskDefs.byFn.get(r.fun)))
+}
+// Find similar on the pinned chip: a score column over the region run, then the view coloured by it.
+const lensQuery = useVwLensQuery({
+  projectUid, imageUid, imageName: () => meta.value?.name ?? imageUid,
+  setUid: () => setUid.value, segmentations: () => cellTableNames(),
+  pinned: () => (lensPin.value ? lensCircle.value : null),
+  // the frame whose cells form the lens — none (every frame) when the chip counts all frames
+  frame: () => ((meta.value?.nT ?? 0) > 1 && !lensAllFrames.value ? Math.round(tileRenderer.value ? t.value : shownT.value) : null),
+  figureBase: () => {
+    const r = figureSpecFromView(liveViewState(), (meta.value?.channels ?? []).map(c => c.name),
+                                 { valueName: valueName.value || undefined })
+    return 'spec' in r ? r.spec : null
+  },
+  umPerPx: () => (meta.value?.calibrated.xy ? meta.value.voxelUm[0] : 0),
+  look: () => lensLookOf({ viewState: liveViewState(), maskValueName: spec.maskValueName, labelNames: specSource.labelNames,
+                           popVisible: spec.popVisible, popEyes: spec.popEyes, ribbonEyes: spec.ribbonEyes,
+                           trackVisible: spec.trackVisible, graphVisible: spec.graphVisible,
+                           showGatedTracks: spec.showGatedTracks }),
+  movieLook: () => lookForRender(viewerLook(spec)),   // as Save as figure sends it (QuickMovie)
+})
+const lensQueryChip = computed(() => ({
+  runs: lensQuery.runs.value, run: lensQuery.run.value ? lensQuery.runKey(lensQuery.run.value) : '',
+  busy: lensQuery.busy.value, error: lensQuery.error.value, saved: lensQuery.saved.value,
+}))
 /** The track clusters the lens counts — as drawn: the ribbons (their eyes, their colours), else the
  *  mask coloured by track clusters (the point eyes, the pops' colours). */
 function lensTrackLayers(): LensCountLayer[] {
@@ -4365,8 +4419,11 @@ function lensTrackLayers(): LensCountLayer[] {
         colour: overrides[trackPopSourceKey(vn, 'trackclust', x.path)] ?? x.colour })) },
       new Set(p.pops.filter(x => !popEyeOn(ribbonEyes.value, vn, 'trackclust', x.path, x.show)).map(x => x.path))))
   }
-  const tc = maskTrackclust.value, ml = maskPopLayers.value[0]
-  return spec.maskColour === 'trackclust' && tc && ml ? [lensCountLayer(tc.vn, tc.payload, ml.hidden ?? new Set<string>())] : []
+  // the clusters' eyes, not the drawn layer's — a colour-by shades that one by value (`trackclustMaskLayer`)
+  const tc = maskTrackclust.value
+  return spec.maskColour === 'trackclust' && tc && maskPopLayers.value.length
+    ? [lensCountLayer(tc.vn, tc.payload, trackclustMaskLayer(tc.payload,
+        (path, show) => popEyeOn(popEyes.value, tc.vn, 'trackclust', path, show)).hidden ?? new Set<string>())] : []
 }
 /** The mask the readout names a cell in: the one drawn, never a preview / live store (no cell ids yet). */
 const readoutMaskVn = computed(() =>
@@ -5078,6 +5135,7 @@ const propsSink = debouncedSave(async () => {
     mode: mode.value, zPlane: zPlane.value, zRange: zRange.value,
     zWindow: { on: zWindowOn.value, half: zWindowHalf.value },
     t: t.value, valueName: valueName.value, lensPin: lensSavedPin.value,
+    lens: { on: settings.viewerLens, rUm: settings.viewerLensRadiusUm, allFrames: lensAllFrames.value },
   })
   await saveViewerProps({ projectUid, imageUid, valueName: valueName.value || undefined }, vs)
 }, { wait: 800 })
@@ -5167,6 +5225,7 @@ async function loadVersion(refit: boolean) {
           zWindowHalf.value = zWindowDraft.value = Math.max(1, Math.min(half, Math.floor(m.nZ / 2) || 1))
         },
         // level-0 px on the tissue — no pipeline effect, but tile mode has no post-alloc restore
+        applyLensState: ls => { settings.viewerLens = ls.on; settings.viewerLensRadiusUm = ls.rUm; lensAllFrames.value = !!ls.allFrames },
         applyLensPin: restoreLensPin,
         applyT:       () => { /* deferred — T is post-alloc, no pipeline effect */ },
       })
@@ -5227,7 +5286,7 @@ watch(zRange,    () => propsSink.schedule())
 watch([zWindowOn, zWindowHalf], () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
-watch(lensSavedPin, () => propsSink.schedule())
+watch([lensSavedPin, () => settings.viewerLens, () => settings.viewerLensRadiusUm, lensAllFrames], () => propsSink.schedule())
 
 // `settings.setShow3D` (QuickMovie's 3D option, or another window via the `cc.viewerSetPrefs` bag sync —
 // see `utils/viewerBagChannel.ts`) drives THIS viewer's mode: watch the setter's derived value here. Guarded on a real change to
@@ -5400,9 +5459,12 @@ watch(() => viewerStore.pickHighlight?.updateId ?? null, () => frame.redraw())
 // localStorage on init (an openViewerWindow handoff wrote it before the popup mounted), and the
 // apply has to happen once the renderer's ready, not when the ref was seeded. `immediate: true` so
 // a fresh popup with a seed applies as soon as meta and canvas resolve; the guard bails otherwise.
-watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.value] as const, async () => {
+// Not while `starting`: the image's own saved view is restored after `meta` lands, across an await —
+// a pending applied in that gap (a lens figure's Open on a fresh window) was then overwritten by it,
+// camera and pin, and only a second Open stuck. `starting` clears once that restore is done.
+watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.value, !!starting.value] as const, async () => {
   const pending = viewerStore.pendingViewState
-  if (!pending) return
+  if (!pending || starting.value) return
   const m = meta.value
   const c = canvas.value
   if (!m || !c) return
@@ -5414,8 +5476,10 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
   const focus = pending.focus
   // A Kiwi ref's pinned lens (2D): restore the view centred on it, then pin it there again below.
   const refLens = pending.lens && mode.value === 'plane' ? pending.lens : null
-  const vs = (pending.viewState as ViewerViewState | undefined)
-    ?? (refLens ? lensFocusView(liveViewState(), refLens, focus?.t ?? t.value) : null)
+  // a lens is always centred: its saved view (a lens figure's look — channels, zoom) is the base, but
+  // the camera it was saved with was wherever the user was when they clicked, not on the lens
+  const saved = pending.viewState as ViewerViewState | undefined
+  const vs = refLens ? lensFocusView(saved ?? liveViewState(), refLens, focus?.t ?? t.value) : saved
 
   if (vs) {
     // Full restore path — Zoom-to-source, keyframe apply, and a modern capture Refocus.
@@ -5490,6 +5554,8 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
   if (refLens) {
     if (typeof focus?.z === 'number' && focus.z < m.nZ && focus.z !== zPlane.value) stepZ(focus.z)
     try { placeLens(refLens, null) } catch (e) { console.warn('[lens] could not pin the ref\'s lens', e) }
+    // a lens figure's look: the segmentation, populations, tracks and graphs it was found with
+    if (refLens.look) applyLensLook(refLens.look as LensLook, imageUid, setUid.value, settings)
   }
 
   // Reshow the frozen capture on top of the live view. Same pathway as the module-page reshow
@@ -6451,7 +6517,8 @@ onUnmounted(() => {
       <!-- Cursor readout (Annotations → Readout): beside the pointer, never over it -->
       <VwLensChip v-if="lensChip" :chip="lensChip" :at="lensAt" :radius-px="lensRadiusPx"
                   :canvas-w="canvasSize.w" :canvas-h="canvasSize.h" :kiwi-ref="() => kiwiViewRef.ref"
-                  :project-uid="projectUid" @unpin="lensPin = null" @draw="beginDraw" />
+                  :project-uid="projectUid" :query="lensQueryChip" @unpin="lensPin = null" @draw="beginDraw"
+                  @find="lensQuery.find" @pick-run="k => (lensQuery.picked.value = k)" @ready="onLensReady" @all-frames="v => (lensAllFrames = v)" />
       <div v-if="readout" :ref="measureReadout" class="cc-card vw-readout" :style="readoutStyle">
         <span v-if="readout.cell" class="cc-row cc-row-tight vw-readout-head">
           <span class="vw-readout-cell">{{ readout.cell }}</span>
@@ -6742,7 +6809,8 @@ onUnmounted(() => {
                         :branch-names="meta.branchNames ?? []"
                         :graph-names="meta.spatialGraphNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
-                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes" />
+                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes"
+                        :columns-tick="lensQuery.columnsTick.value" />
       <!-- The navigation widget (overview in 2D, axes in 3D), top right on its own; its height is
            measured (`navH`) so both floating boxes start under it, level with each other. -->
       <div ref="navEl" class="vw-corner-nav">
@@ -6835,6 +6903,10 @@ onUnmounted(() => {
              is what changes while you look; Annotations is set once. See
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
         <VwAnnotationsSection :landscape="landscape" :timed="(meta?.nT ?? 0) > 1" :lens-range="lensRange" />
+
+        <VwLensesSection v-if="lensQuery.lensFigures.value.length" :lenses="lensQuery.lensFigures.value"
+                         :shown-column="lensQuery.shownScores.value" :error="lensQuery.error.value"
+                         @show-scores="lensQuery.setShowScores" @go-to="lensQuery.goToLens" @rename="lensQuery.renameLens" @remove="lensQuery.deleteLens" />
 
         <VwChannelsSection :channels="meta!.channels.slice(0, MAX_CHANNELS)" :n-c="meta!.nC" :clipped="clipped" :lens-on="lensOn"
                            :all-visible="allChannelsVisible" v-model:distinct="distinctChannelColours" v-model:solo="soloChannel"

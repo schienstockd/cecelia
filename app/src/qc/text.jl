@@ -382,6 +382,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Tissue lost by cycle {value}",
         long  = "Part of the section is gone in that cycle (lifted or torn); those cells read 0 in its markers — exclude them."),
 
+    # lens query (clustRegions.lensQuery `lens_query_qc_findings`)
+    "lensQuery.average_mix" => (
+        short = "Lens holds the tissue's average mix",
+        long  = "Pin the lens on a more distinct spot; this score map is weak everywhere."),
+    "lensQuery.mixed_lens" => (
+        short = "Lens covers more than one kind of tissue",
+        long  = "Make it smaller or move it onto one tissue; it now matches the boundary between them."),
+
     # split into tissues (editImages.splitTissues `split_tissues_qc_findings`)
     "editImages.split_no_tissue" => (
         short = "No tissue found",

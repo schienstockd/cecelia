@@ -12,6 +12,7 @@ import { useSettingsStore } from '../stores/settings'
 import { channelHexFrom } from '../utils/viewerProps'
 import { MAX_CHANNELS, type ViewerMeta, type OrbitCamera, type ViewerLens } from '../utils/volumeViewer'
 import type { ViewerViewState } from '../utils/viewer/viewState'
+import type { LensReadiness } from '../utils/viewer/lensReadiness'
 import {
   lensUniform, lensForRecording, lensCircleL0, lensChipCounts, lensRadiusRangeUm, lensRadiusUm,
   lensScreenAt, lensRadiusCss,
@@ -30,11 +31,19 @@ export interface VwLensDeps {
   pushChannels: () => void
   /** what the chip counts inside the lens circle (level-0 px) — the window's drawn layers */
   counts: (circle: { x: number; y: number; r: number }) => ReturnType<typeof lensChipCounts>
+  /** the layers that add nothing to the count, and why — not drawn or not run (`lensReadiness`) */
+  readiness?: () => LensReadiness[]
 }
 
 export type LensChip = ReturnType<typeof lensChipCounts> & {
   picked: { name: string; colour: string }[]
   pinned: boolean
+  /** a time-lapse: the chip offers This frame / All frames */
+  timed: boolean
+  /** counting every frame (cells inside at any frame), not the one on screen */
+  allFrames: boolean
+  /** a layer that adds nothing to the count: not drawn (Show) or not run (its task) */
+  ready: LensReadiness[]
 }
 
 export function useVwLens(d: VwLensDeps) {
@@ -42,6 +51,9 @@ export function useVwLens(d: VwLensDeps) {
   const lensOn = computed(() => settings.viewerLens && d.mode() === 'plane' && !!d.meta())
   const lensPointer = ref<{ cx: number; cy: number } | null>(null)
   const lensPin = ref<{ x: number; y: number } | null>(null)
+  /** A time-lapse lens counting every frame, not the one on screen — the chip's counts and Find
+   *  similar's lens alike. Per image, saved with the lens (`viewerProps.ts` → `lens.allFrames`). */
+  const lensAllFrames = ref(false)
 
   /** Where the lens is on the canvas, CSS px — the pin through the camera, else the pointer. */
   const lensAt = computed(() => {
@@ -103,7 +115,8 @@ export function useVwLens(d: VwLensDeps) {
     if (!circle || w <= 0 || h <= 0) return null
     const picked = m.channels.slice(0, MAX_CHANNELS).filter(ch => ch.lens)
       .map(ch => ({ name: ch.name, colour: channelHexFrom(ch.lut) }))
-    return { picked, pinned: !!lensPin.value, ...d.counts(circle) }
+    return { picked, pinned: !!lensPin.value, timed: m.nT > 1, allFrames: m.nT > 1 && lensAllFrames.value,
+             ready: d.readiness?.() ?? [], ...d.counts(circle) }
   })
 
   /** The lens a recording draws, or null (`lensForRecording`). */
@@ -132,7 +145,9 @@ export function useVwLens(d: VwLensDeps) {
              pops: chip.shown.map(p => ({ name: p.name, n: p.n, share: p.share })), morePops: chip.more,
              ...Object.fromEntries(chip.groups.map(g => [g.kind === 'tracks' ? 'trackClusters' : 'regions', {
                ...(g.kind === 'tracks' ? { tracks: g.of } : {}),
-               pops: g.shown.map(p => ({ name: p.name, n: p.n, share: p.share })), morePops: g.more }])) }
+               pops: g.shown.map(p => ({ name: p.name, n: p.n, share: p.share })), morePops: g.more }])),
+             // why a group is missing: a layer that is off ("notDrawn") or never run ("notRun") — not "none here"
+             ...(chip.ready.length ? { missingLayers: chip.ready.map(r => ({ layer: r.label, state: r.state, task: r.fun })) } : {}) }
   }
 
   /** `set_viewer_view`'s `lens`: `false` switches it off; `{x, y, r?, channels?}` (level-0 px, channel
@@ -161,7 +176,7 @@ export function useVwLens(d: VwLensDeps) {
   }
 
   return {
-    lensOn, lensPin, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
+    lensOn, lensPin, lensAllFrames, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
     trackLens, toggleLensPin, applyLens, lensChannelNames, recordedLens, savedPin, restorePin,
     lensReport, placeLens,
   }

@@ -273,6 +273,13 @@ lists only its own families. Data: `GET /api/plots/pop-positions` (`app/src/plot
 → `pop_positions`; population membership through `pop_index_by_label`, shared with the UMAP's
 colour-by-population). Layers: `plots/popPositions.ts` (tested). Drawn by `GateScatterCell`, read-only.
 
+**Colour** (panel state `colourBy`): *Populations* (the default, above), or a cell column — the lens
+scores first, by name (`colourByGroups`), then every other measure. Every cell is then shaded on the
+house ramp with one colour bar above the grid (`ColourBarLegend`, the montage's rule — never on a tile), and populations are not drawn. The rail's **Legend** switch shows or hides the key / bar. **One scale over all
+tiles** (`sharedValueScale`: the span of the tiles' ranges), so the images compare side by side; a lens
+score's range is fixed at 0–1 server-side (`fixed_colour_range`), so an image with no places like the
+lens reads dark. This is how a Find similar result is seen across the run's images.
+
 ## 0. Rendering engine — Observable Plot
 
 The summary canvas renders with **Observable Plot** (`@observablehq/plot`), NOT Vega-Lite. We started

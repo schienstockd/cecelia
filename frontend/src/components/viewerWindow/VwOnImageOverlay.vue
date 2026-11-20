@@ -51,6 +51,8 @@ const props = defineProps<{
   timecourse: boolean
   /** the pop types this image has pops of — a switch shows only for those; null = not known yet */
   present: PresentPopTypes | null
+  /** bumped when a cell column was written (the lens's Find similar): the colour-by list refetches */
+  columnsTick?: number
 }>()
 const settings = useSettingsStore()
 const viewerStore = useViewerStore()
@@ -107,7 +109,8 @@ function setShownFiles(vn: string, shown: string[]) {
 
 // ── Colour by: a column of the segmentation's table (the column is a pick; recolouring is a look) ──
 const colourCols = ref<string[]>([])
-watch(() => [props.projectUid, props.imageUid, props.version] as const,
+// `columnsTick`: a column was just written (the lens's Find similar) — refetch so it can be picked
+watch(() => [props.projectUid, props.imageUid, props.version, props.columnsTick] as const,
       async ([p, i, v]) => { colourCols.value = await fetchColourByColumns(p, i, v) }, { immediate: true })
 // per set; shown only when this image's table has it (segmentations differ across a set)
 const colourBy = computed(() => {

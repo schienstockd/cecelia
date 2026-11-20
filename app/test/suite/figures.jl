@@ -60,6 +60,38 @@ end
     @test figure_stale_reason(img, src) == "image version \"denoised\" is gone"
 end
 
+@testset "figure_source: a figure that draws overlays is stale when their segmentation changes" begin
+    td = mktempdir()
+    img = CciaImage(uid = "FIG3", name = "fig", dir = joinpath(td, "1", "FIG3"))
+    mkpath(img._dir)
+    img.filepath = Dict{String,Any}("default" => "a.zarr", "_active" => "default")
+    mkpath(joinpath(img_zero_dir(img), "a.zarr"))
+    img.labels = Dict{String,Any}("cells" => ["cells.zarr"])
+    img.label_props = Dict{String,Any}("cells" => "cells.h5ad")
+    mkpath(img_labels_path(img, "cells")); mkpath(dirname(img_label_props_path(img, "cells")))
+    write(img_label_props_path(img, "cells"), "x")
+    gdir = joinpath(img._dir, "gating"); mkpath(gdir)
+    write(joinpath(gdir, "cells.json"), "{}")
+    write(joinpath(gdir, "cells_b.json"), "{}")            # another segmentation's tree, not this one's
+
+    src = figure_source(img; segmentations = ["cells", "nope"])   # one the image lacks is not stamped
+    @test collect(keys(src["segmentations"])) == ["cells"]
+    @test src["segmentations"]["cells"]["popsMtime"] isa Real
+    @test figure_stale_reason(img, src) === nothing
+    @test !haskey(figure_source(img), "segmentations")      # pixels only: nothing to stamp
+    back(k) = merge(src, Dict("segmentations" => Dict("cells" => merge(src["segmentations"]["cells"],
+                                                                         Dict(k => src["segmentations"]["cells"][k] - 10)))))
+    @test figure_stale_reason(img, back("propsMtime")) == "segmentation cells was re-run since"
+    @test figure_stale_reason(img, back("labelsMtime")) == "segmentation cells was re-run since"
+    @test figure_stale_reason(img, back("popsMtime")) == "the populations on cells changed since"
+    # a tree written for a pop type that had none when the figure was drawn
+    nopops = merge(src, Dict("segmentations" => Dict("cells" => merge(src["segmentations"]["cells"],
+                                                                        Dict("popsMtime" => nothing)))))
+    @test figure_stale_reason(img, nopops) == "the populations on cells changed since"
+    delete!(img.labels, "cells")
+    @test figure_stale_reason(img, src) == "segmentation cells is gone"
+end
+
 @testset "project figure style: validated, merged under the spec, and a change marks figures stale" begin
     schema = figure_style_schema()
     @test schema[:defaults][:fontPt] == 7 && schema[:defaults][:timeFormat] == "clock"   # the viewer's

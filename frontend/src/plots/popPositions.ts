@@ -1,15 +1,18 @@
 /**
  * Pure logic for the population positions plot (`components/plots/PopPositionsView.vue`): where each
  * population's cells sit on the image, frame by frame. The data is `GET /api/plots/pop-positions` —
- * Float32 `[x, y, t, popIdx]` per cell, `popIdx` the index of the requested population the cell is
- * coloured by — the deepest it is in (-1 = none) — and this module turns it into the layers a `GateScatterCell` draws: every cell of the
- * frame as the base, each population's cells as a coloured layer on top.
+ * Float32 `[x, y, t, popIdx, value]` per cell, `popIdx` the index of the requested population the cell is
+ * coloured by — the deepest it is in (-1 = none) — and `value` its colour-by column (NaN = none). This
+ * module turns it into the layers a `GateScatterCell` draws: every cell of the frame as the base (shaded
+ * by its value when colouring by one), each population's cells as a coloured layer on top.
  */
 import type { SeriesTarget } from './types'
 import { categoricalColours } from './plot'
+import { measurePickGroups, type SearchGroup } from '../utils/searchSelect'
+import { lensLabel } from '../utils/viewer/lensQuery'
 
-/** Floats per cell on the wire: x, y, t, popIdx. */
-export const POS_STRIDE = 4
+/** Floats per cell on the wire: x, y, t, popIdx, value. */
+export const POS_STRIDE = 5
 
 /** One population a tile colours: the request token, its legend name and its colour. */
 export interface PosPop { token: string; label: string; colour: string }
@@ -55,16 +58,43 @@ export function framesIn(buf: Float32Array): number[] {
  * (the server picks which), so the colours never stack.
  */
 export function positionLayers(buf: Float32Array, frame: number | null, nPops: number):
-    { base: Float32Array; pops: Float32Array[]; n: number } {
-  const base: number[] = []
+    { base: Float32Array; values: Float32Array; pops: Float32Array[]; n: number } {
+  const base: number[] = [], values: number[] = []
   const pops: number[][] = Array.from({ length: nPops }, () => [])
   for (let i = 0; i + POS_STRIDE <= buf.length; i += POS_STRIDE) {
     if (frame !== null && buf[i + 2] !== frame) continue
     const x = buf[i]!, y = buf[i + 1]!, k = buf[i + 3]!
-    base.push(x, y)
+    base.push(x, y); values.push(buf[i + 4]!)
     if (k >= 0 && k < nPops) pops[k]!.push(x, y)
   }
-  return { base: Float32Array.from(base), pops: pops.map(p => Float32Array.from(p)), n: base.length / 2 }
+  return { base: Float32Array.from(base), values: Float32Array.from(values),
+           pops: pops.map(p => Float32Array.from(p)), n: base.length / 2 }
+}
+
+/** The colour-by picker's groups: the lens scores first (Find similar's score maps — the reason the
+ *  setting exists), then every other cell column; '' = colour by populations. */
+export function colourByGroups(columns: readonly string[], lensNames: Record<string, string> = {}): SearchGroup[] {
+  const lens = columns.filter(c => c.startsWith('spatial.lens.'))
+  const rest = columns.filter(c => !c.startsWith('spatial.lens.'))
+  return measurePickGroups([{ title: 'Lens scores', cols: lens }, { title: 'Cell measures', cols: rest }]
+                             .filter(g => g.cols.length),
+                           c => (lens.includes(c) ? lensLabel(c, lensNames) : c),
+                           [{ value: '', label: 'Populations' }])
+}
+
+/** ONE colour scale over every tile, so one colour is one value on every image: the span of the tiles'
+ *  ranges (a lens score's is fixed server-side, so every tile already agrees); ticks inside it, deduped.
+ *  null when no tile has values. */
+export function sharedValueScale(metas: readonly { valueRange?: [number, number] | null;
+                                                   valueTicks?: { pos: number; label: string }[] }[]):
+    { extent: [number, number]; ticks: { pos: number; label: string }[] } | null {
+  const rs = metas.map(m => m.valueRange).filter((r): r is [number, number] => !!r)
+  if (!rs.length) return null
+  const extent: [number, number] = [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))]
+  const seen = new Map<number, { pos: number; label: string }>()
+  for (const m of metas) for (const t of m.valueTicks ?? [])
+    if (t.pos >= extent[0] && t.pos <= extent[1] && !seen.has(t.pos)) seen.set(t.pos, t)
+  return { extent, ticks: [...seen.values()].sort((a, b) => a.pos - b.pos) }
 }
 
 /** The frame a tile shows: the persisted pick when the data has it, else the first frame; null = all. */

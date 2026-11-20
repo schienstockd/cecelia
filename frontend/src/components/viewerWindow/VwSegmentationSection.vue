@@ -10,7 +10,7 @@ import CcToggle from '../CcToggle.vue'
 import ColourPicker from '../ColourPicker.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { computed } from 'vue'
-import { maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
+import { effectiveMaskColour, maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
 
 const props = defineProps<{
   /** the mask on screen ('' = none) */
@@ -35,9 +35,11 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
 
+// the colour drawn — a still shows Pops for a stored Track clusters (`effectiveMaskColour`)
+const shownColour = computed(() => effectiveMaskColour(settings.viewerMaskColour, props.timecourse))
 // A select, not chips: the choices outgrew the rail's width (as the Tracks section's Colour by)
-const colourOptions = computed(() => maskColourOptions(props.timecourse, settings.viewerMaskColour))
-const colourTip = computed(() => colourOptions.value.find(o => o.value === settings.viewerMaskColour)?.tip ?? 'What colours the mask')
+const colourOptions = computed(() => maskColourOptions(props.timecourse, shownColour.value))
+const colourTip = computed(() => colourOptions.value.find(o => o.value === shownColour.value)?.tip ?? 'What colours the mask')
 </script>
 
 <template>
@@ -91,7 +93,7 @@ const colourTip = computed(() => colourOptions.value.find(o => o.value === setti
       </div>
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
-        <select :value="settings.viewerMaskColour" class="cc-fs-2xs vw-grow" aria-label="Colour mask by"
+        <select :value="shownColour" class="cc-fs-2xs vw-grow" aria-label="Colour mask by"
                 v-tooltip.bottom="colourTip"
                 @change="settings.viewerMaskColour = ($event.target as HTMLSelectElement).value as MaskColour">
           <option v-for="o in colourOptions" :key="o.value" :value="o.value" :title="o.tip">{{ o.label }}</option>

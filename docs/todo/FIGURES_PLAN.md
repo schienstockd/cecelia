@@ -1,7 +1,8 @@
 # Figures — paper figures from the raw data, in one standard look
 
 **Status:** built (2026-11-01) — P1 #1880, P2 #1881, P3 #1882, P4 on `feat/figures-p4`; awaiting the maintainer's
-visual pass. Open: decision C; a second row from the editor.
+visual pass. Overlays built (2026-11-20, `figure-overlays`, uncommitted): a spec's `look` draws the viewer's
+mask, populations, tracks and graph edges on every tile. Open: decision C; a second row from the editor.
 
 ## Goal
 
@@ -191,13 +192,26 @@ write. Validation errors name the field and the allowed values. Caps on frames a
 **P4 — staleness. BUILT** (`feat/figures-p4`): a figure banks its source (`Cecelia.figure_source`:
 image version, vN, store mtime); `/api/movies` reports `figureStale` + `staleReason`
 (`figure_stale_reason`) — the row's warning, the editor's note, `list_figures`' `stale`. A figure
-draws pixels only, so the image version is the whole of its input; segmentation / population run
-stamps join when figures draw overlays. A style (preset) change does not mark figures stale yet —
+draws pixels only unless it carries a `look`; then the segmentations its overlays read are stamped
+too (see *Overlays* below). A style (preset) change does not mark figures stale yet —
 there is no preset editing (decision B). Original scope: Each figure records the image version, segmentation / track / population run
 stamps (see `docs/todo/EVIDENCE_PROVENANCE_PLAN.md`) and the preset version. A changed input marks
 the figure stale on its row. That is data staleness; the registry's existing `configStale`
 (`_config_stale`, `movies_api.jl:256`) only means the file was edited after recording. Re-render is
 explicit.
+
+**Overlays — BUILT** (2026-11-20, branch `figure-overlays`): a spec may carry **`look`** — the `BatchMovieCfg` a
+viewer Record banks (`readViewerLook` → `lookForRender`). The API resolves it with the movies' own readers and
+authors (`figure_look_overlays`, `api/src/figures_api.jl`: `_look_keyframe_mask`, `_overlays_raw_from_config`,
+`_resolve_movie_overlays_mask`, `_overlays3d_state`, `_mask_params!`, `_plane_window`) into the renderer's
+`lookOverlays` — the mask + overlay-style params, each frame's points / segments, each column's plane filter —
+and `render_figure.py` puts them on the tile states (`_look_params`, `_with_look_overlays`), so the movie shader
+pass draws them: a tile is the movie frame of that look (recording parity). No `look` = pixels only, as before;
+the REPL `render_figure` takes `look_overlays` directly. The viewer's **Save as figure** sends the look (ROI
+figures too); the editor's re-make keeps it. Staleness: the source stamps each segmentation the look reads
+(`figure_look_segmentations` → `figure_source(...; segmentations)`: labels version, label store + cell table
+mtimes, newest population tree) and `figure_stale_reason` names the one that changed. Drawn on the first row only — the merge; a split's grey rows show their channel alone. Not drawn: the look's channel lens (the lens figure's `circles` outline is separate), its timestamp / scale bar (the figure has its own). Sizes: the look's point size / tail width are image px (scale with the tile, as in the viewer); the mask outline is image px as the viewer's tile shader draws it (the shown level's px — it grows with zoom), times the crop's enlargement (`image_px_scale`); the point border is screen px, drawn dpi/96 output px each (`screen_px_scale`). A first try drew the outline at dpi/96 too and it came out ~3x too thick on a lens figure. Claude's `add_figure` takes no look yet. Checked on RFtn9f / 7b1jqm
+(Tcells mask, flow pops, tracks) headlessly — needs the maintainer's eyes in the app.
 
 **Later, if asked:** a movie from the same spec (the renderer and the
 registry are already shared).

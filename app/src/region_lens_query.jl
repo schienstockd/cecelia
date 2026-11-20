@@ -3,8 +3,8 @@
 # The signature is the mean neighbourhood composition of the cells inside the lens, read from the
 # composition columns a region run already wrote (`clustRegions.cluster` → `spatial.comp.<pop>.<suffix>`,
 # recorded as the run's features in the clustfeatures sidecar). Every cell is scored by cosine
-# similarity to it. How a score becomes "a match" is open (plan → *P1 findings*: a percentile cut-off
-# was rejected; a per-cell z against random lenses is the candidate), so this returns scores only.
+# similarity to it; the saved score is that similarity above the run's average cell, 0–1
+# (`lens_similarity_scores`). No match threshold — a filter population on the column does that.
 # Pure helpers first, then the one reader.
 
 "Fewest cells a lens must hold for its signature to mean anything (Decision 2)."
@@ -117,4 +117,118 @@ function region_lens_query(img::CciaImage, lens; value_name::AbstractString, suf
     scores = cosine_scores(X, sig)
     (; labels = Int.(df[!, :label]), scores, ok, inside, nInside = n_in, nScored = count(ok),
        features = feats, signature = sig)
+end
+
+# ── The saved score map (`clustRegions.lensQuery`) ──────────────────────────────────────────────────
+
+"""
+    lens_score_col(name) -> String
+
+The per-cell obs column a lens query writes: `spatial.lens.<name>`. ONE namer — the task writes it,
+the viewer colours by it, a filter population thresholds it.
+"""
+lens_score_col(name::AbstractString) = LENS_SCORE_PREFIX * replace(strip(String(name)), r"[^A-Za-z0-9_-]+" => "_")
+"The obs-column family lens queries write (`lens_score_col`); the Runs tab lists and deletes it."
+const LENS_SCORE_PREFIX = "spatial.lens."
+
+"""
+    lens_similarity_scores(X, ok, sig, mu) -> Vector{Float64}
+
+Per cell: how alike its neighbourhood mix is to the lens's, above the run's average cell —
+`clamp((cos(x, sig) − mu) / (1 − mu), 0, 1)`, where `mu` is the mean cosine to the lens over every
+scored cell of the run (`lens_background`). 0 = no more like the lens than the average cell, 1 =
+identical. Plain cosine ranks the cells the same; taking `mu` off keeps a run whose cells are all
+alike (few composition features) from saturating the ramp. A cell with no composition (`!ok`) is NaN.
+Why this score: docs/todo/LENS_QUERY_PLAN.md → *Scoring*.
+"""
+function lens_similarity_scores(X::AbstractMatrix{<:Real}, ok::AbstractVector{Bool}, sig::AbstractVector{<:Real},
+                                mu::Real)::Vector{Float64}
+    s = cosine_scores(X, sig)
+    span = 1.0 - Float64(mu)
+    [ok[i] ? (span > 0 ? clamp((s[i] - mu) / span, 0.0, 1.0) : 0.0) : NaN for i in eachindex(s)]
+end
+
+"""
+    lens_background(tabs, sig) -> Float64
+
+The run's average cell's cosine to the lens: the mean over every usable cell of every table
+(`(; X, ok)`) — the 0 of `lens_similarity_scores`.
+"""
+function lens_background(tabs, sig::AbstractVector{<:Real})::Float64
+    tot = 0.0; n = 0
+    for tb in tabs
+        s = cosine_scores(tb.X, sig)
+        for i in eachindex(s)
+            tb.ok[i] || continue
+            tot += s[i]; n += 1
+        end
+    end
+    n > 0 ? tot / n : 0.0
+end
+
+"""
+    lens_coherence(X, inside, sig) -> Float64
+
+How much the lens is one kind of tissue: the median cosine of its own cells to its signature. A lens
+across two tissues averages them into a mix no cell has, and its scores light the boundary between
+them rather than either.
+"""
+function lens_coherence(X::AbstractMatrix{<:Real}, inside::AbstractVector{Bool}, sig::AbstractVector{<:Real})::Float64
+    s = cosine_scores(X[inside, :], sig)
+    isempty(s) ? NaN : median(s)
+end
+
+"Below this, no phenotype in the lens differs from the tissue's average share by enough to search on."
+const LENS_QUERY_MIN_LIFT = 0.05
+
+"A cell this alike to the lens or more counts as strong in the run's QC (`nStrong`) — not a match cut-off."
+const LENS_STRONG = 0.8
+
+"Below this median cosine of the lens's own cells to its signature, the lens spans more than one tissue
+(`lens_coherence`) — set from six lenses: five coherent ones at 0.97–1.00, one mixed at 0.65."
+const LENS_QUERY_MIN_COHERENCE = 0.8
+
+"""
+    lens_query_qc_findings(max_lift, coherence = 1.0) -> Vector
+
+`max_lift` = the largest |lens share − tissue share| over the run's phenotypes: a lens that holds the
+tissue's average mix finds everything a little and nothing well. `coherence` = `lens_coherence`: a lens
+across tissues matches no cell well.
+"""
+function lens_query_qc_findings(max_lift::Real, coherence::Real = 1.0)
+    out = Any[]
+    max_lift < LENS_QUERY_MIN_LIFT && push!(out, qc_finding("warn", "lensQuery.average_mix"))
+    coherence < LENS_QUERY_MIN_COHERENCE && push!(out, qc_finding("warn", "lensQuery.mixed_lens"))
+    out
+end
+
+"""
+    LENS_SCORE_RANGE
+
+The colour scale every `spatial.lens.*` column is drawn on: the score's own 0 → 1
+(`lens_similarity_scores`). Fixed rather than the column's min–max so one colour means one score on
+every image and every lens — an image with no places like the lens stays dark instead of stretching
+its best weak match to the top. Read by `fixed_colour_range`.
+"""
+const LENS_SCORE_RANGE = (0.0, 1.0)
+
+"""
+    fixed_colour_range(col) -> (lo, hi) | nothing
+
+A column whose values carry their own scale, so colour-by draws it on that scale and not on the
+values' min–max: the lens scores (`LENS_SCORE_RANGE`). `nothing` for every other column.
+"""
+fixed_colour_range(col::AbstractString) = startswith(col, LENS_SCORE_PREFIX) ? LENS_SCORE_RANGE : nothing
+
+"""
+    lens_run_images(img, value_name, suffix) -> Vector{String}
+
+The images a lens query on region run `suffix` scores: every image the run recorded (its clustfeatures
+`partOf`), else just `img`. One answer for the task (which images it writes) and a lens figure (which
+images its delete cleans up).
+"""
+function lens_run_images(img::CciaImage, value_name::AbstractString, suffix::AbstractString)::Vector{String}
+    p = img_label_props_path(img, value_name)
+    entry = (p === nothing || !isfile(p)) ? nothing : _clustfeatures_entry(p, suffix; family = "regions")
+    _clustfeatures_part_of(entry, img.uid)
 end

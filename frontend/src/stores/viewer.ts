@@ -20,7 +20,7 @@ import type { L0Rect } from '../utils/viewerPick'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import type { CropPick } from '../utils/viewer/cropPick'
 import { expiresAtFrom, msUntil, liveOrNull } from '../utils/viewer/markLifetime'
-import { nextUpdateStamp } from '../utils/updateStamp'
+import { freshSeed, nextUpdateStamp } from '../utils/updateStamp'
 import type { ViewerRefLens } from '../utils/kiwiRef'
 
 /** What image is open in the browser viewer, in the same shape the preview worker's request needs. */
@@ -343,7 +343,8 @@ export const useViewerStore = defineStore('viewer', () => {
   // reload doesn't silently re-move the camera. The FRESHNESS guard is the seed's own `updateId` +
   // consumption pattern — the setter writes, whoever applies calls `consumePendingViewState()`, and
   // a straggler entry from a crashed apply expires when the next explicit call overwrites it.
-  const pendingViewState = ref<PendingViewState | null>(_readJson<PendingViewState>(K_PENDING_VIEW))
+  // A seed older than a handoff takes (`freshSeed`) is a straggler — dropped, so it cannot re-pin a lens.
+  const pendingViewState = ref<PendingViewState | null>(freshSeed(_readJson<PendingViewState>(K_PENDING_VIEW)))
   const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
   const liveLabels       = ref<LiveLabels | null>(_readJson<LiveLabels>(K_LIVE_LABELS))

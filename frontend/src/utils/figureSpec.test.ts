@@ -30,6 +30,15 @@ describe('figureSpecFromView', () => {
     expect(s.valueName).toBe('denoised')
     expect(s.view?.camera.zoom).toBe(8)                   // the snapshot rides along, for open-at-source
   })
+  it('carries the viewer look, so its overlays are drawn on the tiles — and survives an edit', () => {
+    const look = { labelValueNames: ['cells'], labelContour: 1, showPopulations: true, popTypes: ['flow'] }
+    const r = figureSpecFromView(vs(), NAMES, { look })
+    if (!('spec' in r)) throw new Error('no spec')
+    expect(r.spec.look).toEqual(look)
+    expect(applyFigureEdits({ ...r.spec } as Record<string, unknown>, { frames: [1, 2] }).look).toEqual(look)   // a re-make keeps drawing it
+    const bare = figureSpecFromView(vs(), NAMES, { look: null })
+    expect('spec' in bare && 'look' in bare.spec).toBe(false)                // none: pixels only, as before
+  })
   it('refuses what has no single 2D crop', () => {
     expect(figureSpecFromView(null, NAMES)).toEqual({ error: 'Open the image in the viewer first' })
     expect(figureSpecFromView(vs({ dims: { ndisplay: 3, current_step: [0], point: [0] } }), NAMES))

@@ -111,6 +111,63 @@ function _entry_image_uid(e::AbstractDict)::String
 end
 
 """
+    _clean_lens(raw, image_uid) -> Union{Nothing,Dict{String,Any}}
+
+A lens figure's lens (Find similar, docs/todo/LENS_QUERY_PLAN.md): where it was on `image_uid` (level-0
+px; `t` -1 = every frame), the region run it read and the score column it wrote on `images`. `nothing`
+unless x/y/r are finite and the column is a lens score's (`Cecelia.LENS_SCORE_PREFIX`) — the delete
+cascade drops that column, so it must never name another. `look` (the viewer's toggles) rides along
+untouched when it is an object under `LENS_LOOK_MAX_BYTES`.
+"""
+function _clean_lens(raw, image_uid::AbstractString)
+    raw isa AbstractDict || return nothing
+    g(k) = get(raw, k, get(raw, Symbol(k), nothing))
+    num(k) = (v = g(k); v isa Real && isfinite(Float64(v)) ? Float64(v) : nothing)
+    x, y, r = num("x"), num("y"), num("r")
+    (x === nothing || y === nothing || r === nothing || r < 1) && return nothing
+    col = string(something(g("column"), ""))
+    (startswith(col, Cecelia.LENS_SCORE_PREFIX) && ncodeunits(col) > ncodeunits(Cecelia.LENS_SCORE_PREFIX)) || return nothing
+    imgs = g("images")
+    images = unique!(String[string(u) for u in (imgs isa AbstractVector ? imgs : []) if u isa AbstractString && !isempty(u)])
+    image_uid in images || pushfirst!(images, String(image_uid))
+    t = num("t")
+    out = Dict{String,Any}("sourceUid" => String(image_uid), "x" => x, "y" => y, "r" => r,
+                           "t" => t === nothing ? -1 : round(Int, t), "column" => col,
+                           "valueName" => string(something(g("valueName"), "")),
+                           "regionSuffix" => string(something(g("regionSuffix"), "")), "images" => images)
+    # what was on screen when it ran (the viewer's `LensLook`) — opaque here, written back on Open;
+    # capped so a runaway client cannot bloat the registry every listing reads
+    look = g("look")
+    (look isa AbstractDict && ncodeunits(JSON3.write(look)) <= LENS_LOOK_MAX_BYTES) && (out["look"] = look)
+    out
+end
+
+const LENS_LOOK_MAX_BYTES = 256_000
+
+# The lens on a registry entry, as listed — `nothing` for every other movie / figure.
+_entry_lens(e::AbstractDict) = (l = get(e, "lens", nothing); l isa AbstractDict ? _clean_lens(l, string(get(l, "sourceUid", ""))) : nothing)
+
+# Deleting a lens figure deletes what it found: its score column on every image it scored, in the
+# segmentation its query ran on (`drop_lens_scores!` — another segmentation's lens of the same name keeps
+# its scores; a lens without one falls back to the Runs tab's delete). One image failing never keeps the figure.
+function _drop_lens_scores!(project_uid::AbstractString, e)
+    e isa AbstractDict || return
+    l = _entry_lens(e)
+    l === nothing && return
+    key = l["column"][ncodeunits(Cecelia.LENS_SCORE_PREFIX)+1:end]
+    for iu in l["images"]
+        try
+            img = init_object(String(project_uid), iu)
+            img isa CciaImage || continue
+            vn = string(get(l, "valueName", ""))
+            isempty(vn) ? delete_analysis_run!(img, "lensScores", key) : Cecelia.drop_lens_scores!(img, key, vn)
+        catch err
+            @warn "could not drop a lens figure's scores" image = iu column = l["column"] exception = err
+        end
+    end
+end
+
+"""
     _entry_channels(entry) -> Vector{String}
 
 The channels the movie shows — the recorder's list, else read back out of the saved config.
@@ -162,7 +219,9 @@ function register_movie!(project_uid::AbstractString, filename::AbstractString;
                          # what the recorder knows the file IS (`roi`, `sheet`, `grid`, …) — ADDED to the
                          # tags, never replacing them, so a user's own tags survive. A re-record adds
                          # back one the user removed: the file still is that.
-                         auto_tags = String[])
+                         auto_tags = String[],
+                         # a lens figure's lens (`_clean_lens`) — kept on a remake, which passes none
+                         lens::Union{Nothing,AbstractDict} = nothing)
     try
         _valid_movie_name(filename) || return nothing
         reg = _read_movies_registry(project_uid)
@@ -178,6 +237,7 @@ function register_movie!(project_uid::AbstractString, filename::AbstractString;
         # the sanitised form would re-prefix it. Recoverable from the filename only by reverse-
         # engineering three recorders' naming, which is why it is stored rather than parsed.
         isempty(suffix)    || (e["suffix"] = String(suffix))
+        lens === nothing   || (e["lens"] = lens)
         isempty(auto_tags) || (e["tags"] = _clean_movie_tags([_clean_movie_tags(get(e, "tags", nothing)); auto_tags]))
         e["recordedAt"] = time()          # unix seconds — the same clock `mtime` uses, see _config_stale
         if config !== nothing && !isempty(config_kind)
@@ -266,7 +326,9 @@ function movies_with_meta(project_uid::AbstractString)
                           # Claude made it and nobody re-made it since — what Claude may change
                           claudeMade  = figure_claude_made(e),
                           # a figure whose image version changed since — it no longer shows the data
-                          figureStale = stale !== nothing, staleReason = something(stale, "")))
+                          figureStale = stale !== nothing, staleReason = something(stale, ""),
+                          # a lens figure (Find similar): where its lens was and the scores it wrote
+                          lens        = _entry_lens(e)))
         end
     end
     sort!(out; by = m -> m.mtime, rev = true)
@@ -371,6 +433,7 @@ end
 # `/api/figures/delete-own` both go through it.
 function _delete_movie_file!(uid::AbstractString, reg::AbstractDict, name::AbstractString)
     rm(_media_path(uid, name); force = true)
+    _drop_lens_scores!(uid, get(reg, String(name), nothing))
     delete!(reg, String(name))
 end
 

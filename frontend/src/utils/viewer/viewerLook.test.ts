@@ -163,6 +163,15 @@ describe('viewerLook', () => {
     expect(batchMaskColour(l)).toBe('trackclust')
   })
 
+  it('track clusters with a colour-by → the movie shades their cells by it, and a batch still reads track clusters', () => {
+    const l = viewerLook(base({ maskColour: 'trackclust', colourBy: 'spatial.lens.x' }))
+    expect(l.maskPopTypes).toEqual(['trackclust'])
+    expect(l.colourLabels).toBe(true)                      // `mask_id_colours(colour_by)` on the clusters
+    expect(batchMaskColour(l)).toBe('trackclust')
+    expect(batchMaskColour({ maskPopTypes: ['trackclust'], colourLabels: true })).toBe('trackclust')
+    expect(buildBatchMovieConfig(l, ['OTI'], {}).colourLabels).toBe(true)
+  })
+
   it('Colour by → every cell by the column, in the viewer’s look and the batch alike', () => {
     const l = viewerLook(base({ maskColour: 'colourBy', colourBy: 'clusters.leiden' }))
     expect(l.maskAllCells).toBe(true)

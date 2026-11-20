@@ -11,3 +11,15 @@
 export function nextUpdateStamp(last: number, now: number = Date.now()): number {
   return Math.max(Math.floor(now), last + 1)
 }
+
+/** How long a pending view left in storage stays good to apply when a viewer starts: an
+ *  `openViewerWindow` handoff mounts within seconds, so anything older is a straggler — a pending
+ *  meant for another image's window, never consumed — that must not pin a lens into a viewer opened
+ *  later by hand. */
+export const PENDING_SEED_MAX_AGE_MS = 2 * 60_000
+
+/** A seeded bag still fresh enough to apply (its `updateId` is the stamp it was written at). */
+export function freshSeed<T extends { updateId?: number }>(seed: T | null, now: number = Date.now(),
+                                                          maxAgeMs = PENDING_SEED_MAX_AGE_MS): T | null {
+  return seed && Number.isFinite(seed.updateId) && now - (seed.updateId as number) <= maxAgeMs ? seed : null
+}

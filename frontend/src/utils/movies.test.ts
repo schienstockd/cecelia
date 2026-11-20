@@ -165,7 +165,7 @@ describe('movieRows', () => {
                               // a pre-registry movie carries the registry fields at their "unset"
                               // values, so the table reads ONE row shape and never has to branch
                               starred: false, tags: [], tagText: '', producedBy: '',
-                              renamed: false, configStale: false, kind: 'movie', staleReason: '',
+                              renamed: false, configStale: false, kind: 'movie', staleReason: '', lens: null,
                               hasConfig: false, configKind: '',
                               // …including the image join, which resolves to nothing when no images
                               // were handed in — the page reads one row shape either way

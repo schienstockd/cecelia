@@ -5,6 +5,7 @@
 // The ONE filename-sanitiser, shared with the recorder's own filename preview — a movie name has to be
 // taken apart here exactly the way it was put together there (see resolveMovieImageUid).
 import { safeNamePart } from './batchMovie'
+import type { FigureLens } from './viewer/lensQuery'
 
 export interface MovieEntry {
   name: string     // file name, e.g. "myImage_animation.mp4" — the id, and what the player streams
@@ -31,6 +32,7 @@ export interface MovieEntry {
   claudeMade?: boolean   // Claude made it and nobody re-made it since (the server's `claude_made`)
   figureStale?: boolean  // a figure whose image version changed since it was rendered
   staleReason?: string   // why, in a phrase ("image version denoised was re-processed since")
+  lens?: FigureLens | null   // a lens figure (Find similar): where its lens was, the scores it wrote
 }
 
 /** The extensions the movies dir holds — a movie or a still figure. */
@@ -197,6 +199,7 @@ export interface MovieRow {
   configStale: boolean
   kind: MediaKind        // a movie, or a still figure (FIGURES_PLAN)
   staleReason: string    // a figure no longer shows the data — why ('' = it does, or not a figure)
+  lens: FigureLens | null   // a lens figure's lens — Open re-pins it; delete takes its scores
   // A saved generation config exists, and which page can edit it (Phase 6 — utils/movieRestore.ts).
   // Carried on the row so the table can offer the action without a second lookup per row; '' means the
   // movie predates the registry, which is most of them in an older project.
@@ -236,6 +239,7 @@ export function movieRows(movies: MovieEntry[],
       configStale: m.configStale === true,
       kind: isFigure(m) ? 'figure' : 'movie',
       staleReason: m.figureStale ? (m.staleReason || 'its image changed since') : '',
+      lens: m.lens ?? null,
       hasConfig: m.hasConfig === true,
       configKind: m.configKind ?? '',
       imageUid: uid,

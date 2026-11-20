@@ -214,6 +214,7 @@ include(joinpath(@__DIR__, "suite", "briefing_and_reads.jl"))
 # MovieConfig JSON round-trip preserves on-disk shape, movie frame range (_t_range parser).
 # Path expression uses API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "movie_registry_and_config.jl"))
+include(joinpath(@__DIR__, "suite", "figure_overlays.jl"))
 
 # ── Napari branch-labels + task-console (snapshot / project / log-frames / chain-node) ──
 # Five testsets: napari branch-labels payload (allBranchLabels dict), task console reconciles

@@ -9,7 +9,9 @@
   module pages) or, on a Cluster / Region page, the populations its manager has switched on
   (`shownPops`). Data: `GET /api/plots/pop-positions` (`meta=1` per image for the axes, then the
   cells — both with the populations); the layer split is `plots/popPositions.ts` (tested). Drawn by the shared `GateScatterCell`,
-  read-only.
+  read-only. Colour by: the populations (default), or a cell column — a Find similar lens score above all
+  (`colourByGroups`) — shading every cell on ONE scale across the tiles (`sharedValueScale`; a lens score's
+  is fixed at 0–1), so the images compare side by side.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
@@ -20,6 +22,11 @@ import GateScatterCell from './GateScatterCell.vue'
 import PopFamilySelect from './PopFamilySelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import CcToggle from '../CcToggle.vue'
+import SearchSelect from '../SearchSelect.vue'
+import ColourBarLegend from './ColourBarLegend.vue'
+import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
+import { useLensNames } from '../../composables/useLensNames'
+import { lensLabel } from '../../utils/viewer/lensQuery'
 import type { PopLayer } from './PlotLayers.vue'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { filterSeriesToPopType } from '../../plots/popTypes'
@@ -28,7 +35,8 @@ import { fetchSegmentationPops } from '../../plots/populations'
 import type { CompareMode } from '../../plots/trackGroups'
 import type { VisProps } from '../../plots/plot'
 import { dotRadiusFor } from '../../plots/density'
-import { GATE_CELL_PAD, framesIn, tileBox, positionLayers, positionPops, resolveFrame } from '../../plots/popPositions'
+import { colourByGroups, GATE_CELL_PAD, framesIn, tileBox, positionLayers, positionPops, resolveFrame,
+         sharedValueScale } from '../../plots/popPositions'
 import { fitGridCols } from '../../plots/montage'
 import { useBoxSize } from '../../composables/usePlotResize'
 import { debouncedLatest } from '../../utils/debouncedLatest'
@@ -44,12 +52,13 @@ const props = defineProps<{
   popType?: string
   shownPops?: { path: string; name: string; colour: string }[]
   vis?: VisProps
-  state: { popType?: string; frame?: number | null }
+  state: { popType?: string; frame?: number | null; colourBy?: string }
 }>()
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 type Tick = { pos: number; label: string }
-interface Meta { n: number; unit: string; extents: Ext; xTicks: Tick[]; yTicks: Tick[]; frames: [number, number] }
+interface Meta { n: number; unit: string; extents: Ext; xTicks: Tick[]; yTicks: Tick[]; frames: [number, number]
+                valueNames?: string[]; valueRange?: [number, number] | null; valueTicks?: Tick[] }
 interface Tile { uid: string; meta: Meta; data: Float32Array }
 
 const project = useProjectStore()
@@ -58,6 +67,8 @@ const project = useProjectStore()
 const { options: familyOptions, popType: railFamily } =
   usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
 const onRail = computed(() => !!props.popTypes?.length)
+// colour by: '' = the populations, else a cell column (persisted per panel)
+const colourBy = computed({ get: () => props.state.colourBy ?? '', set: v => (props.state.colourBy = v) })
 const family = computed(() => onRail.value ? railFamily.value : (props.popType ?? 'flow'))
 const ownSeries = computed(() => filterSeriesToPopType(props.series ?? [], family.value))
 
@@ -84,6 +95,21 @@ const pops = computed(() => positionPops({
 }))
 
 const tiles = ref<Tile[]>([])
+// the columns to offer: the first image's cell table the tiles draw (a lens score is on every image of its run)
+const columns = ref<string[]>([])
+const columnsVn = computed(() => tiles.value[0]?.meta.valueNames?.[0] ?? '')
+watch([() => uids.value[0], columnsVn], async ([uid, vn]) => {
+  columns.value = uid && vn ? await fetchColourByColumns(props.projectUid, uid, vn) : []
+}, { immediate: true })
+// a lens is named as it was renamed (Movies & figures / the viewer's Lenses), not by its column
+const lensNames = useLensNames(() => props.projectUid)
+const colourGroups = computed(() => colourByGroups(columns.value, lensNames.value))
+const valueScale = computed(() => (colourBy.value ? sharedValueScale(tiles.value.map(t => t.meta)) : null))
+// the legend switch (the rail's Legend): the population key and the colour bar, both in the controls
+// strip above the tiles — one for the grid (`ColourBarLegend`, the montage's rule), never on a tile
+const showLegend = computed(() => props.vis?.legend !== false)
+const valueLabel = computed(() => colourBy.value.startsWith('spatial.lens.')
+  ? `like ${lensLabel(colourBy.value, lensNames.value)}` : colourBy.value)
 const loading = ref(false)
 useDelayedLoading(loading)
 const error = ref('')
@@ -95,6 +121,7 @@ async function fetchTiles(isCurrent: () => boolean) {
     for (const uid of uids.value) {
       const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: uid, popType: family.value })
       if (pops.value.length) q.set('pops', pops.value.map(p => p.token).join(','))
+      if (colourBy.value) q.set('colourBy', colourBy.value)
       const mr = await fetch(`/api/plots/pop-positions?${q}&meta=1`)
       if (!mr.ok) continue
       const meta = await mr.json() as Meta
@@ -115,7 +142,7 @@ async function fetchTiles(isCurrent: () => boolean) {
 // one coalesced request per change burst (ticking several populations is several updates)
 const run = debouncedLatest<void>((_a, isCurrent) => fetchTiles(isCurrent),
   { wait: 150, onError: e => { error.value = e instanceof Error ? e.message : String(e); loading.value = false } })
-watch([() => uids.value.join(','), family, () => pops.value.map(p => p.token).join(',')],
+watch([() => uids.value.join(','), family, () => pops.value.map(p => p.token).join(','), () => colourBy.value],
       () => run.schedule(), { immediate: true })
 onBeforeUnmount(() => run.cancel())
 // a task finishing on one of these images (a new region run, a re-gate) redraws the plot
@@ -142,7 +169,7 @@ const layers = computed(() => Object.fromEntries(tiles.value.map(t => {
   const l = positionLayers(t.data, frame.value, pops.value.length)
   const popLayers: PopLayer[] = l.pops.map((pts, k) =>
     ({ path: pops.value[k]!.token, colour: pops.value[k]!.colour, points: pts }))
-  return [t.uid, { base: l.base, popLayers }]
+  return [t.uid, { base: l.base, values: l.values, popLayers }]
 })))
 // THE TILE SIZE, from the measured panel: as many columns as give the biggest tiles (the gating
 // montage's rule), then each map as large as its cell allows at its own aspect. A CSS auto-fill grid
@@ -168,6 +195,10 @@ const tileStyle = (e: Ext) => {
     <div class="ppv-ctrl cc-panel-controls">
       <div class="cc-row">
         <PopFamilySelect v-if="onRail" :options="familyOptions" v-model="railFamily" />
+        <span v-if="columns.length" class="cc-row-group" v-tooltip.top="'Colour the cells by populations or a measure'">
+          <span class="cc-fs-xs">Colour</span>
+          <SearchSelect v-model="colourBy" :groups="colourGroups" aria-label="Colour by" />
+        </span>
         <template v-if="isMovie">
           <span class="cc-row-group">
             <CcToggle v-model="allFrames" aria-label="All frames" v-tooltip.top="'Every frame at once'" />
@@ -180,7 +211,10 @@ const tileStyle = (e: Ext) => {
           </span>
         </template>
       </div>
-      <div v-if="pops.length" class="cc-row ppv-legend">
+      <div v-if="showLegend && valueScale" class="cc-row ppv-legend">
+        <ColourBarLegend :extent="valueScale.extent" :ticks="valueScale.ticks" :label="valueLabel" />
+      </div>
+      <div v-else-if="showLegend && pops.length" class="cc-row ppv-legend">
         <span v-for="p in pops" :key="p.token" class="ppv-key cc-fs-xs">
           <i class="ppv-swatch" :style="{ background: p.colour }" />{{ p.label }}
         </span>
@@ -196,7 +230,10 @@ const tileStyle = (e: Ext) => {
           <GateScatterCell :points="layers[t.uid]!.base" :extents="t.meta.extents" :view-extents="t.meta.extents"
                            :x-ticks="t.meta.xTicks" :y-ticks="t.meta.yTicks"
                            :x-label="`X (${t.meta.unit})`" :y-label="`Y (${t.meta.unit})`"
-                           :pop-layers="layers[t.uid]!.popLayers" :show-pops="pops.length > 0"
+                           :pop-layers="layers[t.uid]!.popLayers" :show-pops="pops.length > 0 && !valueScale"
+                           :base-values="valueScale ? layers[t.uid]!.values : null"
+                           :value-extent="valueScale?.extent ?? null" :value-ticks="valueScale?.ticks ?? []"
+                           :value-label="valueLabel" :value-legend="false"
                            render-mode="points" mode="off" :readonly="true" :flip-y="true"
                            :compact="tiles.length > 1" :aspect="aspectOf(t.meta.extents)" :font-size="vis?.fontSize ?? 11"
                            :dot-size="dotRadiusFor(vis?.pointSize)" />

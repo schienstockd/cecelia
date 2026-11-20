@@ -52,30 +52,35 @@ end
 _token_depth(path::AbstractString)::Int = count(==('/'), path)
 
 """
-    pop_positions(img, value_name, tokens; default_pop_type = "flow")
-        -> (; x, y, t, pop, label, value_name, unit)
+    pop_positions(img, value_name, tokens; default_pop_type = "flow", colour_by = "")
+        -> (; x, y, t, pop, label, value_name, unit, value)
 
 The cells of every segmentation the populations in `tokens` live on (a co-clustered run spans several;
 the rail can pick from several), or — with no populations — of `value_name` (`nothing`/`""` = the
 active one). `x`/`y` the centroid (µm when the image is calibrated, else px — `unit` says which), `t`
 the frame (0 on a still), `pop` the index of the population the cell is coloured by (the deepest it is
 in, `pop_index_by_label(…; most_specific = true)`; -1 = none, drawn only as the base cloud), `label` and
-`value_name` the cell. Parallel vectors in table order, segmentation by segmentation.
+`value_name` the cell, `value` its `colour_by` cell column (NaN where the cell has none, its table lacks
+the column, or none was asked for — a numeric read only: a score map, an intensity). Parallel vectors
+in table order, segmentation by segmentation.
 
 Populations that resolve on none of this image's segmentations → all empty: the image has nothing of
 them to show, and drawing its active segmentation instead would read as "these populations are empty".
 """
-function pop_positions(img::CciaImage, value_name, tokens; default_pop_type::AbstractString = "flow")
+function pop_positions(img::CciaImage, value_name, tokens; default_pop_type::AbstractString = "flow",
+                       colour_by::AbstractString = "")
     calibrated = img_is_calibrated(img)
     unit = calibrated ? SPATIAL_UNIT_UM : SPATIAL_UNIT_PX
     pop_of = pop_index_by_label(img, tokens, default_pop_type; granularity = :cell, most_specific = true)
     vns = isempty(tokens) ? [resolve_value_name(img, isempty(something(value_name, "")) ? nothing : value_name)] :
                             _token_value_names(img, tokens, default_pop_type, pop_of)
-    x = Float32[]; y = Float32[]; t = Float32[]; pop = Int[]; label = Int[]; vn_of = String[]
+    x = Float32[]; y = Float32[]; t = Float32[]; pop = Int[]; label = Int[]; vn_of = String[]; value = Float32[]
     for vn in vns
         path = img_label_props_path(img, vn)
         (path === nothing || !isfile(path)) && continue
-        df = label_props(path) |> v -> view_centroid_cols(v; order = [:x, :y]) |> as_df
+        cb = !isempty(colour_by) && colour_by in col_names(label_props(path); data_type = :obs)
+        df = label_props(path) |> v -> view_centroid_cols(v; order = [:x, :y]) |>
+             v -> (cb ? select_cols(v, [String(colour_by)]) : v) |> as_df
         ("centroid_x" in names(df) && "centroid_y" in names(df)) || continue
         # only a calibrated image is scaled: a missing axis defaults to 1.0, so scaling a half-calibrated
         # image would put µm on one axis and pixels on the other under one unit label
@@ -85,8 +90,10 @@ function pop_positions(img::CciaImage, value_name, tokens; default_pop_type::Abs
         append!(t, "centroid_t" in names(df) ? Float32.(df.centroid_t) : zeros(Float32, length(ls)))
         append!(pop, Int[get(pop_of, (vn, l), -1) for l in ls])
         append!(label, ls); append!(vn_of, fill(vn, length(ls)))
+        append!(value, cb ? Float32[(v isa Real && !ismissing(v)) ? Float32(v) : NaN32 for v in df[!, colour_by]] :
+                            fill(NaN32, length(ls)))
     end
-    (; x, y, t, pop, label, value_name = vn_of, unit)
+    (; x, y, t, pop, label, value_name = vn_of, unit, value)
 end
 
 # The segmentations a set of tokens covers on this image: every one a resolved population has rows on,

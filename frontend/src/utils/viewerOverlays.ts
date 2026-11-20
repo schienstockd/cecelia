@@ -1022,9 +1022,13 @@ export function setOverlayWindow(
 
 // ── Colour-by ────────────────────────────────────────────────────────────────────
 
-/** Grey for a cell the column has no value for. Deliberately not invisible and not the ramp's low end:
- *  "not measured" must not read as "measured, and lowest". */
-export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
+/** A cell the column has no value for: a dark grey, no lighter than the ramp's floor (navy). Not the
+ *  ramp's low end — "not measured" must not read as "measured, and lowest" — and not a mid grey either,
+ *  which outshone the low scores when most cells had none (a lens score: only tracked cells). Not
+ *  invisible: still a cell, just no data. `palettes.json` → `noValue`, the colour the movie draws too
+ *  (`NO_VALUE_COLOUR`, `_cb_prepare` / `mask_id_colours`). */
+export const NO_VALUE_HEX: string = palettesJson.noValue
+export const NO_VALUE_RGB: [number, number, number] = hexToUnit(NO_VALUE_HEX)
 
 /**
  * A row → colour function for the payload's `colourBy` column, or `null` when there is nothing to

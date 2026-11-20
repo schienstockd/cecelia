@@ -33,6 +33,12 @@ font stack.
                           into a near-square matrix — ``grid_columns`` — for a long series)
     ``style``           : overrides of ``STYLE`` (dpi, tileMm — default auto by frame count, gapMm, fontPt, scaleFontPt, barMm,
                           scaleBarOn ``first`` (default) | ``last`` | ``all``)
+    ``lookOverlays``    : optional — the viewer look's overlays, resolved by Julia from a spec's ``look``
+                          (``figure_look_overlays``, ``api/src/figures_api.jl``) exactly as a movie of that
+                          look gets them (``_view_render_params``): ``params`` = the movie renderer's mask +
+                          overlay-style keys (``LOOK_PARAM_KEYS``), ``frames`` = ``{"<t>": overlays3d}``,
+                          ``planeFilters`` = ``{"<zLo>:<zHi>": planeFilter}`` per column window. Drawn on
+                          every tile by the same shader pass a movie frame uses; not kept in ``figure.json``.
 """
 import json
 import os
@@ -118,16 +124,22 @@ def validate(spec):
         raise FigureSpecError(f'layout {s["layout"]!r}: expected one of {", ".join(LAYOUTS)}')
     s.setdefault('zHalf', 0)
     s.setdefault('display', {})
+    for c in s.get('circles') or []:
+        if not all(isinstance(c.get(k), (int, float)) for k in ('x', 'y', 'r')) or c['r'] <= 0:
+            raise FigureSpecError('circles[]: each needs x, y (level-0 px) and r > 0')
+        _hex(c.get('colour', '#ffffff'))
     return s
 
 
-def _columns(s):
-    """``(t, z_lo, z_hi, label)`` per column."""
+def _columns(s, still=False):
+    """``(t, z_lo, z_hi, label)`` per column. ``still`` (the image has one timepoint): no time label —
+    a still has no time, and "t0" above its only tile read as a stray header."""
     zh = int(s['zHalf'])
     if s['kind'] == 'sequence':
         z = int(s['z'])
         fmt = (s.get('style') or {}).get('timeFormat') or STYLE['timeFormat']
-        return [(int(t), z - zh, z + zh, elapsed_label(int(t), s.get('timeIncrementS'), fmt)) for t in s['frames']]
+        return [(int(t), z - zh, z + zh, '' if still else elapsed_label(int(t), s.get('timeIncrementS'), fmt))
+                for t in s['frames']]
     step = s.get('zStepUm')
     return [(int(s['t']), int(p) - zh, int(p) + zh,
              f'z{p}' + (f' ({(int(p) - int(s["z"])) * step:+g} µm)' if step else '')) for p in s['planes']]
@@ -166,6 +178,66 @@ def display_ranges(s, levels, axes, cols):
             allv = np.concatenate([a.ravel() for a in crops])
             rng = (float(np.percentile(allv, p_lo)), float(np.percentile(allv, p_hi)))
             out.update({(c, i): rng for i in range(len(cols))})
+    return out
+
+
+#: The movie renderer's params a figure takes from ``lookOverlays.params`` — the mask and the overlay
+#: style (``render_animation_run`` contract); nothing else of a movie's params is a figure's.
+LOOK_PARAM_KEYS = ('labelsPath', 'labelContourPx', 'labelOpacity', 'labelColouring', 'labelColours',
+                   'labelFiles', 'pointSizePx', 'pointBorderPx', 'segmentWidthPx', 'overlaySizeUnit')
+
+
+#: The look's widths and the unit the viewer draws each in: the mask outline in IMAGE px (the tile shader
+#: draws it in the shown level's pixels, so it grows as you zoom in), the point border in SCREEN px. A
+#: figure draws each as it looked: the outline times the crop's enlargement, the border at dpi/96.
+IMAGE_PX_KEYS = ('labelContourPx',)
+SCREEN_PX_KEYS = ('pointBorderPx',)
+#: CSS px per inch — what one screen pixel of the viewer's point border is on paper.
+SCREEN_DPI = 96.0
+
+
+def screen_px_scale(dpi, canvas, tile):
+    """Canvas px per screen px: ``dpi / 96`` output px, taken back through the canvas → tile resize."""
+    return float(dpi) / SCREEN_DPI * float(canvas) / float(tile)
+
+
+def image_px_scale(canvas, size_px):
+    """Canvas px per image px: the crop (``sizePx`` image px) drawn across the canvas."""
+    return float(canvas) / float(size_px)
+
+
+def _look_params(s, screen=1.0, image=1.0):
+    """The renderer params of the spec's ``lookOverlays`` (``{}`` without one); the widths scaled to the
+    canvas (`IMAGE_PX_KEYS` × ``image``, `SCREEN_PX_KEYS` × ``screen``), a width staying at least 1 px
+    and 0 (= filled / none) staying 0."""
+    lo = s.get('lookOverlays') or {}
+    out = {k: v for k, v in (lo.get('params') or {}).items() if k in LOOK_PARAM_KEYS}
+    for keys, scale in ((IMAGE_PX_KEYS, image), (SCREEN_PX_KEYS, screen)):
+        for k in keys:
+            if isinstance(out.get(k), (int, float)) and out[k] > 0:
+                out[k] = max(1, int(round(out[k] * scale)))
+    return out
+
+
+def _with_look_overlays(states, s, cols):
+    """``states`` with each column's overlays from ``lookOverlays`` — the frame's points / segments
+    (``overlays3d``, keyed by ``t``) and the planes they show on (``planeFilter``, keyed by the column's
+    ``zLo:zHi`` window, as Julia's ``_plane_window`` resolved it). A movie frame's state carries the
+    same two keys; nothing else changes. Without ``lookOverlays`` the states are returned as they were."""
+    lo = s.get('lookOverlays') or {}
+    frames, filters = lo.get('frames') or {}, lo.get('planeFilters') or {}
+    if not (frames or filters):
+        return states
+    out = []
+    for st, (t, zl, zh, _) in zip(states, cols):
+        st = dict(st)
+        ov = frames.get(str(t))
+        if ov:
+            st['overlays3d'] = ov
+        pf = filters.get(f'{zl}:{zh}')
+        if pf:
+            st['planeFilter'] = pf
+        out.append(st)
     return out
 
 
@@ -269,6 +341,27 @@ def _shows_bar(where, ri, ci, n_rows, n_cols):
             or (where == 'last' and ri == n_rows - 1 and ci == n_cols - 1))
 
 
+def circle_box(c, center, size_px, tile):
+    """A level-0 circle ``{x, y, r}`` as a tile's pixel box ``(x0, y0, x1, y1)`` — the tile shows the
+    ``size_px`` square around ``center`` (``[y, x]``), scaled to ``tile``."""
+    k = tile / size_px
+    cx = (float(c['x']) - float(center[1])) * k + tile / 2
+    cy = (float(c['y']) - float(center[0])) * k + tile / 2
+    r = float(c['r']) * k
+    return (cx - r, cy - r, cx + r, cy + r)
+
+
+def _draw_circles(img, s, style):
+    """The spec's ``circles`` outlined on a tile — a lens figure's lens (docs/todo/LENS_QUERY_PLAN.md)."""
+    if not s.get('circles'):
+        return
+    d = ImageDraw.Draw(img)
+    w = max(1, _px(style['barMm'] / 2, style['dpi']))
+    for c in s['circles']:
+        rgb = tuple(int(round(v * 255)) for v in _hex(c.get('colour', '#ffffff')))
+        d.ellipse(circle_box(c, s['center'], s['sizePx'], img.size[0]), outline=rgb, width=w)
+
+
 def _draw_scale_bar(img, bar, style):
     """Plain white bar bottom-right, its label centred above — no outline, no backing box."""
     if not bar:
@@ -297,8 +390,9 @@ def render_figure(spec, host=None, log=None):
     host = host or wgpu_host.MipHost()
     levels, _ = open_as_zarr(s['zarrPath'])
     axes = read_axes(s['zarrPath'])
-    nc = dict(zip([a.lower() for a in axes], levels[0].shape)).get('c', 1)
-    cols = _columns(s)
+    dims = dict(zip([a.lower() for a in axes], levels[0].shape))
+    nc = dims.get('c', 1)
+    cols = _columns(s, still=dims.get('t', 1) <= 1)
     ranges = display_ranges(s, levels, axes, cols)
     per_line = grid_columns(len(cols), len(s['rows']), s['layout'])
     # Auto tile width from the FRAME count, whatever the layout: a grid is the strip's tiles rearranged,
@@ -309,6 +403,7 @@ def render_figure(spec, host=None, log=None):
     canvas = s['sizePx'] if s['interpolation'] == 'smooth' else tile
     params = {'zarrPath': s['zarrPath'], 'canvasH': canvas, 'canvasW': canvas,
               'zAniso': float(s.get('zAniso', 1.0)), 'renderQuality': 'high'}
+    look = _look_params(s, screen_px_scale(style['dpi'], canvas, tile), image_px_scale(canvas, s['sizePx']))
     os.makedirs(s['outDir'], exist_ok=True)
     bar = None
     if s.get('scaleBarUm') and s.get('pixelSizeUm'):
@@ -316,12 +411,20 @@ def render_figure(spec, host=None, log=None):
         bar = {'lengthPx': int(round(um / float(s['pixelSizeUm']) * tile / s['sizePx'])), 'label': f'{um:g} µm'}
     rows_px = []
     for ri, row in enumerate(s['rows']):
-        params['states'] = _states(s, row, cols, ranges, nc, canvas)
+        # the look (mask, points, tracks) goes on the first row only — the merge; a split's grey
+        # single-channel rows show the channel alone
+        states = _states(s, row, cols, ranges, nc, canvas)
+        if ri == 0:
+            params.update(look); params['states'] = _with_look_overlays(states, s, cols)
+        else:
+            for k in look: params.pop(k, None)
+            params['states'] = states
         tiles = []
         for ci, frame in enumerate(render_animation_run.render_frames(params, host, log)):
             img = Image.fromarray(frame).convert('RGB')
             if img.size != (tile, tile):
                 img = img.resize((tile, tile), Image.LANCZOS if s['interpolation'] == 'smooth' else Image.NEAREST)
+            _draw_circles(img, s, style)
             if _shows_bar(style['scaleBarOn'], ri, ci, len(s['rows']), len(cols)):   # first / last FRAME
                 _draw_scale_bar(img, bar, style)
             tiles.append(img)
@@ -336,7 +439,12 @@ def render_figure(spec, host=None, log=None):
     prev.thumbnail((PREVIEW_PX, PREVIEW_PX), Image.LANCZOS)
     with atomic_path(os.path.join(s['outDir'], 'preview.png')) as tmp:
         prev.save(tmp, format='PNG')
-    resolved = dict(s, style=style, tilePxResolved=tile,
+    # the overlays are per-frame point / segment arrays — derived from the spec's `look`, which the
+    # registry keeps; figure.json says only that they were drawn
+    resolved = {k: v for k, v in s.items() if k != 'lookOverlays'}
+    if s.get('lookOverlays'):
+        resolved['lookOverlaysDrawn'] = True
+    resolved = dict(resolved, style=style, tilePxResolved=tile,
                     resolvedRanges={f'{c}:{i}': list(v) for (c, i), v in ranges.items()})
     write_json_atomic(os.path.join(s['outDir'], 'figure.json'), resolved)
     return {'figure': fig_path, 'spec': os.path.join(s['outDir'], 'figure.json')}
@@ -362,7 +470,7 @@ def _compose(rows_px, col_labels, tile, style, per_line=None):
     blocks = [list(range(b, min(n, b + per))) for b in range(0, n, per)]
     n_rows = len(rows_px)
     W = per * tile + (per - 1) * gap
-    head_h = line_h + 2 * pad
+    head_h = line_h + 2 * pad if any(col_labels) else 0      # a still has no titles: no empty band
     band_h = line_h + 2 * pad
 
     def bands_in(bi):

@@ -1,6 +1,12 @@
-"""Figure spec validation + labels (docs/todo/FIGURES_PLAN.md). Rendering needs a GPU adapter and
-real data, so it is checked by eye, not here."""
+"""Figure spec validation + labels (docs/todo/FIGURES_PLAN.md). The look's overlays are rendered end to
+end on a tiny store (a GPU adapter or the software one, as the movie runner's tests); the house look
+itself is checked by eye."""
+import os
+import shutil
+import tempfile
 import unittest
+
+import numpy as np
 
 from cecelia.writers import render_figure as rf
 
@@ -46,6 +52,20 @@ class TestFigureSpec(unittest.TestCase):
         with self.assertRaises(rf.FigureSpecError):     # an unknown format is named, not drawn as minutes
             rf.elapsed_label(50, 15, 'hours')
 
+    def test_still_has_no_time_label(self):
+        # a still's only tile is not "t0": no title, and no empty band above the tiles for it
+        s = rf.validate(_spec(frames=[0]))
+        self.assertEqual([c[3] for c in rf._columns(s, still=True)], [''])
+        self.assertEqual([c[3] for c in rf._columns(s)], ['t0'])          # a movie's first frame keeps it
+
+    def test_circle_lands_where_the_crop_puts_it(self):
+        # the tile shows the 200 px square around center [y=500, x=300] at 100 px: x 300 → 50, r 40 → 20
+        self.assertEqual(rf.circle_box({'x': 300, 'y': 500, 'r': 40}, [500, 300], 200, 100), (30.0, 30.0, 70.0, 70.0))
+        self.assertEqual(rf.circle_box({'x': 250, 'y': 450, 'r': 10}, [500, 300], 200, 100), (20.0, 20.0, 30.0, 30.0))
+        with self.assertRaises(rf.FigureSpecError):
+            rf.validate(_spec(circles=[{'x': 1, 'y': 2}]))
+        rf.validate(_spec(circles=[{'x': 1, 'y': 2, 'r': 3, 'colour': '#ffffff'}]))
+
     def test_zstack_columns_label_offset(self):
         s = rf.validate(_spec(kind='zstack', t=3, planes=[4, 5, 6], z=5, zStepUm=2))
         self.assertEqual([c[3] for c in rf._columns(s)], ['z4 (-2 µm)', 'z5 (+0 µm)', 'z6 (+2 µm)'])
@@ -89,6 +109,104 @@ class TestFigureSpec(unittest.TestCase):
         # one row → one legend band (black) under the last line only: none between the lines
         bands = [y for y in range(grid.height) if grid.getpixel((tile // 2, y)) == (0, 0, 0)]
         self.assertTrue(all(y > blocks_y[-1] for y in bands) and bands)
+
+
+class TestFigureLookOverlays(unittest.TestCase):
+    """A spec's ``lookOverlays`` (Julia's ``figure_look_overlays``) reach the movie renderer: the mask and
+    the points are drawn on the tiles, each frame's points on its own tile, and figure.json keeps only
+    that they were drawn."""
+    N, Z = 40, 4
+
+    @classmethod
+    def setUpClass(cls):
+        from cecelia.tests.test_render_animation_run import _store
+        from cecelia.tests.test_wgsl_utils import _shared_host
+        _shared_host()                      # skip, or fail under CECELIA_REQUIRE_WGPU, like the rest
+        cls.d = tempfile.mkdtemp()
+        img = np.full((2, 1, cls.Z, cls.N, cls.N), 300, np.uint16)     # a dim channel everywhere
+        cls.zarr = _store(os.path.join(cls.d, 'img.zarr'), img, 'tczyx')
+        lab = np.zeros((2, cls.Z, cls.N, cls.N), np.uint32)
+        lab[:, :, 4:16, 4:16] = 3                                       # one cell, top-left, every t
+        cls.labels = _store(os.path.join(cls.d, 'lab.zarr'), lab, 'tzyx')
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d, ignore_errors=True)
+
+    def _render(self, name, **extra):
+        from PIL import Image
+        out = os.path.join(self.d, name)
+        spec = dict(zarrPath=self.zarr, outDir=out, center=[20, 20], sizePx=self.N, z=1, frames=[0, 1],
+                    tilePx=2 * self.N, rows=[{'channels': [{'c': 0, 'colour': '#ff00ff'}]}],
+                    display={'ranges': {'0': [0, 1000]}})
+        spec.update(extra)
+        rf.render_figure(spec)
+        import json
+        with open(os.path.join(out, 'figure.json'), encoding='utf-8') as f:
+            resolved = json.load(f)
+        return np.asarray(Image.open(os.path.join(out, 'figure.png')).convert('RGB')).astype(int), resolved
+
+    def test_the_looks_mask_and_points_are_drawn(self):
+        look = {'params': {'labelsPath': self.labels, 'labelOpacity': 1.0, 'labelContourPx': 0,
+                           'labelColouring': 'table', 'labelColours': {'ids': [3], 'colours': [[0.0, 0.0, 1.0]]},
+                           'pointSizePx': 3, 'overlaySizeUnit': 'image', 'notAFigureKey': 1},
+                # a point on t = 1 only, bottom-right; on plane 1, inside the column's window
+                'frames': {'1': {'points': {'x': [30.0], 'y': [30.0], 'z': [1.0], 'colour': [[0.0, 1.0, 0.0]]}}},
+                'planeFilters': {'1:1': {'points': [0, 2], 'tracks': [0, 2]}}}
+        plain, plain_spec = self._render('plain')
+        drawn, drawn_spec = self._render('drawn', lookOverlays=look)
+        blue = lambda a: (a[..., 2] > 150) & (a[..., 0] < 80) & (a[..., 1] < 80)
+        green = lambda a: (a[..., 1] > 150) & (a[..., 0] < 80) & (a[..., 2] < 80)
+        self.assertEqual(int(blue(plain).sum()), 0)
+        self.assertEqual(int(green(plain).sum()), 0)
+        # the mask on both tiles (12 px cell at x2 = 24 x 24 output px each), the point on the second only
+        ys, xs = np.nonzero(blue(drawn))
+        tile = 2 * self.N
+        self.assertGreater(int((xs < tile).sum()), 300)
+        self.assertGreater(int((xs > tile).sum()), 300)
+        gy, gx = np.nonzero(green(drawn))
+        self.assertGreater(len(gx), 4)
+        self.assertTrue((gx > tile).all())
+        self.assertNotIn('lookOverlays', drawn_spec)
+        self.assertTrue(drawn_spec.get('lookOverlaysDrawn'))
+        self.assertNotIn('lookOverlaysDrawn', plain_spec)
+
+    def test_points_off_the_columns_planes_are_hidden(self):
+        look = {'params': {'pointSizePx': 3, 'overlaySizeUnit': 'image'},
+                'frames': {'1': {'points': {'x': [30.0], 'y': [30.0], 'z': [3.0], 'colour': [[0.0, 1.0, 0.0]]}}},
+                'planeFilters': {'1:1': {'points': [0, 2], 'tracks': [0, 2]}}}
+        drawn, _ = self._render('offplane', lookOverlays=look)
+        self.assertEqual(int(((drawn[..., 1] > 150) & (drawn[..., 0] < 80)).sum()), 0)
+
+
+    def test_split_rows_show_the_look_on_the_merge_only(self):
+        look = {'params': {'labelsPath': self.labels, 'labelOpacity': 1.0, 'labelContourPx': 0,
+                           'labelColouring': 'table', 'labelColours': {'ids': [3], 'colours': [[0.0, 0.0, 1.0]]}}}
+        rows = [{'channels': [{'c': 0, 'colour': '#ff00ff'}]}, {'channels': [{'c': 0, 'colour': '#ffffff'}]}]
+        drawn, _ = self._render('split', lookOverlays=look, rows=rows)
+        blue = (drawn[..., 2] > 150) & (drawn[..., 0] < 80) & (drawn[..., 1] < 80)
+        ys, _ = np.nonzero(blue)
+        self.assertGreater(len(ys), 300)
+        self.assertLess(int(ys.max()), drawn.shape[0] // 2)        # the merge row is the top half
+
+
+class TestLookWidths(unittest.TestCase):
+    """The viewer draws the mask outline in image px (it grows with zoom) and the point border in screen
+    px — a figure draws each as it looked."""
+
+    def test_scales(self):
+        self.assertAlmostEqual(rf.screen_px_scale(300, 100, 100), 3.125)
+        self.assertAlmostEqual(rf.screen_px_scale(96, 50, 200), 0.25)     # smooth: drawn small, enlarged
+        self.assertAlmostEqual(rf.image_px_scale(828, 414), 2.0)          # a crop enlarged 2x
+
+    def test_outline_is_image_px_border_is_screen_px(self):
+        s = {'lookOverlays': {'params': {'labelContourPx': 1, 'pointBorderPx': 2, 'pointSizePx': 3}}}
+        self.assertEqual(rf._look_params(s, screen=3.125, image=2.0),
+                         {'labelContourPx': 2, 'pointBorderPx': 6, 'pointSizePx': 3})
+        self.assertEqual(rf._look_params({'lookOverlays': {'params': {'labelContourPx': 0}}}, image=3.0),
+                         {'labelContourPx': 0})
+        self.assertEqual(rf._look_params({'lookOverlays': {'params': {'labelContourPx': 1}}}, image=0.2),
+                         {'labelContourPx': 1})
 
 
 if __name__ == '__main__':

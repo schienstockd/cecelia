@@ -6,6 +6,7 @@
 import { colourForRender } from './viewerColormap'
 import { niceScaleBar } from './stillOverlay'
 import type { ViewerViewState } from './viewer/viewState'
+import type { BatchMovieCfg } from './batchMovie'
 import { WHITE } from '../plots/fixedColours'
 
 export type FigureLayout = 'strip' | 'grid'
@@ -27,12 +28,18 @@ export interface FigureSpec {
   style?: { tileMm?: number }
   /** The viewer snapshot it was saved from — what "open at source" restores (the renderer ignores it). */
   view?: ViewerViewState
+  /** The viewer's look (`readViewerLook`, the shape a Record banks): its mask, populations, tracks and
+   *  graph edges are drawn on every tile as a movie of that look draws them (`figure_look_overlays`).
+   *  Absent = pixels only. */
+  look?: BatchMovieCfg
 }
 
 /** Why a view can't become a figure, or the spec. Figures are 2D: a 3D view has no single crop. */
 export function figureSpecFromView(vs: ViewerViewState | null | undefined, channelNames: string[],
                                    opts: { valueName?: string; scaleBarUm?: number; frames?: number[];
                                            split?: boolean; grid?: boolean
+                                           /** the viewer's look — its overlays go on the tiles */
+                                           look?: BatchMovieCfg | null
                                            /** the caller replaces the crop and z window (an ROI's
                                             *  figure, `roiFigureSpec`), so a 3D view's channels and
                                             *  contrast are all it takes from the view */
@@ -66,6 +73,7 @@ export function figureSpecFromView(vs: ViewerViewState | null | undefined, chann
     view: vs,
   }
   if (opts.grid) spec.layout = 'grid'
+  if (opts.look) spec.look = opts.look
   if (opts.valueName) spec.valueName = opts.valueName
   if (opts.scaleBarUm) spec.scaleBarUm = opts.scaleBarUm
   return { spec }

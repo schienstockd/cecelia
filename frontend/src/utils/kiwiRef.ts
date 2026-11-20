@@ -9,7 +9,9 @@ import schema from '../lib/kiwiRef.schema.json'
 import type { CaptureAddress } from './captureAddress'
 
 /** A pinned channel lens a `viewer` ref carries: centre + radius in level-0 px, the channels by name. */
-export interface ViewerRefLens { x: number; y: number; r: number; channels?: string[] }
+export interface ViewerRefLens { x: number; y: number; r: number; channels?: string[]
+  /** a lens figure's look (`LensLook`, utils/viewer/lensQuery.ts): written back when it is pinned again */
+  look?: unknown }
 
 export type KiwiRef =
   | { kind: 'project' }

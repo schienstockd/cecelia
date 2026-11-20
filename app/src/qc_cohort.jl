@@ -120,6 +120,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # region clustering (set-scope, one run): per-image region distribution — an image collapsed to
     # one region / a very different dominant-region fraction is an outlier. See clustRegions/cluster.jl.
     "clustRegions.cluster"           => ["nCells", "nClusters", "largestClusterFrac"],
+    # lens query: an image whose cells mostly score high against a lens from elsewhere holds a lot of
+    # "places like this"; nScored drops where the region run left cells out. See clustRegions/lensQuery.jl.
+    "clustRegions.lensQuery"         => ["nScored", "nStrong"],
     # import: nChannels/nZ/nT for every image — an odd channel count / dimensionality vs peers means
     # the wrong file was imported or the acquisition was misconfigured. Banked by qc.jl import_metrics.
     # `nChannelsSaturated`/`maxClippedFrac` describe the ACQUISITION rather than a parameter, so they
