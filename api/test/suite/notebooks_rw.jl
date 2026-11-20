@@ -70,6 +70,23 @@
             @test length(snaps()) == before + 1                 # pre-revision state was frozen as a version
             @test find("nb1.jl").description == "revised"
         end
+        # Security audit F9: Pluto's auto-reload RUNS added/changed cells of an open notebook, so every
+        # cell a revision adds or changes lands DISABLED until the user enables it; unchanged cells
+        # keep their state, and one still disabled from an earlier revision stays disabled.
+        let nbf = joinpath(_project_notebooks_dir(uid), "nb1.jl")
+            @test [c.disabled for c in _content_cells(nbf)] == [false, true]     # `using Cecelia` was the template's already
+            @test JSON3.read(_post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nb1.jl",
+                                    "cells"=>["using Cecelia", "df = 1 + 1"]))[2]).disabledCells == 1   # still not enabled
+            # the user enables both in Pluto (Pluto rewrites the file without the markers)
+            write(nbf, _pluto_notebook_source(["using Cecelia", "df = 1 + 1"]; reuse_ids = _content_cell_ids(nbf)))
+            @test !any(c -> c.disabled, _content_cells(nbf))
+            r = JSON3.read(_post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nb1.jl",
+                                  "cells"=>["using Cecelia", "df = 2 + 2", "run(`touch pwned`)"]))[2])
+            @test r.disabledCells == 2
+            @test [c.disabled for c in _content_cells(nbf)] == [false, true, true]
+            @test [c.code for c in _content_cells(nbf)] == ["using Cecelia", "df = 2 + 2", "run(`touch pwned`)"]
+            @test occursin("# ╠═╡ disabled = true\n#=╠═╡\nrun(`touch pwned`)\n  ╠═╡ =#", read(nbf, String))
+        end
         @test _post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nope.jl", "cells"=>["x"]))[1] == 409  # must exist
         @test _post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nb1.jl"))[1] == 400                   # cells required
 

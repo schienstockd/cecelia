@@ -213,6 +213,24 @@ end
     @test Cecelia.bad_uid_in_json(String(UInt8[0xff, 0xfe, 0x22])) === nothing                  # binary upload
 end
 
+# Security audit F14/F15: containment is by a separator, not a bare prefix.
+@testset "path_inside — a sibling with the same prefix is outside" begin
+    r = mktempdir()
+    @test Cecelia.path_inside(r, joinpath(r, "a", "b"))
+    @test !Cecelia.path_inside(r, r)                                   # strictly inside
+    @test Cecelia.path_inside(r, r * "/"; or_root = true) && !Cecelia.path_inside(r, r * "_x"; or_root = true)
+    @test !Cecelia.path_inside(r, r * "_old/x")                        # the bare-prefix bug
+    @test !Cecelia.path_inside(r, joinpath(r, "..", "x"))
+    @test !Cecelia.path_inside(r * "/", joinpath(dirname(r), "y"))     # trailing separator on root
+    # the OME-Zarr reader keeps a `.zattrs` dataset path inside its store
+    store = mkpath(joinpath(r, "s.ome.zarr"))
+    write(joinpath(store, ".zattrs"), """{"multiscales":[{"axes":[{"name":"c"},{"name":"y"},{"name":"x"}],
+                                          "datasets":[{"path":"../evil"}]}]}""")
+    mkpath(joinpath(r, "evil")); write(joinpath(r, "evil", ".zarray"), """{"shape":[7,4,4]}""")
+    @test get(Cecelia.read_ome_metadata(store), "SizeC", nothing) != 7
+    @test Cecelia.pyramid_layout(store) === nothing                    # pyramid QC: no outside shape
+end
+
 # Security audit F4/F12: a secret is written owner-only from the first byte.
 @testset "write_json_atomic(mode) — owner-only secrets" begin
     d = mktempdir()

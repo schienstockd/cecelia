@@ -206,7 +206,10 @@ To **change an existing** notebook, the observer uses `POST /api/notebooks/revis
 `revise_notebook`): it **snapshots the current notebook first** (freezing whatever is live — including
 the user's un-snapshotted edits — as a restorable version) then overwrites its cells. That's the
 versioned-revision path — the observer never makes a `<name>-v2` copy, and nothing is lost (History →
-Restore brings the prior version back). Descriptions (create/describe/revise) are capped to one short
+Restore brings the prior version back). Every cell the revision adds or changes is written **disabled**
+(Pluto's on-disk form): Pluto's auto-reload runs added and changed cells of an open notebook, so a
+revision would otherwise run with no click. The user reads the greyed cell and enables it
+(`_cells_to_disable`; security audit F9). Descriptions (create/describe/revise) are capped to one short
 line (`_NB_DESC_MAX`).
 
 ## Sysimage (why the first plot isn't slow)

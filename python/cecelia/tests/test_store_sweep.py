@@ -214,6 +214,19 @@ class StructuralDetectionTest(unittest.TestCase):
         self.assertEqual(found[truncated]['why'], 'incomplete')
         self.assertIn('3', found[truncated]['detail'])
 
+    def test_a_level_path_outside_the_store_does_not_count(self):
+        # security audit F15: `.zattrs` is the file's author's text; `../sib` names a directory that
+        # exists — beside the store, not in it — and must not count as a present level
+        store = _multiscale_store(self.zero, 'evil.ome.zarr', declared=2, present=1)
+        os.makedirs(os.path.join(self.zero, 'sib'))
+        za = os.path.join(store, '.zattrs')
+        with open(za, encoding='utf-8') as f:
+            attrs = json.load(f)
+        attrs['multiscales'][0]['datasets'][1]['path'] = '../sib'
+        with open(za, 'w', encoding='utf-8') as f:
+            json.dump(attrs, f)
+        self.assertEqual(sweep_mod._incomplete_levels(store), (2, 1))
+
     def test_a_complete_pyramid_at_a_registered_path_is_left_alone(self):
         whole = _multiscale_store(self.zero, 'ccidImage.ome.zarr', declared=3, present=3)
         _age(whole, 3600)

@@ -305,6 +305,7 @@ function store_pyramid_levels(zarr_path::AbstractString)
     for d in datasets
         path = string(get(d, :path, ""))
         isempty(path) && continue
+        Cecelia.path_inside(base, joinpath(base, path)) || continue   # `.zattrs` may not point outside (audit F15)
         meta = zarr_array_meta(joinpath(base, path))
         isnothing(meta) && continue
         shape = haskey(meta, :shape) ? collect(Int, meta[:shape]) : Int[]

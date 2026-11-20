@@ -2052,7 +2052,11 @@ def revise_notebook(project_uid: str, file: str, cells: list[str], description: 
     figures/CSV only). `file` is the existing notebook's filename (bare name works; .jl appended). 409 if
     it doesn't exist — use create_notebook for a brand-new one. `description` optional (one short line,
     capped) — only changes it if you pass a non-empty value. Non-destructive: the pre-revision state is
-    always snapshotted, so the user can Restore it."""
+    always snapshotted, so the user can Restore it.
+
+    Every cell you add or change lands DISABLED (`disabledCells` in the reply counts them): Pluto shows
+    it greyed out and does not run it until the user enables it. Tell them so — "the changed cells are
+    disabled; read them and enable each in Pluto (cell menu → Enable cell)"."""
     return _client.revise_notebook(project_uid, file, cells, description)
 
 

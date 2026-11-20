@@ -700,7 +700,7 @@ function _resolve_static(reqpath::AbstractString)::Union{String,Nothing}
     rel = lstrip(reqpath, '/')
     isempty(rel) && (rel = "index.html")
     full = abspath(joinpath(_DIST_DIR, rel))
-    (startswith(full, _DIST_DIR) && isfile(full)) || return nothing
+    (Cecelia.path_inside(_DIST_DIR, full) && isfile(full)) || return nothing   # not a bare prefix (audit F14)
     full
 end
 

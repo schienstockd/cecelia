@@ -287,6 +287,8 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
         ax_units   = [haskey(ax, :unit) ? string(ax[:unit]) : nothing for ax in ax_list]
         datasets   = get(ms, :datasets, [])
         level_path = isempty(datasets) ? "0" : string(get(first(datasets), :path, "0"))
+        # `.zattrs` is the file's author's text: a dataset path must stay inside the store (audit F15)
+        path_inside(base, joinpath(base, level_path)) || (level_path = "0")
 
         zarray = zarr_array_meta(joinpath(base, level_path))
         if !isnothing(zarray)

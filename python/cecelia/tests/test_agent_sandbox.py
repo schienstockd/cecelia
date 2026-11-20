@@ -19,6 +19,9 @@ class SandboxTest(unittest.TestCase):
         self.assertEqual(s["sandbox"]["network"]["deniedDomains"], ["*"])
         for rule in ("Write(~/**)", "Edit(~/**)", "Read(~/.ssh/**)", "Read(~/.claude/**)", "WebFetch"):
             self.assertIn(rule, s["permissions"]["deny"])
+        # the config dir holds api-token, which drives the live backend (security audit F13)
+        self.assertIn("~/.cecelia", s["sandbox"]["filesystem"]["denyRead"])
+        self.assertIn("Read(~/.cecelia/**)", s["permissions"]["deny"])
 
     # Windows keeps its temp dir under the profile, and the Claude Code sandbox is Linux/macOS only.
     @unittest.skipIf(sys.platform == "win32", "agents run on Linux/macOS")

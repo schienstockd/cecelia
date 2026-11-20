@@ -29,6 +29,13 @@
     @test haskey(d2, :plugins) && haskey(d2, :clashes)
 end
 
+# Security audit: a plugin is code that runs as the user; plain http lets anyone on the path swap it.
+@testset "API: plugin install takes https only" begin
+    st, out = api_plugins_install(Vector{UInt8}(JSON3.write(Dict("url" => "http://github.com/o/r"))))
+    @test st == 400 && occursin("https", JSON3.read(out).error)
+    @test first(api_plugins_install(Vector{UInt8}(JSON3.write(Dict("url" => "ftp://x/y.tar.gz"))))) == 400
+end
+
 @testset "API: a plugin task's options can depend on the form" begin
     # The import builder (docs/todo/PLUGINS_PLAN.md → P1.5): the column fields offer the columns of
     # the file the user just picked. Two things this pins, both previously broken:

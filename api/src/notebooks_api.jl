@@ -560,16 +560,50 @@ end
 # open notebook goes stale (only a manual reload / server restart would then show the new version).
 # Matches only the `# ╔═╡ <uuid>` cell-definition markers (never the `# ╠═`/`# ╟─` Cell-order list).
 # Best-effort: a missing/garbled file → no ids → revise just falls back to fresh ids (old behaviour).
-function _content_cell_ids(path::AbstractString)::Vector{String}
-    isfile(path) || return String[]
-    ids = String[]
-    for ln in eachline(path)
-        m = match(r"^# ╔═╡ ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$", ln)
-        (m === nothing || m.captures[1] == _NB_ACTIVATION_ID) && continue
-        push!(ids, String(m.captures[1]))
+# The content cells of a notebook file, in order: `(; id, code, disabled)` per cell, activation cell
+# and the Cell-order block excluded. The ONE parser of Pluto's on-disk form here — revise needs the ids
+# (to merge into an open notebook) and the code + disabled state (to decide what to disable), and two
+# parsers could count cells differently. A cell the user disabled or enabled in Pluto reads back as
+# they left it.
+const _NB_CELL_ID_RE = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
+function _content_cells(path::AbstractString)
+    out = NamedTuple{(:id, :code, :disabled), Tuple{String,String,Bool}}[]
+    isfile(path) || return out
+    for block in split(read(path, String), "# ╔═╡ ")[2:end]
+        nl = findfirst('\n', block)
+        nl === nothing && continue
+        id = String(block[1:prevind(block, nl)])
+        (id == _NB_ACTIVATION_ID || !occursin(_NB_CELL_ID_RE, id)) && continue
+        lines = split(block[nextind(block, nl):end], '\n')
+        meta  = String[]
+        while !isempty(lines) && startswith(lines[1], "# ╠═╡ ")
+            push!(meta, String(chopprefix(popfirst!(lines), "# ╠═╡ ")))
+        end
+        code = replace(replace(join(lines, '\n'), "#=╠═╡\n" => ""), "\n  ╠═╡ =#" => "")
+        push!(out, (; id, code = String(strip(code, '\n')),
+                      disabled = any(m -> replace(m, " " => "") == "disabled=true", meta)))
     end
-    ids
+    out
 end
+
+# Which of `cells` (0-based content index, as `_pluto_notebook_source` counts) a revise writes
+# DISABLED: every cell whose code is new or changed, and any still disabled from an earlier revision.
+# Pluto's auto-reload RUNS added and changed cells of an open notebook, so without this a revision
+# Claude made — perhaps steered by text it read — ran with no click (security audit F9). Disabled, it
+# shows in Pluto greyed out; the user reads it and enables it. Pure.
+function _cells_to_disable(prev::AbstractVector, cells::AbstractVector)::Set{Int}
+    out = Set{Int}()
+    for (i, code) in enumerate(cells)
+        new = String(strip(_wrap_multi_expr(String(code)), '\n'))
+        if i > length(prev) || prev[i].code != new || prev[i].disabled
+            push!(out, i)
+        end
+    end
+    out
+end
+
+_content_cell_ids(path::AbstractString)::Vector{String} = [c.id for c in _content_cells(path)]
 
 # Pluto allows only ONE top-level expression per cell — a cell with several statements fails to load
 # ("Multiple expressions in one cell"). Wrap any such cell in `begin … end` (Pluto's own remedy, and
@@ -597,7 +631,8 @@ end
 # stable ids where the cells line up (letting Pluto's auto_reload update an open notebook in place);
 # cells beyond the reused set get fresh uuids. Empty `reuse_ids` (a fresh create) → all fresh. Each cell
 # is normalised so multi-statement cells load in Pluto. Pure — unit-tested in api/test.
-function _pluto_notebook_source(cells::AbstractVector; reuse_ids::AbstractVector = String[])::String
+function _pluto_notebook_source(cells::AbstractVector; reuse_ids::AbstractVector = String[],
+                                disabled::AbstractSet{Int} = Set{Int}())::String
     all_cells = vcat(Any[_NB_ACTIVATION_CELL], collect(cells))
     ids  = String[]
     body = IOBuffer()
@@ -605,7 +640,12 @@ function _pluto_notebook_source(cells::AbstractVector; reuse_ids::AbstractVector
         id = i == 1 ? _NB_ACTIVATION_ID :
              (i - 1) <= length(reuse_ids) ? String(reuse_ids[i - 1]) : _cell_uuid()
         push!(ids, id)
-        print(body, "# ╔═╡ ", id, "\n", _wrap_multi_expr(String(code)), "\n\n")
+        src = _wrap_multi_expr(String(code))
+        if (i - 1) in disabled         # Pluto's own on-disk form of a disabled cell: shown, never run
+            print(body, "# ╔═╡ ", id, "\n# ╠═╡ disabled = true\n#=╠═╡\n", src, "\n  ╠═╡ =#\n\n")
+        else
+            print(body, "# ╔═╡ ", id, "\n", src, "\n\n")
+        end
     end
     io = IOBuffer()
     print(io, "### A Pluto.jl notebook ###\n# v1.0.3\n\n")
@@ -695,7 +735,8 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
     # Reuse the prior version's cell ids (read BEFORE we truncate) so Pluto's auto_reload_from_file can
     # merge the change into an OPEN notebook in place instead of leaving it stale.
     reuse = _content_cell_ids(dest)
-    write_atomic(io -> write(io, _pluto_notebook_source(collect(cells); reuse_ids = reuse)), dest)
+    off   = _cells_to_disable(_content_cells(dest), collect(cells))
+    write_atomic(io -> write(io, _pluto_notebook_source(collect(cells); reuse_ids = reuse, disabled = off)), dest)
 
     reg = _read_registry(uid)
     e = get(reg, file, Dict{String,Any}("current" => 0))
@@ -706,7 +747,7 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
     _write_registry!(uid, reg)
     broadcast_ws(Dict{String,Any}("type" => "notebooks_changed", "projectUid" => uid, "file" => file))
     v = try JSON3.read(snap[2]).version catch; nothing end
-    200, JSON3.write((; ok = true, file = file, snapshotVersion = v))
+    200, JSON3.write((; ok = true, file = file, snapshotVersion = v, disabledCells = length(off)))
 end
 
 # POST /api/notebooks/delete  { projectUid, file }  → { ok }
