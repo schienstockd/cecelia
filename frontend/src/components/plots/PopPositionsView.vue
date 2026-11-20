@@ -28,7 +28,7 @@ import { fetchSegmentationPops } from '../../plots/populations'
 import type { CompareMode } from '../../plots/trackGroups'
 import type { VisProps } from '../../plots/plot'
 import { dotRadiusFor } from '../../plots/density'
-import { containBox, framesIn, positionLayers, positionPops, resolveFrame } from '../../plots/popPositions'
+import { GATE_CELL_PAD, framesIn, tileBox, positionLayers, positionPops, resolveFrame } from '../../plots/popPositions'
 import { fitGridCols } from '../../plots/montage'
 import { useBoxSize } from '../../composables/usePlotResize'
 import { debouncedLatest } from '../../utils/debouncedLatest'
@@ -151,11 +151,14 @@ const gridEl = ref<HTMLElement | null>(null)
 const gridBox = useBoxSize(gridEl)
 const CAPTION_H = 16, GAP = 8
 const cols = computed(() => fitGridCols(tiles.value.length, gridBox.value.w, gridBox.value.h))
+// x and y are both image distance, so the DOTS take the image's shape (equal µm per pixel on both
+// axes) and the cell's axis room is added around them — not fitted inside the image's shape.
+const aspectOf = (e: Ext) => (e.xMax - e.xMin) / (e.yMax - e.yMin)
 const tileStyle = (e: Ext) => {
   const n = tiles.value.length, c = cols.value, r = Math.max(1, Math.ceil(n / c))
   const cw = (gridBox.value.w - (c - 1) * GAP) / c
   const ch = (gridBox.value.h - (r - 1) * GAP) / r - (n > 1 ? CAPTION_H : 0)
-  const b = containBox(cw, ch, (e.xMax - e.xMin) / (e.yMax - e.yMin))
+  const b = tileBox(cw, ch, aspectOf(e), n > 1 ? GATE_CELL_PAD.compact : GATE_CELL_PAD.full)
   return { width: `${b.w}px`, height: `${b.h}px` }
 }
 </script>
@@ -195,7 +198,7 @@ const tileStyle = (e: Ext) => {
                            :x-label="`X (${t.meta.unit})`" :y-label="`Y (${t.meta.unit})`"
                            :pop-layers="layers[t.uid]!.popLayers" :show-pops="pops.length > 0"
                            render-mode="points" mode="off" :readonly="true" :flip-y="true"
-                           :compact="tiles.length > 1" :font-size="vis?.fontSize ?? 11"
+                           :compact="tiles.length > 1" :aspect="aspectOf(t.meta.extents)" :font-size="vis?.fontSize ?? 11"
                            :dot-size="dotRadiusFor(vis?.pointSize)" />
         </div>
       </figure>

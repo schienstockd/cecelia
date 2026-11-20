@@ -83,3 +83,21 @@ export function containBox(w: number, h: number, aspect: number): { w: number; h
   const a = aspect > 0 && Number.isFinite(aspect) ? aspect : 1
   return w / h > a ? { w: h * a, h } : { w: w, h: w / a }
 }
+
+/**
+ * The axis room `GateScatterCell` puts around its dots (its `.plot-capture` padding, left+right and
+ * top+bottom), full-size and `compact`. Mirrors that CSS; `PopPositionsView.browser.test.ts` measures
+ * the real cell and fails when the two drift.
+ */
+export const GATE_CELL_PAD = { full: { x: 84 + 22, y: 18 + 50 }, compact: { x: 30 + 8, y: 10 + 20 } } as const
+
+/**
+ * A map tile's box in a `w × h` cell: the DOTS at the image's `aspect`, as large as fit once the axis
+ * room `pad` is set aside, plus that room. Fitting the whole tile at the image's aspect instead left
+ * the cell's axis padding (wider than tall) as a blank band under a portrait map.
+ */
+export function tileBox(w: number, h: number, aspect: number, pad: { x: number; y: number }):
+  { w: number; h: number; dots: { w: number; h: number } } {
+  const dots = containBox(w - pad.x, h - pad.y, aspect)
+  return dots.w > 0 ? { w: dots.w + pad.x, h: dots.h + pad.y, dots } : { w: 0, h: 0, dots }
+}

@@ -12,6 +12,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { tkey, pickedOrderChips, mergePickOrder } from '../../plots/series'
+import { allSelected, toggleAllSelection } from '../../utils/tableSelection'
 import ChipSelect from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
@@ -54,6 +55,9 @@ const props = defineProps<{
   // "compare by attribute": the attribute groups in the order the plots draw them (draggable). Omit, or
   // fewer than two, and the strip doesn't render.
   attrGroups?: string[]
+  // the family listed, and the active plot's other families with the pages that offer them — a page
+  // curates its families, so a one-family list must say it is one family
+  familyNote?: { listed: string; elsewhere: string[] }
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
@@ -84,6 +88,14 @@ const showOrder = computed(() => !props.selectionUnused && !props.single && orde
 function reorderShown(shown: string[]) {
   emit('reorder', mergePickOrder(props.selected, shown, orderChips.value.map(c => c.value)))
 }
+// "All" row: every population this picker lists and can be picked, in one click — the same row the
+// gating PopulationManager has. One selection write (via `reorder`, which every host applies as the
+// whole selection) rather than a toggle per row.
+const listedKeys = computed(() => props.groups.flatMap(g => g.populations
+  .filter(p => !isOff(g.valueName, p.path, p.popType)).map(p => tkey(p.popType, g.valueName, p.path))))
+const showAll = computed(() => !props.selectionUnused && !props.single && listedKeys.value.length > 1)
+const allLit = computed(() => allSelected(listedKeys.value, props.selected))
+const toggleAll = () => emit('reorder', toggleAllSelection(listedKeys.value, props.selected))
 const attrChips = computed(() => (props.attrGroups ?? []).map(g => ({ value: g, label: g, tip: g })))
 // a chip clicked off would drop the group from the order, not from the plot — so only a reorder counts
 function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) emit('reorder:attrs', v) }
@@ -104,6 +116,10 @@ function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) em
     </div>
     <div v-else-if="!total" class="pick-empty cc-muted">No populations in the selected segmentations.</div>
     <div v-else-if="single" class="pick-note cc-muted cc-fs-2xs">one at a time</div>
+    <div v-if="familyNote && !selectionUnused" class="pick-family cc-fs-2xs">
+      <span>{{ familyNote.listed }}</span>
+      <span v-for="e in familyNote.elsewhere" :key="e" class="cc-muted">{{ e }}</span>
+    </div>
     <div v-if="showOrder" class="pick-order">
       <span class="cc-muted cc-fs-2xs" v-tooltip.left="'Drag to set the order on the plots'">plot order</span>
       <ChipSelect multiple reorderable :options="orderChips" :model-value="orderChips.map(c => c.value)"
@@ -115,6 +131,13 @@ function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) em
       <ChipSelect multiple reorderable :options="attrChips" :model-value="attrGroups ?? []"
                   aria-label="Attribute group order on the plots"
                   @update:model-value="v => reorderAttrs(v as string[])" />
+    </div>
+    <div v-if="showAll" class="pick-row pick-allrow">
+      <span class="pick-name cc-fs-2xs cc-muted">All populations</span>
+      <button class="pick-eye cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: allLit }"
+              v-tooltip.left="allLit ? 'Remove all from plots' : 'Plot all populations'" @click="toggleAll">
+        <i :class="allLit ? 'pi pi-eye' : 'pi pi-eye-slash'" />
+      </button>
     </div>
     <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pick-group-head">{{ grp.valueName }}</div>
@@ -143,7 +166,11 @@ function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) em
    population manager, which made two different components look like one. */
 .pick-note { padding: 2px 12px 4px; }
 .pick-order { display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--cc-border); }
-.pick-empty { padding: 12px; }   /* + .cc-muted */
+.pick-empty { padding: 12px; }
+/* the "All" row is a control strip, not a population: no pick cursor or hover */
+.pick-row.pick-allrow { cursor: default; }
+.pick-row.pick-allrow:hover { background: none; }
+.pick-family { display: flex; flex-direction: column; padding: 4px 8px; border-bottom: 1px solid var(--cc-border); }   /* + .cc-muted */
 .pick-group-head {
   padding: 5px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.06em;
