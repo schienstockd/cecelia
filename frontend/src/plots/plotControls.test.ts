@@ -63,9 +63,7 @@ const FLIPS: Record<Exclude<VisControl, 'stats' | 'title'>, [object, object][]> 
   fontSize: [[{}, { fontSize: 18 }]],
 }
 
-// `_facetIgnored` is the renderer REPORTING an unhonoured facet request, not a change to the drawing
-const json = (v: unknown) => JSON.stringify(v, (k, x) => k === '_facetIgnored' ? undefined
-  : typeof x === 'function' ? String(x) : x)
+const json = (v: unknown) => JSON.stringify(v, (_k, x) => typeof x === 'function' ? String(x) : x)
 
 describe('visControlsFor — the rail offers exactly what the renderer honours', () => {
   for (const [name, kind, r] of CASES) {

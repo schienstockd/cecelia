@@ -18,7 +18,8 @@ struct BU {
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
   trail:    vec4<f32>,  // track tail fade: newest end timepoint shown, tail length (frames); µm per overlay size unit (0 = screen px), _
   zwin:     vec4<f32>,  // first shown plane within the held ones, shown plane count (0 = all), at this level; _, _ — see voxelAt
-  ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
+  ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, in lens)
+  lens: vec4<f32>,                       // channel lens: centre x/y, radius, rim (px) — lens.wgsl
 };
 @group(0) @binding(0) var<uniform> p: BU;
 

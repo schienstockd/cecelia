@@ -89,6 +89,7 @@ describe('badgeOf', () => {
     expect(badgeOf(result({ nOpen: 3 })).tip).toMatch(/set a plan/)
     expect(badgeOf(result({ nOpen: 4, plan: plan() }))).toEqual({ n: 4, tip: '4 to look at' })
     expect(badgeOf(null).n).toBe(0)
+    expect(badgeOf(null).tip).not.toMatch(/movie/)   // no result yet = no noun yet: "images" is right for any set
   })
 })
 

@@ -532,6 +532,16 @@ A user report showed three gaps around one Cancel: the row read `cancelled` whil
   own record (`TaskJob.rec`) — defence in depth for the same id reuse: deleting by id let an old run's
   late deregistration remove the new run's record, which could then never be cancelled.
 
+- **A run that is not done removes the new images it made.** Crop, copy, Z/T-project, bin, resample Z,
+  register and split into tissues register each output image with `add_image!` before writing its
+  pixels, and mark it done after. `_execute_job!` runs `_run_task` inside `tracking_new_images`
+  (`model/set.jl`), which records every `(set, uid)` that `add_image!` registers on that Julia task; when
+  the run ends cancelled or failed (returned `nothing`, or threw), `discard_new_images!` deletes them with
+  `delete_image!` and the task log says how many went. A done run keeps them. Only images registered
+  during a scheduled run are tracked — an import's `add_image!` in a route is never undone. A
+  `_run_task` that registered images from a task it spawned itself would escape the tracking (none
+  does). A backend crash mid-run still leaves them: no Julia code runs to discard them.
+
 What this does **not** cover: a Python child orphaned by a backend *crash*. The installed-app launcher
 restarts the backend without killing its children, and nothing records the task's pid, so such a
 process is invisible to every cancel. The run-log entry it left is reaped as `interrupted` at the next
@@ -749,6 +759,32 @@ Both are **absent on a run.json written before them, and absent means unknown** 
 `ChainRun`), never "no overrides"; a re-save keeps them absent. `GET /api/chains/run` returns them as
 `overrides` / `nodeParams`, `null` when unknown. `params_hash` stays the resume key; these are the
 readable record beside it.
+
+### Queue after — a run that starts when one already going finishes
+
+The runner's **Queue after {function}** button (shown while that function is queued or running on any
+selected image) sends `chain:run` with an inline `template` instead of a `chain` name: a chain built on
+the spot and never saved (`run_chain(...; template)`, validated like a saved one; run.json keeps its
+frozen copy, so resume and replay work as for any run). It has two nodes:
+
+- `wait` — an **`after_live`** node for the running function (`app/src/tasks/chain/after_live.jl`). It
+  starts nothing: per image it waits for every run of that `fn` queued or running in its process
+  (`_TASKS`, the records the duplicate-run guard reads) **and** for the task ids the browser saw live there
+  (`params.waitFor`, uid → ids) until each has a banked outcome (`banked_task_outcome`). The ids cover a
+  run on the other process (task on the runner, chain in the backend) and one that ended before the
+  chain looked. It then takes their outcome — any cancelled → `cancelled`, else any failed → `failed`,
+  else `done`. An image with nothing to wait for is `done` at once. When all is over it looks again for
+  2 s, so a sequential sweep's next value (sent only after the previous ends) is waited for too. A chain
+  cancel stops the wait, never the run waited for. It fires **no** `chain:node:*` events (`quiet`): the
+  run it waits for already has its own rail row, and a node frame under that task id would list and bank
+  the same work twice. Cohort QC, the history readers and `nodeParams` skip it — it ran nothing. Image
+  scope only (validated).
+- `next` — the runner's function with the runner's params and pool. Set scope runs with
+  `successful_only`, so an image whose run failed or was cancelled sits out.
+
+**Resume never retries an `after_live` node** (`_reset_stale_nodes!`, the executor's skip): what it
+waited for is over, so waiting again would find nothing and pass — running the follow-up on an image
+whose run failed, was cancelled, or died with the process (crash recovery marks it `failed`).
 
 ### Replay — a new run from a past run's settings
 

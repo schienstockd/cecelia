@@ -8,13 +8,15 @@
 <script setup lang="ts">
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
+import { computed } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
+import { popRowLabels } from '../../utils/popName'
 import type { ColourScale, OverlayPayload, OverlayPop } from '../../utils/viewerOverlays'
 
 /** one segmentation × pop type's populations, as the window draws them */
 export interface VwPopLayer { vn: string; popType: string; payload: OverlayPayload }
 
-defineProps<{
+const props = defineProps<{
   /** "On the image" has a pop type on — off reads as inactive, not as an empty summary */
   panelOn: boolean
   summary: { cells: number; pops: number; dropped: number }
@@ -48,7 +50,12 @@ const emit = defineEmits<{
   redraw: []
 }>()
 const settings = useSettingsStore()
-
+// the group header already names the segmentation; within a group, two pops sharing a name (every
+// tracked pop is `_tracked`) are named by as much of their path as tells them apart
+const popLabels = computed(() => props.layers.map(l => {
+  const labels = popRowLabels(l.payload.pops)
+  return new Map(l.payload.pops.map((p, i) => [p.path, labels[i]!]))
+}))
 </script>
 
 <template>
@@ -94,14 +101,14 @@ const settings = useSettingsStore()
           </button>
           </div>
         </div>
-        <template v-for="l in layers" :key="l.vn + '::' + l.popType">
+        <template v-for="(l, li) in layers" :key="l.vn + '::' + l.popType">
           <!-- one group per (segmentation, pop type); named only when there is more than one -->
           <div v-if="segs > 1 || types > 1" class="cc-muted cc-fs-3xs">
             {{ segs > 1 ? l.vn : '' }}{{ segs > 1 && types > 1 ? ' · ' : '' }}{{ types > 1 ? l.popType : '' }}
           </div>
           <div v-for="pop in l.payload.pops" :key="pop.path" class="cc-row cc-row-tight">
             <span class="vw-swatch" :style="{ background: pop.colour }" />
-            <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
+            <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ popLabels[li]?.get(pop.path) ?? pop.name }}</span>
             <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
             <CcToggle
               :model-value="isDrawn(l, pop.path)"

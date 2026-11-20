@@ -447,6 +447,8 @@ export function previewSummary(
   fallback2d: boolean,
   signal?: { hasSignal?: boolean; noSignalWhy?: string },
   passes?: PreviewPass[] | null,
+  /** what is counted when it is not cells — the backend names it (`countNoun`, e.g. "tissue") */
+  noun = 'cell',
 ): { cells: number | null; text: string; warn: string; warnDetail: string } {
   const cells = counts && typeof counts.base === 'number' ? counts.base : null
   let warn = fallback2d ? FALLBACK_2D_WARN.short : ''
@@ -471,7 +473,7 @@ export function previewSummary(
   // nothing — the first has already claimed every foreground pixel — and the preview then looks
   // identical to a single-pass run while the form says two. So the breakdown is shown whenever
   // there is more than one pass, and a zero is called out rather than left to be inferred.
-  const text = cells === 1 ? '1 cell' : `${cells} cells`
+  const text = cells === 1 ? `1 ${noun}` : `${cells} ${noun}s`
   const breakdown = passBreakdown(passes)
   if (breakdown && !warn) {
     const dead = (passes ?? []).filter(p => p.objects === 0)

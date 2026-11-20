@@ -21,6 +21,7 @@
 import { ref, computed, watch, onBeforeUnmount, onDeactivated, nextTick } from 'vue'
 import { placeBox } from '../utils/anchorPosition'
 import { rafCoalesce } from '../utils/rafCoalesce'
+import { isTopmost } from '../utils/topmostSurface'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -65,8 +66,13 @@ function onDocPointer(e: PointerEvent) {
   if (el?.closest('.cc-popover')) return
   emit('update:modelValue', false)
 }
-// preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it
-function onKey(e: KeyboardEvent) { if (e.key === 'Escape') { emit('update:modelValue', false); e.preventDefault() } }
+// preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it.
+// Only the TOPMOST popover answers (the last `.cc-popover` in the DOM — nested ones teleport after their
+// parent): every open popover listens on `document`, and the outer one, opened first, hears it first.
+function onKey(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || e.defaultPrevented || !isTopmost(popEl.value, '.cc-popover')) return
+  emit('update:modelValue', false); e.preventDefault()
+}
 
 // The content can GROW after the first measurement — a popover whose body waits on a fetch (the
 // thread budget in `PoolThrottle`) renders short, then gets taller once the response lands. The

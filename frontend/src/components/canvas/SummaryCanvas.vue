@@ -26,13 +26,15 @@ import { useSummaryData } from '../../composables/useSummaryData'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, isPluginView, railFor, viewControls, popTypesFor, popTypeSpecFor, singlePopFor, viewOption, moduleViewKeys } from './interactiveViews'
+import PlotPicker from './PlotPicker.vue'
+import { specOption, type PlotOption } from '../../plots/plotPicker'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
-import type { SeriesTarget, ChartType } from '../../plots/types'
+import type { SeriesTarget, ChartType, MatrixMode, MatrixNormalize } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
-import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
+import { emptyReadout, declaredReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
@@ -92,7 +94,7 @@ interface PanelState {
   popType?: string        // which population family this plot shows (specs that offer a choice)
   chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'
   groupBy?: string; smooth?: number; interval?: boolean
-  matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'
+  matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: MatrixNormalize
 }
 // Workspace shell + zoomable panels + zoom provided to plot components inside. See
 // useFloatingCanvas — the wiring that used to be four hand-rolled statements here (and identically
@@ -100,7 +102,7 @@ interface PanelState {
 // usable; plot renders/exports stay at 100% (Vega, PNG, PDF, and the frame-annotator composite all
 // sample from the logical canvas via CANVAS_ZOOM_KEY-injected 1/zoom).
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -119,6 +121,7 @@ const {
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  attrGroups, setAttrOrder,
 } = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared,
   // The population picker follows the ACTIVE plot's spec, exactly as on the Analysis board. This used
   // to be board-only, on the assumption that a module page's specs all share one popType — which stopped
@@ -134,7 +137,7 @@ const {
   // resolution the board uses — a second path here could disagree about what the plot is showing.
   activeFamily: computed(() => {
     const k = activePanel.value?.state.kind
-    return k ? popTypeSpecFor(String(k)) : null
+    return k ? popTypeSpecFor(String(k), props.module) : null
   }) })
 
 // A page's default plots (utils/defaultPlots.ts): placed once, when this canvas is first seen empty
@@ -168,6 +171,18 @@ const VIEW_OPT_PREFIX = 'view:'   // option values are namespaced so a view id c
 const declaredViews = computed(() => (props.views ?? []).filter(v => isPluginView(v.view)))
 const unusableViews = computed(() => (props.views ?? []).filter(v => !isPluginView(v.view)))
 const viewLabel = (v: DeclaredView) => v.label || INTERACTIVE_VIEWS[v.view]?.label || v.view
+// the built-in views THIS page offers (the registry's `modules`), beside any a plugin declares
+const pageViews = computed(() => moduleViewKeys(props.module).filter(k => !declaredViews.value.some(v => v.view === k)))
+// the "+ Plot…" picker's rows: this page's specs, then the plugin-declared views, each filed under its
+// own category (plots/plotPicker.ts) — a view is no longer set apart as "Interactive", the picker
+// groups by what a plot answers, not by how it is drawn
+const pickerOptions = computed<PlotOption[]>(() => [
+  ...specs.value.map(s => specOption(s)),
+  ...declaredViews.value.map(v => ({
+    ...viewOption(v.view, INTERACTIVE_VIEWS[v.view]!), label: viewLabel(v), value: `${VIEW_OPT_PREFIX}${v.view}`,
+  })),
+  ...pageViews.value.map(k => ({ ...viewOption(k, INTERACTIVE_VIEWS[k]!), value: `${VIEW_OPT_PREFIX}${k}` })),
+])
 const unusableViewText = computed(() =>
   `Plot not available here: ` +
   unusableViews.value.map(v => v.plugin ? `${v.view} (${v.plugin})` : v.view).join(', '))
@@ -183,8 +198,8 @@ const viewContext = (id: number, st: PanelState) => {
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value,
                  vis: panelVis(st) }
   return railFor(String(st.kind)) === 'pops'
-    ? { ...base, series: panelSeries(id, st), popTypes: popTypesFor(String(st.kind)),
-        compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value }
+    ? { ...base, series: panelSeries(id, st), popTypes: popTypesFor(String(st.kind), props.module),
+        compareMode: compareMode.value, groupAttr: panelGroupAttr.value, groupOrder: attrGroups.value, poolGroups: poolGroups.value }
     : base
 }
 
@@ -208,7 +223,11 @@ const activeVis = computed(() => scope.value === 'global' ? gVis.value : (active
 // count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:
 // it's a readout of the current result, not a setting.
 const readouts = ref<Record<number, PlotReadout>>({})
-const activeReadout = computed<PlotReadout>(() => readouts.value[activeId.value] ?? emptyReadout())
+// …and an interactive view reports nothing, so its rail reads the settings its registry entry declares
+const activeReadout = computed<PlotReadout>(() => {
+  const kind = activePanel.value?.state.kind
+  return kind ? declaredReadout(viewControls(String(kind))) : (readouts.value[activeId.value] ?? emptyReadout())
+})
 // the active plot is PRECOMPUTED — its populations come from an analysis run, so the picker says so
 // instead of offering eye toggles that do nothing (see isPrecomputedSpec)
 const activeIsPrecomputed = computed(() => {
@@ -456,19 +475,7 @@ watch(segPops, () => {
     <div v-if="!imageUid" class="cc-empty-inline cc-empty-pane">Select images above to plot</div>
     <template v-else>
       <div class="sc-bar cc-row cc-row-loose">
-        <select class="sc-add" v-tooltip.bottom="'Add a plot'"
-                @change="addPanel(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-          <option value="">+ Plot…</option>
-          <option v-for="s in specs" :key="s.id" :value="s.id">{{ s.label }}</option>
-          <!-- Interactive views a plugin asked for on this page. In their own group so it is obvious
-               they are a different kind of plot: they fetch their own data and carry their own
-               controls, so the population picker does not drive them. -->
-          <optgroup v-if="declaredViews.length" label="Interactive">
-            <option v-for="v in declaredViews" :key="v.view" :value="`${VIEW_OPT_PREFIX}${v.view}`">
-              {{ viewLabel(v) }}
-            </option>
-          </optgroup>
-        </select>
+        <PlotPicker :options="pickerOptions" @pick="addPanel" />
         <!-- compare cluster: mode + (by attribute) its attribute selects, kept tight in one group -->
         <!-- the row's tip belongs on the mode select (the control it describes, and the only one here
              without its own); on the container it fired over the attribute selects too -->
@@ -512,10 +519,10 @@ watch(segPops, () => {
              Silently dropping it from the picker is the failure Decision 11 exists to avoid. -->
         <PlotNotice v-if="unusableViews.length" :text="unusableViewText"
                     tip="The plugin names a plot this Cecelia does not offer — update the plugin, or ask its author." />
-        <span v-if="!specs.length && !declaredViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
+        <span v-if="!specs.length && !declaredViews.length && !pageViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
         <span v-else-if="specs.length" class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <InteractivePanel v-if="p.state.kind" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
@@ -527,7 +534,7 @@ watch(segPops, () => {
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
                         :project-uid="projectUid" :image-uid="imageUid"
                         :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                        :group-attr="panelGroupAttr"
+                        :group-attr="panelGroupAttr" :group-order="attrGroups"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
                         :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
@@ -594,7 +601,8 @@ watch(segPops, () => {
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"
-                        @toggle="toggleTarget" @reorder="reorderTargets" @update:scope="scope = $event" @update:vis="setVis"
+                        @toggle="toggleTarget" @reorder="reorderTargets"
+                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />
@@ -608,7 +616,6 @@ watch(segPops, () => {
 .summary-canvas { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
 .sc-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .sc-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
-.sc-add { min-width: 8rem; }
 /* compare cluster: one tight group so the mode + attribute selects read as a unit */
 .sc-compare { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
   padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }

@@ -137,7 +137,7 @@ end
 # `labelValueNames` is what `viewerLook` writes from the viewer's mask picker, 0 or 1 long.
 function _look_keyframe_mask(look)::Union{Nothing,@NamedTuple{name::String, contour::Int}}
     look isa AbstractDict || return nothing
-    raw = _cfg_get(look, "labelValueNames", nothing)
+    raw = _cfg_maybe(look, "labelValueNames")
     (raw isa AbstractVector && length(raw) == 1) || return nothing
     name = String(only(raw))
     isempty(name) ? nothing : (name = name, contour = _label_contour(look))
@@ -726,6 +726,10 @@ function handle_chain_run(ws, data)
     # (`run_chain(...; from_run)`). No `chain` needed; no `imageUids` = the past run's images.
     from_run    = resuming ? "" : _wstr(data, :fromRun)
     replaying   = !isempty(from_run)
+    # Inline: `template` is a chain built on the spot and never saved — the runner's "Queue after"
+    # (chain/after_live.jl). Its name stands in for `chain`; the executing process parses + validates it.
+    template    = (resuming || replaying) ? Dict{String,Any}() : _to_str_dict(get(data, :template, nothing))
+    isempty(template) || isempty(chain_name) && (chain_name = string(get(template, "name", "Queue after")))
 
     if !isempty(project_uid) && replaying
         src = _chain_run_header(project_uid, from_run)
@@ -783,7 +787,7 @@ function handle_chain_run(ws, data)
     # is already executing there, and starting a second execution would have two processes writing the
     # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
     creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, from_run, excluded,
-                          by = active_profile_name(), caller = caller_stamp())
+                          by = active_profile_name(), caller = caller_stamp(), template)
     outcome = _submit_chain_to_runner(creq)
     outcome === :accepted && return
     if outcome === :refused

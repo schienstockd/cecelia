@@ -312,6 +312,11 @@ end
 
 # The ROI set only. Its reviews (`roiReviews/`) are user work, like gates (`ANALYSIS_KEEP`), and a
 # re-run under the same name re-attaches them by ROI id (ROI_TRIAGE_PLAN Decisions 5–6).
+function _proximity_delete!(img, run; on_log = _ -> nothing)
+    _rm_if(img_proximity_path(img, run.key); on_log)
+    _rm_if(qc_path(img, "spatialAnalysis.proximityProfile", run.key); on_log)
+end
+
 function _rois_delete!(img, run; on_log = _ -> nothing)
     _rm_if(img_rois_path(img, run.key); on_log)
     _rm_if(qc_path(img, "spatialAnalysis.roiDiscovery", run.key); on_log)
@@ -443,6 +448,8 @@ const RUN_KINDS = RunKind[
             img -> _file_runs("stats", img_stats_suffixes(img)), _stats_delete!),
     RunKind("patterns", "Spatial patterns", ["spatialAnalysis.spatialPattern"],
             img -> _file_runs("patterns", img_pattern_suffixes(img)), _patterns_delete!),
+    RunKind("proximity", "Proximity profiles", ["spatialAnalysis.proximityProfile"],
+            img -> _file_runs("proximity", img_proximity_suffixes(img)), _proximity_delete!),
     RunKind("rois", "ROI sets", ["spatialAnalysis.roiDiscovery"],
             img -> _file_runs("rois", img_rois_suffixes(img)), _rois_delete!),
     RunKind("contacts", "Contacts", ["spatialAnalysis.cellContacts", "spatialAnalysis.contactsMeshes"],
@@ -462,6 +469,7 @@ const NOT_RUN_TASKS = Dict{String,String}(
     "cleanupImages.driftCorrect" => "image version", "cleanupImages.flowRegister" => "image version",
     "cleanupImages.smooth" => "image version", "cleanupImages.stackAlign" => "image version",
     "editImages.bin" => "image version", "editImages.cropImage" => "new image",
+    "editImages.splitTissues" => "new image",
     "editImages.copyImage" => "new image", "editImages.dtype" => "image version",
     "editImages.flip" => "image version", "editImages.register" => "image version",
     "editImages.resampleZ" => "image version", "editImages.tProject" => "image version",

@@ -914,6 +914,9 @@ end
     byattr = Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], false)
     @test [g.label for g in byattr] == ["MerTK", "WT"]
     @test length(byattr[1].items) == 1 && length(byattr[2].items) == 2
+    # the user's dragged order of the groups wins over the category sort
+    @test [g.label for g in Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], false;
+                                                        group_order = ["WT"])] == ["WT", "MerTK"]
 
     # pooled: one unlabelled bundle (there is nothing to distinguish)
     pooled = Cecelia._track_image_groups(collect(zip(imgs, uids)), String[], true)
@@ -927,6 +930,9 @@ end
     @test [g.refs[1] for g in pg] == [("B", "/tcells"), ("C", "/qc/_tracked")]
     # the LEAF is what a user calls a population; the path is a file path
     @test [g.label for g in pg] == ["tcells", "_tracked"]
+    # two tracked pops share the leaf `_tracked`: each is named by the parent that tells it apart
+    pt = Cecelia._track_pop_groups(["T/qc/OTI/_tracked", "T/qc/gBT/_tracked"], "T", false)
+    @test [g.label for g in pt] == ["OTI/_tracked", "gBT/_tracked"]
     poolp = Cecelia._track_pop_groups(["B/a", "B/b"], "B", true)
     @test length(poolp) == 1 && length(poolp[1].refs) == 2
 

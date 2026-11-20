@@ -5,7 +5,7 @@ import {
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
-  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
+  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow,
   isTrackDrawable,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
@@ -743,6 +743,12 @@ describe('graph edges between shown populations (graphEdgesBetween)', () => {
   it('nothing shown, nothing drawn', () => {
     expect(graphEdgesBetween(g, new Map()).nSegments).toBe(0)
   })
+  it("keeps a window graph's tile borders, which join no cells", () => {
+    const grid: SpatialGraphPayload = { ...g, flat: true, nSegments: 2, t: [-1, -1], plane: [-1, -1],
+      x0: [0, 0], y0: [0, 5], z0: [0, 0], x1: [0, 9], y1: [9, 5], z1: [0, 0],
+      vns: [''], aVn: [0, 0], aLabel: [-1, -1], bVn: [0, 0], bLabel: [-1, -1] }
+    expect(graphEdgesBetween(grid, new Map()).nSegments).toBe(2)
+  })
 })
 
 describe('skeleton lines (appendSkeletonLines)', () => {
@@ -823,5 +829,19 @@ describe('skeleton lines (appendSkeletonLines)', () => {
     setOverlayWindow(r, pts, buf, 2, [1, 1], style, 'plane')
     expect(lines).toEqual(skeletonLineRanges(buf, 2))
     expect(lines.length).toBe(2)
+  })
+})
+
+describe('overlayPlaneWindow', () => {
+  it('one 2D plane widens by the tolerance', () => {
+    expect(overlayPlaneWindow([5, 5], 1, 'plane')).toEqual([4, 6])
+  })
+  it('plane 0 with a tolerance stops at 0 — a negative low end reads as "no filter" in the shader', () => {
+    expect(overlayPlaneWindow([0, 0], 2, 'plane')).toEqual([0, 2])
+  })
+  it('a range, or 3D, is drawn exactly; a negative low end (no filter) passes through', () => {
+    expect(overlayPlaneWindow([4, 10], 1, 'plane')).toEqual([4, 10])
+    expect(overlayPlaneWindow([3, 3], 1, 'volume')).toEqual([3, 3])
+    expect(overlayPlaneWindow([-1, -1], 1, 'plane')).toEqual([-1, -1])
   })
 })

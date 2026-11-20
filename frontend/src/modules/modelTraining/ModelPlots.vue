@@ -1,6 +1,6 @@
 <!--
   Optical-flow workspace below the image table — the module page's own plot canvas, built on the
-  shared shell (useCanvasPanels + InteractivePanel + CanvasZoomControl), exactly like the cluster and
+  shared shell (useFloatingCanvas + FloatingCanvasHost + InteractivePanel), exactly like the cluster and
   summary canvases. This is what "the module page convention" means: the plots live in ModuleLayout's
   `#plots` slot, so they collapse, persist and zoom the same way as every other page's.
 
@@ -23,18 +23,18 @@
   rather than a population.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, provide } from 'vue'
+import { computed, watch } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useCanvasPanels } from '../../composables/useCanvasPanels'
-import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
-import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
+import { useFloatingCanvas } from '../../composables/useFloatingCanvas'
+import FloatingCanvasHost from '../../components/canvas/FloatingCanvasHost.vue'
 import { useViewState } from '../../composables/useViewState'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import ModelVault from './ModelVault.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
+import PlotPicker from '../../components/canvas/PlotPicker.vue'
 import { defaultVis } from '../../plots/plot'
 import type { VaultKind } from '../../utils/modelVaultKinds'
 
@@ -48,15 +48,16 @@ const meta = useProjectMetaStore()
 const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
 
-const canvasRef = ref<HTMLElement | null>(null)   // the visible viewport (zoom + fit measure it)
-const zoomRef = ref<HTMLElement | null>(null)     // the scaled workspace (panels' offsetParent)
 // Per-image, like the summary/gating canvases (`flow:` is registered in the canvasPanels store's
 // MODULE_PREFIXES, so the panels persist with the image at 1/{uid}/moduleCanvases.json).
 const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
-const { panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowMetrics' }), ckey,
-    // tileBox: the grid is sized to the VIEWPORT, not to the workspace it grew (utils/tileGrid.ts)
-    { tileBox: () => workspaceBase.value })
+// Workspace shell + zoomable panels + zoom provided to the plots — the same wiring as the cluster,
+// gating and summary canvases (useFloatingCanvas + FloatingCanvasHost).
+const {
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
+  panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade,
+  zoom, fitWidth, fitHeight, setZoom, resetZoom,
+} = useFloatingCanvas<FlowPanelState>(ckey, () => ({ kind: 'flowMetrics' }))
 
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
 // `model` + `scope` are the vault's selection, in exactly the shape the population manager's
@@ -75,13 +76,6 @@ const { showManager, scope, model, tileCols, vaultKind } = useViewState(shared, 
 const KIND_ALIASES: Record<string, string> = { flowModel: 'flowMetrics' }
 for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.state.kind = a }
 
-const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
-  () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
-provide(CANVAS_ZOOM_KEY, zoom)
-const { workspaceStyle, workspaceBase } = useCanvasWorkspace(canvasRef, zoom,
-  // grow the workspace to hold the plots (a tall Tile grid scrolls instead of spilling);
-  // a getter, so it may name `contentBounds` from the line above
-  () => contentBounds.value)
 
 const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
 // the model a given panel is showing, and the one the vault edits — the two halves of the scope
@@ -94,7 +88,7 @@ function setModel(v: string) {
   else if (activePanel.value) activePanel.value.state.model = v
 }
 
-const plotTypes = computed(() => pageViews('opticalFlowPage'))
+const plotTypes = computed(() => pageViews('opticalFlowPage').map(v => ({ ...v, value: v.key })))
 function addKind(kind: string) {
   const id = add()
   const p = panels.value.find(x => x.id === id)
@@ -127,11 +121,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
     <div v-if="!imageUids.length" class="cc-empty-inline cc-empty-pane">Select an image above to inspect a flow model</div>
     <template v-else>
       <div class="cc-row cc-row-loose fp-bar">
-        <select class="fp-add" v-tooltip.bottom="'Add a plot'"
-                @change="addKind(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-          <option value="" disabled selected>+ Plot…</option>
-          <option v-for="t in plotTypes" :key="t.key" :value="t.key">{{ t.label }}</option>
-        </select>
+        <PlotPicker :options="plotTypes" @pick="addKind" />
         <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
                               @update:cols="tileCols = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
@@ -148,27 +138,22 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
         <span class="fp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
 
-      <div class="fp-canvas">
-        <!-- scroll viewport (measured): the workspace inside it may be TALLER than the
-             visible box, so the plots scroll. The rail is a sibling BELOW, outside this
-             box, so it stays put instead of scrolling away with them. -->
-        <div ref="canvasRef" class="fp-scroll">
-        <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
-        <ModelVault v-if="showManager" :selected="activeModel" :scope="scope" :kind="vaultKind"
-                    @update:selected="setModel" @update:scope="scope = $event"
-                    @update:kind="vaultKind = $event" />
-        <div ref="zoomRef" class="fp-zoom" :style="workspaceStyle">
-          <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
-            <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
-                              :active="p.id === activeId" :view="p.state.kind"
-                              :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
-                              :persist-key="`${ckey}:${p.id}`"
-                              @activate="activeId = p.id" @remove="remove(p.id)"
-                              @duplicate="duplicatePanel(p.state)" />
-          </template>
-        </div>
-        </div>
-      </div>
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
+        <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
+          <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
+                            :active="p.id === activeId" :view="p.state.kind"
+                            :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
+                            :persist-key="`${ckey}:${p.id}`"
+                            @activate="activeId = p.id" @remove="remove(p.id)"
+                            @duplicate="duplicatePanel(p.state)" />
+        </template>
+        <!-- outside the zoom layer, like the population manager: the vault stays full-size -->
+        <template #overlay>
+          <ModelVault v-if="showManager" :selected="activeModel" :scope="scope" :kind="vaultKind"
+                      @update:selected="setModel" @update:scope="scope = $event"
+                      @update:kind="vaultKind = $event" />
+        </template>
+      </FloatingCanvasHost>
     </template>
   </div>
 </template>
@@ -177,12 +162,5 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 .flow-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
 /* a `.cc-row`, so it wraps on a narrow window instead of running off the right edge (as Gate's) */
 .fp-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
-.fp-add { padding: 4px 8px; }
 .fp-hint { opacity: 0.7; white-space: nowrap; }
-.fp-canvas { position: relative; flex: 1; min-height: 70vh; }
-/* scaled workspace (offsetParent for the panels); size + transform set inline by useCanvasWorkspace */
-/* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace
-   grows it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
-.fp-scroll { position: absolute; inset: 0; overflow: auto; }
-.fp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

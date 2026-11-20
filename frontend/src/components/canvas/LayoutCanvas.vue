@@ -34,12 +34,14 @@ import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
-import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
+import { emptyReadout, declaredReadout, type PlotReadout } from '../../plots/plotReadout'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
+import PlotPicker from './PlotPicker.vue'
+import { specOption, type PlotOption } from '../../plots/plotPicker'
+import { INTERACTIVE_VIEWS, boardViews, viewOption, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import { boardParamsScope, historyParamsUrl, type BoardParamsScope, type HistoryParamsRow } from '../../utils/chainFromHistory'
 import { snapshotScope, paramsScopeKey, snapshotDue } from '../../utils/boardProvenance'
@@ -50,7 +52,7 @@ import PopulationManager from './PopulationManager.vue'
 import ModelVault from '../../modules/modelTraining/ModelVault.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
-import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail } from '../../modules/cluster/clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail, registeredControls } from '../../modules/cluster/clusterPanels'
 import CcToggle from '../CcToggle.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
@@ -169,6 +171,7 @@ const {
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  attrGroups, setAttrOrder,
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
   shared: computed(() => entry.value.shared),
@@ -218,11 +221,6 @@ const activeContent = computed<SlotContent | null>(() => entry.value.contents[en
 type PState = { sel: string[]; vis: VisProps; [k: string]: unknown }
 const st = (c: SlotContent): PState => c.state as PState
 
-// The picker's three interactive optgroups come STRAIGHT from the registry's `analysisBoard` flag +
-// `boardGroup` — no key list here. There used to be one (`ANALYSIS_VIEWS`/`IMAGE_VIEWS`), which made
-// the flag a lie: a view could set `analysisBoard: true` and never appear, because nothing read it.
-// Self-contained interactive views (read their own context / pops):
-const interactiveOptions = computed(() => boardViews('interactive'))
 // Which MANAGER a slot needs, straight from the registry that owns the slot's kind. Summary slots have
 // no registry entry and take the default (the population picker) — see canvasManager.ts.
 function railOf(c: SlotContent | null): RailKind {
@@ -234,8 +232,15 @@ function railOf(c: SlotContent | null): RailKind {
 // by the board's clustering run" and "wants the cluster pop manager" are the same statement, so this is
 // now the rail declaration rather than a second, parallel test that could disagree with it.
 const isClusterSlot = (c: SlotContent | null): boolean => railOf(c) === 'clusterPops'
-const clusterOptions = computed(() => {
-  const out: { key: string; label: string }[] = [...boardViews('clustering')]
+// The "+ Plot…" picker: every board plot, filed by category (plots/plotPicker.ts) like every other
+// picker. The views come STRAIGHT from the registries' `analysisBoard` flag — no key list here. There
+// used to be one (`ANALYSIS_VIEWS`/`IMAGE_VIEWS`), which made the flag a lie: a view could set
+// `analysisBoard: true` and never appear, because nothing read it.
+const pickerOptions = computed<PlotOption[]>(() => {
+  const out: PlotOption[] = [
+    ...specs.value.map(s => specOption(s, `summary:${s.id}`)),
+    ...boardViews().map(v => ({ ...v, value: `interactive:${v.key}` })),
+  ]
   for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
     if (!def.analysisBoard) continue
     // `trackOnly` no longer filters the picker — picking such a plot AUTO-SETS `clustPopType` (see
@@ -245,12 +250,10 @@ const clusterOptions = computed(() => {
     // RUN, not from a user choice, so hiding a plot that has no data to draw is right.
     if (def.needsCols === 'hmmState' && !clustHmmStateCols.value.length) continue
     if (def.needsCols === 'hmmTransition' && !clustHmmTransitionCols.value.length) continue
-    out.push({ key, label: def.label })
+    out.push({ ...viewOption(key, def), value: `interactive:${key}` })
   }
   return out
 })
-// image-content views (viewer screenshot slots) — grouped separately in the picker
-const imageOptions = computed(() => boardViews('image'))
 
 // the "+ Plot" value is "summary:<specId>" or "interactive:<viewKey>"
 function addPlot(i: number, val: string) {
@@ -362,7 +365,14 @@ const panelSeries = (i: number, c: SlotContent): SeriesTarget[] => memoSeries(i,
 // group count) — the rail shows the ACTIVE slot's, so the user can see what `auto` chose. Keyed by slot
 // index; a readout of the current result, not a persisted setting.
 const readouts = ref<Record<number, PlotReadout>>({})
-const activeReadout = computed<PlotReadout>(() => readouts.value[entry.value.activeIndex] ?? emptyReadout())
+// A summary slot reports its own; an interactive view or cluster panel has only its registry declaration
+// (which rail settings it reacts to) — read per KIND, so a slot that was a summary plot before can't
+// leave its stale readout behind.
+const activeReadout = computed<PlotReadout>(() => {
+  const c = activeContent.value
+  if (c?.kind === 'interactive') return declaredReadout(registeredControls(c.ref))
+  return readouts.value[entry.value.activeIndex] ?? emptyReadout()
+})
 
 // ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
 // the board's gating store is driven unambiguously; only active when a cluster slot exists. ────────────
@@ -445,7 +455,7 @@ function ctxFor(c: SlotContent, i: number) {
   // passing the map would be a prop wired to nothing — the failure this file's rail comments warn about.)
   if (railOf(c) === 'pops') return {
     ...base, series: panelSeries(i, c), popTypes: popTypesFor(c.ref),
-    compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value,
+    compareMode: compareMode.value, groupAttr: panelGroupAttr.value, groupOrder: attrGroups.value, poolGroups: poolGroups.value,
   }
   return base
 }
@@ -819,7 +829,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :spec="specById[entry.contents[i]!.ref]"
                           :project-uid="projectUid" :image-uid="imageUid"
                           :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                          :group-attr="panelGroupAttr" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
+                          :group-attr="panelGroupAttr" :group-order="attrGroups" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="panelReloadToken(panelSeries(i, entry.contents[i]!))" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
@@ -839,22 +849,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                               @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- empty slot: add a plot (summary spec or interactive view) -->
             <div v-else class="lc-add">
-              <select data-guide="board.addPlot" v-tooltip.bottom="'Add a plot to this slot'"
-                      @change="addPlot(i, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-                <option value="">+ Plot…</option>
-                <optgroup label="Summary">
-                  <option v-for="s in specs" :key="s.id" :value="`summary:${s.id}`">{{ s.label }}</option>
-                </optgroup>
-                <optgroup v-if="interactiveOptions.length" label="Interactive">
-                  <option v-for="v in interactiveOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
-                </optgroup>
-                <optgroup v-if="clusterOptions.length" label="Clustering">
-                  <option v-for="v in clusterOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
-                </optgroup>
-                <optgroup v-if="imageOptions.length" label="Image">
-                  <option v-for="v in imageOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
-                </optgroup>
-              </select>
+              <PlotPicker :options="pickerOptions" data-guide="board.addPlot" tip="Add a plot to this slot"
+                          @pick="addPlot(i, $event)" />
               <span class="lc-add-hint cc-muted cc-fs-xs">empty slot</span>
             </div>
             </div>
@@ -917,7 +913,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
-                             :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :reloadable="true"
+                             :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :readout="activeReadout" :reloadable="true"
                              @update:scope="scope = $event" @update:vis="setVis"
                              @toggle-highlight="toggleClustHl" @reload="reload" />
           <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
@@ -926,7 +922,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
                         :manual-apply="manualApply" :has-staged="hasStaged"
                         :staged-change-count="stagedChangeCount" :reloadable="true"
-                        @toggle="toggleTarget" @reorder="reorderTargets" @update:scope="scope = $event" @update:vis="setVis"
+                        @toggle="toggleTarget" @reorder="reorderTargets"
+                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />

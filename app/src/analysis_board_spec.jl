@@ -351,6 +351,7 @@ const BOARD_VIEWS = Dict{String,NamedTuple}(
     "gatingStrategy"   => (; fields = ("image", "valueName", "popType", "pop", "hierarchy"), cluster = false, trackOnly = false),
     "trackPaths"       => (; fields = ("pops", "mode"), cluster = false, trackOnly = false),
     "trackDiagnostics" => (; fields = ("pops",), cluster = false, trackOnly = false),
+    "popPositions"     => (; fields = ("pops", "frame"), cluster = false, trackOnly = false),
     "hmmStateCards"    => (; fields = ("valueName", "hmmCol"), cluster = false, trackOnly = false),
     "motifCards"       => (; fields = ("valueName",), cluster = false, trackOnly = false),
     "clusterMap"       => (; fields = ("popType", "suffix", "basis"), cluster = true, trackOnly = false),
@@ -460,6 +461,22 @@ function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, 
             mode in ("paths", "star", "rose") || throw(BoardSpecError(
                 "plots[$i]: mode must be one of paths, star, rose, got \"$mode\""))
             state["mode"] = mode
+        end
+    elseif key == "popPositions"
+        # any family, but ONE per plot (docs/PLOTS.md): the plot's family picker shows one at a time
+        wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i, ctx.resolved)
+        fams = unique(pops[p] for p in wanted)
+        length(fams) <= 1 || throw(BoardSpecError(
+            "plots[$i]: \"popPositions\" shows one population type at a time; got $(join(fams, ", ")). " *
+            "Use one plot per type."))
+        if !isempty(wanted)
+            state["sel"] = String["$(pops[p])::$(p)" for p in wanted]
+            state["popType"] = only(fams)
+        end
+        if haskey(d, "frame")
+            f = get(d, "frame", nothing)
+            (f isa Integer && f >= 0) || throw(BoardSpecError("plots[$i]: frame must be a frame number (0, 1, …)"))
+            state["frame"] = Int(f)
         end
     elseif key == "clusterMap"
         # layout: the UMAP (default) or a track run's named diffusion axes

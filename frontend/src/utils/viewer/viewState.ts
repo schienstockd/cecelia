@@ -31,6 +31,7 @@
 import { visibleExtentUm, type ViewerMeta, type OrbitCamera } from '../volumeViewer'
 import { viewerColormapForHex } from '../viewerColormap'
 import { toHex } from '../colour'
+import type { RecordedLens } from './channelLens'
 
 export interface ViewerLayerState {
   visible: boolean
@@ -60,6 +61,9 @@ export interface ViewerViewState {
   // self-describing. A movie rendered at a different canvas can rescale; a snapshot without this
   // number is ambiguous.
   canvas: { width: number; height: number }
+  /** The channel lens as the 2D view draws it (`channelLens.ts` → `lensForRecording`): canvas
+   *  fractions + the lens channels by name. Absent = no lens. */
+  lens?: RecordedLens
 }
 
 /** The z plane a 2D view shows (rounded, ≥ 0), or null for a 3D view / a state without one. The one
@@ -97,12 +101,14 @@ export interface BuildViewStateInput {
   /** The 3D projection toggle (`settings.viewerVolumeProjection === 'persp'`). Ignored in 2D, which is
    *  always orthographic. */
   perspective?: boolean
+  /** The channel lens to record (2D only; ignored in 3D). */
+  lens?: RecordedLens | null
 }
 
 /** Build a viewer-shaped view state from the browser viewer's current camera + meta + slider
  *  positions + canvas size. Pure → testable, no DOM / no store. */
 export function buildViewState(input: BuildViewStateInput): ViewerViewState {
-  const { cam, meta, t, zPlane, zLoaded, ndisplay, canvasW, canvasH, viewHalfAngle, perspective = false } = input
+  const { cam, meta, t, zPlane, zLoaded, ndisplay, canvasW, canvasH, viewHalfAngle, perspective = false, lens } = input
   const umPerL0X = meta.voxelUm?.[0] || 1
   const umPerL0Y = meta.voxelUm?.[1] || 1
 
@@ -150,6 +156,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
               ...(zLoaded ? { zRange: [zLoaded[0], zLoaded[1]] as [number, number] } : {}) },
     layers,
     canvas: { width: canvasW, height: canvasH },
+    ...(ndisplay === 2 && lens ? { lens } : {}),
   }
 }
 

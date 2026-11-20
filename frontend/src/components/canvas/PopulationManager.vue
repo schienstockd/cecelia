@@ -15,6 +15,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
+import { tooManyClustersToDraw, tooManyClustersText } from '../../utils/clusterLimit'
 import { useObserverStore } from '../../stores/observer'
 import { ref, computed, watch } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
@@ -30,14 +31,16 @@ import ColourPicker from '../ColourPicker.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
-import { popNameError, popPath, isInSubtree } from '../../utils/popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName, popDisplayLabels } from '../../utils/popName'
 import { claudeProposal } from '../../utils/authorStamp'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
 // `PALETTES` is gone from here on purpose: the swatch is `ColourPicker` now, which owns the default
 // palette. Only `DOT_R` is still needed, for the gate colour-by legend main added.
 import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
+import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import { DOT_R } from '../../plots/density'
+import { assignHistoryFor, recordStep, takeStep, toggleStep, writePlan, type Assign } from '../../utils/clusterAssignHistory'
 import { clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale } from '../../utils/clusterMeasure'
 import { eyeKey, offPaths, popEyeOn, popTypeSwitch } from '../../utils/viewer/popEyes'
 import { isTypingTarget } from '../../utils/typingTarget'
@@ -45,6 +48,7 @@ import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
 import { SEVERITY } from '../../lib/severity'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
+import { allSelected } from '../../utils/tableSelection'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
 const AXIS_OPTIONS: ChipOption[] = [
@@ -67,6 +71,7 @@ const props = withDefaults(defineProps<{
   // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
+  readout?: PlotReadout            // the active plot's readout — which of those rows it reacts to
   docked?: boolean                 // fill a docked rail (Analysis board) instead of floating
   readonly?: boolean               // read-only surface (Analysis board): highlight only — no add / delete /
                                    // rename / recolour / cluster reassignment (project_analysis_canvas_readonly)
@@ -77,7 +82,7 @@ const props = withDefaults(defineProps<{
   hasStaged?: boolean
   stagedChangeCount?: number
   reloadable?: boolean | null      // forward to CanvasSidePanel — manual reload button (null = hide)
-}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false, readonly: false,
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, readout: emptyReadout, docked: false, readonly: false,
         manualApply: null, hasStaged: false, stagedChangeCount: 0, reloadable: null })
 const emit = defineEmits<{
   'update:selected': [string]
@@ -120,7 +125,10 @@ const beginRename = (p: FlatPop) => beginRenameAt(p.path, p.name)
 // browser volume viewer needed the same control. It owns the popover, the palette and the anchor, so the
 // `colourPop`/`colourAnchor` bookkeeping this file used to carry is gone.
 
-function pick(p: FlatPop) { emit('update:selected', p.path) }
+// cluster mode: clicking the selected row again deselects it, so the strip can be disarmed (gating keeps a selection)
+function pick(p: FlatPop) {
+  emit('update:selected', clusterMode.value && p.path === props.selected ? '' : p.path)
+}
 const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
   // reserved-prefix + same-list duplicate are caught here for instant feedback; a cross-pop-type
   // collision is rejected by the server (pop_name_conflict) and surfaced via the store's error toast.
@@ -141,29 +149,56 @@ const RUN_STALE_TIP = 'Clustering re-run since — check its clusters, then clic
 // through the bag channel before the write's refetch ping, and holds with the pop-out closed.
 const viewerEyeOn = (p: FlatPop) => !g.imageUid ? p.show : popEyeOn(
   new Map([[g.valueName, settings.getPopEyes(g.imageUid, g.valueName)]]), g.valueName, g.popType, p.path, p.show)
-async function toggleViewer(p: FlatPop) {
-  const on = !viewerEyeOn(p), k = eyeKey(g.popType, p.path)
+// one write path for a single eye and for the "all" toggle: every eye first (one settings pass per
+// image), then the pops' `show` — not undoable server-side (looking, not editing) — then ONE refresh
+async function setViewer(pops: FlatPop[], on: boolean) {
+  if (!pops.length) return
+  const keys = pops.map(p => eyeKey(g.popType, p.path))
   for (const uid of [g.imageUid, ...g.mirrorUids]) {
     if (!uid) continue
-    for (const layer of ['points', 'ribbons'] as const)
-      settings.setPopEyes(uid, g.valueName, { ...settings.getPopEyes(uid, g.valueName, layer), [k]: on }, layer)
+    for (const layer of ['points', 'ribbons'] as const) {
+      const eyes = { ...settings.getPopEyes(uid, g.valueName, layer) }
+      for (const k of keys) eyes[k] = on
+      settings.setPopEyes(uid, g.valueName, eyes, layer)
+    }
     // the ribbon eyes' per-path projection, as the pop-out's `storeRibbonEyes` keeps it
     settings.setTrackPopHidden(uid, g.valueName, new Set(offPaths(settings.getPopEyes(uid, g.valueName, 'ribbons'))))
     // an eye under a switched-off population type draws nothing: turning a pop on turns its type on
     const sw = on ? popTypeSwitch(g.popType) : null, su = sw ? projectStore.setUidOfImage(uid) : null
     if (sw && su) settings.setPopVisible(su, sw, true)
   }
-  await g.updatePop(p.path, { show: on })
+  // sequential: each update rewrites the same popmap file server-side
+  for (const p of pops) await g.updatePop(p.path, { show: on })
   g.refreshOverlays()
+}
+const toggleViewer = (p: FlatPop) => setViewer([p], !viewerEyeOn(p))
+
+// "All" row: one click instead of ticking every row. Mixed → turn the rest ON (the first click
+// completes the set; the second clears it), so a partly-lit list never needs two clicks to show all.
+const allLit = computed(() => allSelected(visiblePops.value.map(p => p.path), props.highlighted))
+function toggleAllHighlight() {
+  const on = !allLit.value
+  for (const p of visiblePops.value) if (isLit(p) !== on) emit('toggleHighlight', p.path)
+}
+const viewerPops = computed(() => visiblePops.value.filter(p => !p.transient))
+const allViewerOn = computed(() => viewerPops.value.length > 0 && viewerPops.value.every(viewerEyeOn))
+const toggleAllViewer = () => {
+  const on = !allViewerOn.value
+  return setViewer(viewerPops.value.filter(p => viewerEyeOn(p) !== on), on)
 }
 
 // ── Undo / redo ───────────────────────────────────────────────────────────────
-// Hand-drawn gating only (flow = cells, track = tracks). A cluster/region/filter pop's edit is a
-// tick you can un-tick, so it needs no history; a gate you dragged or a population you deleted with
-// its children is work you cannot get back. History itself lives on the server — see the gating
-// store — so these two flags are its answer, not a local guess.
+// Hand-drawn gating (flow = cells, track = tracks): a gate you dragged or a population you deleted
+// with its children is work you cannot get back. That history lives on the server — see the gating
+// store — so its two flags are the server's answer, not a local guess. Cluster pops: a strip click
+// can MOVE a cluster off another population, so those clicks get a client-side history.
 // Read-only surfaces (the Analysis board) get nothing: they cannot mutate in the first place.
-const historyMode = computed(() => !props.readonly && isGatingPopType(props.popType))
+// Cluster pops get their own client-side history of strip clicks (see stepAssign below).
+const historyMode = computed(() => !props.readonly && (isGatingPopType(props.popType) || clusterMode.value))
+const canUndo = computed(() => clusterMode.value ? assignHistory.value.undo.length > 0 && !assignBusy.value : g.canUndo)
+const canRedo = computed(() => clusterMode.value ? assignHistory.value.redo.length > 0 && !assignBusy.value : g.canRedo)
+const undo = () => clusterMode.value ? stepAssign('undo') : g.undo()
+const redo = () => clusterMode.value ? stepAssign('redo') : g.redo()
 // Ctrl/⌘+Z and Ctrl/⌘+Shift+Z, the bindings every user already has in their fingers. Bound to the
 // WINDOW, so it works with focus on the plot canvas where the gate was just dragged — hence the
 // typing guard, or "z" in a rename field would undo the rename you are in the middle of typing.
@@ -171,8 +206,8 @@ function onKey(e: KeyboardEvent) {
   if (!historyMode.value || isTypingTarget(e)) return
   if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return
   e.preventDefault()
-  if (e.shiftKey) { if (g.canRedo) g.redo() }
-  else if (g.canUndo) g.undo()
+  if (e.shiftKey) { if (canRedo.value) redo() }
+  else if (canUndo.value) undo()
 }
 // only while the page is visible: a hidden kept-alive page would undo on a tree you can't see
 useWindowListener('keydown', onKey)
@@ -222,20 +257,66 @@ const popClusterIds = (p: FlatPop): number[] => {
 // exclusive per run, not across runs that happen to share the segmentation's sidecar)
 const clusterOwner = (id: number): FlatPop | undefined => visiblePops.value.find(p => popClusterIds(p).includes(id))
 
+// every population of this run → its cluster IDs: the state the assignment history checks against
+const currentAssign = (): Assign =>
+  Object.fromEntries(visiblePops.value.filter(p => p.filter).map(p => [p.path, popClusterIds(p)]))
+// write lists back, drops before gains so a cluster is never in two pops at once (server refuses that)
+async function writeAssign(target: Assign) {
+  for (const [path, values] of writePlan(currentAssign(), target)) await g.updatePop(path, { filter: { values } })
+}
+
+// a click: into `p` (moved off its current pop), or out of `p` if already there — one undo step
 async function toggleCluster(p: FlatPop, id: number) {
-  const owner = clusterOwner(id)
-  if (owner?.path === p.path) {                       // already in this pop → remove
-    await g.updatePop(p.path, { filter: { values: popClusterIds(p).filter(x => x !== id) } })
-    return
-  }
-  // move it off whatever pop currently owns it, then add to this one (mutually exclusive)
-  if (owner) await g.updatePop(owner.path, { filter: { values: popClusterIds(owner).filter(x => x !== id) } })
-  await g.updatePop(p.path, { filter: { values: [...popClusterIds(p), id].sort((a, b) => a - b) } })
+  const step = toggleStep(currentAssign(), p.path, id)
+  await writeAssign(step.after)
+  recordStep(assignHistory.value, step)
+}
+
+// Undo / redo of the strip's clicks (utils/clusterAssignHistory.ts — why it is not the server's
+// gating history). Keyed by run, so each run keeps its own steps.
+const assignHistory = computed(() =>
+  assignHistoryFor([viewerSetUid.value, g.valueName, props.popType, props.suffix].join('\u0000')))
+const assignBusy = ref(false)
+async function stepAssign(dir: 'undo' | 'redo') {
+  if (assignBusy.value) return
+  assignBusy.value = true
+  try {
+    const target = takeStep(assignHistory.value, dir, currentAssign())
+    if (target) await writeAssign(target)
+    else log.info('Populations changed since — nothing to ' + dir, { source: 'gating' })
+  } finally { assignBusy.value = false }
 }
 
 async function addClusterPopulation() {
+  if (!isClusterPopType(props.popType)) return
+  // named for its run and numbered past every name in the segmentation, not just this run's
   const n = visiblePops.value.length
-  await g.addClusterPop(`Population ${n + 1}`, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
+  const name = nextClusterPopName(props.suffix, props.popType, g.flat.map(p => p.name))
+  await g.addClusterPop(name, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
+  // select the new pop so the strip's next click fills it — "add, then click clusters" in one go
+  const made = [...visiblePops.value].reverse().find(p => p.name === name)
+  if (made) pick(made)
+}
+
+// the shared strip's target: the selected row, if it is one of THIS run's cluster pops
+const armedPop = computed(() => clusterMode.value
+  ? visiblePops.value.find(p => p.path === props.selected && p.filter) : undefined)
+const hoverPath = ref<string | null>(null)
+const hoverPop = computed(() => hoverPath.value ? visiblePops.value.find(p => p.path === hoverPath.value) : undefined)
+// strip focus: the hovered row, else the selected (armed) one — so filling a pop keeps its clusters lit
+const focusPop = computed(() => hoverPop.value ?? armedPop.value)
+const isFocusLit = (id: number) => !!focusPop.value && popClusterIds(focusPop.value).includes(id)
+const isFocusDim = (id: number) => !!focusPop.value && !isFocusLit(id)
+function chipStyle(id: number) {
+  const o = clusterOwner(id)
+  return o ? { background: o.colour, borderColor: o.colour, color: 'var(--cc-on-bright)' } : {}
+}
+function chipTip(id: number) {
+  const o = clusterOwner(id), a = armedPop.value
+  if (props.readonly) return o ? `In “${o.name}”` : 'In no population'
+  if (!a) return o ? `In “${o.name}” — select a population to move it` : 'Select a population first'
+  if (o?.path === a.path) return `Take out of “${a.name}”`
+  return o ? `Move from “${o.name}” to “${a.name}”` : `Put into “${a.name}”`
 }
 
 // ── Filter-population form (Decision 15): define a pop by an AND-ed filter on ANY obs measure, for the
@@ -331,7 +412,9 @@ const boolTermOptions = computed(() => visiblePops.value
   .map(p => p.path))
 const boolParentOptions = computed(() => parentChoices(bpEditPath.value))
 // a path → the population's own name, for the summary line (paths get long and the leaf is the name)
-const popLabel = (path: string) => g.flat.find(x => x.path === path)?.name ?? path
+// a combined pop's terms can come from anywhere in the tree: two sharing a name are named apart
+const flatLabels = computed(() => popDisplayLabels(g.flat.map(x => x.path), q => g.flat.find(x => x.path === q)?.name))
+const popLabel = (path: string) => flatLabels.value.get(path) ?? path
 
 function addBoolTerm() { bpTerms.value.push({ path: '', negate: false }) }
 function removeBoolTerm(i: number) { bpTerms.value.splice(i, 1) }
@@ -435,7 +518,7 @@ function moveTo(target: string) {
 </script>
 
 <template>
-  <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
+  <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :readout="readout" :docked="docked"
                         :manual-apply="manualApply" :has-staged="hasStaged"
                         :staged-change-count="stagedChangeCount" :reloadable="reloadable"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)"
@@ -449,6 +532,15 @@ function moveTo(target: string) {
                 v-tooltip.bottom="'Create a population, then tick cluster IDs into it'">
           <i class="pi pi-plus" /> Add population
         </button>
+        <span class="pm-add-spacer" />
+          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!canUndo"
+                  v-tooltip.bottom="'Undo (Ctrl+Z)'" @click="undo()">
+            <i class="pi pi-undo" />
+          </button>
+          <button class="pm-icon pm-redo cc-btn cc-btn-bare cc-btn-icon" :disabled="!canRedo"
+                  v-tooltip.bottom="'Redo (Ctrl+Shift+Z)'" @click="redo()">
+            <i class="pi pi-undo" />
+          </button>
       </div>
 
       <!-- Filter + Combine + history in one row, `+[icon]` compact form — matches `+ Plot` / `+ Pairs`
@@ -474,12 +566,12 @@ function moveTo(target: string) {
              the document these act on. -->
         <template v-if="historyMode">
           <span class="pm-add-spacer" />
-          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canUndo"
-                  v-tooltip.bottom="'Undo (Ctrl+Z)'" @click="g.undo()">
+          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :disabled="!canUndo"
+                  v-tooltip.bottom="'Undo (Ctrl+Z)'" @click="undo()">
             <i class="pi pi-undo" />
           </button>
-          <button class="pm-icon pm-redo cc-btn cc-btn-bare cc-btn-icon" :disabled="!g.canRedo"
-                  v-tooltip.bottom="'Redo (Ctrl+Shift+Z)'" @click="g.redo()">
+          <button class="pm-icon pm-redo cc-btn cc-btn-bare cc-btn-icon" :disabled="!canRedo"
+                  v-tooltip.bottom="'Redo (Ctrl+Shift+Z)'" @click="redo()">
             <i class="pi pi-undo" />
           </button>
         </template>
@@ -570,14 +662,57 @@ function moveTo(target: string) {
         </div>
       </div>
 
+      <!-- cluster mode: ONE shared strip of the run's clusters, each chip coloured by the population that
+           holds it (white = in none). Clicking puts the cluster into the SELECTED population row (or takes
+           it out, if it is already there).
+           The hovered row (else the selected one) lights its clusters here. -->
+      <div v-if="clusterMode && visiblePops.length" class="pm-clusters" data-guide="popmanager.clusterChips">
+        <div class="pm-clusters-head cc-fs-2xs">
+          <template v-if="readonly">Clusters</template>
+          <template v-else-if="armedPop">Click to put into <b :style="{ color: armedPop.colour }">{{ armedPop.name }}</b>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro pm-disarm" v-tooltip.bottom="'Deselect'"
+                    @click.stop="emit('update:selected', '')"><i class="pi pi-times" /></button></template>
+          <template v-else>Select a population, then click clusters</template>
+        </div>
+        <span v-if="tooManyClustersToDraw(props.clusterIds.length)" class="pm-chip-empty cc-empty-inline cc-fs-2xs">
+          {{ tooManyClustersText(props.clusterIds.length) }}</span>
+        <div v-else class="pm-chip-grid cc-row cc-row-tight">
+          <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
+                  :class="{ on: !!clusterOwner(id), ro: readonly || !armedPop, lit: isFocusLit(id), dim: isFocusDim(id) }"
+                  :disabled="readonly || !armedPop"
+                  :style="chipStyle(id)"
+                  v-tooltip.bottom="chipTip(id)"
+                  @click.stop="armedPop && !readonly && toggleCluster(armedPop, id)">{{ id }}</button>
+        </div>
+        <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-fs-2xs">no clusters at this suffix</span>
+      </div>
+
       <div v-if="!visiblePops.length" class="pm-empty cc-muted">
         {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
+      </div>
+
+      <!-- "All" row: the eye + viewer toggles for every population at once, in the rows' own columns.
+           Only worth its height once there is more than one row to tick. -->
+      <div v-if="visiblePops.length > 1" class="pm-row pm-allrow" data-guide="popmanager.allToggles">
+        <span class="pm-name cc-fs-2xs cc-muted">All populations</span>
+        <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: allLit }"
+                v-tooltip.left="allLit ? 'Hide all on plots' : 'Highlight all on plots'"
+                @click.stop="toggleAllHighlight">
+          <i :class="allLit ? 'pi pi-eye' : 'pi pi-eye-slash'" />
+        </button>
+        <button v-if="viewerPops.length" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: allViewerOn }"
+                v-tooltip.left="allViewerOn ? 'Hide all in viewer' : 'Show all in viewer'"
+                @click.stop="toggleAllViewer">
+          <i class="pi pi-images" />
+        </button>
+        <span class="pm-icon pm-allrow-pad cc-btn cc-btn-bare cc-btn-icon" aria-hidden="true"><i class="pi pi-ellipsis-h" /></span>
       </div>
 
       <template v-for="p in visiblePops" :key="p.path">
         <div class="pm-row" data-guide="popmanager.row"
              :class="{ active: p.path === props.selected, transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
+             @mouseenter="hoverPath = p.path" @mouseleave="hoverPath = null"
              @click="pick(p)">
           <!-- `.bottom`, not `.left`: this marker is the row's LEFTMOST element, so there is never room
                beside it and the flip drops the tip somewhere it covers a pop row. The injected viewer
@@ -630,6 +765,8 @@ function moveTo(target: string) {
             <i class="pi pm-missing-col" :class="SEVERITY.warn.icon" :style="{ color: SEVERITY.warn.color }" /></button>
           <i v-else-if="runStale(p)" class="pi pm-missing-col" :class="SEVERITY.warn.icon"
              :style="{ color: SEVERITY.warn.color }" v-tooltip.left="'Clustering re-run since — check its clusters'" />
+          <span v-if="clusterMode && p.filter" class="pm-ncl cc-fs-2xs" v-tooltip.left="popClusterIds(p).join(', ') || 'No clusters yet'">
+            {{ popClusterIds(p).length }} cl</span>
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
             {{ g.stats[p.path]?.count ?? '–' }}
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
@@ -656,18 +793,6 @@ function moveTo(target: string) {
           </button>
         </div>
 
-        <!-- cluster-ID toggles: tick a cluster into this pop (filled = assigned; a cluster lives in
-             at most one pop). Tooltip names the owner if it's assigned elsewhere. -->
-        <div v-if="clusterMode && p.filter" class="pm-clusters cc-row cc-row-tight"
-             data-guide="popmanager.clusterChips"
-             :style="{ paddingLeft: 22 + p.depth * 14 + 'px' }">
-          <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
-                  :class="{ on: popClusterIds(p).includes(id), ro: readonly }" :disabled="readonly"
-                  :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: 'var(--cc-on-bright)' } : {}"
-                  v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
-                  @click.stop="!readonly && toggleCluster(p, id)">{{ id }}</button>
-          <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-fs-2xs">no clusters at this suffix</span>
-        </div>
       </template>
 
       <!-- ⋯ row menu — the per-population actions that don't fit beside the row. Shares the
@@ -816,6 +941,10 @@ function moveTo(target: string) {
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
+/* the "All" row is a control strip, not a population: no pick-hover, the ⋯ column kept as a spacer */
+.pm-allrow { cursor: default; }
+.pm-allrow:hover { background: none; }
+.pm-allrow-pad { visibility: hidden; }
 .pm-row.transient { font-style: italic; background: color-mix(in srgb, var(--cc-ink-cyan) 8%, transparent); }
 .pm-viewer { width: 16px; text-align: center; font-size: var(--cc-fs-md); }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -889,7 +1018,14 @@ function moveTo(target: string) {
 .pm-filter-badge { font-size: var(--cc-fs-2xs); color: var(--cc-accent); margin-left: 2px; opacity: 0.8; }
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
 button.pm-filter-badge:hover { opacity: 1; }
-.pm-clusters { padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
+.pm-clusters { padding: 4px 8px 6px; border-bottom: 1px solid var(--cc-border); }
+/* fixed height: the armed name + ✕ appearing must not push the chips down */
+.pm-clusters-head { height: 1rem; line-height: 1rem; color: var(--cc-text-dim); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-chip-grid { gap: 2px; }
+.pm-disarm { margin-left: 2px; vertical-align: top; }
+.pm-chip.lit { outline: 2px solid var(--cc-accent-strong); outline-offset: 1px; }
+.pm-chip.dim { opacity: 0.35; }
+.pm-ncl { color: var(--cc-text-dim); white-space: nowrap; }
 .pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: var(--cc-fs-xs); line-height: 1;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1);
   color: var(--cc-text-dim); cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s, color 0.1s, border-color 0.1s; }

@@ -51,6 +51,70 @@ end
     @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7, 0.8))["code"] == "spatial.many_isolated"
 end
 
+@testset "fixed-window graphs: no edges is not a finding" begin
+    # a window graph places cells on tiles and has no edges by design — the edge checks must not fire
+    @test isempty(Cecelia._window_graph_qc_findings(500))
+    @test only(Cecelia._window_graph_qc_findings(0))["code"] == "spatial.no_cells"
+    win = Dict{String,Any}("method" => "windows", "nCells" => 500, "nEdges" => 0, "tile" => 25.0)
+    @test isempty(Cecelia._loaded_graph_findings(win, "w50"))
+    # the same metrics without the method tag are an edgeless cell graph, and do flag
+    @test only(Cecelia._loaded_graph_findings(delete!(copy(win), "method"), "w50"))["code"] == "spatial.no_edges"
+    p = Cecelia.parse_cell_neighbours_params(Dict{String,Any}("neighbourMethod" => "windows", "windowSize" => 40))
+    @test p.neighbourMethod == "windows" && p.windowSize === 40.0
+    @test Cecelia.parse_cell_neighbours_params(Dict{String,Any}()).windowSize === 50.0
+    # region pooling: the closed set the runner understands (spatial_utils.POOLINGS)
+    @test Cecelia.REGION_POOLINGS == ("frame", "track", "movie")
+    d = mktempdir(); q = joinpath(d, "region_qc.json")
+    write(q, JSON3.write(Dict("windowGraph" => true)))
+    @test Cecelia._region_qc_flag(q, "windowGraph") && !Cecelia._region_qc_flag(q, "otherAllZero")
+    @test !Cecelia._region_qc_flag(joinpath(d, "absent.json"), "windowGraph")
+end
+
+# "Neighbourhood over" follows the picked graph: a window graph pools per frame or over the movie, a cell
+# graph per frame or per track, and a track needs frames. The form check and Run share this one rule.
+@testset "region pooling follows the graph kind" begin
+    P = Cecelia.region_pooling_problem
+    for k in (:window, :frames, :pooled)
+        @test P("frame", [k, k]) === nothing                    # per frame works on any graph
+    end
+    @test P("track", [:frames]) === nothing
+    @test P("movie", [:window]) === nothing
+    @test occursin("needs a cell graph", P("track", [:window]))
+    @test occursin("built per frame", P("track", [:frames, :pooled]))
+    @test occursin("needs a window graph", P("movie", [:frames]))
+    @test occursin("on some images", P("frame", [:window, :frames]))
+    @test P("track", [nothing]) === nothing                     # no graph: Run reports that itself
+    @test occursin("pick one of", P("tile", [:frames]))
+
+    # the kind is read off the file: the window fixture carries its grid, the cross graph is per frame
+    cross = normpath(joinpath(test_projects_dir(), "..", "graph-cross"))
+    if !isdir(cross)
+        @test_skip "graph-cross fixture (missing)"
+    else
+        @test Cecelia.region_graph_kind(joinpath(cross, "win.h5ad")) === :window
+        @test Cecelia.region_graph_kind(joinpath(cross, "cross.h5ad")) === :frames
+        @test Cecelia.region_graph_kind(joinpath(cross, "absent.h5ad")) === nothing
+    end
+
+    # the form's verdict: silent with no graph, a fail naming the mismatch, else the graph's kind
+    A = Cecelia._region_pooling_advisory
+    @test A("track", "w50", [nothing, nothing]) === nothing
+    bad = A("track", "w50", [:window, nothing])
+    @test bad.severity == "fail" && occursin("needs a cell graph", bad.message)
+    ok = A("movie", "w50", [:window])
+    @test ok.severity == "ok" && ok.message == "\"w50\" is a window graph"
+    @test A("frame", "r30", [:frames]).message == "\"r30\" is a cell graph"
+    @test A("frame", "all", [:pooled]).tip == "Each frame"
+
+    # the form re-asks when the graph changes: the server stamps the sibling it reads
+    spec = Dict{String,Any}("params" => Any[Dict{String,Any}("key" => "pooling"),
+                                            Dict{String,Any}("key" => "graphSuffix")])
+    Cecelia.stamp_backend_advisories!(spec, "clustRegions.cluster")
+    @test spec["params"][1]["backendAdvisory"] === true
+    @test spec["params"][1]["advisoryReloadOn"] == ["graphSuffix"]
+    @test !haskey(spec["params"][2], "backendAdvisory")
+end
+
 @testset "clustRegions carries the neighbour graph's sparse-graph QC (#1771)" begin
     # the region runner banks per-image `graphMetrics` of the graph it loaded; the run's QC must flag a
     # sparse one with the graph task's own finding — per image, not pooled across the set
@@ -200,16 +264,17 @@ end
     end
 end
 
-# End to end on a real tracked timecourse with DEFAULT params: every aggregate lies within one frame.
-@testset "detectAggregates aggregates within a frame (KDIeEm)" begin
-    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
-    if !have_fixture(h5)
-        @test_skip "detectAggregates per-frame (fixture missing)"
+# End to end on a real tracked timecourse: every aggregate lies within one frame, and `clustDiameter`
+# is µm. On the calibrated copy (0.5 µm x/y, 2 µm z) the task's groups are DBSCAN's on the µm centroids
+# worked out here from the raw pixel columns; the same DBSCAN in pixels must group differently, or the
+# check could not tell a missing conversion.
+@testset "detectAggregates aggregates within a frame, in µm" begin
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy: the task writes into it
+    if fx === nothing
+        @test_skip "detectAggregates per-frame (calibrated fixture missing)"
     else
-        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
-        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
-        img = CciaImage(uid="KDIeEm", dir=td)
-        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        img = Cecelia._load_image(fx.dir)
+        @test img_is_calibrated(img)
         m = PopulationMap(pop_type="flow", value_name="B")
         add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
         save_pop_map!(m, img)
@@ -218,15 +283,26 @@ end
                                 on_log = _ -> nothing)
         @test res !== nothing
         # an unnamed run is the `default` run
-        out = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id#default", "centroid_t"]) |> as_df
+        idcol = "flow.cell.aggregate.id#default"
+        out = label_props(img; value_name="B") |> v -> view_centroid_cols(v; order = [:x, :y, :z]) |>
+              select_cols([idcol, "centroid_t"]) |> as_df
         frames_of = Dict{Float64,Set{Float64}}()
-        for (a, t) in zip(out[!, "flow.cell.aggregate.id#default"], out.centroid_t)
+        for (a, t) in zip(out[!, idcol], out.centroid_t)
             (ismissing(a) || a <= 0) && continue
             push!(get!(frames_of, a, Set{Float64}()), t)
         end
         @test !isempty(frames_of)
         @test all(length(ts) == 1 for ts in values(frames_of))
-        rm(td; recursive=true)
+
+        # the grouping as a set of label sets — DBSCAN's ids are arbitrary, its partition is not
+        groups(ids) = Set(Set(out.label[ids .== k]) for k in unique(ids) if k > 0)
+        px  = hcat(out.centroid_x, out.centroid_y, out.centroid_z)
+        um  = px .* [0.5 0.5 2.0]
+        got = groups(Int.(coalesce.(out[!, idcol], 0.0)))
+        want    = groups(Cecelia._aggregate_ids_by_frame(um, out.centroid_t, 30.0, 3))
+        want_px = groups(Cecelia._aggregate_ids_by_frame(px, out.centroid_t, 30.0, 3))
+        @test want != want_px                    # the units change the answer on this data
+        @test got == want
     end
 end
 

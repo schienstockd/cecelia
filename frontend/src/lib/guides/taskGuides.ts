@@ -461,17 +461,17 @@ const clusterToPops = (route: string, what: string): GuideStep[] => [
     title: 'Add a population',
     text: 'There is no gate to draw here — you create the population first, then fill it.',
     bullets: ['Name it for what it is: "patrolling", "CD4 T cell".'],
-    // The chip row only exists once a population does, so its appearance is the signal.
+    // The cluster strip only exists once a population does, so its appearance is the signal.
     when: c => c.anchorExists('popmanager.clusterChips'),
   },
   {
     anchor: 'popmanager.clusterChips',
     route,
     placement: 'left',
-    title: 'Tick clusters into it',
-    text: `Each chip is one cluster — click to put it in this population.`,
+    title: 'Click clusters into it',
+    text: `Each chip is one cluster, coloured by its population. Click to put it in the selected row.`,
     bullets: [
-      'A cluster belongs to at most one population; ticking it elsewhere moves it.',
+      'A cluster belongs to at most one population; clicking it into another moves it.',
       'The heatmap is how you decide which clusters belong together.',
     ],
   },
@@ -700,6 +700,7 @@ export const clusterRegionsGuide = moduleTaskGuide({
   params: [
     'Neighbour graph — the graph a Spatial run produced; pick one to cluster over.',
     'Population basis — the populations whose mix defines each neighbourhood\'s composition vector.',
+    'Neighbourhood over — each frame, a whole track (one region per track), or a whole movie on a window graph.',
     'Suffix — output name for this run; you pick it again when reading the regions downstream.',
   ],
   after: [

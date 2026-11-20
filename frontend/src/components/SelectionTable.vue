@@ -37,6 +37,7 @@ import { sortRows, cycleSort, sortIconFor, parseSortState,
 import { useColumnResize } from '../composables/useColumnResize'
 import { fillColumnKey, fillExtraPx, lengthPx } from '../utils/columnFill'
 import { rafCoalesce } from '../utils/rafCoalesce'
+import { headerLift, liftScrollBox, verticalScrollBox } from '../utils/stickyHead'
 import { allSelected as allChosen, someSelected as someChosen,
          toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep } from '../utils/tableSelection'
 
@@ -209,6 +210,9 @@ const props = withDefaults(defineProps<{
    * stick to the page top instead. The header sits above the pinned pick column, so its radios never
    * draw over the column titles. A scroll box with top padding must set `--cc-scroll-pad-top` to it
    * (BaseModal's body does), or rows show through the padding strip above the pinned header.
+   * Something already pinned above the table (a sticky CollapsibleSection bar) publishes its height as
+   * `--cc-sticky-above`, and the header stops below it. Works inside a `fit="content"` wrapper too,
+   * whose `overflow-x` traps CSS sticky — the header is then lifted by hand (`utils/stickyHead.ts`).
    */
   stickyHeader?: boolean
   /**
@@ -338,11 +342,7 @@ let scroller: HTMLElement | null = null
 let scrollFrame = 0
 function onDragMove(e: MouseEvent) { pointer = { x: e.clientX, y: e.clientY } }
 function scrollBoxOf(el: HTMLElement | null): HTMLElement {
-  for (let p = el?.parentElement; p; p = p.parentElement) {
-    const oy = getComputedStyle(p).overflowY
-    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p
-  }
-  return (document.scrollingElement as HTMLElement) ?? document.documentElement
+  return verticalScrollBox(el) ?? (document.scrollingElement as HTMLElement) ?? document.documentElement
 }
 function autoScroll() {
   if (!drag || !scroller || !tableEl.value) return
@@ -542,6 +542,41 @@ onMounted(() => {
   fillRo.observe(parent)
 })
 onBeforeUnmount(() => { fillRo?.disconnect(); fillRo = null; measureParent.cancel() })
+// `stickyHeader` inside a horizontal scroll wrapper (`fit="content"`): the wrapper traps CSS sticky,
+// so the header is lifted by hand against the box that really scrolls (`utils/stickyHead.ts`). Any
+// scroll on the page can move the table, so one capturing listener, coalesced to a frame. `null` box
+// = CSS sticky is doing it, lift 0.
+const headLift = ref(0)
+// Lifting by hand, the CSS `top` must be off: it is relative to the wrapper, which never scrolls, so a
+// non-zero `top` (`--cc-sticky-above`) pushes the header that far down into the rows even at rest —
+// and the lift then adds the same inset again. Two mechanisms placing one header is what floated it.
+const liftMode = ref(false)
+const updateLift = rafCoalesce(() => {
+  const table = tableEl.value
+  const head = table?.tHead
+  if (!table || !head) return
+  const box = liftScrollBox(table)
+  liftMode.value = box !== null
+  if (box === null) { headLift.value = 0; return }
+  const boxTop = box ? box.getBoundingClientRect().top + box.clientTop : 0
+  const above = parseFloat(getComputedStyle(table).getPropertyValue('--cc-sticky-above')) || 0
+  const t = table.getBoundingClientRect()
+  headLift.value = headerLift(boxTop + above, t.top, t.height, head.getBoundingClientRect().height)
+})
+const onAnyScroll = () => updateLift.schedule(undefined)
+onMounted(() => {
+  if (!props.stickyHeader) return
+  window.addEventListener('scroll', onAnyScroll, { capture: true, passive: true })
+  window.addEventListener('resize', onAnyScroll, { passive: true })
+  onAnyScroll()
+  void updateLift.flush()   // placed before the first paint, not a frame after it
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onAnyScroll, { capture: true })
+  window.removeEventListener('resize', onAnyScroll)
+  updateLift.cancel()
+})
+const headStyle = computed(() => headLift.value ? { transform: `translateY(${headLift.value}px)` } : undefined)
 const fillKey = computed(() => sized.value && props.fit === 'fill' ? fillColumnKey(props.columns) : null)
 const colPx = (c: SelectionColumn) => c.fixed ? (c.width ?? props.defaultColumnWidth) : lengthPx(widthOf(c.key))
 const fillExtra = computed(() => {
@@ -560,14 +595,14 @@ function colStyle(c: SelectionColumn) {
 </script>
 
 <template>
-  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact', 'sticky-head': stickyHeader }" :style="tableStyle">
+  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact', 'sticky-head': stickyHeader, 'sticky-head-lift': stickyHeader && liftMode }" :style="tableStyle">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="sized">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
       <col v-for="c in columns" :key="c.key" :style="colStyle(c)">
       <col v-if="$slots.actions" :style="{ width: actionsWidth }">
     </colgroup>
-    <thead v-if="!headerless">
+    <thead v-if="!headerless" :class="{ 'sel-head-lifted': headLift > 0 }" :style="headStyle">
       <tr>
         <th v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input v-if="selectionMode === 'multi' && selectAll" type="checkbox" :checked="allSelected"
@@ -723,10 +758,15 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 .sel-table.sticky-head thead th {
   /* `top: 0` sticks at the scroll box's PADDING edge, so rows show through a strip above the header;
      a padded scroll box publishes its top padding as `--cc-scroll-pad-top` (BaseModal's body does). */
-  position: sticky; top: calc(-1 * var(--cc-scroll-pad-top)); z-index: 3; background: var(--cc-bg);
+  position: sticky; top: calc(var(--cc-sticky-above) - var(--cc-scroll-pad-top)); z-index: 3; background: var(--cc-bg);
   box-shadow: inset 0 -1px 0 var(--cc-border);
 }
 .sel-table.sticky-head thead th.sel-sticky { z-index: 4; }
+/* lifted by hand (`headLift`): the transform makes the header its own stacking context, so it needs a
+   z-index of its own to stay above the rows' pinned cells (z 2) — below a pinned section bar (z 5) */
+.sel-table.sticky-head thead.sel-head-lifted { position: relative; z-index: 4; }
+/* …and with the lift doing the vertical placement, CSS sticky keeps only the horizontal pinning */
+.sel-table.sticky-head-lift thead th { top: auto; }
 /* a row scrolled into view (`followSelection`) stops below the pinned header, not under it */
 .sel-table.sticky-head tbody tr { scroll-margin-top: 2rem; }
 .sel-col-resize {

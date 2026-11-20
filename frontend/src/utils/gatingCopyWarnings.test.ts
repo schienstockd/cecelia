@@ -21,6 +21,10 @@ describe('copyWarningLines', () => {
     expect(copyWarningLines({}, nameOf)).toEqual([])
     expect(copyWarningLines({ a: [] }, nameOf)).toEqual([])
   })
+  it('names two pops sharing a name by their parents', () => {
+    expect(copyWarningLines({ a: [{ column: 'x', pops: ['/A/CD8', '/B/CD8', '/B/CD4'] }] }, nameOf)[0].pops)
+      .toEqual(['A/CD8', 'B/CD8', 'CD4'])
+  })
   it('singular', () => {
     expect(copyWarningLines({ a: [{ column: 'x', pops: ['/p'] }] }, nameOf)[0].text)
       .toBe('img2: no x — 1 population will be empty')

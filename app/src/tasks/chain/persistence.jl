@@ -25,6 +25,15 @@ _cache_dir(proj::CciaProject)::String          = joinpath(_chains_dir(proj), ".c
 
 # ── Template I/O ──────────────────────────────────────────────────────────────
 
+# One node as stored — the template file and the content-cache JSON (`_template_json`, whose hash names
+# the template) both write it through here. `after_live` only when set, so a template without a "Queue
+# after" step writes, and hashes, exactly as before the field existed.
+function _node_doc(n::ChainNode)
+    base = (; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
+              barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
+    n.after_live ? merge(base, (; after_live = true)) : base
+end
+
 function _node_from_dict(d)::ChainNode
     fn = string(get(d, "fn", get(d, :fn, "")))
     sc = string(get(d, "scope", get(d, :scope, "")))
@@ -36,6 +45,7 @@ function _node_from_dict(d)::ChainNode
                          for (k, v) in get(d, "params", get(d, :params, Dict()))),
         parse_chain_barrier_policy(string(get(d, "barrier_policy", get(d, :barrier_policy, "all")))),
         string(get(d, "resource_pool", get(d, :resource_pool, ""))),   # renamed in ChainNode
+        get(d, "after_live", get(d, :after_live, false)) === true,
     )
 end
 
@@ -110,9 +120,7 @@ function save_chain_template!(proj::CciaProject, t::ChainTemplate;
     mkpath(_chains_dir(proj))
     doc = (;
         name  = t.name,
-        nodes = [(; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
-                   barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
-                 for n in t.nodes],
+        nodes = [_node_doc(n) for n in t.nodes],
         edges = [(; from=e.from, to=e.to) for e in t.edges],
         startTargets = t.start_targets,
     )

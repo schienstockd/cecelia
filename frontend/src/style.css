@@ -20,6 +20,9 @@
   /* a padded scroll box's top padding, set on that box (BaseModal's body) so a sticky table header
      inside it can lift over the padding strip — read by SelectionTable `stickyHeader` */
   --cc-scroll-pad-top: 0px;
+  /* the height of a bar already pinned at the top of that scroll box (a `sticky` CollapsibleSection
+     publishes it on its body), so a sticky table header inside stops below it, not under it */
+  --cc-sticky-above: 0px;
   /* backgrounds — near-neutral dark with a trace of warmth (GUI_CLARITY_PLAN Decision 15): not the
      old blue cast, not a warm brown. Plot cards and the viewer read as neutral against them. */
   --cc-bg:         #121212;
@@ -1079,6 +1082,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
 /* destructive item (delete): the icon carries the colour at rest, the whole row once armed */
 .cc-actions-item.danger .pi { color: var(--cc-sev-fail); }
 .cc-actions-item.armed, .cc-actions-item.armed .pi { color: var(--cc-sev-warn); }
+/* a mode switch in the menu (`role="menuitemcheckbox"`): a check at the row's end while it is on */
+.cc-actions-item .cc-actions-check { margin-left: auto; color: var(--cc-accent-strong); }
 /* a heading inside the menu (e.g. "Move under…") — not clickable */
 .cc-actions-head {
   padding: 0.35rem 0.6rem 0.2rem; color: var(--cc-text-dim); font-size: var(--cc-fs-2xs);

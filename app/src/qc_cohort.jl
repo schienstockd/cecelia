@@ -46,6 +46,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # where the estimator is not converging.
     "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx", "meanFrameCorrelation"],
     "editImages.register"        => ["worstResidualUm", "minTissueCovered", "minTissueRetained"],
+    # slides prepared alike carry alike numbers of sections; one that split into far fewer (or far
+    # more) is a threshold that missed faint sections or cut one apart
+    "editImages.splitTissues"    => ["nTissues"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.importLabels"       => ["nCells"],
@@ -105,6 +108,8 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # spatial pattern: an image whose smallest target is far smaller than its peers' reads noisier,
     # and one where every other image differs from random placement but this one doesn't is worth a look
     "spatialAnalysis.spatialPattern" => ["nTargetMin", "nSignificant"],
+    # proximity profile: a structure far smaller than its peers', or a thin band, reads noisier
+    "spatialAnalysis.proximityProfile" => ["nStructureCells", "minBandCells"],
     "spatialAnalysis.detectAggregates" => ["nCells", "nAggregates", "fracAggregated"],
     "spatialAnalysis.cellContacts"     => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.contactsMeshes"   => ["nCellsA", "nContacts", "fracInContact"],

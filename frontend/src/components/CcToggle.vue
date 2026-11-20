@@ -41,9 +41,16 @@ defineProps<{ label?: string; ariaLabel?: string; disabled?: boolean }>()
 </template>
 
 <style scoped>
-.cc-toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.cc-toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; position: relative; }
 .cc-toggle.disabled { opacity: 0.5; cursor: not-allowed; }
-.cc-toggle-input { display: none; }
+/* Hidden from the EYE only: `display: none` also took it out of the tab order, so no switch in the app
+   could be reached or flipped from the keyboard (CcToggle in ChipSelect.browser.test.ts). The label
+   still takes the clicks; keyboard focus shows on the track, as a slider's does on its thumb. */
+.cc-toggle-input {
+  position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+  opacity: 0; pointer-events: none;
+}
+.cc-toggle-input:focus-visible ~ .cc-toggle-track { box-shadow: 0 0 0 2px var(--cc-accent-soft); }
 .cc-toggle-track {
   width: 32px; height: 17px;
   border-radius: var(--cc-radius-pill);

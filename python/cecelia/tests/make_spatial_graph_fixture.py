@@ -10,6 +10,16 @@ on-disk layout.
   pooled.h5ad  frames pooled: most edges join a cell to its neighbours on other frames
   knn.h5ad     per timepoint, kNN (k = 3): DIRECTED — a cell's nearest need not list it back
 
+and, under `test-data/graph-cross/` (outside the project, so no other test sees a second segmentation
+or a fourth graph):
+
+  T.h5ad       a second segmentation's cell table, made here: B's cells on frames 0–2 whose label is
+               divisible by 3, moved `T_SHIFT_X` pixels along x. Its labels are B's, so a reader that
+               finds a node's cell by label alone (not segmentation AND label) puts a T end where the
+               B cell of that label is — 7 px off.
+  cross.h5ad   per timepoint, over TWO segmentations: B (as net.h5ad) and T.
+  win.h5ad     FIXED WINDOWS (`WINDOW` µm): no edges, the grid in `uns`, each node's frame in `_t`.
+
 Not a TestCase (the discovery pattern is `test_*.py`) — a generator for the fixtures the Julia API
 suite reads (`api/test/suite/spatial_graph_lines.jl`).
 """
@@ -25,6 +35,10 @@ IMG = os.path.join(_ROOT, "testpr", "1", "KDIeEm")
 PHYS = [1.0, 1.0, 1.0]
 RADIUS = 60.0
 FRAMES = 3
+T_SHIFT_X = 7.0      # pixels
+WINDOW = 60.0        # µm (= px here): 30 µm tiles
+CROSS = os.path.normpath(os.path.join(_ROOT, "..", "graph-cross"))
+T_TABLE = os.path.join(CROSS, "T.h5ad")
 
 
 def _labels():
@@ -34,13 +48,31 @@ def _labels():
     return d.loc[d["centroid_t"] < FRAMES, "label"].astype(int).tolist()
 
 
-def _write(name, per_timepoint, method="delaunay", n_neighs=6):
-    segs = [{"valueName": "B", "propsPath": os.path.join(IMG, "labelProps", "B.h5ad"), "labels": _labels()}]
+def _write_t_table():
+    import anndata as ad   # H5AD-OK: creating a new fixture table (the sanctioned creation exception)
+    import numpy as np
+    from cecelia.utils.atomic_io import write_h5ad_atomic
+    cells = ad.read_h5ad(os.path.join(IMG, "labelProps", "B.h5ad"))
+    labels = cells.obs.index.astype(np.int64).to_numpy()
+    # centroids live in obsm, named by uns (label_props_utils' layout); the axis by NAME, never position
+    t = np.asarray(cells.obsm["temporal"])[:, list(cells.uns["temporal_cols"]).index("centroid_t")]
+    tx = cells[(t < FRAMES) & (labels % 3 == 0)].copy()
+    sp = np.array(tx.obsm["spatial"], dtype=float)
+    sp[:, list(tx.uns["spatial_cols"]).index("centroid_x")] += T_SHIFT_X
+    tx.obsm["spatial"] = sp
+    write_h5ad_atomic(tx, T_TABLE)
+    return tx.obs.index.astype(int).tolist()
+
+
+def _write(name, per_timepoint, method="delaunay", n_neighs=6, extra=(), out_dir=None, window_size=WINDOW):
+    segs = [{"valueName": "B", "propsPath": os.path.join(IMG, "labelProps", "B.h5ad"), "labels": _labels()},
+            *extra]
     adata, obs = spatial_utils.build_pooled_image_graph(
-        segs, PHYS, method=method, radius=RADIUS, n_neighs=n_neighs, per_timepoint=per_timepoint)
+        segs, PHYS, method=method, radius=RADIUS, n_neighs=n_neighs, per_timepoint=per_timepoint,
+        window_size=window_size)
     meta = {"method": method, "radius": RADIUS, "nNeighbours": n_neighs, "perTimepoint": per_timepoint,
-            "valueNames": ["B"]}
-    path = os.path.join(IMG, "spatialGraph", f"{name}.h5ad")
+            "valueNames": [sg["valueName"] for sg in segs]}
+    path = os.path.join(out_dir or os.path.join(IMG, "spatialGraph"), f"{name}.h5ad")
     spatial_utils.save_graph(adata, obs, path, meta=meta)
     conn = adata.obsp["spatial_connectivities"]
     # undirected edges: a pair linked in EITHER direction, once (the tests' expected counts)
@@ -53,3 +85,7 @@ if __name__ == "__main__":
     _write("net", True)
     _write("pooled", False)
     _write("knn", True, method="knn", n_neighs=3)
+    os.makedirs(CROSS, exist_ok=True)
+    _write("cross", True, extra=[{"valueName": "T", "propsPath": T_TABLE, "labels": _write_t_table()}],
+           out_dir=CROSS)
+    _write("win", True, method="windows", out_dir=CROSS)

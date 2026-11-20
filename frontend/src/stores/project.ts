@@ -59,6 +59,7 @@ export interface CciaImage {
   statsSuffixes?: string[]      // spatialAnalysis.neighbourStats runs
   roiSuffixes?: string[]        // spatialAnalysis.roiDiscovery ROI sets (rois/{suffix}.json)
   patternSuffixes?: string[]    // spatialAnalysis.spatialPattern runs (spatialPattern/{suffix}.json)
+  proximitySuffixes?: string[]  // spatialAnalysis.proximityProfile runs (proximity/{suffix}.json)
   clusterSuffixes?: string[]    // clustPops / clustTracks runs, for the ACTIVE segmentation
   regionSuffixes?: string[]     // clustRegions runs, same segmentation, separate family
   attr?: Record<string, string>           // user-defined metadata attributes

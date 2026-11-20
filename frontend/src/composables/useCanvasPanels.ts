@@ -2,6 +2,7 @@ import { computed, unref, watch, type Ref } from 'vue'
 import { useCanvasPanelsStore } from '../stores/canvasPanels'
 import type { ArrangeCmd } from './useFloatingPanel'
 import { tileGrid, tileCell } from '../utils/tileGrid'
+import { contentBox } from './useCanvasWorkspace'
 
 /** One panel on a canvas: a stable id, an optional Tile/Cascade command, and opaque per-panel
  *  state owned by the host (e.g. gating's displayed-parent/highlight; a summary plot's spec). */
@@ -97,15 +98,9 @@ export function useCanvasPanels<S>(
   // Bounding box of the placed panels (max right/bottom over this canvas's persisted geometry), in
   // unscaled workspace px. Hosts feed it to `useCanvasZoom` so "Fit" fits the actual plots, not the
   // (zoom-dependent) workspace size — see useCanvasWorkspace.
-  const contentBounds = computed(() => {
-    let w = 0, h = 0
-    const pre = `${keyRef.value}:`
-    for (const [k, g] of Object.entries(store.geom)) {
-      if (!k.startsWith(pre)) continue
-      w = Math.max(w, g.x + g.w); h = Math.max(h, g.y + g.h)
-    }
-    return { w, h }
-  })
+  // Same object while the box is unchanged, so dragging a panel inside the canvas re-renders nothing
+  // but that panel (see `contentBox`).
+  const contentBounds = computed<{ w: number; h: number }>(prev => contentBox(store.geom, `${keyRef.value}:`, prev))
 
   return { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds }
 }

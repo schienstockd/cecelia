@@ -680,3 +680,11 @@ describe('weights-downloading — a wait, not a failure', () => {
     expect(isWeightsJob('system-env-install:cellpose-v3')).toBe(false)
   })
 })
+
+describe('previewSummary — what is counted', () => {
+  it('counts cells unless the backend names something else', () => {
+    expect(previewSummary({ base: 3 }, false).text).toBe('3 cells')
+    expect(previewSummary({ base: 6 }, false, undefined, null, 'tissue').text).toBe('6 tissues')
+    expect(previewSummary({ base: 1 }, false, undefined, null, 'tissue').text).toBe('1 tissue')
+  })
+})

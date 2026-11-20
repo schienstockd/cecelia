@@ -341,6 +341,11 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                 label="Also show durable run history"
                 v-tooltip.bottom="'On: previous runs from the log, not just this session'" />
 
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Plots</div>
+      <CcToggle v-model="settings.plotPickerPreviews"
+                label="Show plot previews"
+                v-tooltip.bottom="'A sketch of each plot in the + Plot picker'" />
+
       <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">When tasks finish</div>
       <CcToggle v-model="settings.autoRefreshOnTask"
                 label="Refresh plots"

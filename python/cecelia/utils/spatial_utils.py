@@ -117,7 +117,7 @@ def build_block_diagonal_graph(coords, times, method="delaunay", radius=30.0, n_
 
 
 def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_neighs=6,
-                             per_timepoint=True):
+                             per_timepoint=True, window_size=50.0):
     """Pool ONE image's cells across its segmentations into a single spatial graph — so a cell in
     segmentation B and a nearby cell in segmentation T are neighbours (cross-segmentation). THE graph
     builder: only `spatialAnalysis.cellNeighbours` calls it, and everything else loads what it persisted.
@@ -154,7 +154,7 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
         coords = scale_centroids(d, phys)[ccols].to_numpy(dtype=np.float64)
         coords_list.append(coords)
         obs_list.append(pd.DataFrame({"valueName": seg["valueName"], "label": d["label"].to_numpy()}))
-        if per_timepoint and tcols and tcols[0] in d.columns:
+        if (per_timepoint or method == "windows") and tcols and tcols[0] in d.columns:
             time_list.append(d[tcols[0]].to_numpy())
     if not coords_list:
         return None, None
@@ -163,6 +163,15 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     obs_all = pd.concat(obs_list, ignore_index=True)
     a = ad.AnnData(coords_all.astype(np.float32))
     a.obsm["spatial"] = coords_all
+    if method == "windows":
+        # FIXED WINDOWS: no cell-to-cell edges — each node belongs to a tile of a grid laid over the
+        # field (`window_grid`), and a consumer counts cells per window. The frame is kept whatever
+        # `per_timepoint` says: whether windows count per frame or over the movie is the consumer's call.
+        a.obsp["spatial_connectivities"] = sp.csr_matrix((a.n_obs, a.n_obs), dtype=np.float32)
+        a.uns.update(window_grid(coords_all, [c.split("_")[-1] for c in ccols], window_size))
+        if len(time_list) == len(coords_list):
+            obs_all["_t"] = np.concatenate(time_list)
+        return a, obs_all
     if per_timepoint and len(time_list) == len(coords_list):   # every segment had a temporal column
         times = np.concatenate(time_list)
         a.obsp["spatial_connectivities"] = build_block_diagonal_graph(
@@ -171,6 +180,110 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     else:
         build_spatial_graph(a, method=method, radius=radius, n_neighs=n_neighs)
     return a, obs_all
+
+
+# ── fixed windows (CytoMAP raster scan) ─────────────────────────────────────────────────────────────
+# Schienstock & Mueller 2021 (Immunol Rev, doi:10.1111/imr.13038 §4.5) after CytoMAP (Stoltzfus et al.
+# 2020, Cell Rep, doi:10.1016/j.celrep.2020.107523): the image "tiled into overlapping squares". A window
+# is a square (cube in 3D) of side S; windows sit on a grid of step S/2, so neighbours overlap by half.
+# The grid's cells — TILES, S/2 wide — are what a cell is assigned to: a cell's own window is the one
+# centred on its tile (= the nearest window centre). Every cell lies in exactly two windows per axis.
+
+def window_grid(coords, axes, window_size):
+    """The grid for `coords` (n, d) µm with axis names `axes` (e.g. ['z', 'y', 'x']): a dict for the graph
+    file's `uns` — `windowSize`, `tile` (= S/2), `gridAxes` (the axes windows span) and `gridShape`
+    (tiles per axis). The grid starts at 0 µm and covers the cells' extent. Z is left out (windows are
+    columns through the stack) unless the cells span at least two windows in Z: a shallow intravital
+    stack — 55 µm with 50 µm windows — is one layer of columns, not a single slab of cubes whose depth
+    would then hinge on each image's Z spread."""
+    coords = np.asarray(coords, dtype=float)
+    S = float(window_size)
+    tile = S / 2.0
+    keep = [i for i, ax in enumerate(axes)
+            if not (ax == "z" and np.ptp(coords[:, i]) < 2 * S)] if len(coords) else list(range(len(axes)))
+    shape = [int(np.floor(max(coords[:, i].max(), 0.0) / tile)) + 1 if len(coords) else 1 for i in keep]
+    return {"method": "windows", "windowSize": S, "tile": tile,
+            "gridAxes": [str(axes[i]) for i in keep], "gridAxisIdx": [int(i) for i in keep],
+            "gridShape": shape}
+
+
+def window_tiles(coords, grid):
+    """Each node's tile as a flat index into `grid['gridShape']` (C order over `gridAxes`)."""
+    c = np.asarray(coords, dtype=float)[:, grid["gridAxisIdx"]]
+    shape = np.asarray(grid["gridShape"], dtype=np.int64)
+    idx = np.clip(np.floor(c / grid["tile"]).astype(np.int64), 0, shape - 1)
+    return np.ravel_multi_index(tuple(idx.T), tuple(shape))
+
+
+def window_metrics(adata):
+    """A window graph's QC metrics: `nCells`, the grid, and `cellsPerTile` — cell-frames per occupied
+    tile, how much each window has to go on. `method: "windows"` tells a reader there are no edges."""
+    grid = {k: _plain(adata.uns[k]) for k in ("windowSize", "tile", "gridAxes", "gridAxisIdx", "gridShape")}
+    tiles = window_tiles(adata.obsm["spatial"], grid) if adata.n_obs else np.zeros(0, dtype=np.int64)
+    occupied = len(np.unique(tiles))
+    return {"method": "windows", "nCells": int(adata.n_obs), "nEdges": 0, **grid,
+            "nTiles": int(np.prod(grid["gridShape"])), "occupiedTiles": int(occupied),
+            "cellsPerTile": float(adata.n_obs / occupied) if occupied else 0.0}
+
+
+def _plain(v):
+    """An `uns` value as plain Python (h5ad round-trips lists as numpy arrays)."""
+    if isinstance(v, np.ndarray):
+        return v.tolist()
+    return v.item() if isinstance(v, np.generic) else v
+
+
+def graph_window_grid(adata):
+    """The window grid a graph was built with, or None for a cell-to-cell graph."""
+    uns = adata.uns or {}
+    if _plain(uns.get("method")) != "windows":
+        return None
+    return {k: _plain(uns[k]) for k in ("windowSize", "tile", "gridAxes", "gridAxisIdx", "gridShape")}
+
+
+def window_counts(coords, pop_codes, n_pops, grid, groups=None, include_other=False):
+    """Cells of each population inside each WINDOW: `(counts, n_windows)`, `counts` shaped
+    (n_groups × n_windows, n_cols) with row `g * n_windows + w`. `groups` (length n, ints 0..G-1)
+    separates frames for per-frame windows; None counts over the whole movie (G = 1). A cell lies in
+    two windows per axis — those centred on its tile and on the tile next to it on the side of the
+    tile's centre it sits on — so it is counted in 2^d windows. UNASSIGNED cells count in the trailing
+    "other" column with `include_other`, else not at all (as in `neighbourhood_counts`)."""
+    import itertools
+    c = np.asarray(coords, dtype=float)[:, grid["gridAxisIdx"]]
+    shape = np.asarray(grid["gridShape"], dtype=np.int64)
+    n_win = int(np.prod(shape))
+    codes = np.asarray(pop_codes, dtype=np.int64)
+    g = np.zeros(len(codes), dtype=np.int64) if groups is None else np.asarray(groups, dtype=np.int64)
+    n_groups = int(g.max()) + 1 if len(g) else 1
+    n_cols = n_pops + 1 if include_other else n_pops
+    col = np.where(codes >= 0, codes, n_pops if include_other else -1)
+    use = col >= 0
+    # the window centred on tile k spans [(k - 0.5)·tile, (k + 1.5)·tile) → lower window index
+    lo = np.floor(c / grid["tile"] - 0.5).astype(np.int64)
+    counts = np.zeros((n_groups * n_win, n_cols), dtype=np.float64)
+    for offs in itertools.product((0, 1), repeat=c.shape[1]):
+        w = lo + np.asarray(offs, dtype=np.int64)
+        ok = use & np.all((w >= 0) & (w < shape), axis=1)
+        flat = np.ravel_multi_index(tuple(w[ok].T), tuple(shape))
+        np.add.at(counts, (g[ok] * n_win + flat, col[ok]), 1.0)
+    return counts, n_win
+
+
+def window_coverage(grid):
+    """The fraction of each window (flat index, as in `window_counts`) that lies inside the field —
+    the grid's extent, [0, gridShape·tile) per axis. A window centred on an edge tile reaches half a
+    tile past the field (3/4 inside per axis), so its raw count understates the tissue there; dividing
+    by this puts every window on the same footing."""
+    shape = np.asarray(grid["gridShape"], dtype=np.int64)
+    per_axis = []
+    for n in shape:
+        k = np.arange(n, dtype=float)                  # the window centred on tile k: [k-0.5, k+1.5) tiles
+        inside = np.minimum(k + 1.5, n) - np.maximum(k - 0.5, 0.0)
+        per_axis.append(inside / 2.0)
+    cov = per_axis[0]
+    for p in per_axis[1:]:
+        cov = np.multiply.outer(cov, p)
+    return np.asarray(cov, dtype=float).ravel()
 
 
 def save_graph(adata, obs_df, path, meta=None):
@@ -238,6 +351,34 @@ def graph_node_times(obs_df, props_paths):
     if not found or np.isnan(times).all():
         return None
     return times
+
+
+def node_track_ids(obs_df, props_paths):
+    """Each graph node's `track_id`, read from its segmentation's cell table — what pools a cell's
+    per-frame neighbourhoods into one per TRACK (`clustRegions`, pooling "track"). Array parallel to
+    `obs_df` (float, NaN = an untracked cell), or None when no table carries `track_id`.
+    `props_paths` maps valueName → labelProps path; reads go through LabelPropsView."""
+    import pandas as pd
+    from cecelia.utils.label_props_utils import LabelPropsView
+
+    ids = np.full(len(obs_df), np.nan)
+    vns = obs_df["valueName"].astype(str).to_numpy()
+    labs = obs_df["label"].astype(np.int64).to_numpy()
+    found = False
+    for vn in pd.unique(vns):
+        path = props_paths.get(vn)
+        if path is None:
+            continue
+        idx = np.where(vns == vn)[0]
+        view = LabelPropsView(path).view_cols(["track_id"]).filter_by_label(labs[idx].tolist())
+        d = view.as_df(); view.close()
+        if "track_id" not in d.columns:
+            continue
+        tid = pd.to_numeric(d["track_id"], errors="coerce").to_numpy(dtype=float)
+        t_of = dict(zip(d["label"].astype(np.int64), tid))
+        ids[idx] = [t_of.get(int(l), np.nan) for l in labs[idx]]
+        found = True
+    return ids if found else None
 
 
 def graph_meta(adata):
@@ -443,6 +584,14 @@ def neighbourhood_composition(conn, pop_codes, n_pops, include_other=False):
     renormalised over basis neighbours only, so a cell surrounded mostly by unlabelled cells looks
     identical to one surrounded entirely by basis cells. CytoMAP keeps the same "other" bin.
     """
+    return normalise_counts(neighbourhood_counts(conn, pop_codes, n_pops, include_other=include_other))
+
+
+def neighbourhood_counts(conn, pop_codes, n_pops, include_other=False):
+    """The COUNTS behind `neighbourhood_composition`: row i = how many of cell i's graph neighbours are
+    in each population (+ the trailing "other" column with `include_other`). Kept separate so counts can
+    be summed over a group of rows (a track's frames, `sum_rows_by_group`) BEFORE normalising — summing
+    fractions instead would weigh a frame with one neighbour as much as a frame with twenty."""
     pop_codes = np.asarray(pop_codes, dtype=np.int64)
     n_cells = conn.shape[0]
     n_cols = n_pops + 1 if include_other else n_pops
@@ -455,7 +604,166 @@ def neighbourhood_composition(conn, pop_codes, n_pops, include_other=False):
         (np.ones(len(rows), dtype=np.float32), (rows, cols[keep])),
         shape=(n_cells, n_cols))
     # counts[i, p] = number of cell i's neighbours in population p
-    counts = np.asarray((conn > 0).astype(np.float32) @ onehot.toarray())
+    return np.asarray((conn > 0).astype(np.float32) @ onehot.toarray())
+
+
+def normalise_counts(counts):
+    """Row-normalise a count matrix to fractions (`freq = n / sum(n)`, legacy cellRegionsStats). A row
+    with no counts — an isolated cell, a track that never had a neighbour — stays all-zero."""
+    counts = np.asarray(counts, dtype=np.float32)
     totals = counts.sum(axis=1, keepdims=True)
-    totals[totals == 0] = 1.0                       # avoid /0; isolated cells stay all-zero
+    totals[totals == 0] = 1.0                       # avoid /0; empty rows stay all-zero
     return (counts / totals).astype(np.float32)
+
+
+def sum_rows_by_group(rows, keys):
+    """Sum the rows of `rows` (n, k) that share a key. `keys` is a length-n sequence of hashables (e.g.
+    (uID, valueName, track_id) tuples). Returns `(sums, inverse, uniques)`: `sums[g]` is group g's summed
+    row, `inverse[i]` is row i's group, `uniques[g]` its key — so a per-group result broadcasts back to
+    the rows as `result[inverse]`. Groups are numbered in first-appearance order."""
+    import pandas as pd
+    rows = np.asarray(rows, dtype=np.float64)
+    inverse, uniques = pd.factorize(pd.Series(list(keys), dtype=object), sort=False)
+    sums = np.zeros((len(uniques), rows.shape[1]), dtype=np.float64)
+    np.add.at(sums, inverse, rows)
+    return sums, inverse, list(uniques)
+
+
+# ── region clustering: from a loaded graph to the rows that get clustered ─────────────────────────
+# Three ways to pool (`clustRegions` `pooling`), one shape out: per image, a count matrix of the rows
+# that will be clustered and, per basis cell, the row it takes its region from.
+#   "frame" — a cell-to-cell graph: one row per cell-frame (its neighbours' counts); on a WINDOW graph:
+#             one row per window per frame.
+#   "track" — a cell-to-cell graph: a track's frames summed into one row.
+#   "movie" — a WINDOW graph: one row per window, cells counted over every frame, per frame on average.
+POOLINGS = {"cells": ("frame", "track"), "windows": ("frame", "movie")}
+
+
+def image_region_rows(a, obs_all, codes_all, n_pops, pooling, include_other, props_paths):
+    """One image's contribution: `(counts, own, keep, problem)`. `counts` are the image's rows to
+    cluster; `own[i]` is the row basis cell `i` (of the nodes kept by `keep`) takes its region from;
+    `problem` is a user-facing reason the pooling can't run on this graph (else None). Only basis cells
+    are kept — composition counts every neighbour, but a non-basis cell gets no region."""
+    grid = graph_window_grid(a)
+    kind = "windows" if grid is not None else "cells"
+    if pooling not in POOLINGS[kind]:
+        return None, None, None, (
+            f"pooling \"{pooling}\" needs a {'cell-to-cell' if kind == 'windows' else 'fixed-window'} graph "
+            f"— this graph is {kind.replace('cells', 'cell-to-cell')}; use one of {', '.join(POOLINGS[kind])}")
+    keep = np.asarray(codes_all) >= 0
+    has_t = "_t" in obs_all.columns
+    if grid is not None:
+        frames = pd_codes(obs_all["_t"]) if has_t else None
+        groups = frames if pooling == "frame" else None
+        counts, n_win = window_counts(a.obsm["spatial"], codes_all, n_pops, grid, groups=groups,
+                                      include_other=include_other)
+        # per window per frame, as if the whole window lay in the field: the cell count beside the
+        # composition then means the same at the image edge, and in a short movie as in a long one
+        n_frames = 1 if (groups is not None or frames is None) else int(frames.max()) + 1
+        counts = counts / (np.tile(window_coverage(grid), len(counts) // n_win)[:, None] * n_frames)
+        own = window_tiles(a.obsm["spatial"], grid) + (0 if groups is None else groups * n_win)
+        return counts, own[keep], keep, None
+    counts = neighbourhood_counts(a.obsp["spatial_connectivities"], codes_all, n_pops,
+                                  include_other=include_other)
+    if pooling == "frame":
+        idx = np.flatnonzero(keep)
+        return counts[keep], np.arange(len(idx)), keep, None
+    # "track": a graph pooled over frames would count a cell's own other frames as its neighbours
+    if not has_t:
+        return None, None, None, ("the graph was built over all frames together — pooling per track "
+                                  "needs a per-timepoint graph (Neighbour graph → Per timepoint)")
+    tids = node_track_ids(obs_all, props_paths)
+    if tids is None:
+        return None, None, None, "no tracks — pooling per track needs tracked cells"
+    keep = keep & ~np.isnan(tids)
+    keys = list(zip(obs_all["valueName"].astype(str).to_numpy()[keep], tids[keep].astype(np.int64)))
+    sums, inverse, _ = sum_rows_by_group(counts[keep], keys)
+    return sums, inverse, keep, None
+
+
+def pd_codes(values):
+    """Dense 0-based integer codes for `values` (frame indices → 0..F-1)."""
+    import pandas as pd
+    return pd.factorize(pd.Series(np.asarray(values)), sort=True)[0].astype(np.int64)
+
+
+def pool_region_rows(blocks):
+    """Stack the images' `(counts, own)` blocks (from `image_region_rows`) into one matrix, dropping
+    rows nobody counted (an empty window): `(counts, inverse)`, `inverse[i]` = pooled cell i's row."""
+    counts = np.vstack([b[0] for b in blocks]) if blocks else np.zeros((0, 0))
+    offsets = np.cumsum([0] + [len(b[0]) for b in blocks[:-1]])
+    own = np.concatenate([np.asarray(b[1], dtype=np.int64) + o for b, o in zip(blocks, offsets)]) \
+        if blocks else np.zeros(0, dtype=np.int64)
+    used = counts.sum(axis=1) > 0
+    used[own] = True                       # a row a cell takes its region from stays, even if empty
+    remap = np.full(len(counts), -1, dtype=np.int64)
+    remap[used] = np.arange(int(used.sum()))
+    return counts[used], remap[own]
+
+
+# ── region clustering: composition rows → clusters, then back to one row per cell ────────────────
+def cluster_composition(X, var_names, method="leiden", num_clusters=5, resolution=1.0,
+                        create_umap=True, random_state=0, log=None, run_env=None):
+    """Cluster neighbourhood-composition rows (`clustRegions`): one row per cell, or per track when a
+    run pools per track. k-means (fixed count, sklearn) or Leiden through `find_populations_on_distinct_rows` with no
+    transform/normalisation — the rows are already fractions in [0, 1]. Returns an AnnData whose obs
+    `clusters` holds string codes and, with `create_umap`, `obsm['X_umap']`."""
+    import anndata as ad
+    import pandas as pd
+    _log = log if callable(log) else (lambda _m: None)
+    adata = ad.AnnData(np.asarray(X, dtype=np.float32))
+    adata.var_names = [str(c) for c in var_names]
+    adata.obs_names = [str(i) for i in range(adata.n_obs)]
+    if method == "kmeans":
+        import scanpy as sc
+        from sklearn.cluster import KMeans
+        km = KMeans(n_clusters=int(num_clusters), random_state=random_state, n_init=10).fit(adata.X)
+        adata.obs["clusters"] = pd.Categorical([str(c) for c in km.labels_])
+        _log(f">> k-means: {num_clusters} regions")
+        if create_umap:
+            sc.pp.neighbors(adata, use_rep="X")
+            sc.tl.umap(adata, random_state=random_state)
+    else:
+        # compositions repeat exactly (k/6 steps on a Delaunay graph), which splits Leiden's kNN graph
+        # into one island per repeated vector — cluster the distinct vectors once, then map back
+        from cecelia.utils.clustering_utils import find_populations_on_distinct_rows
+        find_populations_on_distinct_rows(adata, resolution=resolution, axis="NONE", transformation="NONE",
+                                          create_umap=create_umap, backend="auto", random_state=random_state,
+                                          log=log, run_env=run_env if run_env is not None else {})
+    return adata
+
+
+def drop_empty_other(comp_obs, other_col):
+    """Drop the "other" composition column from `comp_obs` (column name → per-cell values) when it is
+    all zero, and say whether it was. It is all zero exactly when the graph holds nothing outside the
+    basis (built over the basis populations themselves): then it is no measurement, only a flat heatmap
+    row that invites "where does this come from?". The region run tells Julia, so the clustfeatures
+    sidecar doesn't advertise it, which keeps the option on by default without a dead measure."""
+    if other_col in comp_obs and not np.any(np.asarray(comp_obs[other_col]) > 0):
+        del comp_obs[other_col]
+        return True
+    return False
+
+
+def broadcast_clusters(clustered, X, obs, inverse=None):
+    """The per-CELL AnnData `split_back_and_write` expects, from a clustering of cells or of groups.
+    `X` (n_cells, k) and `obs` (uID, valueName, label) are per cell; `inverse` maps each cell to its row
+    in `clustered` (None = `clustered` IS per cell). Per group, the UMAP point goes on each group's first
+    cell only, the rest NaN — the cluster map drops non-finite rows, so a track shows as ONE point."""
+    import anndata as ad
+    import pandas as pd
+    n = X.shape[0]
+    cells = ad.AnnData(np.asarray(X, dtype=np.float32))
+    cells.obs_names = [str(i) for i in range(n)]
+    for c in ("uID", "valueName", "label"):
+        cells.obs[c] = np.asarray(obs[c])
+    rows = np.arange(n) if inverse is None else np.asarray(inverse)
+    cells.obs["clusters"] = pd.Categorical(clustered.obs["clusters"].astype(str).to_numpy()[rows])
+    if "X_umap" in clustered.obsm:
+        emb = np.asarray(clustered.obsm["X_umap"])
+        first = np.zeros(n, dtype=bool)
+        first[np.unique(rows, return_index=True)[1]] = True
+        um = np.full((n, emb.shape[1]), np.nan)
+        um[first] = emb[rows[first]]
+        cells.obsm["X_umap"] = um
+    return cells

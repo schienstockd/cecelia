@@ -142,9 +142,9 @@ for the user, not a verdict).
 - The analysis: get_populations (what a population MEANS — its gate geometry or filter rule), \
 get_measure_summary (phenotype + motility per population), get_behaviour_summary (HMM states), \
 get_cluster_summary (cluster sizes, and what defines each cluster: its z-scored feature profile — \
-describe from it, the name is the user's call), get_region_clusters (spatial niches), \
+describe from it, the name is the user's call), get_region_clusters (spatial niches + cell types per niche), \
 get_contact_stats (pairwise co-localisation), get_spatial_patterns (one population clustered or \
-random among the tissue's cells).
+random among the tissue's cells), get_proximity_profiles (which populations sit near a structure).
 - A population as pictures: gate_histogram / gate_plot (its distribution and gate plot), \
 gate_cells_view / gate_examples (its cells in the image — zoomed, and as example crops), \
 gate_stats (its counts).
@@ -446,7 +446,9 @@ SEEING AND ADJUSTING THE VIEWER. `get_viewer_screenshot(image_uid)` returns the 
 picture (its Save image) plus its `view` (camera, 2D/3D, t/z, per-channel visible + \
 contrast_limits). `set_viewer_view(image_uid, view)` changes that view live — a PARTIAL view, only \
 the fields named — and is saved as the image's viewer settings, so change only what the user \
-asked for. Loop: screenshot → adjust → screenshot; never ask the user to re-run anything for it.
+asked for. Loop: screenshot → adjust → screenshot; never ask the user to re-run anything for it. \
+"The lens" is the viewer's channel lens: the screenshot's `lens` says where it is and the cells and \
+populations inside; `view.lens` `{x, y, r, channels}` (level-0 px) pins one there.
 
 SEEING AND ADJUSTING A PLOT. `get_plot_image(plot_id)` returns an open plot panel's picture (a \
 UMAP, heatmap, summary chart, gate pairs …) as the user has it set up, plus the `settings` it lets \

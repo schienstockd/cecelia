@@ -11,16 +11,58 @@ build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
    answers, in the user's words — required (as on `INTERACTIVE_VIEWS` and `CLUSTER_PANELS` entries):
    it is what an agent matches "how do I plot X?" against in `get_guide("which-plot")`
    (`frontend/src/lib/guides/plotCatalogue.ts`, rendered into `mcp/cecelia_mcp/guides.json`).
+   `category` files it in the `+ Plot…` picker — see *The `+ Plot…` picker* below. Required on a
+   built-in spec (`plots/plotPicker.test.ts`).
 2. Rendered by `SummaryCanvas` → `SummaryPanel` → `PlotChart` (Observable Plot). Data comes from the
    single `POST /api/plot_data` aggregator (`plot_summary_data`). `whiteboardCompatible: true` makes
    the same definition available on the whiteboard too.
 
 3. `SummaryCanvas` may ALSO host an interactive view (`interactiveViews.ts` → `InteractivePanel`),
-   offered under an **Interactive** optgroup in its `+ Plot…` picker. Today only a plugin's custom
+   offered in its `+ Plot…` picker under the view's own category. Today only a plugin's custom
    module page asks for one — `plugin.json` → `contributions.views` names a view by its stable id, and
    the view must be flagged `pluginPage` + `rail: 'none'` (self-contained: it fetches its own data and
    the canvas's population picker does not drive it). See `docs/CUSTOM_MODULES.md` and
    `docs/todo/PLUGINS_PLAN.md` → Decision 11.
+
+### The `+ Plot…` picker — kinds of plot beside their plots
+
+Every plot surface (module pages, the board, the cluster / model-training / track canvases) uses ONE
+picker, `components/canvas/PlotPicker.vue`. It groups plots by the question a user brings, in this
+order everywhere (`plots/plotPicker.ts` → `PLOT_CATEGORIES`):
+
+| `category` | Shown as | Holds |
+|---|---|---|
+| `compare` | Compare groups | a measure between populations, images or treatments (Track measures, Cell properties, Population summary, the spatial comparisons) |
+| `time` | Over time | Populations over time |
+| `makeup` | Make-up | fractions per state / class / cluster (HMM state, motif class, track cluster frequency) |
+| `profiles` | Clusters & matrices | where clusters sit, what defines each group, who goes or touches whom (cluster map, state signature, transition / interaction matrix, cluster heatmap) |
+| `look` | Images & cards | the cells themselves (tracks, filmstrip, figure, cards, gating strategy, timeline) |
+| `checks` | Checks & diagnostics | did it work (segmentation QC, HMM state count, flow model views, track diagnostics) |
+| `other` | Other | a plugin spec without a category — the fallback, never set on a built-in |
+
+The category is declared on the plot — `category` in a spec's JSON, `category` on an
+`INTERACTIVE_VIEWS` / `CLUSTER_PANELS` entry (required by the type). The old optgroups
+(Summary / Interactive / Clustering / Image) grouped by how a plot is BUILT, which tells a user nothing.
+
+**Previews.** With `settings.plotPickerPreviews` on (default; Preferences → Plots, or the picker's own
+button) the picker lists the kinds of plot (categories) in a column on the left, each with its chart
+shape (`PlotKindSketch.vue`) — every Compare-groups plot opens as a box plot, so the shape is drawn
+once, there, not on every card. Beside the column are the picked kind's plots (the first kind until one is hovered — after a short rest, so crossing the column doesn't flip
+it — or clicked), a card each with a sketch of what the plot is ABOUT (`PlotSketch.vue`: a cell, a track,
+two images, a track coloured by state) plus its `answers` line. Typing in the search shows every match
+beside the column, grouped by kind, and the hovered card's kind lights up in the column; a host offering one kind only has no column.
+
+The card sketches come from `plots/plotSketchArt.ts`: a few shared subjects (cell, track, population
+in an image, contact, spread, states, motif, movement patterns, clusters, gate, image) plus a modifier
+(× 2 images, × frames, → card), so a new plot is usually a reuse of a subject rather than a new
+drawing. Every plot names its sketch — `"sketch"` in a spec's JSON, `sketch` on a view / cluster panel
+— and `plotPicker.test.ts` fails when a built-in one doesn't. A plugin spec with none, or one this
+build doesn't know, draws `generic`. `plotSketchArt.test.ts` keeps every sketch inside its box. The
+sketch is drawn, never rendered from data — no request, nothing blank before a task has run. Off, the
+picker is a plain grouped menu with the question on hover.
+
+**Search** matches every word against the label and the question, plus a short synonym list for words
+users reach for that the app spells differently ("velocity" → speed). Enter picks the first match.
 
 **A page's default plots** are declared on the spec: `"defaultOn": ["segment"]` names the pages whose
 canvas starts with it. `SummaryCanvas` places them once, when that canvas is first seen with no
@@ -43,6 +85,16 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
+**A second run-backed matrix: the proximity profile.** `spatialAnalysis.proximityProfile` writes, per
+image, each population's log2 enrichment in distance bands around a structure (`proximity/{suffix}.json`).
+`matrixMode: "proximity"` (`_proximity_matrix`, `plot_data.jl`) draws populations × bands. Unlike the
+interaction matrix it is the MEAN over the selected images whose run MATCHES — the most common structure,
+counted and reference populations and bands (`matching_run_images`, `image_metrics.jl`); a same-named run
+built differently is left out and counted in `nSkipped`, which the panel shows as a footer notice. Each
+cell reports `nImages`. The per-image plot (`spatial_proximity_summary`) applies the same rule. The frontend treats both modes alike through
+`isRunMatrixMode` (`plots/types.ts`): diverging colours pivoted at 0, a run picker, no population picker.
+Spec: `spatial_proximity.json`.
+
 **When the data is one number per image from a run.** A spatial-pattern run's NN ratio, or one
 interaction pair's log-odds, is a per-IMAGE value a task wrote to a sidecar, and the question asked of
 it is "does it differ between groups of images?". The spec declares
@@ -58,10 +110,11 @@ population the run holds). Two kinds:
   order) and greys out the ones the run has no result for (`PlotReadout.available`). All six pop
   types are offered (the task accepts tracked and track-cluster populations too). Several populations
   × attribute groups are tested within each population, as every attribute-grouped plot is (below).
-- **Otherwise** (interaction pairs, which are not picker populations) it is precomputed
+- **Otherwise** (interaction pairs and proximity "population · band" rows, which are not picker populations) it is precomputed
   (`isPrecomputedSpec`): no population selection, a header dropdown picks one of `pops`, and a stale
   pick falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
-Specs: `spatial_pattern_summary.json` (source `spatialPattern`) and `spatial_interaction_pairs.json`
+Specs: `spatial_pattern_summary.json` (source `spatialPattern`), `spatial_proximity_summary.json` (source
+`proximityProfile`, `pop` = "population · band") and `spatial_interaction_pairs.json`
 (source `neighbourStats`, `pop` = the pair "A × B"). With `shufflePops` set on an interaction run (the
 conditional null), the log-odds is observed vs that null's exact mean, so ≈ 0 means "no different from
 the shuffled populations in general". See `docs/todo/SPATIAL_PATTERN_PLAN.md` Decision 8.
@@ -190,6 +243,29 @@ Hosts declare it, renderers consume it: `GatePlotPanel` and `GateMontage` pass
 `:flip-y="isImageYAxis(yChan)"` down through `GateScatterCell`. `TrackPathsView` is always spatial, so
 it simply sets Observable Plot's `y: { reverse: true }`. `density.ts` is exempt — it bins the grid in
 DATA order and never touches pixels; `gridToPx` converts those back through the shared mapping.
+
+## Population positions — where the populations sit on the image
+
+`popPositions` (`components/plots/PopPositionsView.vue`, an interactive view) draws every cell of the
+segmentations the picked populations live on (a co-clustered run or a multi-segmentation pick draws
+each; with nothing picked, the active one) at its centroid — µm when calibrated, y downward like the image — in the gate plot's
+density colours (dimmed once populations are shown), with each picked population's cells in its colour, one square tile per selected image, at one frame (a slider)
+or all frames at once. It is the old R version's read-only gating plot of X/Y with populations on top.
+Any population type: a track family (behaviour clusters, tracked cells) resolves to its member cells
+in every frame, so a behaviour cluster is coloured along its tracks and a region shows the cells it
+holds at each timepoint. One family per plot, like every plot here. A cell in several picked
+populations takes the colour of the deepest (a child picked after its parent stays visible). An image
+the picked populations are not on draws no tile, rather than another segmentation's cells. Captions are
+image uids (the name on hover): names run to two lines and push the maps down.
+
+It is offered on the Analysis board, on the Cluster and Region pages (`clusterPage` — there it draws
+the populations the page's manager has switched on, the way the UMAP does) and on the Phenotype,
+Behaviour and Spatial pages through the registry's **`modules`** field: a view names the summary
+module pages that offer it, with each page's families — the same shape and curation as a summary
+spec's `modules`. `SummaryCanvas` reads it (`moduleViewKeys`, `popTypesFor(key, module)`), so a page
+lists only its own families. Data: `GET /api/plots/pop-positions` (`app/src/plotting/pop_positions.jl`
+→ `pop_positions`; population membership through `pop_index_by_label`, shared with the UMAP's
+colour-by-population). Layers: `plots/popPositions.ts` (tested). Drawn by `GateScatterCell`, read-only.
 
 ## 0. Rendering engine — Observable Plot
 
@@ -411,9 +487,15 @@ add a new plot with its own popover/menu, follow this pattern — a plain absolu
    **Axis order.** The series axis is category-sorted (`_sort_cats`: numeric-when-all-numeric, else
    lex) on the primary axis (attribute value when `attr_map` is set, else `uID`). So a two-attribute
    cross like "Treatment.Mouse" groups cleanly ("MerTK.M2" → "WT.M1" → "WT.M3") instead of reading in
-   image-insertion order. Within an image key the **populations follow the user's pick order** (the
+   image-insertion order. **By attribute, the user can override it**: the picker's *attribute order*
+   strip (shown while comparing by attribute, one chip per group the selected images form) drags the
+   groups, and the panel sends them as `groupOrder` — those groups lead in that order, any it doesn't
+   name follow category-sorted (`_ordered_cats`). The order is kept per attribute combination
+   (`attrOrder` in the canvas's shared view state); the track plots take the same `groupOrder`. Within an image key the **populations follow the user's pick order** (the
    request's targets, `_pop_rank`) — the picker's *plot order* strip drags them; a population nobody
-   picked sorts after, by name. The colour legend inherits the same domain. Same image rule in
+   picked sorts after, by name. The strip shows only picks the active plot's picker lists — on a mixed
+   board the selection also holds other slots' families, which a reorder keeps in place
+   (`mergePickOrder`). The colour legend inherits the same domain. Same image rule in
    `_track_image_groups` for the track-plot family.
 
    **`groupBy` — a generic categorical sub-axis.** Optionally split the measure by the levels of any
@@ -827,7 +909,7 @@ Observable Plot covers both natively.
 
 **Heatmap (`heatmap` ChartType, backend `chartType: "matrix"`) — implemented.** A matrix POOLS the
 whole `pop_df` frame (every selected population/segmentation/image) into ONE grid — a composition view,
-not a per-series overlay. Two **modes** (generic, reusable for any data):
+not a per-series overlay. Three **modes** (generic, reusable for any data):
 - **profile** — rows = `measures` (the spec's `measureOptions`), columns = the levels of a categorical
   `category` column; each cell = the **mean** of that measure for cells in that level: the **"state
   signature"** (what properties do cells in each HMM state have). Each row is normalised so
@@ -842,6 +924,12 @@ not a per-series overlay. Two **modes** (generic, reusable for any data):
   transitions `"1_2"`, or the cross-model hybrid `"1.2_3.4"` — the hybrid joins state columns with
   `.`, so the FIRST `sep` splits prev|cur). Cell = count, or a rate (`row` = P(to|from), `col` =
   P(from|to), `total` = fraction): the **transition matrix**.
+- **composition** — rows = the selected populations, columns = the levels of a categorical column
+  (the spatial region run, `regions.{suffix}` — the plot's **measure**, so no Category control). Cell =
+  `col` fraction of the region (default — what is the region made of), `row` fraction of the population
+  (where does it live), `enrichment` log2(observed/expected) on a diverging scale symmetric about 0 (a
+  zero count is a blank tile), or counts. Margins are over the selected populations; named regions read
+  by name. Plot def: `region_composition.json`, which also offers the per-image stacked/box views.
 
 Backend: `_matrix_agg(df; mode, measures, category, separator, zscore, normalize)` in
 `plot_data.jl`, dispatched from `_summary_agg` when `chart_type == "matrix"` (and threaded through all
@@ -895,7 +983,9 @@ It never picks K — see `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 **More ported adjustments** (second pass): **`coord_flip` (rotate 90°)** — `axM(o)` maps the
 position/measure axes (series→Y, measure→X when rotated) so each distribution builder has one path;
-long series labels then sit on Y with horizontal room. **The app scheme sets the plot ground** (all ink is
+long series labels then sit on Y with horizontal room. On the **heatmap** it transposes the grid
+(rows — features / `from` — along X, columns down Y); the cells, the per-row rescale and the tooltips
+keep the data's own x/y, only the channels and domains swap (`buildHeatmap`). **The app scheme sets the plot ground** (all ink is
 `currentColor`; PlotChart draws the legend + title overlays in the theme ink so they're visible on the
 dark ground — Plot's HTML title/legend would otherwise inherit the app's text colour). **Colour by
 population** is consistent across images (a population reads identically in every image; facet/x

@@ -267,7 +267,10 @@ def _cellpose_imports():
 #:     (`correction_utils.af_reference_field`). A protocol-20 worker hollows bright target cells.
 #: 22: new backend `segment.ridgesMeasure` (the ridges composite); a protocol-21 worker answers
 #:     "no preview backend" for it.
-PROTOCOL = 22
+#: 23: new backend `editImages.splitTissues` — the WHOLE image, whatever the view, since tissues are
+#:     found slide-wide; the reply names what it counted (`countNoun`). A protocol-22 worker answers
+#:     "no preview backend" for it.
+PROTOCOL = 23
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -1489,6 +1492,93 @@ def _preview_ridges(ctx):
     }
 
 
+def _preview_split_tissues(ctx):
+    """The tissues `editImages.splitTissues` would cut, numbered as the run numbers its images.
+
+    The one backend that ignores the visible region: tissues are found on a low-resolution level of
+    the WHOLE image (`tissue_split_utils.detect_tissues`, the run's own derivation), and a preview of
+    part of a slide would number and split differently. Cheap regardless — a few seconds on a
+    60-channel slide scan. The mask is staged full-image at every pyramid level, so the viewer shows
+    it at any zoom; each tissue is its own label, i.e. its own colour."""
+    from cecelia.utils import tissue_split_utils
+
+    p = ctx.params
+    px_um = _px_um_x(ctx.im_path)
+    if not px_um:
+        raise ValueError('pixel size not set — set it in the image metadata so areas and gaps mean µm')
+    chs = p.get('channelIndices')
+    det = tissue_split_utils.detect_tissues(
+        ctx.levels, ctx.dim_utils, px_um, tissue_split_utils.SplitParams.from_dict(p),
+        channels=[int(c) for c in chs] if chs else None)
+    axes = [ax for ax in ctx.dim_utils.im_dim_order if ax != 'C']
+    full_shape = [int(ctx.axis_len.get(ax, 1)) for ax in axes]
+    path = _stage_detection_labels(det, axes, full_shape, ctx.task_dir, ctx.value_name, ctx.im_path)
+    return {
+        'counts': {'base': len(det.tissues)},
+        'countNoun': 'tissue',
+        'wholeImage': True,
+        'passes': [],
+        'derived': {'tissues': [t.as_dict() for t in det.tissues]},
+        'region': {'Y': [0, int(det.full_yx[0])], 'X': [0, int(det.full_yx[1])]},
+        'layers': [_layer_disk('labels', 'Preview', ctx.value_name, path, axes, full_shape)],
+    }
+
+
+def _px_um_x(im_path):
+    """Full-resolution X pixel size in µm, or None when the store records none."""
+    scale = zarr_utils.read_scale_um(im_path)
+    axes = [str(a).upper() for a in (zarr_utils.read_axes(im_path) or [])]
+    if not scale or 'X' not in axes:
+        return None
+    v = float(scale[axes.index('X')])
+    return v if v > 0 else None
+
+
+def _stage_detection_labels(det, axes, full_shape, task_dir, value_name, im_path):
+    """`_stage_labels_store` for a mask that covers the WHOLE image but exists only at the detection
+    level: every pyramid level is filled nearest-neighbour from `det.labels`, in row bands, so level 0
+    of a 55k × 25k slide never sits in RAM. Same path, geometry and lifecycle as the region store."""
+    from cecelia.utils import tissue_split_utils
+    _PREVIEW_TASK_DIRS.add(task_dir)
+    labels_dir = os.path.join(task_dir, 'labels')
+    os.makedirs(labels_dir, exist_ok=True)
+    final_path = os.path.join(labels_dir, f'{value_name}{_PREVIEW_LABEL_SUFFIX}')
+
+    enc = zarr_utils.store_encoding_of(im_path)
+    fmt, separator = enc.get('zarr_format', 2), enc.get('separator')
+    nscales = len(zarr_utils.open_as_zarr(im_path, as_dask=False)[0])
+    xy = zarr_utils.store_xy_tile(im_path) or zarr_utils.DEFAULT_XY_TILE
+    axes_up = [str(a).upper() for a in axes]
+    yi, xi = axes_up.index('Y'), axes_up.index('X')
+    with zarr_utils.staged_store(final_path) as staging:
+        g = zarr.open_group(staging, mode='w', zarr_format=fmt)
+        zarr_utils.write_multiscales_attrs(g, zarr_utils.multiscales_metadata(axes_up, nscales), fmt)
+        for lv in range(nscales):
+            stride = 2 ** lv
+            shape = tuple(-(-n // stride) if ax in ('Y', 'X') else n
+                          for ax, n in zip(axes_up, full_shape))
+            chunks = tuple(min(shape[i], xy) if ax in ('Y', 'X') else 1
+                           for i, ax in enumerate(axes_up))
+            arr = g.create_array(str(lv), shape=shape, chunks=chunks, dtype=det.labels.dtype,
+                                 fill_value=0,
+                                 **zarr_utils._codec_kwargs('labels', fmt, separator=separator))
+            xs = np.arange(shape[xi]) * stride
+            band = max(chunks[yi], (1 << 24) // max(shape[xi], 1) // chunks[yi] * chunks[yi])
+            for y0 in range(0, shape[yi], band):
+                y1 = min(shape[yi], y0 + band)
+                block = tissue_split_utils.labels_block(
+                    det.labels, det.factor_yx, np.arange(y0, y1) * stride, xs)
+                expand = [np.newaxis] * len(axes_up)
+                expand[yi], expand[xi] = slice(None), slice(None)
+                block = block[tuple(expand)]                 # NGFF: Y always precedes X
+                sl = [slice(None)] * len(axes_up)
+                sl[yi] = slice(y0, y1)
+                arr[tuple(sl)] = np.broadcast_to(
+                    block, tuple(shape[i] if ax not in ('Y', 'X') else block.shape[i]
+                                 for i, ax in enumerate(axes_up)))
+    return final_path
+
+
 _BACKENDS = {
     'segment.cellpose': _preview_cellpose,
     'segment.cellposeMeasure': _preview_cellpose,
@@ -1500,6 +1590,7 @@ _BACKENDS = {
     'opticalFlow.probability': _preview_flow_probability,
     'cleanupImages.afCorrect': _preview_af,
     'cleanupImages.smooth': _preview_smooth,
+    'editImages.splitTissues': _preview_split_tissues,
 }
 
 
@@ -1530,7 +1621,8 @@ def preview(msg):
     out = backend(ctx)
     out.setdefault('hasSignal', True)
     out.setdefault('noSignalWhy', '')
-    out['region'] = {ax: list(v) for ax, v in bounds.items()}
+    # a backend that previews more than the view (the whole slide) reports its own region
+    out.setdefault('region', {ax: list(v) for ax, v in bounds.items()})
     out['fallback2d'] = fallback2d
     out['valueName'] = value_name
     out['funName'] = fun_name

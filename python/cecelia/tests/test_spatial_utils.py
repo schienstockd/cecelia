@@ -63,6 +63,100 @@ class TestNeighbourhoodComposition(unittest.TestCase):
         self.assertTrue(np.allclose(comp_o.sum(axis=1)[:1], 1.0))
 
 
+class TestTrackPooling(unittest.TestCase):
+    """Per-track pooling (`clustRegions`, pooling "track"): counts are summed over a track's frames and
+    only THEN turned into fractions — the composition of every neighbour the track ever had."""
+
+    def test_counts_are_summed_before_normalising(self):
+        from cecelia.utils.spatial_utils import neighbourhood_counts, normalise_counts, sum_rows_by_group
+        # frame 1: cell 0 (track 7) has ONE neighbour, pop0. frame 2: cell 4 (track 7) has THREE, all pop1.
+        rows, cols = [0, 1], [1, 0]
+        rows += [4, 5, 4, 6, 4, 7]; cols += [5, 4, 6, 4, 7, 4]
+        conn = sp.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(8, 8))
+        codes = np.array([0, 0, 0, 0, 0, 1, 1, 1])
+        counts = neighbourhood_counts(conn, codes, 2)
+        np.testing.assert_allclose(counts[0], [1, 0])
+        np.testing.assert_allclose(counts[4], [0, 3])
+        sums, inverse, keys = sum_rows_by_group(counts[[0, 4]], [("img", "T", 7), ("img", "T", 7)])
+        self.assertEqual(keys, [("img", "T", 7)])
+        np.testing.assert_array_equal(inverse, [0, 0])
+        # 1 pop0 + 3 pop1 neighbours over the track → 1/4 and 3/4. Averaging the two frames'
+        # fractions would give 1/2 and 1/2, weighing the one-neighbour frame as much as the other.
+        np.testing.assert_allclose(normalise_counts(sums)[0], [0.25, 0.75])
+
+    def test_groups_keep_first_appearance_order(self):
+        from cecelia.utils.spatial_utils import sum_rows_by_group
+        sums, inverse, keys = sum_rows_by_group(np.eye(3), [("a", 2), ("a", 1), ("a", 2)])
+        self.assertEqual(keys, [("a", 2), ("a", 1)])
+        np.testing.assert_array_equal(inverse, [0, 1, 0])
+        np.testing.assert_allclose(sums, [[1, 0, 1], [0, 1, 0]])
+
+    def test_a_track_shows_as_one_umap_point(self):
+        """Every cell takes its track's region; the track's UMAP point sits on its first cell only —
+        the cluster map drops non-finite rows, so the map shows one point per track."""
+        import anndata as ad
+        import pandas as pd
+        from cecelia.utils.spatial_utils import broadcast_clusters
+        tracks = ad.AnnData(np.zeros((2, 2), dtype=np.float32))
+        tracks.obs["clusters"] = pd.Categorical(["1", "0"])
+        tracks.obsm["X_umap"] = np.array([[1.0, 2.0], [3.0, 4.0]])
+        obs = pd.DataFrame({"uID": ["i"] * 5, "valueName": ["T"] * 5, "label": [1, 2, 3, 4, 5]})
+        cells = broadcast_clusters(tracks, np.zeros((5, 2)), obs, inverse=np.array([0, 1, 0, 0, 1]))
+        self.assertEqual(list(cells.obs["clusters"]), ["1", "0", "1", "1", "0"])
+        finite = np.isfinite(cells.obsm["X_umap"]).all(axis=1)
+        np.testing.assert_array_equal(finite, [True, True, False, False, False])
+        np.testing.assert_allclose(cells.obsm["X_umap"][1], [3.0, 4.0])
+
+
+class TestFixedWindows(unittest.TestCase):
+    """CytoMAP raster windows: squares of side S on a grid of step S/2. Expected values come from the
+    definition — the window centred on tile k spans [(k + 0.5)·t − t, (k + 0.5)·t + t) on each axis."""
+
+    def test_grid_covers_the_cells_and_drops_a_shallow_z(self):
+        from cecelia.utils.spatial_utils import window_grid
+        coords = np.array([[0.0, 0.0, 0.0], [40.0, 264.0, 266.0]])      # z, y, x µm
+        g = window_grid(coords, ["z", "y", "x"], 50.0)
+        self.assertEqual(g["tile"], 25.0)
+        self.assertEqual(g["gridAxes"], ["y", "x"])                      # 40 µm of Z < two 50 µm windows
+        self.assertEqual(g["gridShape"], [11, 11])                       # floor(264/25)+1, floor(266/25)+1
+        deep = window_grid(np.array([[0.0, 0, 0], [120.0, 10, 10]]), ["z", "y", "x"], 50.0)
+        self.assertEqual(deep["gridAxes"], ["z", "y", "x"])
+
+    def test_each_cell_counts_in_the_windows_that_contain_it(self):
+        from cecelia.utils.spatial_utils import window_grid, window_counts
+        rng = np.random.default_rng(1)
+        coords = rng.uniform(0, 95, size=(60, 2))
+        codes = rng.integers(0, 2, size=60)
+        g = window_grid(coords, ["y", "x"], 20.0)
+        counts, n_win = window_counts(coords, codes, 2, g)
+        t, (ny, nx) = g["tile"], g["gridShape"]
+        expect = np.zeros((ny * nx, 2))
+        for (y, x), c in zip(coords, codes):
+            for ky in range(ny):
+                for kx in range(nx):
+                    cy, cx = (ky + 0.5) * t, (kx + 0.5) * t
+                    if cy - t <= y < cy + t and cx - t <= x < cx + t:
+                        expect[ky * nx + kx, c] += 1
+        np.testing.assert_allclose(counts, expect)
+        self.assertEqual(n_win, ny * nx)
+
+    def test_frames_count_apart(self):
+        from cecelia.utils.spatial_utils import window_grid, window_counts
+        coords = np.array([[5.0, 5.0], [5.0, 5.0]])
+        g = window_grid(coords, ["y", "x"], 20.0)
+        counts, n_win = window_counts(coords, [0, 1], 2, g, groups=[0, 1])
+        self.assertEqual(counts.shape, (2 * n_win, 2))
+        np.testing.assert_allclose(counts[0], [1, 0])                    # frame 0, window 0: the pop-0 cell
+        np.testing.assert_allclose(counts[n_win], [0, 1])                # frame 1, window 0: the pop-1 cell
+
+    def test_unassigned_cells_land_in_other_only_when_asked(self):
+        from cecelia.utils.spatial_utils import window_grid, window_counts
+        coords = np.array([[5.0, 5.0], [6.0, 6.0]])
+        g = window_grid(coords, ["y", "x"], 20.0)
+        np.testing.assert_allclose(window_counts(coords, [0, -1], 1, g)[0][0], [1])
+        np.testing.assert_allclose(window_counts(coords, [0, -1], 1, g, include_other=True)[0][0], [1, 1])
+
+
 class TestPopCodesFor(unittest.TestCase):
     """Attaching a labelling to a LOADED graph — the (valueName, label) join legacy used."""
     def _obs(self):
@@ -465,6 +559,66 @@ class TestPooledImageGraphPerFrame(unittest.TestCase):
         framed = pattern_test(coords, mask, times=t, n_permutations=0)
         self.assertGreater(framed["nnObserved"], pooled["nnObserved"])
 
+
+class TestGraphRadiusIsMicrons(unittest.TestCase):
+    """The neighbour graph's prune radius is µm: on a calibrated image (0.5 × 0.5 × 2 µm) no edge is longer
+    than the radius in µm, worked out here from the raw pixel centroids, and the graph differs from the one
+    built in pixels — so a dropped conversion fails instead of passing on 1 µm/px. Needs squidpy."""
+    RADIUS = 30.0
+
+    def _build(self, fx, sizes_zyx, labels):
+        from cecelia.utils.spatial_utils import build_pooled_image_graph
+        segs = [{"valueName": fx.value_name, "propsPath": fx.table, "labels": labels}]
+        adata, obs = build_pooled_image_graph(segs, sizes_zyx, method="delaunay", radius=self.RADIUS)
+        conn = adata.obsp["spatial_connectivities"].tocoo()
+        lab = obs["label"].to_numpy()
+        return {tuple(sorted((int(lab[i]), int(lab[j])))) for i, j in zip(conn.row, conn.col)}
+
+    def test_prune_radius_is_in_microns(self):
+        from cecelia.tests.fixture_registry import fixture_for
+        from cecelia.utils.label_props_utils import LabelPropsView
+        fx = fixture_for("cells", "movie", "calibrated")
+        sizes = [float(fx.meta[k]) for k in ("PhysicalSizeZ", "PhysicalSizeY", "PhysicalSizeX")]
+        self.assertNotEqual(sizes, [1.0, 1.0, 1.0])
+        view = LabelPropsView(fx.table).only_centroid_cols()
+        d = view.as_df(); view.close()
+        d = d[d["centroid_t"] < 3]                                  # three frames: enough edges, quick
+        labels = d["label"].astype(int).tolist()
+        um = {int(r.label): np.array([r.centroid_x * sizes[2], r.centroid_y * sizes[1], r.centroid_z * sizes[0]])
+              for r in d.itertuples()}
+        edges = self._build(fx, sizes, labels)
+        self.assertGreater(len(edges), 0)
+        self.assertLessEqual(max(np.linalg.norm(um[a] - um[b]) for a, b in edges), self.RADIUS + 1e-6)
+        self.assertNotEqual(edges, self._build(fx, [1.0, 1.0, 1.0], labels))
+
+
+class TestWindowGraphIsMicrons(unittest.TestCase):
+    """A fixed-window graph places each cell on a tile of S/2 µm: worked out here from the raw pixel
+    centroids × the image's µm per pixel, so a dropped conversion fails. No edges; frames kept."""
+
+    def test_cells_sit_on_micron_tiles(self):
+        from cecelia.tests.fixture_registry import fixture_for
+        from cecelia.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.spatial_utils import build_pooled_image_graph, graph_window_grid, window_tiles
+        fx = fixture_for("cells", "movie", "calibrated")
+        sizes = [float(fx.meta[k]) for k in ("PhysicalSizeZ", "PhysicalSizeY", "PhysicalSizeX")]
+        view = LabelPropsView(fx.table).only_centroid_cols()
+        d = view.as_df(); view.close()
+        d = d[d["centroid_t"] < 3]
+        segs = [{"valueName": fx.value_name, "propsPath": fx.table, "labels": d["label"].astype(int).tolist()}]
+        adata, obs = build_pooled_image_graph(segs, sizes, method="windows", window_size=20.0,
+                                              per_timepoint=False)
+        grid = graph_window_grid(adata)
+        self.assertEqual(grid["tile"], 10.0)
+        self.assertEqual(adata.obsp["spatial_connectivities"].nnz, 0)
+        self.assertIn("_t", obs.columns)                 # kept even with per_timepoint off
+        um = {int(r.label): {"x": r.centroid_x * sizes[2], "y": r.centroid_y * sizes[1],
+                             "z": r.centroid_z * sizes[0]} for r in d.itertuples()}
+        shape = grid["gridShape"]
+        got = window_tiles(adata.obsm["spatial"], grid)
+        for lab, tile in zip(obs["label"].astype(int), got):
+            idx = [min(int(um[lab][ax] // 10.0), n - 1) for ax, n in zip(grid["gridAxes"], shape)]
+            self.assertEqual(int(tile), int(np.ravel_multi_index(tuple(idx), tuple(shape))))
 
 if __name__ == "__main__":
     unittest.main()

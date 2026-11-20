@@ -35,6 +35,7 @@
     "get_region_clusters": "read",
     "get_contact_stats": "read",
     "get_spatial_patterns": "read",
+    "get_proximity_profiles": "read",
     "get_chains": "read",
     "suggest_chain": "read",
     "get_session_briefing": "read",

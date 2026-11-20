@@ -60,6 +60,17 @@ export const UNGUIDED: UnguidedFeature[] = [
       ],
       next: [todo('A pixel test per op (max projection, bin mean)'), todo('A bit-depth test')],
     }) },
+  { id: 'split-tissues', title: 'Split a slide into tissues', group: 'Data', maturity: covering(
+    ['editImages.splitTissues'], {
+      tier: 'experimental', testedOn: 'One PhenoCycler slide scan; synthetic slides',
+      evidence: [
+        { path: 'python/cecelia/tests/test_tissue_split_utils.py', test: 'test_interlaced_sections_have_disjoint_masks',
+          failsIf: 'two interlaced sections share mask pixels' },
+        { path: 'python/cecelia/tests/test_tissue_split_utils.py', test: 'test_thin_neck_splits_but_a_dent_does_not',
+          failsIf: 'touching sections stay joined, or one section is cut at a dent' },
+      ],
+      next: [todo('Check the split on TMA cores; brightfield (H&E) is not handled')],
+    }) },
   { id: 'stack-align', title: 'Within-stack alignment', group: 'Data', maturity: covering(['cleanupImages.stackAlign'], {
     tier: 'experimental', testedOn: 'Synthetic',
     evidence: [
@@ -236,6 +247,16 @@ export const UNGUIDED: UnguidedFeature[] = [
         failsIf: 'the null moves a cell into another frame' },
     ],
     next: [todo('Look at the Spatial pattern by group panel on real data'), todo('Whole-curve group test')],
+  }) },
+  { id: 'proximity-profile', title: 'Proximity profile', group: 'Explore', maturity: covering(['spatialAnalysis.proximityProfile'], {
+    tier: 'experimental', testedOn: 'A real calibrated movie; hand-computed bands',
+    evidence: [
+      { path: 'app/test/suite/proximity_profile.jl', test: 'proximity records — shares, enrichment, overlapping populations',
+        failsIf: 'a band share or enrichment differs from the hand-computed value' },
+      { path: 'app/test/suite/proximity_profile.jl', test: 'proximityProfile on a real calibrated timecourse',
+        failsIf: 'band counts differ from a brute-force same-frame search in µm' },
+    ],
+    next: [todo('Look at the proximity plots on a real PhenoCycler or IBEX set')],
   }) },
   { id: 'motif-discovery', title: 'Motif discovery', group: 'Explore', maturity: covering(['behaviour.motif_discovery'], {
     tier: 'experimental', testedOn: 'A real measured + tracked fixture',

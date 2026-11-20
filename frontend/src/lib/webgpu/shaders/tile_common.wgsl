@@ -20,7 +20,8 @@
 //         Negative y = no plane filter. Same lanes as the MIP block's `ov`.
 // `ovx`   x/y = track ribbon first/last plane (negative x = no filter), z/w = tail fade head /
 //         length (`tailAlpha`, overlay_quads.wgsl) — the MIP and brick blocks' `trail`.
-// `ch[]`  per-channel window: x = lo, y = hi, z = visible (0/1), w = unused.
+// `ch[]`  per-channel window: x = lo, y = hi, z = visible (0/1), w = visible inside the lens (0/1).
+// `lens`  the channel lens (lens.wgsl): x/y = centre, z = radius (0 = off), w = rim width — px.
 
 struct P {
   cam:  vec4<f32>,
@@ -31,6 +32,7 @@ struct P {
   ov:   vec4<f32>,
   ovx:  vec4<f32>,
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
+  lens: vec4<f32>,                       // channel lens: centre x/y, radius, rim (px) — lens.wgsl
 };
 @group(0) @binding(0) var<uniform> p: P;
 

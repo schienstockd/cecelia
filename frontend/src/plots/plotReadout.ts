@@ -35,6 +35,10 @@ export function readoutOf(
   return { stats: statsInfoOf(cmp), overrides, controls, available }
 }
 
+/** The readout of a plot that reports nothing after rendering (an interactive view, a cluster panel):
+ *  just the settings its registry entry declares. */
+export const declaredReadout = (controls: VisControl[]): PlotReadout => ({ ...emptyReadout(), controls })
+
 /** Does the active plot react to this setting? Undeclared (a plot that reports none) → yes. */
 export const offers = (r: PlotReadout | undefined, c: VisControl): boolean =>
   !r?.controls || r.controls.includes(c)

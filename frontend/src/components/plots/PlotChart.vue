@@ -9,20 +9,23 @@
   regl-scatterplot; this is server-aggregated summaries only, so re-rendering on resize is cheap.
 -->
 <script setup lang="ts">
-import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
-import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
+import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
 import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
-import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
+import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
+import { slowPaint } from '../../utils/slowPaint'
+import PlotSpinner from './PlotSpinner.vue'
 import { usePlotDark } from '../../composables/usePlotDark'
 import { pointInPoly } from '../../utils/drawGeometry'
 import type { PlotDataResponse } from '../../plots/types'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import type { FrameRect } from '../../plots/frame'
 
-const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
+// `hostBusy`: the host is already showing its own loading wheel over this chart — don't stack a second
+const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts; hostBusy?: boolean }>()
 const plotDark = usePlotDark()
 // settings the RENDERER had to substitute (today: rotating x tick labels that wouldn't fit). Reported
 // up so the host can say so — a plot silently disagreeing with its own controls is the thing we avoid.
@@ -272,7 +275,6 @@ async function render(pass = 0) {
   // render a state write, which renders again. See sameOverrides in plots/autoOverride.ts.
   const overrides = [
     xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel),
-    facetOverride(!!base._facetIgnored, facetMode(props.opts)),
   ].filter(Boolean) as AutoOverride[]
   if (!lastOverrides || !sameOverrides(overrides, lastOverrides)) {
     lastOverrides = overrides; emit('auto-override', overrides)
@@ -354,26 +356,40 @@ defineExpose({ toImageURL, axisRect })
 // hold up to 36 slots, each of which rebuilds its whole Plot from scratch. Rendering per event queued
 // tens of superseded rebuilds and the board kept redrawing well after the mouse was released.
 // `render(0)`: never the legend's corrective second pass, which drives itself from inside `render`.
-const frame = rafCoalesce(() => render(0))
+//
+// A redraw that is known to be slow (Rotate 90° on a big heatmap: no request, all browser work) shows
+// the wheel first and dims the old chart — otherwise the toggle reads as "did nothing" until the new
+// chart lands. Fast plots never cross the threshold. See utils/slowPaint.ts.
+const redrawing = ref(false)
+const painter = slowPaint(() => render(0), b => { redrawing.value = b })
+const frame = rafCoalesce(() => painter.run())
 const scheduleRender = () => frame.schedule()
 
 watch(() => [props.data, props.opts, plotDark.value], scheduleRender, { deep: true })
-onMounted(() => {
-  render()
+onMounted(async () => {
   if (host.value && typeof ResizeObserver !== 'undefined') {
     ro = observeBoxChanges(host.value, scheduleRender)
   }
+  // load the library before the first timed draw, so a one-off chunk download isn't counted as draw cost
+  if (!Plot) Plot = await import('@observablehq/plot')
+  void painter.run()
 })
 onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
 </script>
 
-<template><div ref="host" class="plot-host" :style="{ background: hostBg }" /></template>
+<template>
+  <div ref="host" class="plot-host" :class="{ 'plot-host--stale': redrawing }" :style="{ background: hostBg }">
+    <PlotSpinner v-if="redrawing && !hostBusy" label="Redrawing…" />
+  </div>
+</template>
 
 <style scoped>
 /* white plot ground (theme_classic) — fills the panel body. position:relative anchors the legend
    overlay. color:#111 so any HTML text (legend) is dark on the white ground (not the app's light grey). */
 .plot-host { position: relative; width: 100%; height: 100%; background: var(--cc-paper); border-radius: var(--cc-radius-xs); overflow: hidden; color: var(--cc-paper-ink); }
 .plot-host :deep(svg) { display: block; }
+/* the chart on screen is about to be replaced — say so (docs/UI.md → *Plot loading state*) */
+.plot-host--stale > :deep(svg) { opacity: 0.45; }
 /* legend drawn as an absolute overlay (top-right) so it never eats height / clips the x-axis.
    colour is set inline by PlotChart (theme ink); descendants inherit it (force inherit so Plot's
    own swatch styles don't override the dark-theme ink). */

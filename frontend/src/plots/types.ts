@@ -4,6 +4,19 @@ import type { HmmFitSummary } from '../utils/hmmFitNote'
 import type { HmmFitCurve } from '../utils/hmmElbow'
 import type { QcFinding } from '../lib/qc'
 
+/**
+ * The heatmap's matrix modes. `profile`/`crosstab` aggregate the ticked populations; the RUN-BACKED ones
+ * read a task's sidecar instead — `interaction` (neighbourStats: population × population log-odds) and
+ * `proximity` (proximityProfile: population × distance band, log2 enrichment). A run-backed grid is fixed
+ * by its run, carries a signed effect size (diverging colours pivoted at 0), and needs a run picker.
+ */
+export type MatrixMode = 'profile' | 'crosstab' | 'composition' | 'interaction' | 'proximity'
+// a heatmap's normalisation: crosstab uses none|row|col|total; composition adds log2 enrichment
+export type MatrixNormalize = 'none' | 'row' | 'col' | 'total' | 'enrichment'
+export const RUN_MATRIX_MODES: readonly MatrixMode[] = ['interaction', 'proximity']
+export const isRunMatrixMode = (m: string | undefined | null): boolean =>
+  !!m && (RUN_MATRIX_MODES as readonly string[]).includes(m)
+
 export interface PlotParam {
   key: string
   label: string
@@ -27,6 +40,7 @@ export type ChartType =
 export interface PlotSpec {
   id: string
   label: string
+  answers?: string   // the question it answers — the picker card's subtitle (required on built-ins, see docs/PLOTS.md)
   // Where the plot is offered. Either a single page (`module`) or several, each with its own subset of
   // `dataSource.popTypes` (`modules`) — the server narrows the list per page, so by the time a spec
   // reaches here `popTypes` already holds only what this page offers. See docs/PLOTS.md.
@@ -36,6 +50,11 @@ export interface PlotSpec {
   // when that page's canvas is first seen empty, and never again — a removed default stays removed.
   // A page named here must be one the spec is offered on (`module`/`modules`).
   defaultOn?: string[]
+  // The "+ Plot…" picker's group and schematic (plots/plotPicker.ts). `category` is set on every
+  // built-in spec; a plugin's may omit it (→ "Other"). `sketch` overrides the one drawn from the
+  // default chart, for a chart type whose shape depends on the spec (a count over frames is a line).
+  category?: string
+  sketch?: string
   family: 'summary' | 'interactive'
   // the chart types valid for this data source's measures (the panel lets the user switch among
   // them); chart type is INDEPENDENT of the data source (single image vs cross-image set).
@@ -76,7 +95,7 @@ export interface PlotSpec {
     // signature; crosstab = a "from_to" categorical → transition matrix). `category` optionally pins
     // the default category column (used if present in the discovered obs columns); otherwise the panel
     // picks a sensible one (an HMM-state column for profile, a transitions column for crosstab).
-    matrix?: { mode?: 'profile' | 'crosstab' | 'interaction'; category?: string }
+    matrix?: { mode?: MatrixMode; category?: string }
     // A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
     // per image, the populations (or interaction pairs) fixed by the run, grouped by image attribute. `source` is a key of the
     // backend's IMAGE_METRIC_SOURCES; `task` names the task that produces it, for the empty state.
@@ -150,6 +169,8 @@ export interface MatrixCell {
   // interaction matrix only: the permutation-test result for this population PAIR. These ride along on
   // the cell so significance needs no second request — see plot_data.jl `_interaction_matrix`.
   zScore?: number; pValue?: number; significance?: string
+  // proximity matrix only: how many images the mean enrichment averages (plot_data.jl `_proximity_matrix`)
+  nImages?: number
 }
 
 // one raw datapoint row (chartType "raw") — the per-cell/track value behind a plot, with the identity
@@ -212,14 +233,14 @@ export interface PlotDataResponse {
   categoryMembers?: Record<string, Record<string, string[]>>
   series: PlotSeries[]
   // matrix/heatmap (chartType "matrix"): a pooled grid — xLabels × yLabels with flat `cells`.
-  matrixMode?: 'profile' | 'crosstab' | 'interaction'
+  matrixMode?: MatrixMode
   xLabels?: string[]
   yLabels?: string[]
   cells?: MatrixCell[]
   rows?: RawRow[]          // chartType "raw": per-datapoint export rows (identity + value)
   valueLabel?: string      // colour-scale label ("mean" / "z-score" / "count" / "P(to|from)" …)
   zscore?: boolean         // profile: rows standardised → diverging colour scale
-  normalize?: string       // crosstab normalisation (none|row|col|total)
+  normalize?: string       // crosstab/composition normalisation (none|row|col|total|enrichment)
   category?: string        // the categorical column the matrix was built from
   curves?: HmmFitCurve[]   // chartType "elbow": one curve per family of HMM runs differing only in K
   fit?: HmmFitSummary      // profile over an HMM state column: the run's fit record (rows = its modelled measures first)
@@ -228,4 +249,7 @@ export interface PlotDataResponse {
   suffix?: string
   suffixes?: string[]
   pops?: string[]
+  // images whose same-named run measured something else (another structure / populations / bands) and
+  // were left out — proximity plots only (`matching_run_images`, image_metrics.jl)
+  nSkipped?: number
 }

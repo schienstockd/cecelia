@@ -20,7 +20,7 @@ import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { autoValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, scopeValueNames, siblingKeyOfType, popChipValues, segmentationKey, groupOrderKeys, newEntryDefaults, sharedChannels } from './paramValues'
+         scopeValueName, scopeValueNames, siblingKeyOfType, popReloadSources, colsReloadSources, popChipValues, groupOrderKeys, newEntryDefaults, sharedChannels } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
 import { openViewerWindow } from '../utils/viewerWindow'
@@ -384,11 +384,8 @@ const popOptionsShown = computed(() => singlePopOptions(popOptions.value, props.
 const popMultiGroupsShown = computed(() => prospectivePopGroups(popMultiGroups.value,
   props.context?.extraPops ?? [], props.param.accepts, chipArr()))   // a legacy one-string value as its chip
 
-// reload when the image or the chosen segmentation changes
-watch(() => [props.context?.images?.[0]?.uid,
-             scopeValueName(props.context?.params, props.context?.values,
-                            Object.keys(props.context?.images?.[0]?.labels ?? {}))],
-  () => { loadPops() }, { immediate: true })
+// reload when the image or the chosen segmentation changes — `popReloadSources` says why it's per source
+watch(popReloadSources(() => props.context), () => { loadPops() }, { immediate: true })
 
 // Multi-select chip lists (pops / measure cols / channels) all edit the same flat string[] `val`.
 // A GROUPED list edits only its own slice, so on update merge the group's new selection back with the
@@ -426,6 +423,7 @@ const COL_DENYLIST = new Set(['label', 'track_id', 'track_parent', 'track_root',
   'track_generation', 'cell_id', 'pop', 'value_name'])
 const colGroups = ref<{ title: string; opts: { label: string; value: string }[] }[]>([])
 
+let colsScope = ''   // image + segmentation the shown measure chips belong to
 async function loadCols() {
   if (props.param.type !== 'labelPropsColsSelection') return
   const img = props.context?.images?.[0]
@@ -440,8 +438,12 @@ async function loadCols() {
   // motility + aggregatable cell measures), not the cell columns. Was hardcoded to flow, so the
   // track-clustering picker never showed the whole-track measures.
   const popType = props.param.popType ?? 'flow'
-  colGroups.value = []
-  if (!img || !projectUid) return
+  // A new image/segmentation clears the chips; a new pop selection on the same one keeps them until
+  // the refetch lands (clearing flashed "No measures" on every pop pick).
+  const scope = `${img?.uid ?? ''}\u0000${JSON.stringify(scopedVns)}\u0000${valueName}`
+  if (scope !== colsScope) colGroups.value = []
+  colsScope = scope
+  if (!img || !projectUid) { colGroups.value = []; return }
   try {
     const vnsParam = scopedVns.length >= 2 ? `&valueNames=${scopedVns.map(encodeURIComponent).join(',')}` : ''
     const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}${vnsParam}&popType=${popType}`
@@ -490,19 +492,8 @@ async function loadCols() {
   } catch { /* no columns available yet */ }
 }
 
-// reload when the image, its channel names (a rename relabels the chips), the sibling valueName, or
-// the selected populations change.
-// The pop/valueName params are looked up BY TYPE — same reason `scopeValueName` does: their keys
-// aren't a naming convention (`clustTracks.cluster` calls them `popsToCluster`, `hmm_states` calls
-// them `pops`), and hardcoding `values.pops` here meant the picker never re-fired when the pops it
-// actually depends on changed.
-const popKey = computed(() => siblingKeyOfType(props.context?.params, 'popSelection'))
-const vnKey = computed(() => segmentationKey(props.context?.params))   // as scopeValueName reads it
-watch(() => [props.context?.images?.[0]?.uid,
-             props.context?.images?.[0]?.channelNames?.join('|'),
-             vnKey.value ? props.context?.values?.[vnKey.value] : undefined,
-             popKey.value ? JSON.stringify(props.context?.values?.[popKey.value]) : ''],
-  () => { loadCols() }, { immediate: true })
+// reload when the image, its channel names, the segmentation or the selected populations change
+watch(colsReloadSources(() => props.context), () => { loadCols() }, { immediate: true })
 
 const colAllValues = computed(() => colGroups.value.flatMap(g => g.opts).map(o => o.value))
 
@@ -558,7 +549,7 @@ function loadAdvisory() {
 // estimate changes as the slider moves), and `reloadOn` only covers the context. The fetch itself is
 // the expensive part, so advisors whose fetch does not depend on the value should cache — today both
 // are cheap enough (one metadata read) that correctness wins over a caching layer nobody needs yet.
-watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value)],
+watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value, props.param)],
   () => { loadAdvisory() }, { immediate: true, deep: true })
 onUnmounted(() => advisoryRun.cancel())
 

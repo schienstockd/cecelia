@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  cohortParams, cohortKey, facetPlan, groupLabel, cohortNote,
+  cohortParams, cohortKey, splitsByGroup, groupLabel, cohortNote,
   type TrackCohortCtx, type TrackGroupMeta,
 } from './trackGroups'
 import type { SeriesTarget } from './types'
@@ -32,6 +32,11 @@ describe('cohortParams — the board\'s compare selector, translated', () => {
       .toBe('Treatment,Mouse')
     // the board holds a chosen attribute even in other modes; sending it would silently group anyway
     expect(q(ctx({ compareMode: 'per_image', groupAttr: ['Treatment'] })).groupAttr).toBeUndefined()
+  })
+
+  it('by attribute sends the user order of the groups with them, and not without', () => {
+    expect(q(ctx({ compareMode: 'by_attr', groupAttr: ['Mouse'], groupOrder: ['3', '1'] })).groupOrder).toBe('3,1')
+    expect(q(ctx({ compareMode: 'per_image', groupOrder: ['3', '1'] })).groupOrder).toBeUndefined()
   })
 
   it('defaults to per image, so a module page with one image behaves as before', () => {
@@ -80,22 +85,15 @@ describe('cohortKey', () => {
 
 // A track plot ALWAYS splits: overlaying two conditions needs a colour per group and therefore a swatch
 // legend (which the house style rules out — see plots/plot.ts), and it reads worse than two boxes in
-// every mode. So `facetBy` does not decide, it only decides whether the plot has to SAY it overrode it.
-describe('facetPlan', () => {
+// every mode. `Facet by` does not decide, so the track views don't offer it (interactiveViews.ts).
+describe('splitsByGroup', () => {
   it('one group is never faceted — a facet title over the only cell is noise', () => {
-    expect(facetPlan('image', 1)).toEqual({ facet: false, note: '' })
-    expect(facetPlan('none', 1)).toEqual({ facet: false, note: '' })
+    expect(splitsByGroup(1)).toBe(false)
+    expect(splitsByGroup(0)).toBe(false)
   })
-
-  it('several groups always split, whatever the setting says', () => {
-    expect(facetPlan('image', 3).facet).toBe(true)
-    expect(facetPlan('series', 3).facet).toBe(true)
-    expect(facetPlan('none', 2).facet).toBe(true)
-  })
-
-  it('says so when it overrode "one box", and stays quiet when it did not', () => {
-    expect(facetPlan('none', 2).note).toMatch(/always split/i)
-    expect(facetPlan('image', 2).note).toBe('')
+  it('several groups always split', () => {
+    expect(splitsByGroup(2)).toBe(true)
+    expect(splitsByGroup(3)).toBe(true)
   })
 })
 

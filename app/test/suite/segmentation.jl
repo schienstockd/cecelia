@@ -281,7 +281,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     @testset "task_output_effect labels image-producing tasks" begin
         # editImages tasks all mint a NEW image (new uid via `add_image!`); the module-page picker
         # surfaces this so the user knows they're duplicating, not overwriting.
-        for t in (Cecelia.CopyImage(), Cecelia.CropImage(), Cecelia.ZProject(), Cecelia.TProject(),
+        for t in (Cecelia.CopyImage(), Cecelia.CropImage(), Cecelia.SplitTissues(), Cecelia.ZProject(), Cecelia.TProject(),
                   Cecelia.BinImage(), Cecelia.ResampleZ())
             @test Cecelia.task_output_effect(t) == "new-image"
         end

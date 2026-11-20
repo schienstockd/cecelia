@@ -40,7 +40,7 @@ and is where a user checks before letting Claude near their Analysis page. See
 `docs/ai-assist/OBSERVER.md` and `docs/todo/MCP_BOARD_AUTHORING_PLAN.md`.
 
 A `plot` is a summary spec id **or a board VIEW key** — the interactive views and cluster panels the
-board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`,
+board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`, `popPositions`,
 `hmmStateCards`, `motifCards`, `figure` (a rendered figure by file `name`), and the clustering plots `clusterMap` (was `umap`), `heatmap`, `hmmStates`,
 `hmmTransitions`, `cellCards`), each with its own few fields, stored as `{kind: "interactive", ref,
 state}`. Clustering views name their run (`suffix` + `popType` clust/trackclust), which becomes the
@@ -163,11 +163,11 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
   **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`),
   **tracks** (`TrackPathsView` — paths / star / rose) and **track diagnostics** (`TrackDiagnosticsView`
   — the celltrackR QC battery; both in [`docs/TRACKING.md`](TRACKING.md)). Surface
-  flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `boardGroup` (which optgroup on the
-  board: `interactive` (default) / `clustering` / `image`) and `rail` (see below).
+  flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `category` + `sketch` (where the
+  `+ Plot…` picker files it and what it draws — `docs/PLOTS.md` → *The `+ Plot…` picker*) and `rail` (see below).
 - **Cluster panels** (summary-family, wrap `CanvasPanel`): `modules/cluster/clusterPanels.ts`
   (`CLUSTER_PANELS`) — **heatmap**, **HMM states**, **HMM transitions**. Flags `analysisBoard` /
-  `trackOnly` / `needsCols` / `rail`, plus a `props(ctx)` mapper. Rendered generically via `<component :is v-bind>`.
+  `trackOnly` / `needsCols` / `rail` / `category` / `sketch`, plus a `props(ctx)` mapper. Rendered generically via `<component :is v-bind>`.
 
 Adding a plot to the board = write the component to the contract + one registry line + tick the flag.
 No `LayoutCanvas` change.
@@ -178,7 +178,7 @@ because it MUTATES and this board is read-only. That is different from the `flow
 where a flag was set and silently went nowhere. The registry entry still earns its place — it is what
 `InteractivePanel` resolves to give any view the panel chrome.
 
-**A host must not name a view key.** Every optgroup comes from `boardViews(group)` (and a module page's
+**A host must not name a view key.** The board's picker comes from `boardViews()` (and a module page's
 picker from `pageViews(flag)`); `LayoutCanvas` mentions no view id at all, and
 `interactiveViews.test.ts` fails if one reappears. This is not tidiness: the board used to filter a
 hardcoded key list, so `flowMetrics` could set `analysisBoard: true`, pass review, and simply never
@@ -272,11 +272,11 @@ Three snapshot-card families on the analysis board, sharing a spine:
 
 - **`cellCards`** — `CLUSTER_PANELS`, `rail: 'clusterPops'`. One card per track-cluster pop the
   user ticks; medoid = the track closest to the cluster centroid.
-- **`motifCards`** — `INTERACTIVE_VIEWS`, `boardGroup: 'clustering'`, `rail: 'none'`. One card per
+- **`motifCards`** — `INTERACTIVE_VIEWS`, `category: 'look'`, `rail: 'none'`. One card per
   discovered motif class on the picked segmentation; medoid = the motif instance (8-frame subtrack
   of one track) with the lowest mean `motif.distance`. See [`docs/DATAMODEL.md`](DATAMODEL.md) →
   *Motif discovery output* for the h5ad contract.
-- **`hmmStateCards`** — `INTERACTIVE_VIEWS`, `boardGroup: 'clustering'`, `rail: 'none'`. One card
+- **`hmmStateCards`** — `INTERACTIVE_VIEWS`, `category: 'look'`, `rail: 'none'`. One card
   per HMM state value on the picked `live.cell.hmm.state.<measure>` column; medoid = the state-run
   whose owning track spends the largest fraction of its cells in this state (Fig 4c pattern), ties
   broken by longer run. Cell-fraction is the right denominator (a track spending 88-97% of its

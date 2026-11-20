@@ -5,7 +5,7 @@ import { TITLE_CARD_DEFAULT, RENDER_QUALITY_DEFAULT, type TitleCardCfg, type Bat
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
-import { decodeViewerBagEvent, decodeScalarPrefEvent } from '../utils/viewerBagChannel'
+import { decodeViewerBagEvent, decodeScalarPrefEvent, createEchoGuard } from '../utils/viewerBagChannel'
 import { LABEL_OPACITY, OVERLAY_Z_TOL } from '../utils/viewerLabels'
 import { SPATIAL_GRAPH_COLOUR, SPATIAL_GRAPH_WIDTH } from '../utils/viewerOverlays'
 import { debouncedSave } from '../utils/debouncedSave'
@@ -28,9 +28,10 @@ const PROFILE_KEYS = [
   'taskListAutoFollow', 'tasksThisProjectOnly', 'tasksShowHistory',
   'vaultOtherUsers', 'vaultOtherProjects',
   'autoRefreshOnTask', 'viewerAutoUpdate', 'preferDevChannel', 'csvIncludeAttrs',
-  'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps',
+  'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps', 'plotPickerPreviews',
   // Overlay preferences
   'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity', 'viewerCursorReadout',
+  'viewerLens', 'viewerLensRadiusUm',
   'viewerLandscape', 'viewerLandscapeLabels',
   'viewerScaleBarPx', 'viewerTimestampPx',
   'viewerPointSize', 'viewerPointBorder', 'viewerTailLength', 'viewerTailWidth',
@@ -106,6 +107,11 @@ export const useSettingsStore = defineStore('settings', () => {
   const csvIncludeAttrs = ref(
     localStorage.getItem('cc.csvIncludeAttrs') !== 'false'  // default true
   )
+
+  // Whether the "+ Plot…" picker shows a schematic card per plot (components/canvas/PlotPicker.vue) or
+  // a plain grouped list. On by default — the sketch is what tells a new user which plot is which; a
+  // user who knows the list turns it off here or with the picker's own button.
+  const plotPickerPreviews = ref(_storedBool('cc.plotPickerPreviews', true))
 
   // Auto-refresh plots + pop lists when a task finishes successfully (the per-image task-refresh; see
   // composables/useDataRefresh). On by default; users who find plots refetching under them distracting
@@ -186,6 +192,11 @@ export const useSettingsStore = defineStore('settings', () => {
   // Cursor readout (what is under the pointer — `utils/viewer/cursorReadout.ts`). Opt-in: default OFF,
   // and off it sends nothing.
   const viewerCursorReadout = ref(localStorage.getItem('cc.viewerCursorReadout') === 'true')
+  // Channel lens (a circle on the pointer that draws its own channel set — `utils/viewer/channelLens.ts`).
+  // The pointer tool beside the readout: the two are exclusive (`pointerToolChips`). Radius in CSS px.
+  const viewerLens = ref(localStorage.getItem('cc.viewerLens') === 'true')
+  // The lens radius on the tissue, µm — 0 = unset, each image's own default (`lensRadiusRangeUm`).
+  const viewerLensRadiusUm = ref(Math.max(0, Number(localStorage.getItem('cc.viewerLensRadiusUm') ?? 0) || 0))
   // Set-of-Mark grid overlay (`components/GridOverlay.vue`, `utils/gridOverlay.ts`). Default OFF —
   // it is an active tool for referring to viewport regions by cell name ("look at C4"), not
   // default chrome like the scale bar. Density persists so the user's chosen mesh survives a reload.
@@ -842,92 +853,102 @@ export const useSettingsStore = defineStore('settings', () => {
     _patchSet(setUid, { batchMovie: { ...cfg } })
   }
 
-  watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
-  watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
-  watch(tasksShowHistory,         v => localStorage.setItem('cc.tasksShowHistory',         String(v)))
-  watch(vaultOtherUsers,          v => localStorage.setItem('cc.vaultOtherUsers',          String(v)))
-  watch(vaultOtherProjects,       v => localStorage.setItem('cc.vaultOtherProjects',       String(v)))
-  watch(csvIncludeAttrs,          v => localStorage.setItem('cc.csvIncludeAttrs',          String(v)))
-  watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
+  // Every synced preference is written through here, never by `localStorage.setItem` in a watcher:
+  // a value just applied from another window is not written back (`createEchoGuard`, the race that
+  // made a dragged slider jump). Enforced by `utils/viewerBagChannel.test.ts`.
+  const _echo = createEchoGuard()
+  const persistPref = (name: string, raw: string) => {
+    if (!_echo.isEcho(`cc.${name}`, raw)) localStorage.setItem(`cc.${name}`, raw)
+  }
+  watch(taskListAutoFollow,       v => persistPref('taskListAutoFollow',       String(v)))
+  watch(tasksThisProjectOnly,     v => persistPref('tasksThisProjectOnly',     String(v)))
+  watch(tasksShowHistory,         v => persistPref('tasksShowHistory',         String(v)))
+  watch(vaultOtherUsers,          v => persistPref('vaultOtherUsers',          String(v)))
+  watch(vaultOtherProjects,       v => persistPref('vaultOtherProjects',       String(v)))
+  watch(csvIncludeAttrs,          v => persistPref('csvIncludeAttrs',          String(v)))
+  watch(plotPickerPreviews,       v => persistPref('plotPickerPreviews',       String(v)))
+  watch(autoRefreshOnTask,        v => persistPref('autoRefreshOnTask',        String(v)))
   watch([pickZMode, pickZWindow], ([mode, w]) => profileStorage.setItem('cc.pickZScope',
     JSON.stringify({ mode, window: Math.max(0, Math.floor(Number(w) || 0)) })))
-  watch(viewerAutoUpdate,         v => localStorage.setItem('cc.viewerAutoUpdate',         String(v)))
-  watch(preferDevChannel,         v => localStorage.setItem('cc.preferDevChannel',         String(v)))
-  watch(importPyramidAdvisor,     v => localStorage.setItem('cc.importPyramidAdvisor',     String(v)))
-  watch(animationSyncViewer,      v => localStorage.setItem('cc.animationSyncViewer',      String(v)))
-  watch(viewerAutoSaveLayerProps, v => localStorage.setItem('cc.viewerAutoSaveLayerProps', String(v)))
-  watch(viewerSteps,              v => localStorage.setItem('cc.viewerSteps',              String(v)))
-  watch(viewerCompress,           v => localStorage.setItem('cc.viewerCompress',           String(v)))
-  watch(viewerFps,                v => localStorage.setItem('cc.viewerFps',                String(v)))
-  watch(viewerLoop,               v => localStorage.setItem('cc.viewerLoop',               String(v)))
-  watch(viewerCacheFrames,        v => localStorage.setItem('cc.viewerCacheFrames',        String(v)))
-  watch(viewerVolumeLevel,        v => localStorage.setItem('cc.viewerVolumeLevel',        String(v)))
-  watch(viewerVolumeProjection,   v => localStorage.setItem('cc.viewerVolumeProjection',   v))
-  watch(viewerAutoContrastPercent, v => localStorage.setItem('cc.viewerAutoContrastPercent', String(v)))
-  watch(viewerPlaneLevel,         v => localStorage.setItem('cc.viewerPlaneLevel',         String(v)))
-  watch(viewerBricksMode,         v => localStorage.setItem('cc.viewerBricksMode',         v))
-  watch(viewerBrickTier,          v => localStorage.setItem('cc.viewerBrickTier',          v))
-  watch(viewerCacheMB,            v => localStorage.setItem('cc.viewerCacheMB',            String(v)))
-  watch(viewerScaleBar,           v => localStorage.setItem('cc.viewerScaleBar',           String(v)))
-  watch(viewerTimestamp,          v => localStorage.setItem('cc.viewerTimestamp',          String(v)))
-  watch(viewerCursorReadout,      v => localStorage.setItem('cc.viewerCursorReadout',      String(v)))
-  watch(viewerGrid,               v => localStorage.setItem('cc.viewerGrid',               String(v)))
-  watch(viewerGridDensity,        v => localStorage.setItem('cc.viewerGridDensity',        String(v)))
-  watch(viewerLandscape,          v => localStorage.setItem('cc.viewerLandscape',          String(v)))
-  watch(viewerLandscapeLabels,    v => localStorage.setItem('cc.viewerLandscapeLabels',    String(v)))
-  watch(viewerPointSize,          v => localStorage.setItem('cc.viewerPointSize',          String(v)))
-  watch(viewerPointBorder,        v => localStorage.setItem('cc.viewerPointBorder',        String(v)))
-  watch(viewerTailLength,         v => localStorage.setItem('cc.viewerTailLength',         String(v)))
-  watch(viewerTailWidth,          v => localStorage.setItem('cc.viewerTailWidth',          String(v)))
-  watch(viewerRoiSuffix,          v => localStorage.setItem('cc.viewerRoiSuffix',          String(v)))
-  watch(viewerRoiStatus,          v => localStorage.setItem('cc.viewerRoiStatus',          String(v)))
-  watch(viewerRoiSpotlight,       v => localStorage.setItem('cc.viewerRoiSpotlight',       String(v)))
-  watch(viewerRoiAutoNext,        v => localStorage.setItem('cc.viewerRoiAutoNext',        String(v)))
-  watch(viewerLabelOpacity,       v => localStorage.setItem('cc.viewerLabelOpacity',       String(v)))
-  watch(viewerLabelContour,       v => localStorage.setItem('cc.viewerLabelContour',       String(v)))
-  watch(viewerGraphColour,        v => localStorage.setItem('cc.viewerGraphColour',        v))
-  watch(viewerGraphWidth,         v => localStorage.setItem('cc.viewerGraphWidth',         String(v)))
-  watch(viewerMaskColour,         v => localStorage.setItem('cc.viewerMaskColour',         v))
-  watch(viewerPointZTol,          v => localStorage.setItem('cc.viewerPointZTol',          String(v)))
-  watch(viewerTrackZTol,          v => localStorage.setItem('cc.viewerTrackZTol',          String(v)))
-  watch(viewerScaleBarPx,         v => localStorage.setItem('cc.viewerScaleBarPx',         String(v)))
-  watch(viewerTimestampPx,        v => localStorage.setItem('cc.viewerTimestampPx',        String(v)))
-  watch(moviesPlaybackRate,       v => localStorage.setItem('cc.moviesPlaybackRate',       String(v)))
-  watch(moviesZoom,               v => localStorage.setItem('cc.moviesZoom',               String(v)))
-  watch(moviesAutoplay,           v => localStorage.setItem('cc.moviesAutoplay',           String(v)))
-  watch(moviesEndMode,            v => localStorage.setItem('cc.moviesEndMode',            v))
-  watch(moviesShowDetails,        v => localStorage.setItem('cc.moviesShowDetails',        String(v)))
-  watch(moviesChannelMode,        v => localStorage.setItem('cc.moviesChannelMode',        String(v)))
-  watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
-  watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
-  watch(viewerWindowSideCollapsed, v => localStorage.setItem('cc.viewerWindowSideCollapsed', String(v)))
-  watch(chainPaletteCollapsed,    v => localStorage.setItem('cc.chainPaletteCollapsed',    String(v)))
-  watch(plotsMaximised,           v => localStorage.setItem('cc.plotsMaximised',           String(v)))
-  watch(viewerSelectMode,         v => localStorage.setItem('cc.viewerSelectMode',         String(v)))
-  watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
-  watch(correctionCockpitOpen,      v => localStorage.setItem('cc.correctionCockpitOpen',      String(v)))
-  watch(kiwiOpen,                   v => localStorage.setItem('cc.kiwiOpen',                   String(v)))
+  watch(viewerAutoUpdate,         v => persistPref('viewerAutoUpdate',         String(v)))
+  watch(preferDevChannel,         v => persistPref('preferDevChannel',         String(v)))
+  watch(importPyramidAdvisor,     v => persistPref('importPyramidAdvisor',     String(v)))
+  watch(animationSyncViewer,      v => persistPref('animationSyncViewer',      String(v)))
+  watch(viewerAutoSaveLayerProps, v => persistPref('viewerAutoSaveLayerProps', String(v)))
+  watch(viewerSteps,              v => persistPref('viewerSteps',              String(v)))
+  watch(viewerCompress,           v => persistPref('viewerCompress',           String(v)))
+  watch(viewerFps,                v => persistPref('viewerFps',                String(v)))
+  watch(viewerLoop,               v => persistPref('viewerLoop',               String(v)))
+  watch(viewerCacheFrames,        v => persistPref('viewerCacheFrames',        String(v)))
+  watch(viewerVolumeLevel,        v => persistPref('viewerVolumeLevel',        String(v)))
+  watch(viewerVolumeProjection,   v => persistPref('viewerVolumeProjection',   v))
+  watch(viewerAutoContrastPercent, v => persistPref('viewerAutoContrastPercent', String(v)))
+  watch(viewerPlaneLevel,         v => persistPref('viewerPlaneLevel',         String(v)))
+  watch(viewerBricksMode,         v => persistPref('viewerBricksMode',         v))
+  watch(viewerBrickTier,          v => persistPref('viewerBrickTier',          v))
+  watch(viewerCacheMB,            v => persistPref('viewerCacheMB',            String(v)))
+  watch(viewerScaleBar,           v => persistPref('viewerScaleBar',           String(v)))
+  watch(viewerTimestamp,          v => persistPref('viewerTimestamp',          String(v)))
+  watch(viewerCursorReadout,      v => persistPref('viewerCursorReadout',      String(v)))
+  watch(viewerLens,               v => persistPref('viewerLens',               String(v)))
+  watch(viewerLensRadiusUm,       v => persistPref('viewerLensRadiusUm',       String(v)))
+  watch(viewerGrid,               v => persistPref('viewerGrid',               String(v)))
+  watch(viewerGridDensity,        v => persistPref('viewerGridDensity',        String(v)))
+  watch(viewerLandscape,          v => persistPref('viewerLandscape',          String(v)))
+  watch(viewerLandscapeLabels,    v => persistPref('viewerLandscapeLabels',    String(v)))
+  watch(viewerPointSize,          v => persistPref('viewerPointSize',          String(v)))
+  watch(viewerPointBorder,        v => persistPref('viewerPointBorder',        String(v)))
+  watch(viewerTailLength,         v => persistPref('viewerTailLength',         String(v)))
+  watch(viewerTailWidth,          v => persistPref('viewerTailWidth',          String(v)))
+  watch(viewerRoiSuffix,          v => persistPref('viewerRoiSuffix',          String(v)))
+  watch(viewerRoiStatus,          v => persistPref('viewerRoiStatus',          String(v)))
+  watch(viewerRoiSpotlight,       v => persistPref('viewerRoiSpotlight',       String(v)))
+  watch(viewerRoiAutoNext,        v => persistPref('viewerRoiAutoNext',        String(v)))
+  watch(viewerLabelOpacity,       v => persistPref('viewerLabelOpacity',       String(v)))
+  watch(viewerLabelContour,       v => persistPref('viewerLabelContour',       String(v)))
+  watch(viewerGraphColour,        v => persistPref('viewerGraphColour',        v))
+  watch(viewerGraphWidth,         v => persistPref('viewerGraphWidth',         String(v)))
+  watch(viewerMaskColour,         v => persistPref('viewerMaskColour',         v))
+  watch(viewerPointZTol,          v => persistPref('viewerPointZTol',          String(v)))
+  watch(viewerTrackZTol,          v => persistPref('viewerTrackZTol',          String(v)))
+  watch(viewerScaleBarPx,         v => persistPref('viewerScaleBarPx',         String(v)))
+  watch(viewerTimestampPx,        v => persistPref('viewerTimestampPx',        String(v)))
+  watch(moviesPlaybackRate,       v => persistPref('moviesPlaybackRate',       String(v)))
+  watch(moviesZoom,               v => persistPref('moviesZoom',               String(v)))
+  watch(moviesAutoplay,           v => persistPref('moviesAutoplay',           String(v)))
+  watch(moviesEndMode,            v => persistPref('moviesEndMode',            v))
+  watch(moviesShowDetails,        v => persistPref('moviesShowDetails',        String(v)))
+  watch(moviesChannelMode,        v => persistPref('moviesChannelMode',        String(v)))
+  watch(sidebarCollapsed,         v => persistPref('sidebarCollapsed',         String(v)))
+  watch(rightPanelCollapsed,      v => persistPref('rightPanelCollapsed',      String(v)))
+  watch(viewerWindowSideCollapsed, v => persistPref('viewerWindowSideCollapsed', String(v)))
+  watch(chainPaletteCollapsed,    v => persistPref('chainPaletteCollapsed',    String(v)))
+  watch(plotsMaximised,           v => persistPref('plotsMaximised',           String(v)))
+  watch(viewerSelectMode,         v => persistPref('viewerSelectMode',         String(v)))
+  watch(labLogPanelOpen,          v => persistPref('labLogPanelOpen',          String(v)))
+  watch(correctionCockpitOpen,      v => persistPref('correctionCockpitOpen',      String(v)))
+  watch(kiwiOpen,                   v => persistPref('kiwiOpen',                   String(v)))
   // captureAttachToKiwi / captureSendToPaired persist via the per-profile bag (see PROFILE_KEYS
   // + `_autosave`); no localStorage watcher.
-  watch(kiwiReasoning,              v => localStorage.setItem('cc.kiwiReasoning',              String(v)))
-  watch(kiwiModel,                  v => localStorage.setItem('cc.kiwiModel',                  v))
-  watch(correctionCockpitMode,      v => localStorage.setItem('cc.correctionCockpitMode',      String(v)))
-  watch(correctionCockpitValueName, v => localStorage.setItem('cc.correctionCockpitValueName', v))
-  watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
+  watch(kiwiReasoning,              v => persistPref('kiwiReasoning',              String(v)))
+  watch(kiwiModel,                  v => persistPref('kiwiModel',                  v))
+  watch(correctionCockpitMode,      v => persistPref('correctionCockpitMode',      String(v)))
+  watch(correctionCockpitValueName, v => persistPref('correctionCockpitValueName', v))
+  watch(labLogAutoContext,        v => persistPref('labLogAutoContext',        String(v)))
   watch(hiddenMcpAccounts, v => profileStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
-  watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
-  watch(showImageNames,        v => localStorage.setItem('cc.showImageNames',        String(v)))
-  watch(guidesShowClaude,         v => localStorage.setItem('cc.guidesShowClaude',         String(v)))
-  watch(kiwiHidden,               v => localStorage.setItem('cc.kiwiHidden',               String(v)))
-  watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
+  watch(labLogShowNames,          v => persistPref('labLogShowNames',          String(v)))
+  watch(showImageNames,        v => persistPref('showImageNames',        String(v)))
+  watch(guidesShowClaude,         v => persistPref('guidesShowClaude',         String(v)))
+  watch(kiwiHidden,               v => persistPref('kiwiHidden',               String(v)))
+  watch(viewProfile,              v => persistPref('viewProfile',              v))
   watch(colourScheme, v => {
     const s = parseColourScheme(v)   // a hand-edited settings.toml can hydrate anything
     localStorage.setItem(COLOUR_SCHEME_KEY, s)
     applyColourScheme(s, document.documentElement)
   })
-  watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
-  watch(tipsLastShown,            v => localStorage.setItem('cc.tipsLastShown',            v))
-  watch(tipsEverShown,            v => localStorage.setItem('cc.tipsEverShown',            String(v)))
+  watch(tipsOnLaunch,             v => persistPref('tipsOnLaunch',             String(v)))
+  watch(tipsLastShown,            v => persistPref('tipsLastShown',            v))
+  watch(tipsEverShown,            v => persistPref('tipsEverShown',            String(v)))
   watch(labLogPanelOpen, open => { if (open) {          // opening clears the badge (all facets)
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
@@ -960,6 +981,8 @@ export const useSettingsStore = defineStore('settings', () => {
     // reach the main window's settings store. Without this the pop-manager
     // pointer stayed in its old state when the viewer flipped the mode.
     window.addEventListener('storage', e => {
+      if ((e.key === 'cc.viewerSelectMode' || e.key === 'cc.viewerRoiSuffix' || e.key === 'cc.viewerRoiStatus')
+          && e.newValue !== null) _echo.received(e.key, e.newValue)
       if (e.key === 'cc.viewerSelectMode') {
         viewerSelectMode.value = e.newValue === 'select' ? 'select' : 'off'
       }
@@ -987,8 +1010,9 @@ export const useSettingsStore = defineStore('settings', () => {
     taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory,
     vaultOtherUsers, vaultOtherProjects,
     autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, csvIncludeAttrs,
-    importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps,
+    importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, plotPickerPreviews,
     viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout,
+    viewerLens, viewerLensRadiusUm,
     viewerLandscape, viewerLandscapeLabels,
     viewerScaleBarPx, viewerTimestampPx,
     viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth,
@@ -1039,6 +1063,7 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!ev) return
       const refX = _profileRefs[ev.name as ProfileKey]
       if (!refX || refX.value === ev.value) return
+      _echo.received(e.key!, e.newValue!)
       _autosave.duringRestore(() => { refX.value = ev.value as ProfileSettingsValue })
     })
   }
@@ -1103,7 +1128,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, colourScheme, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, viewerGraphColour, viewerGraphWidth, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, chainPaletteCollapsed, plotsMaximised, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getLabelFilesHidden, setLabelFilesHidden, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getGraphVisibility, setGraphVisibility, getGraphPopsOnly, setGraphPopsOnly, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, colourScheme, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, plotPickerPreviews, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout, viewerLens, viewerLensRadiusUm, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, viewerGraphColour, viewerGraphWidth, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, chainPaletteCollapsed, plotsMaximised, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getLabelFilesHidden, setLabelFilesHidden, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getGraphVisibility, setGraphVisibility, getGraphPopsOnly, setGraphPopsOnly, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

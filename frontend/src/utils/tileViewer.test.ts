@@ -313,6 +313,8 @@ describe('sameMaskLayer', () => {
   })
   it('a task preview re-run is another parameter set, never kept', () => {
     expect(sameMaskLayer('DAPI|preview:1|0', 'DAPI|preview:2|0')).toBe(false)
+    // …but the very preview on screen is itself: its uploaded bytes draw
+    expect(sameMaskLayer('DAPI|preview:1|0', 'DAPI|preview:1|0')).toBe(true)
     expect(sameMaskLayer('DAPI|labels|0', 'DAPI|preview:2|0')).toBe(false)
   })
 })

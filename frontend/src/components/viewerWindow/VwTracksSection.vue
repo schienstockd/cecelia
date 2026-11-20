@@ -13,8 +13,10 @@ import { PALETTES } from '../../plots/plot'
 import { useSettingsStore } from '../../stores/settings'
 import type { TrackColorMode } from '../../utils/viewerOverlays'
 import type { TrackPopRow } from '../../utils/viewer/popEyes'
+import { computed } from 'vue'
+import { popRowLabels } from '../../utils/popName'
 
-defineProps<{
+const props = defineProps<{
   /** ribbon segments drawn */
   segCount: number
   pops: TrackPopRow[]
@@ -37,6 +39,8 @@ const emit = defineEmits<{
   redraw: []
 }>()
 const settings = useSettingsStore()
+// every tracked pop is `_tracked`: name each row by as much of its path as tells it apart
+const rowLabels = computed(() => popRowLabels(props.pops))
 </script>
 
 <template>
@@ -52,9 +56,9 @@ const settings = useSettingsStore()
            mirroring the Populations section above (swatch/name/count/toggle). The eye hides
            the ribbon layer WITHOUT touching the point layer's eye — `ribbonEyes` is a
            separate bag from `popEyes` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
-      <div v-for="pop in pops" :key="pop.key" class="cc-row cc-row-tight">
+      <div v-for="(pop, i) in pops" :key="pop.key" class="cc-row cc-row-tight">
         <span class="vw-swatch" :style="{ background: pop.colour }" />
-        <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ pop.name }}</span>
+        <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ rowLabels[i] }}</span>
         <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
         <CcToggle
           :model-value="pop.drawn" :disabled="pop.clusterHeld"

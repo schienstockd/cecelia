@@ -37,16 +37,60 @@ function _contact_metric_rows(img::CciaImage, suffix::AbstractString)
      for p in stats[s].pairs]
 end
 
+# one row per (population, band) — "CD8 T · 0–15 µm" — so the run's own band order survives as the
+# population order and a picked row compares one band of one population between groups of images
+proximity_row_label(pop, band) = "$(pop) · $(band)"
+
+function _proximity_metric_rows(img::CciaImage, suffix::AbstractString)
+    runs = _collect_proximity_stats(img)
+    s = findfirst(r -> r.suffix == suffix, runs)
+    s === nothing && return Tuple{String,Dict{String,Float64}}[]
+    [(proximity_row_label(r[:pop], r[:band]),
+      Dict{String,Float64}(m => _metric_value(get(r, Symbol(m), nothing))
+                           for m in IMAGE_METRIC_SOURCES["proximityProfile"].measures))
+     for r in runs[s].records]
+end
+
+# what a proximity run measured: two images' same-named runs are comparable only when these agree
+function _proximity_signature(img::CciaImage, suffix::AbstractString)
+    runs = _collect_proximity_stats(img)
+    i = findfirst(r -> r.suffix == suffix, runs)
+    i === nothing ? nothing : (runs[i].structurePops, runs[i].pops, runs[i].referencePops, runs[i].bands)
+end
+
 """
-    ImageMetricSource(suffixes, rows, measures)
+    ImageMetricSource(suffixes, rows, measures[, signature])
 
 One per-image metric source: `suffixes(img)` lists the image's runs, `rows(img, suffix)` reads one run as
-`(pop, metrics)` pairs, and `measures` is the allow-list a request may plot. Same shape as `RunKind`.
+`(pop, metrics)` pairs, and `measures` is the allow-list a request may plot. `signature(img, suffix)`
+says what a run MEASURED, for a source whose same-named runs can differ between images (default: every
+run of a name is alike). Same shape as `RunKind`.
 """
 struct ImageMetricSource
     suffixes::Function
     rows::Function
     measures::Vector{String}
+    signature::Function
+end
+ImageMetricSource(suffixes, rows, measures) = ImageMetricSource(suffixes, rows, measures, (_, _) -> true)
+
+"""
+    matching_run_images(imgs, src, suffix) -> (keep::Vector{Bool}, n_skipped)
+
+Which images' run `suffix` measured the same thing. The MOST COMMON signature among the images that
+have the run wins (a tie goes to the one that sorts first as text), so the kept set never depends on
+which image was selected first. Images without the run are not kept and not counted as skipped.
+"""
+function matching_run_images(imgs::AbstractVector{<:CciaImage}, src::ImageMetricSource, suffix::AbstractString)
+    sigs = [String(suffix) in src.suffixes(img) ? src.signature(img, suffix) : nothing for img in imgs]
+    present = [s for s in sigs if s !== nothing]
+    isempty(present) && return (falses(length(imgs)), 0)
+    counts = Dict{Any,Int}()
+    for s in present; counts[s] = get(counts, s, 0) + 1; end
+    best = maximum(values(counts))
+    winner = first(sort([s for (s, n) in counts if n == best]; by = string))
+    keep = [s !== nothing && s == winner for s in sigs]
+    (keep, length(present) - count(keep))
 end
 
 """
@@ -60,6 +104,8 @@ const IMAGE_METRIC_SOURCES = Dict{String,ImageMetricSource}(
                                           ["nnRatio", "ceR", "zScore", "nnObserved"]),
     "neighbourStats" => ImageMetricSource(img_stats_suffixes, _contact_metric_rows,
                                           ["logOdds", "zScore"]),
+    "proximityProfile" => ImageMetricSource(img_proximity_suffixes, _proximity_metric_rows,
+                                            ["log2Enrichment", "fraction", "n"], _proximity_signature),
 )
 
 # The run to plot: the requested one when some image has it, else the first run present on EVERY image
@@ -75,29 +121,31 @@ function _image_metric_run(imgs, src, suffix::AbstractString)
 end
 
 """
-    image_metric_frame(imgs, uids, source; suffix="") -> (df, suffix, suffixes)
+    image_metric_frame(imgs, uids, source; suffix="") -> (df, suffix, suffixes, n_skipped)
 
 One row per (image, population) of run `suffix` of `source` (a key of `IMAGE_METRIC_SOURCES`): columns
-`uID`, `value_name` (""), `pop` and one column per metric. An image without that run contributes no rows.
+`uID`, `value_name` (""), `pop` and one column per metric. An image without that run contributes no rows;
+one whose run measured something else (`matching_run_images`) is left out and counted in `n_skipped`.
 """
 function image_metric_frame(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector, source::AbstractString;
                             suffix::AbstractString = "")
     src = IMAGE_METRIC_SOURCES[String(source)]
     chosen, suffixes = _image_metric_run(imgs, src, suffix)
+    keep, n_skipped = matching_run_images(imgs, src, chosen)
     cols = Dict{String,Vector{Float64}}(m => Float64[] for m in src.measures)
     uid_col, pop_col = String[], String[]
-    for (img, uid) in zip(imgs, uids), (pop, vals) in src.rows(img, chosen)
+    for (img, uid, k) in zip(imgs, uids, keep), (pop, vals) in (k ? src.rows(img, chosen) : ())
         push!(uid_col, String(uid)); push!(pop_col, pop)
         for m in src.measures; push!(cols[m], get(vals, m, NaN)); end
     end
     df = DataFrame(uID = uid_col, value_name = fill("", length(uid_col)), pop = pop_col)
     for m in src.measures; df[!, m] = cols[m]; end
-    (df, chosen, suffixes)
+    (df, chosen, suffixes, n_skipped)
 end
 
 """
     image_metric_summary(imgs, uids, source, chart_type; measure, suffix="", pop="", pops=nothing, attr_map=nothing,
-                         stats_enabled=false, stats_test=:auto, raw=false) -> Dict
+                         attr_order=nothing, stats_enabled=false, stats_test=:auto, raw=false) -> Dict
 
 The summary-plot response for a per-image metric: `chart_type` ∈ boxplot | points | bar, each dot one
 image. With `attr_map` (uID → attribute value) the series are attribute groups per population and the
@@ -113,10 +161,10 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
                               measure::AbstractString, suffix::AbstractString = "",
                               pop::AbstractString = "",
                               pops::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                              attr_map::Union{Nothing,AbstractDict} = nothing,
+                              attr_map::Union{Nothing,AbstractDict} = nothing, attr_order = nothing,
                               stats_enabled::Bool = false, stats_test::Symbol = :auto,
                               raw::Bool = false)::Dict{String,Any}
-    df, chosen, suffixes = image_metric_frame(imgs, uids, source; suffix = suffix)
+    df, chosen, suffixes, n_skipped = image_metric_frame(imgs, uids, source; suffix = suffix)
     run_pops = unique(df.pop)
     picked = pops === nothing ? nothing : String[String(p) for p in pops]
     chosen_pop = ""
@@ -130,7 +178,9 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
     end
     result = _summary_agg(df, chart_type; measure = String(measure), granularity = :cell, nbins = 30,
                           normalize = :none, by_image = attr_map !== nothing, attr_map = attr_map,
-                          raw_points = true, raw = raw, pop_order = picked,
+                          attr_order = attr_order,
+                          raw_points = true, raw = raw,
+                          pop_order = something(picked, run_pops),   # the picks, else the run's own order
                           stats_enabled = stats_enabled, stats_test = stats_test)
     result["imageMetric"] = String(source)
     result["suffix"] = chosen
@@ -138,5 +188,6 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
     result["pops"] = run_pops
     result["pop"] = chosen_pop
     result["nImages"] = length(unique(df.uID))
+    result["nSkipped"] = n_skipped
     result
 end

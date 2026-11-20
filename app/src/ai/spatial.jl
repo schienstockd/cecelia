@@ -64,6 +64,27 @@ function _collect_pattern_stats(img::CciaImage)
     out
 end
 
+# proximity-profile sidecars (proximity/{suffix}.json, spatialAnalysis.proximityProfile) → one entry per
+# run with its flat per-(population, band) records, passed through as written. A sidecar that fails to
+# parse is skipped, like the readers above.
+function _collect_proximity_stats(img::CciaImage)
+    out = Any[]
+    for s in img_proximity_suffixes(img)
+        d = try JSON3.read(read(img_proximity_path(img, s), String)) catch; continue end
+        recs = get(d, :records, nothing); recs isa AbstractVector || continue
+        push!(out, (; suffix = s,
+                     structurePops = String[string(x) for x in get(d, :structurePops, [])],
+                     pops = String[string(x) for x in get(d, :pops, [])],
+                     referencePops = String[string(x) for x in get(d, :referencePops, [])],
+                     bands = String[string(x) for x in get(d, :bands, [])],
+                     bandWidth = Float64(something(get(d, :bandWidth, 0.0), 0.0)),
+                     nStructureCells = Int(get(d, :nStructureCells, 0)),
+                     nCounted = Int(get(d, :nCounted, 0)), nReference = Int(get(d, :nReference, 0)),
+                     records = recs))
+    end
+    out
+end
+
 """
     contact_matrix(img; suffix="") -> NamedTuple
 
@@ -94,21 +115,49 @@ function contact_matrix(img::CciaImage; suffix::AbstractString = "")
     (; suffixes, suffix = e.suffix, basis = e.basis, cells, nCells = e.nCells, nEdges = e.nEdges)
 end
 
+# Per region run: how many cells of each NAMED cell-cluster population (the image's `clust` pops on
+# the same segmentation) sit in each region — the counts behind the Region composition plot, read
+# through the SAME `plot_summary_data` composition matrix (one computation, two readers). Regions read
+# by their population names where the user named them. Compact grid: `pops` × `regions` → `counts`
+# (row = pop). `nothing` when the segmentation has no cluster populations. A failure on one image is
+# logged and leaves that run without a composition, never the whole summary.
+function _region_composition(img::CciaImage, vn::AbstractString, suffix::AbstractString)
+    pt = "clust"
+    isfile(gating_path(img._dir, vn; pop_type = pt)) || return nothing
+    pops = pop_paths(load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false))
+    isempty(pops) && return nothing
+    m = try
+        plot_summary_data(img, pt, [(String(vn), p) for p in pops], "matrix";
+                          matrix_mode = "composition", category = "regions." * suffix,
+                          matrix_normalize = :none)
+    catch e
+        @warn "spatial summary: region composition failed" uid = img.uid vn suffix exception = e
+        return nothing
+    end
+    rows = String[string(x) for x in m["yLabels"]]; cols = String[string(x) for x in m["xLabels"]]
+    isempty(rows) && return nothing
+    at = Dict((string(c["y"]), string(c["x"])) => Int(c["count"]) for c in m["cells"])
+    (; popType = pt, pops = rows, regions = cols,
+       counts = [Int[get(at, (r, c), 0) for c in cols] for r in rows])
+end
+
 function _spatial_image(img::CciaImage)
     regions = Any[]
     for vn in sort(img_value_names(img))
         _collect_region_cols!(regions, vn, img_label_props_path(img, vn))
     end
+    regions = Any[merge(r, (; composition = _region_composition(img, r.valueName, r.suffix))) for r in regions]
     (; _observer_image_header(img)..., regionRuns = regions, contactStats = _collect_contact_stats(img),
-       patternStats = _collect_pattern_stats(img))
+       patternStats = _collect_pattern_stats(img), proximityStats = _collect_proximity_stats(img))
 end
 
 """
     spatial_summary(proj; image_uid="", set_uid="") -> NamedTuple
 
 Per image: region-clustering runs (`regions.{suffix}` — n regions, sizes), pairwise cell-type contact
-statistics (observed/expected/log-odds per population pair, association vs avoidance) and one-population
-spatial-pattern runs (`patternStats`: nearest-neighbour ratio vs random relabelling). Flat + MCP-friendly
+statistics (observed/expected/log-odds per population pair, association vs avoidance), one-population
+spatial-pattern runs (`patternStats`: nearest-neighbour ratio vs random relabelling) and proximity
+profiles (`proximityStats`: each population's share in distance bands around a structure vs the image). Flat + MCP-friendly
 (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 9).
 """
 spatial_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =

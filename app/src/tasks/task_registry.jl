@@ -121,6 +121,10 @@ function _spec_path(::SpatialPattern)
     joinpath(@__DIR__, "spatialAnalysis", "spatialPattern.json")
 end
 
+function _spec_path(::ProximityProfile)
+    joinpath(@__DIR__, "spatialAnalysis", "proximityProfile.json")
+end
+
 function _spec_path(::RoiDiscovery)
     joinpath(@__DIR__, "spatialAnalysis", "roiDiscovery.json")
 end
@@ -171,6 +175,10 @@ end
 
 function _spec_path(::CropImage)
     joinpath(@__DIR__, "editImages", "cropImage.json")
+end
+
+function _spec_path(::SplitTissues)
+    joinpath(@__DIR__, "editImages", "splitTissues.json")
 end
 
 function _spec_path(::ExportOmeTiff)
@@ -287,6 +295,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "spatialAnalysis.roiDiscovery"      => RoiDiscovery(),
         "spatialAnalysis.detectAggregates"  => DetectAggregates(),
         "spatialAnalysis.cellContacts"      => CellContacts(),
+        "spatialAnalysis.proximityProfile"  => ProximityProfile(),
         "spatialAnalysis.contactsMeshes"    => ContactsMeshes(),
         "spatialAnalysis.aggregatesMeshes"  => AggregatesMeshes(),
         "clustRegions.cluster"              => ClustRegions(),
@@ -301,6 +310,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.smooth"              => Smooth(),
         "cleanupImages.denoise"             => Denoise(),
         "editImages.cropImage"              => CropImage(),
+        "editImages.splitTissues"           => SplitTissues(),
         "editImages.copyImage"              => CopyImage(),
         "editImages.zProject"               => ZProject(),
         "editImages.tProject"               => TProject(),

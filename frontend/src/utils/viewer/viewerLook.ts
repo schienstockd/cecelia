@@ -23,7 +23,7 @@ import { SKELETON_BY_TYPE } from '../viewerOverlays'
 export { readGatingCurrent, type LookImage } from './drawSpec'
 
 export interface ViewerLookInput {
-  viewState: (ViewStateLike & Partial<Pick<ViewerViewState, 'dims' | 'camera' | 'canvas'>>) | null
+  viewState: (ViewStateLike & Partial<Pick<ViewerViewState, 'dims' | 'camera' | 'canvas' | 'lens'>>) | null
   channelNames: string[]
   /** the image's z depth — tells a 3D Depth crop from the whole stack (0 = unknown) */
   nZ?: number
@@ -167,6 +167,16 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   const canvasH = i.viewState?.canvas?.height ?? 0
   if (canvasH > 0) out.textCanvasPx = canvasH
   out.steps = i.steps
+  // the channel lens, pinned to the tissue where the pointer left it; its channels in their viewer colours
+  const lens = is3D ? undefined : i.viewState?.lens
+  if (lens) {
+    const layers = i.viewState?.layers ?? {}
+    const channels = Object.fromEntries(lens.channels.flatMap(n => {
+      const cm = layers[n]?.colormap
+      return typeof cm === 'string' ? [[n, cm]] : []
+    }))
+    if (Object.keys(channels).length) out.lens = { x: lens.x, y: lens.y, r: lens.r, channels }
+  }
   // the shown skeletons, as lines coloured by branch type (`appendSkeletonLines`)
   const skeletons = Object.keys(i.branchVisible).filter(vn => i.branchVisible[vn])
   if (skeletons.length) out.skeletons = Object.fromEntries(skeletons.map(vn => [vn, SKELETON_BY_TYPE]))

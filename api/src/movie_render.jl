@@ -101,6 +101,26 @@ _specs_payload(specs) = [begin
                          "lut" => [Float64[rgb[1], rgb[2], rgb[3]] for rgb in lut])
     end for s in specs]
 
+# The channel lens of a look or a view state — `{x, y, r, channels}`, centre and radius in level-0 image
+# px (pinned to the tissue), `channels` the lens's channel names (a list, or a look's name → colormap) —
+# → the renderer's per-state `lens`: the same geometry, the channels as 0-based indices into
+# `ch_names`. `nothing` when there is none, it is malformed, or none of its channels is in the image.
+# Drawn by `shaders/lens.wgsl`; the frontend half is `utils/viewer/channelLens.ts`.
+function lens_state(lens, ch_names)
+    (lens isa AbstractDict && ch_names !== nothing) || return nothing
+    g(k) = get(lens, k, get(lens, Symbol(k), nothing))
+    x, y, r = g("x"), g("y"), g("r")
+    (x isa Real && y isa Real && r isa Real && isfinite(x) && isfinite(y) && isfinite(r) && r > 0) ||
+        return nothing
+    chs = g("channels")
+    names = chs isa AbstractDict ? Set(String(string(k)) for k in keys(chs)) :
+            chs isa AbstractVector ? Set(String(string(c)) for c in chs) : Set{String}()
+    idx = [i - 1 for (i, c) in enumerate(ch_names) if String(c) in names]
+    # no channels named = the spotlight lens (shows the view, dims the rest); names that all miss = drop it
+    !isempty(names) && isempty(idx) && return nothing
+    Dict{String,Any}("x" => Float64(x), "y" => Float64(y), "r" => Float64(r), "channels" => idx)
+end
+
 # A movie mask (`MovieMask`) onto the runner's params: the label store, its derived files, its outline and opacity, and
 # its colouring — `labelColouring` "palette", or "table" with `labelColours` (an empty table draws no
 # labels; the runner must not read it as "no table").
@@ -135,7 +155,8 @@ function _plane_window(z, nz::Int, style; flat::Bool = true)
     lo = clamp(lo, 0, nz - 1); hi = clamp(hi, lo, nz - 1)
     pt, tt = flat && lo == hi ? (style.point_z_tol, style.track_z_tol) : (0, 0)
     filt = z === nothing ? nothing :
-        Dict{String,Any}("points" => [lo - pt, hi + pt], "tracks" => [lo - tt, hi + tt])
+        # never below plane 0: a negative low end is the shader's "no filter" (`offPlanes`)
+        Dict{String,Any}("points" => [max(0, lo - pt), hi + pt], "tracks" => [max(0, lo - tt), hi + tt])
     (Int[lo, hi], filt)
 end
 
@@ -168,7 +189,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            fps::Real = 15,
                            z = nothing, channels = nothing, specs = nothing,
                            crop = nothing, max_px::Int = 0, min_px::Int = 0,
-                           title_card = nothing,
+                           title_card = nothing, lens = nothing,
                            overlays3d_for = nothing, mask = nothing,
                            style = movie_overlay_style(),
                            show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
@@ -180,7 +201,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            on_process::Function = _ -> nothing,
                            cancelled::Function = () -> false)
     v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, min_px, overlays3d_for, mask,
-                            style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
+                            style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min, lens,
                             caller = "record_view_movie")
     cancelled() && return (; path = out_path, frames = 0, width = v.width, height = v.height, cancelled = true)
     params = v.params
@@ -209,7 +230,7 @@ same either way.
 function render_view_stills(zarr_path::AbstractString, out_paths::AbstractVector{<:AbstractString},
                             ts::AbstractVector{<:Integer};
                             z = nothing, channels = nothing, specs = nothing,
-                            crop = nothing, max_px::Int = 0, min_px::Int = 0,
+                            crop = nothing, max_px::Int = 0, min_px::Int = 0, lens = nothing,
                             overlays3d_for = nothing, mask = nothing,
                             style = movie_overlay_style(),
                             show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
@@ -221,7 +242,7 @@ function render_view_stills(zarr_path::AbstractString, out_paths::AbstractVector
     length(out_paths) == length(ts) ||
         throw(ArgumentError("render_view_stills: $(length(out_paths)) paths for $(length(ts)) timepoints"))
     v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, min_px, overlays3d_for, mask,
-                            style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
+                            style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min, lens,
                             caller = "render_view_stills", keep_all = true)
     v.params["outPaths"] = String[String(p) for p in out_paths]
     mkpath(task_dir)
@@ -286,7 +307,7 @@ _enlarge_factor(cH::Integer, cW::Integer, stride::Integer, min_px::Integer)::Int
 function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, crop, max_px,
                              min_px::Int = 0, overlays3d_for, mask, style, show_timestamp, show_scale_bar,
                              pixel_size_um, time_step_min, caller::AbstractString,
-                             keep_all::Bool = false)
+                             keep_all::Bool = false, lens = nothing)
     arr, caxes = open_level0(zarr_path)
     dims  = axis_dims(caxes, ndims(arr))
     nT    = haskey(dims, "t") ? size(arr, dims["t"]) : 1
@@ -326,6 +347,7 @@ function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, 
         st = Dict{String,Any}("t" => t, "ndisplay" => 2, "zRange" => z_range, "snapH" => H,
                               "camera" => camera, "specs" => specs_out)
         plane_filter === nothing || (st["planeFilter"] = plane_filter)
+        lens === nothing || (st["lens"] = lens)   # `lens_state` — level-0 px, mapped through `camera`
         ov = _overlays3d_state(overlays3d_for, t)
         ov === nothing || (st["overlays3d"] = ov)
         st
@@ -551,7 +573,9 @@ function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVecto
     end
     # A 2D window is a slab: the max over its planes, as the viewer draws it.
     ndisplay == 2 && zrange !== nothing && length(zrange) > 1 && (z = zrange)
-    (; t, z, zrange, specs, crop, ndisplay, angles, center3d, zoom = zoom_val)
+    # the channel lens the view showed (2D only — `lens_state`)
+    lens = ndisplay == 2 ? lens_state(get(vs, "lens", nothing), channel_names) : nothing
+    (; t, z, zrange, specs, crop, ndisplay, angles, center3d, zoom = zoom_val, lens)
 end
 
 # The crop half of `viewstate_to_render_args`, in isolation. The one-shot record (which uses fixed
@@ -930,6 +954,7 @@ function _view_state_render_params(zarr_path::AbstractString, states::AbstractVe
             z_range, plane_filter = _plane_window(a.z, nZ, style)
             py_states[i]["ndisplay"] = 2
             py_states[i]["zRange"] = z_range
+            a.lens === nothing || (py_states[i]["lens"] = a.lens)
             plane_filter === nothing || (py_states[i]["planeFilter"] = plane_filter)
         elseif a.zrange !== nothing && (first(a.zrange) > 0 || last(a.zrange) < nZ - 1)
             # A 3D view cropped to part of the stack (the ±n window, or Depth): only those planes,

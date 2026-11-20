@@ -80,20 +80,24 @@ function _nearest_contacts(aCoords::AbstractMatrix, aT, bCoords::AbstractMatrix,
     (min_dist, contactid)
 end
 
-# One target group's µm point cloud: `(coords, labels, frames)` over every segmentation the group spans,
-# or `nothing` when it resolves no cells. Each segmentation's rows are scaled with ITS OWN image
-# resolution by `pop_df` before they pool here; frames only if EVERY segmentation carries them.
+# One target group's µm point cloud: `(coords, labels, frames, keys)` over every segmentation the group
+# spans, or `nothing` when it resolves no cells. Each segmentation's rows are scaled with ITS OWN image
+# resolution by `pop_df` before they pool here; frames only if EVERY segmentation carries them. `keys`
+# holds each member's `(value_name, label)` — a label alone is ambiguous once segmentations pool.
 function _target_cloud(img::CciaImage, refs::Vector{String})
     bMem = pop_df_multi([img], [img.uid], refs; granularity = :cell, centroids = :physical)
     nrow(bMem) == 0 && return nothing
     coordsList = Matrix{Float64}[]; labels = Int[]; tList = Union{Nothing,Vector{Float64}}[]
+    keys = Set{Tuple{String,Int}}()
     for g in groupby(bMem, :value_name)
-        c, l, ft = _centroid_matrix(img, string(first(g.value_name)), DataFrame(g))
+        vn = string(first(g.value_name))
+        c, l, ft = _centroid_matrix(img, vn, DataFrame(g))
         isempty(l) && continue
         push!(coordsList, c); append!(labels, l); push!(tList, ft)
+        for x in l; push!(keys, (vn, x)); end
     end
     isempty(labels) && return nothing
-    (vcat(coordsList...), labels, any(isnothing, tList) ? nothing : vcat(tList...))
+    (vcat(coordsList...), labels, any(isnothing, tList) ? nothing : vcat(tList...), keys)
 end
 
 function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
@@ -143,7 +147,7 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
                                        detail = Dict{String,Any}("target" => refs)))
             continue
         end
-        bCoords, bLabels, bT = cloud
+        bCoords, bLabels, bT, _ = cloud
         # nearest B for each A (KDTree over B, query A), per frame on a timecourse — distances in µm
         (aT === nothing) == (bT === nothing) || on_log("[WARN] cellContacts: only one side has " *
             "timepoints for $(target) — searching across all frames")
