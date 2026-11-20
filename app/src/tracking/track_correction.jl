@@ -342,7 +342,7 @@ end
 
 # ── Journal sidecar: {task_dir}/corrections/{value_name}.json ────────────────────
 #
-# Shaped after `gating/{value_name}.json` (`gating_dir`/`gating_path`/`save_pop_map!`,
+# Shaped after `gating/{value_name}.json` (`gating_dir`/`gating_path`/`save_pop_tree!`,
 # population_manager.jl:340) — a per-segmentation sidecar next to the gates, written with
 # `write_json_atomic` so a concurrent reader never sees a truncated file and an interrupted write
 # keeps the previous journal. Append-only: this is the durable, per-image edit history that old R

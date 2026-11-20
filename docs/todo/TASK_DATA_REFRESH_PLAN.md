@@ -22,7 +22,7 @@ Today: `task:result` (`stores/ws.ts`) does targeted patches (`filepaths`, dims, 
 refetches when a prop it keys on changes — so a task that overwrites data **in place** (same
 `value_name`/clustering `suffix`, unchanged `filepaths`) leaves the plot stale → hence the manual
 reload buttons (cluster heatmap/UMAP/HMM; tooltip literally "after re-running clustering at the same
-suffix"). Gating already solved this: `gating:popmap` → `useSummaryData.onPopmap()` bumps a
+suffix"). Gating already solved this: `gating:pop-tree` → `useSummaryData.onPopTree()` bumps a
 `reloadToken` → panels refetch. Generalise that.
 
 **Design**
@@ -37,7 +37,7 @@ suffix"). Gating already solved this: `gating:popmap` → `useSummaryData.onPopm
   now delete them outright. No global/board button needed (R had none).
 
 **Open Q:** is a single global `dataVersion++` (refetch everything) acceptable for v1, or scope by uID
-from the start? Lean scoped-by-uID (mirrors `onPopmap`'s imageUid guard + `gating.ts` per-pop version).
+from the start? Lean scoped-by-uID (mirrors `onPopTree`'s imageUid guard + `gating.ts` per-pop version).
 
 ---
 

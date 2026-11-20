@@ -184,6 +184,13 @@ describe('mergeColumnSets', () => {
   })
 
   it('returns empty lists for no parts', () => {
-    expect(mergeColumnSets([])).toEqual({ columns: [], channels: [], obsColumns: [], temporalColumns: [] })
+    expect(mergeColumnSets([])).toEqual({ columns: [], channels: [], obsColumns: [], temporalColumns: [],
+                                          channelNames: [] })
+  })
+
+  it('takes channel names from the first segmentation that has them, never a union', () => {
+    // names are BY CHANNEL INDEX: a union of two lists would shift every name after the first difference
+    const m = mergeColumnSets([{ channelNames: [] }, { channelNames: ['CD4', 'GFP'] }, { channelNames: ['X', 'Y', 'Z'] }])
+    expect(m.channelNames).toEqual(['CD4', 'GFP'])
   })
 })

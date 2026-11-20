@@ -517,7 +517,7 @@ not an addition.
 **Built** (2026-08-26). Click-to-pick and rectangle-drag both go through `/api/viewer/pick-cell` and
 `/api/viewer/pick-rect`; they read the mask store the viewer is displaying via `read_slab`, register
 the picked labels in `_napari_sel` under the same key `_inject_napari_pop!` reads from, and rebroadcast
-the pop map so the plots highlight the "Viewer selection" pop straight away. The pick endpoints take
+the pop tree so the plots highlight the "Viewer selection" pop straight away. The pick endpoints take
 the viewer's displayed LOD as `level` so nearest-neighbour label downsampling doesn't return a
 neighbour of the visible cell. Fed the P4 label texture — the pick reads the label id directly rather
 than inferring it from a ray hit, so a MIP is unambiguous.

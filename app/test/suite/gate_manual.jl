@@ -16,30 +16,30 @@ function _gate_fixture(f)
     try
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
         src = init_object("testpr", "KDIeEm")
-        m = load_pop_map(src; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(src; value_name = "B", pop_type = "flow")
         has_pop(m, "/qc") || add_pop!(m, "qc"; filter_measure = "track_id", filter_fun = "gt", filter_values = 0)
-        save_pop_map!(m, src)
+        save_pop_tree!(m, src)
         f(src, init_object("testpr", "TgtImg"))
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end
 end
 
-_gated(img) = has_pop(load_pop_map(img; value_name = "B", pop_type = "flow", backfill_save = false), "/qc")
+_gated(img) = has_pop(load_pop_tree(img; value_name = "B", pop_type = "flow", backfill_save = false), "/qc")
 
 @testset "copy_gating! — replace = false keeps an image's own gates" begin
     _gate_fixture() do src, tgt
         r = copy_gating!(src, [tgt]; value_name = "B", pop_type = "flow", replace = false)
         @test r.copied == ["TgtImg"] && _gated(tgt)
         # now gated: a second prefill must not overwrite it
-        m = load_pop_map(tgt; value_name = "B", pop_type = "flow")
-        add_pop!(m, "mine"; filter_measure = "track_id", filter_fun = "gt", filter_values = 1); save_pop_map!(m, tgt)
+        m = load_pop_tree(tgt; value_name = "B", pop_type = "flow")
+        add_pop!(m, "mine"; filter_measure = "track_id", filter_fun = "gt", filter_values = 1); save_pop_tree!(m, tgt)
         r2 = copy_gating!(src, [tgt]; value_name = "B", pop_type = "flow", replace = false)
         @test isempty(r2.copied) && r2.skipped["TgtImg"] == "already gated"
-        @test has_pop(load_pop_map(tgt; value_name = "B", pop_type = "flow"), "/mine")
+        @test has_pop(load_pop_tree(tgt; value_name = "B", pop_type = "flow"), "/mine")
         # replace = true (the API's copy) does overwrite
         @test copy_gating!(src, [tgt]; value_name = "B", pop_type = "flow").copied == ["TgtImg"]
-        @test !has_pop(load_pop_map(tgt; value_name = "B", pop_type = "flow"), "/mine")
+        @test !has_pop(load_pop_tree(tgt; value_name = "B", pop_type = "flow"), "/mine")
         # a source with no gating on that label set has nothing to copy
         @test_throws ArgumentError copy_gating!(tgt, [src]; value_name = "nope", pop_type = "flow")
     end
@@ -91,10 +91,10 @@ end
 
 @testset "copy_gating! — a target with another channel order gates the same channel" begin
     _gate_fixture() do src, tgt
-        m = load_pop_map(src; value_name = "B", pop_type = "flow")
+        m = load_pop_tree(src; value_name = "B", pop_type = "flow")
         add_pop!(m, "cd4"; gate = RectangleGate("mean_intensity_0", "area", 0.0, 1e9, 0.0, 1e9))
         add_pop!(m, "cd8hi"; filter_measure = "mean_intensity_1", filter_fun = "gt", filter_values = 0.0)
-        save_pop_map!(m, src)
+        save_pop_tree!(m, src)
         _set_names!(src, ["CD4", "CD8", "GFP", "TOM"])
         # unresolvable: CD4 is not on the target → skipped, nothing written
         _set_names!(tgt, ["CD8", "GFP", "TOM", "x"])
@@ -105,23 +105,23 @@ end
         _set_names!(tgt, ["CD8", "cd4", "GFP", "TOM"])
         r = copy_gating!(src, [tgt]; value_name = "B", pop_type = "flow")
         @test r.copied == ["TgtImg"]
-        tm = load_pop_map(tgt; value_name = "B", pop_type = "flow")
+        tm = load_pop_tree(tgt; value_name = "B", pop_type = "flow")
         @test (pop_at(tm, "/cd4").gate.x_channel, pop_at(tm, "/cd4").gate.y_channel) == ("mean_intensity_1", "area")
         @test pop_at(tm, "/cd8hi").filter_measure == "mean_intensity_0"
         @test Set(r.remapped["TgtImg"]) == Set([(from = "mean_intensity_0", to = "mean_intensity_1", channel = "CD4"),
                                                 (from = "mean_intensity_1", to = "mean_intensity_0", channel = "CD8")])
         # the source keeps its own columns
-        @test pop_at(load_pop_map(src; value_name = "B", pop_type = "flow"), "/cd4").gate.x_channel == "mean_intensity_0"
+        @test pop_at(load_pop_tree(src; value_name = "B", pop_type = "flow"), "/cd4").gate.x_channel == "mean_intensity_0"
         # same order → copied as-is, nothing remapped
         _set_names!(tgt, ["CD4", "CD8", "GFP", "TOM"])
         r2 = copy_gating!(src, [tgt]; value_name = "B", pop_type = "flow")
         @test r2.copied == ["TgtImg"] && isempty(r2.remapped)
-        @test pop_at(load_pop_map(tgt; value_name = "B", pop_type = "flow"), "/cd4").gate.x_channel == "mean_intensity_0"
+        @test pop_at(load_pop_tree(tgt; value_name = "B", pop_type = "flow"), "/cd4").gate.x_channel == "mean_intensity_0"
     end
 end
 
 @testset "rename_pop_columns — every column a pop reads, on a copy" begin
-    m = PopulationMap(; pop_type = "flow", value_name = "B")
+    m = PopulationTree(; pop_type = "flow", value_name = "B")
     add_pop!(m, "g"; gate = PolygonGate("mean_intensity_0", "mean_intensity_1", [(0, 0), (1, 0), (1, 1)]))
     add_pop!(m, "f"; filter_conditions = [Dict("measure" => "mean_intensity_1", "fun" => "gt", "values" => 1.0),
                                           Dict("measure" => "area", "fun" => "lt", "values" => 9.0)])

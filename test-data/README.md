@@ -51,7 +51,7 @@ projects/testpr/
     spatialGraph/pooled.h5ad  # (198 nodes): per timepoint / frames pooled / kNN k=3 (directed).
     spatialGraph/knn.h5ad     # Regenerate with
                               # `pixi run python python/cecelia/tests/make_spatial_graph_fixture.py`
-    gating/B__trackclust.json # SYNTHETIC trackclust pop map: three pops (Scanning/Directed/
+    gating/B__trackclust.json # SYNTHETIC trackclust pop tree: three pops (Scanning/Directed/
                               # Meandering) each filter `clusters.movement in [0|1|2]`. Also the
                               # track-cluster INPUT to the track tasks (pop_df_multi_share.jl).
     labelProps/aniso__branch.h5ad  # SYNTHETIC branch sidecar (~32 KB): 6 branches over 3

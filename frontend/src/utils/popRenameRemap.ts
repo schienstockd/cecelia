@@ -1,5 +1,5 @@
 // Rename-preserving remap for path-keyed highlight sets. On a pop mutation (add / delete /
-// rename) the pop's PATH may change but its `uid` (`PopulationMap._fresh_pop_uid`, server-side)
+// rename) the pop's PATH may change but its `uid` (`PopulationTree._fresh_pop_uid`, server-side)
 // does not. Watchers keyed on a `path[]` (`ClusterPlots.vue`'s `highlighted`, `useSummaryData`'s
 // `gSel`) therefore need to look up the old path's uid and swap in the pop's NEW path — a plain
 // path-intersect drops the entry silently, which reads as "the plot didn't update".

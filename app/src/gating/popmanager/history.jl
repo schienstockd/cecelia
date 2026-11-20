@@ -11,7 +11,7 @@
 #     re-segmentation or a corrected pixel size changes the cells under the same hash (the run log's
 #     `inputs` / `replaces` record those). The scheduler stamps the hashes of the pops a
 #     run reads into its run-log entry (`gates`, `run_gates` in run_log.jl).
-#   • `gating/{vn}[__type].history.jsonl` — `save_pop_map!` (the ONE gating writer: GUI routes, the MCP
+#   • `gating/{vn}[__type].history.jsonl` — `save_pop_tree!` (the ONE gating writer: GUI routes, the MCP
 #     gate tools, gate copy, tasks and the REPL all reach the file through it) appends the PREVIOUS
 #     state there whenever a write changes any population's definition: `{at, author, valueName,
 #     popType, kind, changes:[{kind, path, previousPath?, hash?, previousHash?}], previous}`.
@@ -68,7 +68,7 @@ The content hash of every population's gate definition in `m` (16 hex chars of a
 file header for what it covers — the gate, not the cells it selects today. Compute it on a map read from disk (or round-tripped through JSON), so an in-memory
 `0` and an on-disk `0.0` cannot differ.
 """
-function pop_gate_hashes(m::PopulationMap)::Dict{String,String}
+function pop_gate_hashes(m::PopulationTree)::Dict{String,String}
     memo = Dict{String,String}()
     for path in m.order
         _pop_gate_hash!(memo, m, path, Set{String}())
@@ -76,7 +76,7 @@ function pop_gate_hashes(m::PopulationMap)::Dict{String,String}
     memo
 end
 
-function _pop_gate_hash!(memo::Dict{String,String}, m::PopulationMap, path::AbstractString, visiting::Set{String})
+function _pop_gate_hash!(memo::Dict{String,String}, m::PopulationTree, path::AbstractString, visiting::Set{String})
     path = String(path)
     haskey(memo, path) && return memo[path]
     (is_root(path) || !has_pop(m, path)) && return ""
@@ -100,7 +100,7 @@ end
 # The per-population changes between two states (`nothing` = no file before). Pops are matched by uid,
 # so a rename/move reads as one `move`, not a delete plus an add — except against a state whose uids
 # were backfilled on load (they are fresh random ones), which is matched by path instead.
-function _gating_changes(prev::Union{PopulationMap,Nothing}, new::PopulationMap)::Vector{Any}
+function _gating_changes(prev::Union{PopulationTree,Nothing}, new::PopulationTree)::Vector{Any}
     by_path = prev === nothing || prev._uid_backfilled
     keyed(m) = m === nothing ? Dict{String,Population}() :
         Dict{String,Population}((by_path ? p.path : p.uid) => p for p in values(m.pops) if !p.transient)
@@ -128,11 +128,11 @@ function _gating_changes(prev::Union{PopulationMap,Nothing}, new::PopulationMap)
     out
 end
 
-# Called by `save_pop_map!` under `with_popmap_lock`, BEFORE the new file is written: a kill between the
+# Called by `save_pop_tree!` under `with_pop_tree_lock`, BEFORE the new file is written: a kill between the
 # two leaves an entry whose new state never landed, never a lost previous state. Never throws — a gate
 # edit must not fail because its history line could not be saved. `kind` overrides the summarised kind
 # (a value_name rename, whose sidecar is new under its new name).
-function _record_gating_history!(task_dir::AbstractString, m::PopulationMap, new_tree::AbstractDict;
+function _record_gating_history!(task_dir::AbstractString, m::PopulationTree, new_tree::AbstractDict;
                                  kind::Union{AbstractString,Nothing} = nothing)
     try
         path = gating_path(task_dir, m.value_name; pop_type = m.pop_type)
@@ -166,7 +166,7 @@ replaced). `definition` is its own gate/filter/boolean record. `nothing` = no st
 function gate_state_for_hash(task_dir::AbstractString, value_name::AbstractString, hash::AbstractString;
                              pop_type::PopTypeArg="flow")
     find(m) = (for (p, h) in pop_gate_hashes(m); h == hash && return p; end; nothing)
-    cur = load_pop_map(task_dir, value_name; pop_type = pop_type, backfill_save = false)
+    cur = load_pop_tree(task_dir, value_name; pop_type = pop_type, backfill_save = false)
     p = find(cur)
     p === nothing || return (; path = p, definition = _pop_own_defn(cur.pops[p]), at = nothing, current = true)
     for e in Iterators.reverse(read_gating_history(task_dir, value_name; pop_type = pop_type))

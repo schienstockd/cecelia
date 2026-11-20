@@ -20,7 +20,7 @@ end
 
 @testset "compound filter populations (Decision 15 — AND-ed conditions)" begin
     # a user-defined filter pop combining two obs conditions in ONE pop: CD4>0.5 AND speed>5
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "CD4hi_fast"; colour="#8b5cf6", filter_conditions=[
         Dict("measure" => "live.cell.cd4",   "fun" => "gt", "values" => 0.5),
         Dict("measure" => "live.cell.speed", "fun" => "gt", "values" => 5)])
@@ -49,7 +49,7 @@ end
     # `filter_fun` is stored as a `FilterFun` enum; string/Symbol kwargs at add_pop! and API-body
     # boundaries are coerced via `parse_filter_fun`. `filter_conditions` is a `Vector{FilterCondition}`
     # after normalisation (JSON dicts and NamedTuples both accepted at the boundary).
-    m = PopulationMap(pop_type="flow", value_name="B")
+    m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "single"; filter_measure="x", filter_fun="gt", filter_values=1)
     add_pop!(m, "enum_kwarg"; filter_measure="x", filter_fun=Cecelia.FILTER_GTE, filter_values=1)
     @test pop_at(m, "/single").filter_fun === Cecelia.FILTER_GT
@@ -69,7 +69,7 @@ end
 
     # sidecar serialises the wire string (`"in"`, NOT `"FILTER_IN"`) — enforced so the frontend and
     # any older Julia consumer keep reading a raw string.
-    td = mktempdir(); save_pop_map!(m, td)
+    td = mktempdir(); save_pop_tree!(m, td)
     raw = JSON3.read(read(gating_path(td, "B"), String))
     funs = String[]
     walk = node -> begin
@@ -91,7 +91,7 @@ end
     @test !any(startswith(f, "FILTER_") for f in funs)
 
     # read back — the loader coerces sidecar strings into the enum + typed FilterCondition
-    m2 = load_pop_map(td, "B")
+    m2 = load_pop_tree(td, "B")
     @test pop_at(m2, "/single").filter_fun === Cecelia.FILTER_GT
     p2 = pop_at(m2, "/compound")
     @test p2.filter_conditions isa Vector{Cecelia.FilterCondition}
@@ -113,7 +113,7 @@ end
     # against a segmentation that didn't take part in that run, so `fetch_cols` silently dropped it
     # — must resolve to NO members, not raise `ArgumentError: column name … not found` and 500 the
     # whole plot. Regression: the trackclust heatmap crash (clusters.default not found).
-    m = PopulationMap(pop_type="trackclust", value_name="C")
+    m = PopulationTree(pop_type="trackclust", value_name="C")
     add_pop!(m, "present"; filter_measure="clusters.movement", filter_fun="in", filter_values=[1, 2], colour="#10b981")
     add_pop!(m, "absent";  filter_measure="clusters.default",  filter_fun="in", filter_values=[0, 1], colour="#ef4444")
     # frame HAS clusters.movement but NOT clusters.default
@@ -123,7 +123,7 @@ end
     @test isempty(cells_in_pop(m, "/absent"))                     # missing column → empty membership
 
     # same guard for a GATE whose axis column is absent from the frame
-    mg = PopulationMap(pop_type="flow", value_name="C")
+    mg = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(mg, "g"; gate=RectangleGate("x", "missingY", 0.0, 10.0, 0.0, 10.0), colour="#abcdef")
     fetchg = _ -> DataFrame("label" => [1, 2], "x" => [1.0, 2.0])   # no "missingY"
     @test_logs (:warn, r"missingY") match_mode=:any recompute!(mg, fetchg)
@@ -133,7 +133,7 @@ end
 @testset "missing_gate_columns — which pops a target's absent column leaves empty (#1737)" begin
     # Copying gates to an image that wasn't in a clustering run: the `clusters.<run>` filter and every
     # pop under it are empty there. The copy reports exactly those, per missing column.
-    m = PopulationMap(pop_type="flow", value_name="C")
+    m = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(m, "live"; gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
     add_pop!(m, "immune"; parent="/live", filter_measure="clusters.immune", filter_fun="in", filter_values=[1])
     add_pop!(m, "T"; parent="/live/immune", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0))
@@ -156,7 +156,7 @@ end
 
     # a pop carrying a gate AND a filter is evaluated by its gate (recompute!'s branch order), so its
     # filter's column is not "missing" for it
-    m2 = PopulationMap(pop_type="flow", value_name="C")
+    m2 = PopulationTree(pop_type="flow", value_name="C")
     add_pop!(m2, "both"; gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0),
              filter_measure="clusters.gone", filter_fun="in", filter_values=[1])
     @test isempty(missing_gate_columns(m2, ["label", "x", "y"]))
@@ -175,7 +175,7 @@ end
 end
 
 @testset "pop_label_overrides — a population names its values, never recolours them" begin
-    m = PopulationMap(pop_type="clust", value_name="B")
+    m = PopulationTree(pop_type="clust", value_name="B")
     add_pop!(m, "directed";   filter_measure="clusters.mov", filter_fun="in", filter_values=[2],       colour="#ff1493")
     add_pop!(m, "crawling";   filter_measure="clusters.mov", filter_fun="in", filter_values=[0, 3, 4], colour="#ffd700")
     add_pop!(m, "unrelated";  filter_measure="clusters.other", filter_fun="in", filter_values=[1],     colour="#000001")
@@ -187,7 +187,7 @@ end
     @test lbl == Dict("2" => "directed", "0" => "crawling", "3" => "crawling", "4" => "crawling")
     @test isempty(pop_label_overrides(m, "clusters.absent"))
     # only a SELECTING filter claims: "not 3" holds everything but 3, so 3 must not read its name
-    mx = PopulationMap(pop_type="trackclust", value_name="B")
+    mx = PopulationTree(pop_type="trackclust", value_name="B")
     add_pop!(mx, "motile"; filter_measure="clusters.mov", filter_fun="neq", filter_values=[3], colour="#123456")
     add_pop!(mx, "fast"; filter_measure="clusters.mov", filter_fun="eq", filter_values=[1], colour="#654321")
     @test pop_label_overrides(mx, "clusters.mov") == Dict("1" => "fast")

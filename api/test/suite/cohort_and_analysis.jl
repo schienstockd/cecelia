@@ -272,9 +272,9 @@ end
         s    = add_set!(proj; name = "set-A")
         img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
         img.label_props = Dict("A" => "A.h5ad"); save!(img)
-        m = Cecelia.PopulationMap(; pop_type = "flow", value_name = "A")
+        m = Cecelia.PopulationTree(; pop_type = "flow", value_name = "A")
         Cecelia.add_pop!(m, "CD3"; gate = Cecelia.RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
-        Cecelia.save_pop_map!(m, img)
+        Cecelia.save_pop_tree!(m, img)
         @test _pops("")[1] == 400                                            # missing projectUid
         @test _pops("?projectUid=nope")[1] == 404
         st, body = _pops("?projectUid=$(proj.uid)")

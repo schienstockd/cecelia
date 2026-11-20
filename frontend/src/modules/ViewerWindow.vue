@@ -3536,7 +3536,7 @@ async function warnPickRefused(res: Response, what: string) {
 }
 
 /**
- * Send a pick request to the server for the pixel under the pointer. The gating store's `popmap`
+ * Send a pick request to the server for the pixel under the pointer. The gating store's `pop tree`
  * broadcast lights up the transient pop on the plots — this window never touches the gating store
  * directly. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → P8.
  */

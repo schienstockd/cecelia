@@ -522,7 +522,7 @@ Contact-column naming schema to reproduce: `<popType>.cell.contact#<pop>`, `.min
 ## `region` poptype — Julia touchpoints (from the integration map)
 
 Add `"region"` at (all in `app/src/gating/population_manager.jl` unless noted):
-1. `POP_MAP_SUFFIX` → `"region" => "__region"`.
+1. `POP_TREE_SUFFIX` → `"region" => "__region"`.
 2. `_is_cluster_pop_type` → include `"region"` (reuse cluster expansion / borrow / auto-share).
 3. `is_track_pop` → `false` for region (per-cell), unless a track-scoped behaviour region.
 4. `scope_pop_types` → add to the `"cells"` branch (feeds the module popSelection picker).
@@ -546,7 +546,7 @@ statsmodels/networkx confirmed already present via scanpy.
 
 **Phase 1 — `region` poptype plumbing. ✅ DONE (2026-07-20).** Generalised the cluster-pop machinery so
 `region` rides it with a `regions.{suffix}` prefix — **no duplicated logic** (new `_cluster_measure_prefix`
-is the single prefix decision). Touched: `population_manager.jl` (`POP_MAP_SUFFIX`, `_is_cluster_pop_type`,
+is the single prefix decision). Touched: `population_manager.jl` (`POP_TREE_SUFFIX`, `_is_cluster_pop_type`,
 `_referenced_cluster_suffixes`, `_expand_cluster_pops`, `scope_pop_types`), `track_props.jl`
 (`_is_categorical_col` name-rule), `plot_data.jl` (`_cluster_matrix_suffix`), `ai/observer_summary.jl`
 (`_OBSERVER_POP_TYPES`), `lab_log_context.jl` (`_category_of_pop_type`). `lineage.jl`/`measures.jl` needed
@@ -663,7 +663,7 @@ behaviour over time in different areas. Mockup: the *Behaviour Regions Plan* art
 - All module functions REPL-runnable without API/Vue (Decision 12).
 - squidpy evaluation done (Decision 1) before any spatial code.
 - CytoMAP attribution on every derived function (Phase 0).
-- Region labels in the population map, same mechanism as clusters (Decision 5).
+- Region labels in the population tree, same mechanism as clusters (Decision 5).
 - Cross-poptype query is first-class (Decision 6), not an afterthought.
 - Live-imaging extension scoped separately (Phase 8).
 

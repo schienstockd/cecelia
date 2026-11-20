@@ -17,7 +17,7 @@ branchH5AD, gating, corrections, qc, clustfeatures, sidecar}.
 | Python writers (staged_store) | 1 | 15 |
 | Python writers (write_h5ad_atomic on {vn}.h5ad / {vn}__tracks.h5ad / {vn}__branch.h5ad) | 1 | 5 |
 | Python writers (write_json_atomic per-vn) | 1 | ~30 (task runners) |
-| Julia readers keyed by value_name (label_props, img_*_path, load_pop_map) | 8 | ~65 |
+| Julia readers keyed by value_name (label_props, img_*_path, load_pop_tree) | 8 | ~65 |
 | Python readers keyed by value_name (LabelPropsView, open_as_zarr, read_axes/scale, series_base) | 5 | ~40 |
 | API-side resolvers (resolve_image_version, resolve_value_name in payload builders) | 2 | ~15 |
 | ccid.json versioned-field helpers | 8 | schema definition + ~40 callers |
@@ -87,7 +87,7 @@ Labels registry (writes `raw["labels"][<vn>]` = filenames):
 
 | file:line | Helper | (vn, kind) |
 |---|---|---|
-| `app/src/gating/popmanager/persistence.jl:144` (`save_pop_map!`) | write_json_atomic to `gating/{vn}[__suffix].json` | (m.value_name, gating) |
+| `app/src/gating/popmanager/persistence.jl:144` (`save_pop_tree!`) | write_json_atomic to `gating/{vn}[__suffix].json` | (m.value_name, gating) |
 | `app/src/tracking/track_correction.jl:383` | write_json_atomic to `corrections/{vn}.json` | (value_name, corrections) |
 | `app/src/label_correction.jl:236` | write_json_atomic to `corrections/labels_{vn}.json` | (value_name, corrections) |
 | `app/src/correction_staleness.jl:199` | write_json_atomic to `corrections/{vn}.staleness.json` | (value_name, corrections) |
@@ -129,8 +129,8 @@ Labels registry (writes `raw["labels"][<vn>]` = filenames):
 | `img_branch_props_path` | `image.jl:299` | `anisotropy.jl:102,151,168`; `tasks/segment/branching.jl:201`; `gating/popmanager/allow_list.jl:178,480` |
 | `img_labels_path` / `img_labels_dir` | `image.jl:117,132` | `api/src/viewer_api.jl:282,286,562,583`; `api/src/viewer_api.jl` (`_resolve_movie_overlays_mask`); `api/src/movie_render.jl` (`_resolve_keyframe_overlay_builders`); `tasks/spatialAnalysis/{aggregatesMeshes,contactsMeshes}.jl:_label_zarr_path` |
 | `img_branch_labels_path` / `img_branch_labels_dir` | `image.jl:329-340` | `tasks/segment/branching.jl:199` |
-| `gating_path(task_dir, vn; pop_type=…)` | `app/src/gating/popmanager/persistence.jl:131` | `correction_staleness.jl:81`; `gating/popmanager/{allow_list,pop_df}.jl`; `ai/{observer_summary,lineage}.jl`; every read path around `save_pop_map!/load_pop_map` (§3) |
-| `load_pop_map(img; value_name=…, pop_type=…)` | `gating/popmanager/clustering_colour.jl:245` | `analysis_board_spec.jl:108`; `cell_cards.jl:206`; `gating/popmanager/{picker,mixed_resolution,allow_list,pop_df,clustering_colour}.jl`; `ai/{observer_summary,lineage}.jl`; `tasks/{tracking/bayesian_tracking, segment/branching}.jl`; `api/src/gating_api.jl:141,178,317,345,375,380,656,848,1068`; `api/src/viewer_api.jl:844,921,977,999` |
+| `gating_path(task_dir, vn; pop_type=…)` | `app/src/gating/popmanager/persistence.jl:131` | `correction_staleness.jl:81`; `gating/popmanager/{allow_list,pop_df}.jl`; `ai/{observer_summary,lineage}.jl`; every read path around `save_pop_tree!/load_pop_tree` (§3) |
+| `load_pop_tree(img; value_name=…, pop_type=…)` | `gating/popmanager/clustering_colour.jl:245` | `analysis_board_spec.jl:108`; `cell_cards.jl:206`; `gating/popmanager/{picker,mixed_resolution,allow_list,pop_df,clustering_colour}.jl`; `ai/{observer_summary,lineage}.jl`; `tasks/{tracking/bayesian_tracking, segment/branching}.jl`; `api/src/gating_api.jl:141,178,317,345,375,380,656,848,1068`; `api/src/viewer_api.jl:844,921,977,999` |
 | `resolve_value_name(img[, value_name])` | `image.jl:246` | called through every `img_*_path` caller that passes `value_name=nothing`; `img_cluster_suffixes:196` |
 | `img_value_names` / `img_has_value_name` | `image.jl:209-212` | `analysis_board_spec.jl:107,115`; task validators; image payload builders |
 | `versioned_get_field(raw, "filepath"|"imChannelNames", vn)` | `helpers.jl:58` | 20+ callers reading channel names / filepath; every image payload build |

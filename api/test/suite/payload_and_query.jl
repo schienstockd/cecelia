@@ -235,10 +235,10 @@ end
         img.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad")
         save!(img)
         for vn in ("A", "B")                                     # one gate each, so both have a row
-            m = PopulationMap(pop_type = "flow", value_name = vn)
+            m = PopulationTree(pop_type = "flow", value_name = vn)
             add_pop!(m, "qc"; gate = RectangleGate("mean_intensity_0", "mean_intensity_1",
                                                    0.0, 1e12, -1e12, 1e12))
-            save_pop_map!(m, img)
+            save_pop_tree!(m, img)
         end
         ask(extra) = JSON3.read(api_plot_populations(HTTP.Request("GET",
             "/api/plots/populations?projectUid=$(proj.uid)&imageUid=$(img.uid)&popType=live" * extra))[2])

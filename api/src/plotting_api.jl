@@ -144,7 +144,7 @@ function api_plot_populations(req::HTTP.Request)
     # images of a set, and the picker's answer for those is "no populations", not an error.
     names_for = img -> (ks = versioned_keys(img.label_props);
                         isempty(want_vn) ? ks : [v for v in ks if String(v) == want_vn])
-    load_map = (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt)
+    load_map = (img, vn, pt) -> load_pop_tree(img; value_name = vn, pop_type = pt)
     # A derived `/_tracked` is offered only where it is INFORMATIVE: the segmentation is tracked, that
     # population holds tracks, and no sub-population holds exactly the same ones (then the deeper pop
     # is the one that was tracked and this row is a copy of it). `tracked_pop_parents` answers for a

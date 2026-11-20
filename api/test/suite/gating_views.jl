@@ -175,8 +175,8 @@ end
             @test JSON3.read(get_(api_gating_summary, "popType=flow&pop=/Pick%20selection&x=mean_intensity_0&y=area")[2]).n == length(pick)
             # never on a track map — its labels are track ids — so the track tree doesn't list it either
             @test get_(api_gating_stats, "popType=track&pop=/Pick%20selection")[1] == 404
-            @test occursin("Pick selection", String(get_(api_gating_popmap, "popType=flow")[2]))
-            @test !occursin("Pick selection", String(get_(api_gating_popmap, "popType=track")[2]))
+            @test occursin("Pick selection", String(get_(api_gating_pop_tree, "popType=flow")[2]))
+            @test !occursin("Pick selection", String(get_(api_gating_pop_tree, "popType=track")[2]))
         finally
             _set_pick_selection!(img._dir, "B", Int[])
         end
@@ -352,7 +352,7 @@ end
                                     "y_min" => 0, "y_max" => 1e9)
             @test _post(api_gating_pop_add, merge(ids2, Dict("name" => "gen", "gate" => bare)))[1] == 200
             @test _post(api_gating_pop_set_gate, merge(ids2, Dict("path" => "/gen", "gate" => bare)))[1] == 200
-            m = load_pop_map(img; value_name = "B", pop_type = "flow")
+            m = load_pop_tree(img; value_name = "B", pop_type = "flow")
             @test pop_at(m, "/gen").gate.x_transform.T ≈ xmax
             # plotdata sent a bare kind lands in the coordinates plotmeta reported
             buf = reinterpret(Float32, api_gating_plotdata(HTTP.Request("GET", "/x?$base&xt=logicle&yt=linear"))[2])

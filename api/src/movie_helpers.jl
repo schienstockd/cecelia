@@ -370,10 +370,10 @@ end
 
 # ── Overlay legend content ────────────────────────────────────────────────────
 # Canonical legend rows shared by /api/viewer/overlay-legend (viewer_api.jl) and the movie title card
-# (`_title_card_content` below). Pure — walks pop maps, no viewer canvas.
+# (`_title_card_content` below). Pure — walks pop trees, no viewer canvas.
 
 # Gather a {value(str) => X} map for colouring by `column`, pooling every user population (across
-# segmentations, in the given pop_types) that FILTERS on `column` via `getter` (a `PopulationMap →
+# segmentations, in the given pop_types) that FILTERS on `column` via `getter` (a `PopulationTree →
 # Dict`, e.g. `pop_label_overrides` for the pop name). First pop (by
 # segmentation/type order) wins a shared value. Empty when `column` is blank / a special key.
 function _gather_pop_overrides(img, column::AbstractString, pop_types, getter)::Dict{String,String}
@@ -387,7 +387,7 @@ function _gather_pop_overrides(img, column::AbstractString, pop_types, getter)::
                     get!(out, k, val)
                 end
             catch
-                # pop map for this (vn, pop_type) unavailable → nothing to contribute
+                # pop tree for this (vn, pop_type) unavailable → nothing to contribute
             end
         end
     end
@@ -478,7 +478,7 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
                 push!(rows, (; vn, kind = ribbon ? :ribbon : :pop, path, own = p.name,
                                colour = drawn === missing ? p.colour : drawn))
             catch
-                # pop map / path unavailable → skip
+                # pop tree / path unavailable → skip
             end
         end
         # One tracked pop in a segmentation = its whole tracks ("<vn> tracks", one row per source as

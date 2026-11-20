@@ -135,7 +135,7 @@ def _cluster_pops(api: str, project_uid: str, image_uid: str, value_name: str, p
     q = urllib.parse.urlencode({"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
                                 "popType": pop_type})
     try:
-        with open_url(api.rstrip("/"), f"/api/gating/popmap?{q}", headers=auth_headers(), timeout=60) as r:
+        with open_url(api.rstrip("/"), f"/api/gating/pop-tree?{q}", headers=auth_headers(), timeout=60) as r:
             return len(((json.loads(r.read().decode("utf-8")) or {}).get("tree") or {}).get("populations") or [])
     except (urllib.error.URLError, OSError, ValueError):
         return -1                      # unknown: keep the views, the render will say what it shows

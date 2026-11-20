@@ -44,7 +44,7 @@ function resolve_pop_type(img::CciaImage, value_name::AbstractString, path::Abst
     # actually selected* is flagged, and only where discovery must guess.
     matches = String[]
     for pt in POP_TYPE_PROBE_ORDER
-        m = try; load_pop_map(img; value_name=value_name, pop_type=pt); catch; continue; end
+        m = try; load_pop_tree(img; value_name=value_name, pop_type=pt); catch; continue; end
         has_pop(m, String(path)) && push!(matches, pt)
     end
     isempty(matches) && return "flow"
@@ -247,10 +247,10 @@ function pop_name_conflict(img::CciaImage, value_name::AbstractString, path::Abs
                            pop_type::PopTypeArg)::Union{String,Nothing}
     p = String(path)
     (is_root(p) || is_reserved_pop_name(pop_name(p))) && return nothing
-    own_map = pop_map_type(pop_type)          # live → flow: one map, one type
+    own_map = pop_tree_type(pop_type)          # live → flow: one map, one type
     for pt in STORED_POP_TYPES
         (pt == own_map || pt == string(pop_type)) && continue
-        m = try; load_pop_map(img; value_name=value_name, pop_type=pt); catch; continue; end
+        m = try; load_pop_tree(img; value_name=value_name, pop_type=pt); catch; continue; end
         has_pop(m, p) && return pt
     end
     nothing

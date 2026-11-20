@@ -163,7 +163,7 @@ vignette's 0–180° range splits one physical alignment across both ends of its
 
 ## Branch populations in the UI (gating page + plot picker)
 
-**What.** `branch` is a real pop type — the sidecar, the pop map and `pop_df(img, "branch", …)` all
+**What.** `branch` is a real pop type — the sidecar, the pop tree and `pop_df(img, "branch", …)` all
 work — but no UI surface can reach it. `/api/gating/channels` and `/api/plots/populations` both
 enumerate `label_props` value_names, and a branch value_name is a *segmentation* (`SHG`) that
 usually has no per-cell table, so the picker looks for `B__branch`/`T__branch` and finds nothing.

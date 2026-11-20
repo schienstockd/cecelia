@@ -7,9 +7,9 @@
 # Serialise gating load→mutate→save. Every writer of a gating sidecar holds it across the whole cycle;
 # without it two concurrent edits to one map both load the same tree and the second save drops the
 # first. One process-wide lock is enough — gating edits are user-paced and cheap. The API's gating
-# handlers take it through `with_popmap_lock` too, so a chain step and a click cannot interleave.
-const _POPMAP_LOCK = ReentrantLock()
-with_popmap_lock(f) = lock(f, _POPMAP_LOCK)
+# handlers take it through `with_pop_tree_lock` too, so a chain step and a click cannot interleave.
+const _POP_TREE_LOCK = ReentrantLock()
+with_pop_tree_lock(f) = lock(f, _POP_TREE_LOCK)
 
 """
     copy_gating!(src, targets; value_name, pop_type, replace = true, on_copied = (img, m) -> nothing)
@@ -38,8 +38,8 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
                       value_name::AbstractString, pop_type::AbstractString,
                       replace::Bool = true, on_copied::Function = (_, _) -> nothing)
     vn, pt = String(value_name), String(pop_type)
-    with_popmap_lock() do
-        m = load_pop_map(src; value_name = vn, pop_type = pt)
+    with_pop_tree_lock() do
+        m = load_pop_tree(src; value_name = vn, pop_type = pt)
         isempty(m.order) && throw(ArgumentError("$(src.uid) has no $pt gating on '$vn' to copy"))
         foreach(path -> stamp_edit!(m, path), m.order)    # in memory only — the source is not re-saved
         src_names = channel_names(src; value_name = vn)
@@ -52,7 +52,7 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
             tuid = timg.uid
             tuid == src.uid && continue
             img_has_value_name(timg, vn) || (skipped[tuid] = "no segmentation '$vn'"; continue)
-            if !replace && !isempty(load_pop_map(timg; value_name = vn, pop_type = pt,
+            if !replace && !isempty(load_pop_tree(timg; value_name = vn, pop_type = pt,
                                                  backfill_save = false).order)
                 skipped[tuid] = "already gated"; continue
             end
@@ -67,7 +67,7 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
                 (skipped[tuid] = "channels don't match — " * describe_channel_problems(mt.problems); continue)
             tm = isempty(mt.remapped) ? m : rename_pop_columns(m, Dict(r.from => r.to for r in mt.remapped))
             try
-                save_pop_map!(tm, timg)
+                save_pop_tree!(tm, timg)
                 on_copied(timg, tm)
                 push!(copied, tuid)
                 isempty(mt.remapped) || (remapped[tuid] = mt.remapped)

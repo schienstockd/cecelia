@@ -259,7 +259,7 @@ Which population of run `suffix` holds each cluster id on map `m`. A cluster id 
 population of a run (the manager's tick moves it); the routes that write cluster ids refuse one another
 population holds. `except` leaves out the population(s) being edited: one path, or a collection of them.
 """
-function cluster_id_owners(m::PopulationMap, suffix::AbstractString; except = nothing)::Dict{Int,String}
+function cluster_id_owners(m::PopulationTree, suffix::AbstractString; except = nothing)::Dict{Int,String}
     out = Dict{Int,String}()
     skip(path) = except === nothing ? false : except isa AbstractString ? path == except : path in except
     for path in m.order
@@ -281,8 +281,8 @@ as_cluster_id(v::Real) = (isfinite(v) && isinteger(v)) ? Int(v) : nothing
 as_cluster_id(v::AbstractString) = (x = tryparse(Float64, strip(v)); x === nothing ? nothing : as_cluster_id(x))
 as_cluster_id(::Any) = nothing
 
-# Suffixes a cluster pop map's filters reference (each pop's `filter_measure` = "{prefix}{suffix}").
-function _referenced_cluster_suffixes(m::PopulationMap)::Set{String}
+# Suffixes a cluster pop tree's filters reference (each pop's `filter_measure` = "{prefix}{suffix}").
+function _referenced_cluster_suffixes(m::PopulationTree)::Set{String}
     out = Set{String}()
     for p in values(m.pops)
         sfx = cluster_pop_suffix(p)
@@ -299,14 +299,14 @@ end
 # `clusters.{suffix}` (so we never fabricate cluster pops for a segmentation not in the run). Returns
 # nothing when there's nothing to borrow. Read-side only — the SAVE path stays per-vn (editing under a
 # borrowing vn materialises its own real sidecar: plain copy semantics).
-function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
-                                 pop_type::PopTypeArg)::Union{PopulationMap,Nothing}
+function _borrow_cluster_pop_tree(img::CciaImage, value_name::AbstractString,
+                                 pop_type::PopTypeArg)::Union{PopulationTree,Nothing}
     p = cluster_props_path(img, value_name, pop_type)
     my_suffixes = _clustfeatures_suffixes(p; family=_cluster_measure_family(pop_type))
     isempty(my_suffixes) && return nothing              # this vn wasn't clustered → nothing to share
     for vn in versioned_keys(img.label_props)
         v = String(vn); v == value_name && continue
-        sib = load_pop_map(img._dir, v; pop_type=pop_type)
+        sib = load_pop_tree(img._dir, v; pop_type=pop_type)
         isempty(sib.pops) && continue
         ref = _referenced_cluster_suffixes(sib)
         (isempty(ref) || !(ref ⊆ my_suffixes)) && continue
@@ -351,7 +351,7 @@ The `{value => population name}` a user population gives `column`: for each pop 
 STRING form. Lets a colour-by legend read the **population name** (e.g. "migratory") instead of the raw
 category value (e.g. "2") wherever a population defines that value. First pop in insertion order wins.
 """
-function pop_label_overrides(m::PopulationMap, column::AbstractString)::Dict{String,String}
+function pop_label_overrides(m::PopulationTree, column::AbstractString)::Dict{String,String}
     col = String(column); out = Dict{String,String}()
     for path in m.order
         p = m.pops[path]
@@ -388,9 +388,9 @@ function category_colours(values; palette::AbstractVector{<:AbstractString}=POPU
     Dict{Any,String}(v => palette[(i - 1) % length(palette) + 1] for (i, v) in enumerate(vals))
 end
 
-function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow",
+function load_pop_tree(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow",
                       backfill_save::Bool=true)
-    m = load_pop_map(img._dir, value_name; pop_type=pop_type, backfill_save=backfill_save)
+    m = load_pop_tree(img._dir, value_name; pop_type=pop_type, backfill_save=backfill_save)
     # Stamp THIS image's µm/px so `recompute!` can put spatial gate axes and the cell data in the same
     # unit. Per image on purpose: the same µm gate copied to another image must be evaluated with that
     # image's own scale (SPATIAL_GATE_UNITS_PLAN.md decision 2). Only for a calibrated image — an
@@ -412,7 +412,7 @@ function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_
     (img_is_calibrated(img) && !has_spatial_gate(m)) && (m.spatial_unit = SPATIAL_UNIT_UM)
     # cluster pop_types with no own sidecar → try to borrow from a co-clustered sibling (auto-share)
     (_is_cluster_pop_type(pop_type) && isempty(m.pops)) || return m
-    borrowed = _borrow_cluster_pop_map(img, String(value_name), string(pop_type))
+    borrowed = _borrow_cluster_pop_tree(img, String(value_name), string(pop_type))
     borrowed === nothing && return m
     # a borrowed map came from a sibling segmentation of the SAME image → same pixel sizes
     borrowed.physical_sizes = m.physical_sizes
@@ -420,25 +420,25 @@ function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_
 end
 
 """
-    stored_pop_map(img, value_name, pop_type) -> Union{PopulationMap,Nothing}
+    stored_pop_tree(img, value_name, pop_type) -> Union{PopulationTree,Nothing}
 
 The map holding `value_name`'s stored `pop_type` populations, or `nothing` when it can have none. A
 gate-drawn map (flow/track/region…) is per segmentation, so no sidecar file means no pops — the cheap
 `isfile` skip. A CLUSTER pop_type often has no sidecar of its own: cluster pops are global to a run and
-`load_pop_map` lends them to every co-clustered sibling (`_borrow_cluster_pop_map`), so it is always
+`load_pop_tree` lends them to every co-clustered sibling (`_borrow_cluster_pop_tree`), so it is always
 loaded — skipping on the file hid exactly those borrowers. The one walk every "which pops does this
 image have" reader shares (`has_stored_pops`, the observer's population enumerator).
 """
-function stored_pop_map(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)
+function stored_pop_tree(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)
     (_is_cluster_pop_type(pop_type) || isfile(gating_path(img._dir, value_name; pop_type = pop_type))) ||
         return nothing
-    load_pop_map(img; value_name = value_name, pop_type = pop_type)
+    load_pop_tree(img; value_name = value_name, pop_type = pop_type)
 end
 
 """True when `value_name` has at least one stored (non-transient) `pop_type` population. Membership is
 not evaluated — an authored pop that matches no cell still counts: the type exists on this image."""
 function has_stored_pops(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)::Bool
-    m = stored_pop_map(img, value_name, pop_type)
+    m = stored_pop_tree(img, value_name, pop_type)
     m !== nothing && any(path -> !pop_at(m, path).transient, pop_paths(m))
 end
 
@@ -463,7 +463,7 @@ function _expand_cluster_pops(img::CciaImage, pops, pop_type::PopTypeArg, defaul
         prefix = _cluster_measure_prefix(pop_type)
         suffix = nothing
         for vn in vns
-            m = load_pop_map(img._dir, String(vn); pop_type=pop_type)
+            m = load_pop_tree(img._dir, String(vn); pop_type=pop_type)
             has_pop(m, p) || continue
             fm = m.pops[p].filter_measure
             (fm !== nothing && startswith(String(fm), prefix)) || continue

@@ -38,7 +38,7 @@ set_has_gating(set::CciaSet, pop_type::AbstractString)::Bool =
 # One image's map on one segmentation, evaluated: per population its count and its parent's count,
 # and the gate columns its table lacks. `nothing` when it has no populations.
 function _gating_image_state(img::CciaImage, vn::AbstractString, pop_type::AbstractString)
-    m = computed_pop_map(img; value_name = vn, pop_type = pop_type)
+    m = computed_pop_tree(img; value_name = vn, pop_type = pop_type)
     isempty(m.order) && return nothing
     counts = Dict{String,Tuple{Int,Int}}()
     for path in m.order

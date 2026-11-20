@@ -1,13 +1,13 @@
 # (De)serialisation + on-disk persistence. The wire shape is a nested tree — {name, gate, filter,
 # children} — Python-readable (docs/POPULATION.md → Format). Files live at
 # `{task_dir}/gating/{value_name}.json` and (for track populations) `{task_dir}/gating/{value_name}__tracks.json`;
-# atomic write goes through `write_json_atomic`. Reads reconstruct a PopulationMap; writes flatten
+# atomic write goes through `write_json_atomic`. Reads reconstruct a PopulationTree; writes flatten
 # it back. Kept separate from mutations so a caller can serialise without pulling in the mutation API.
 
 # ── (De)serialisation — nested tree {name, gate, filter, children}, Python-readable ─
 # `include_transient=false` drops ephemeral pops (napari selection) — used for persistence so
 # they never reach disk; the broadcast/serve path keeps them so the client stays in sync.
-function _node_dict(m::PopulationMap, path::AbstractString; include_transient::Bool=true)::Dict{String,Any}
+function _node_dict(m::PopulationTree, path::AbstractString; include_transient::Bool=true)::Dict{String,Any}
     p = m.pops[path]
     # UID is emitted BEFORE `colour`/`show` so a diff of the sidecar names the identity of each node
     # up front rather than buried after the tree ornaments.
@@ -35,7 +35,7 @@ end
 
 """Serialise the map to a nested-tree dict. Pass `include_transient=false` to omit
 ephemeral (napari-selection) pops — persistence uses this so they never hit disk."""
-function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,Any}
+function to_tree(m::PopulationTree; include_transient::Bool=true)::Dict{String,Any}
     roots = direct_children(m, ROOT)
     include_transient || (roots = [r for r in roots if !m.pops[r].transient])
     out = Dict{String,Any}(
@@ -58,7 +58,7 @@ function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,An
     out
 end
 
-function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString)
+function _add_node!(m::PopulationTree, node::AbstractDict, parent::AbstractString)
     g(k, default=nothing) = get(node, k, get(node, Symbol(k), default))
     gate = g("gate") === nothing ? nothing : gate_from_spec(g("gate"))
     flt = g("filter")
@@ -89,11 +89,11 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
 end
 
 """Build a map from a nested-tree dict."""
-function from_tree(tree::AbstractDict)::PopulationMap
+function from_tree(tree::AbstractDict)::PopulationTree
     g(k, default=nothing) = get(tree, k, get(tree, Symbol(k), default))
     # No stamp ⇒ "px": every gating file written before spatial gates moved to µm holds pixel
     # coordinates, and must keep evaluating as pixels (SPATIAL_GATE_UNITS_PLAN.md decision 4).
-    m = PopulationMap(; pop_type=String(g("pop_type", "flow")), value_name=String(g("value_name", "default")),
+    m = PopulationTree(; pop_type=String(g("pop_type", "flow")), value_name=String(g("value_name", "default")),
                       spatial_unit=String(g("spatial_unit", SPATIAL_UNIT_PX)),
                       # P3b: absent on any file predating the breadcrumb (legacy default) — stays
                       # `nothing`, drift detection skips, `_latest` semantics unchanged.
@@ -118,11 +118,11 @@ end
 # it gates over: `flow` → `gating/{vn}.json` (cell gates); `track` → `gating/{vn}__tracks.json`
 # (per-track gates); `clust`/`trackclust`/`region`/`branch` → `gating/{vn}__<type>.json`. The tree
 # format + engine are identical across types (only the data source + membership rule differ). `live`
-# has no own file: it is derived off the `flow` map. The suffixes (`POP_MAP_SUFFIX`) and the gating
+# has no own file: it is derived off the `flow` map. The suffixes (`POP_TREE_SUFFIX`) and the gating
 # types (`GATING_POP_TYPES`, `is_gating_pop_type`) come from the pop-type registry (registry.jl).
 gating_dir(task_dir::AbstractString) = joinpath(task_dir, "gating")
 gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::PopTypeArg="flow") =
-    joinpath(gating_dir(task_dir), value_name * get(POP_MAP_SUFFIX, string(pop_type), "") * ".json")
+    joinpath(gating_dir(task_dir), value_name * get(POP_TREE_SUFFIX, string(pop_type), "") * ".json")
 
 """Write the map to `{task_dir}/gating/{value_name}[__tracks].json` (by `m.pop_type`).
 
@@ -130,7 +130,7 @@ THE gating writer — every route, MCP tool, task and REPL edit reaches the file
 also where the previous state goes to the gate history (`gating/{vn}[__type].history.jsonl`, see
 popmanager/history.jl) when the write changes any population's definition. `history_kind` overrides the
 history entry's summarised kind (a value_name rename passes `"rename"`)."""
-function save_pop_map!(m::PopulationMap, task_dir::AbstractString;
+function save_pop_tree!(m::PopulationTree, task_dir::AbstractString;
                        history_kind::Union{AbstractString,Nothing} = nothing)
     dir = gating_dir(task_dir)
     isdir(dir) || mkpath(dir)
@@ -138,11 +138,11 @@ function save_pop_map!(m::PopulationMap, task_dir::AbstractString;
     # `write_json_atomic` (app/src/utils.jl) so a concurrent reader never observes a half-written
     # (truncated) JSON, and an interrupted write keeps the previous gates. This file was where that
     # tmp-then-rename pattern was first written by hand; it is now the shared mechanism every state
-    # write uses. The load→mutate→save critical section is separately serialised by `with_popmap_lock`
+    # write uses. The load→mutate→save critical section is separately serialised by `with_pop_tree_lock`
     # (popmanager/copy.jl; held by the gating API handlers and by tasks that write gating) against lost
     # updates; this guards the file itself.
     # The lock (reentrant) also makes "read the previous state → append it → write" one step here.
-    with_popmap_lock() do
+    with_pop_tree_lock() do
         tree = to_tree(m; include_transient = false)
         _record_gating_history!(task_dir, m, tree; kind = history_kind)
         write_json_atomic(path, tree)
@@ -155,30 +155,30 @@ end
 
 **One-shot UID backfill**: a sidecar written before UIDs shipped (MULTI_POP_TRACKING_PLAN.md
 Decision 0) has no `uid` on any node — `_add_node!` generates them and flips
-`m._uid_backfilled = true`. This function then runs a `save_pop_map!` before returning so the
+`m._uid_backfilled = true`. This function then runs a `save_pop_tree!` before returning so the
 freshly-picked UIDs are stable across sessions (a next load would otherwise reroll them and any
 outside reference — a `track_source` obs value, a lab-log capture — would drift). Once the sidecar
 is UID-complete this branch never fires again. The backfill re-reads and saves under
-`with_popmap_lock`, so an unlocked caller can neither reroll a concurrent loader's UIDs nor drop a
+`with_pop_tree_lock`, so an unlocked caller can neither reroll a concurrent loader's UIDs nor drop a
 locked gate edit.
 
 `backfill_save = false` skips that write, for a caller that must stay read-only (the Kiwi ref resolver,
 `api/src/kiwi_refs.jl`, which only asks whether a path exists — the rerolled uids are never used)."""
-function load_pop_map(task_dir::AbstractString, value_name::AbstractString;
-                      pop_type::PopTypeArg="flow", backfill_save::Bool=true)::PopulationMap
+function load_pop_tree(task_dir::AbstractString, value_name::AbstractString;
+                      pop_type::PopTypeArg="flow", backfill_save::Bool=true)::PopulationTree
     path = gating_path(task_dir, value_name; pop_type=pop_type)
-    isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
+    isfile(path) || return PopulationTree(; pop_type=pop_type, value_name=value_name)
     m = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
     (backfill_save && m._uid_backfilled) || return m
-    # The backfill is a WRITE, and most callers load without holding `with_popmap_lock`. So take
+    # The backfill is a WRITE, and most callers load without holding `with_pop_tree_lock`. So take
     # the lock (reentrant, so a caller that already holds it is unaffected) and RE-READ the file
     # under it: a concurrent loader may have backfilled already (its UIDs win; saving ours would
     # reroll them and orphan any `track_source` stamped with them), and a locked gate edit may have
     # landed since our read (saving our stale tree would drop it).
-    with_popmap_lock() do
-        isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
+    with_pop_tree_lock() do
+        isfile(path) || return PopulationTree(; pop_type=pop_type, value_name=value_name)
         fresh = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
-        fresh._uid_backfilled && save_pop_map!(fresh, task_dir)
+        fresh._uid_backfilled && save_pop_tree!(fresh, task_dir)
         fresh
     end
 end
@@ -189,13 +189,13 @@ end
 # In practice it reads `v1`: segmentation/measurement overwrite their label set in place by design and
 # never mint a `vN`, so the breadcrumb only moves for a hand-versioned label set (docs/POPULATION.md →
 # Storage). The gate history, not this field, is what ties a run to its gate.
-function save_pop_map!(m::PopulationMap, img::CciaImage)
+function save_pop_tree!(m::PopulationTree, img::CciaImage)
     # Only stamp when a label_props entry actually exists for this value_name — a first-save on an
     # image that never ran segmentation has no version to point at (the breadcrumb stays `nothing`
     # and the drift banner never fires because there is no drift to detect).
     if haskey(img.label_props, m.value_name)
         m.authored_labels_version = resolve_version(img, :label_props, m.value_name)
     end
-    save_pop_map!(m, img._dir)
+    save_pop_tree!(m, img._dir)
 end
 

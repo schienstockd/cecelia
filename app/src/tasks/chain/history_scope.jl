@@ -35,7 +35,7 @@ function _hp_cluster_runs(proj::CciaProject, image_uids, tkeys, explicit::Vector
         pt = t.popType
         prefix = _cluster_measure_prefix(pt)
         isfile(gating_path(img._dir, t.valueName; pop_type = pt)) || continue
-        m = try load_pop_map(img._dir, t.valueName; pop_type = pt, backfill_save = false) catch; continue end
+        m = try load_pop_tree(img._dir, t.valueName; pop_type = pt, backfill_save = false) catch; continue end
         p = t.pop
         while (pop = get(m.pops, p, nothing)) !== nothing
             fm = something(pop.filter_measure, "")

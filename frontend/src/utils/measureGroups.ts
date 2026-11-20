@@ -16,6 +16,8 @@
 
 import { isCentroidAxis } from './gatingAxes'
 import { popTypeInfo } from '../plots/popTypeRegistry'
+import { channelColumnName } from './channelNames'
+import { measurePickGroups, type SearchGroup } from './searchSelect'
 
 /** One titled block of a picker: an `<optgroup>`, or a titled chip/checkbox list. */
 export interface MeasureGroup {
@@ -112,3 +114,48 @@ export function measureGroups(input: MeasureGroupsInput): MeasureGroup[] {
 
 /** Every column the groups offer, flattened back into one list (validity checks / select-all). */
 export const groupedCols = (groups: MeasureGroup[]): string[] => groups.flatMap(g => g.cols)
+
+// Regionprops that are bookkeeping, not measurements: the label index, the bounding box, the centroid,
+// the raw inertia tensor. Hidden from every "plot a measure" list (new measurements no longer save bbox,
+// existing tables still carry `bbox-*`).
+export const STRUCTURAL_COL = /^(label$|bbox[-_]|centroid[-_]|inertia_tensor)/
+
+/** What a per-cell summary plot can offer as its measure, for one (image, segmentation) set. */
+export interface SummaryMeasureInput {
+  /** var columns (morphology + intensity), as `/api/gating/channels` lists them. */
+  columns: readonly string[]
+  /** the intensity subset of `columns`. */
+  channels: readonly string[]
+  /** obs columns present — only the spec's own `options` are taken from these. */
+  obsColumns: readonly string[]
+  /** display names by channel index (`channelNames`). */
+  channelNames: readonly string[]
+  /** the spec's static measures (`measureOptions`), offered when the data has them. */
+  options: readonly string[]
+}
+
+/**
+ * The measure picker of a per-cell summary plot — markers, shape and the spec's own measures — as
+ * titled groups for `SearchSelect` (a 40-channel panel is unreadable as one flat list).
+ *
+ * A channel's VALUE is its stored name (`channelColumnName`: `CD4`, `nuc_CD4`), so a saved panel and a
+ * multi-image plot ask every image for the same marker whatever its channel order; the backend names a
+ * raw request the same way (plot_data.jl `_named_measure`). Morphology is alphabetical, channels keep
+ * channel order. Grouping is `measureGroups`, so this reads like every other measure picker.
+ */
+export function summaryMeasurePicks(input: SummaryMeasureInput): SearchGroup[] {
+  const names = [...input.channelNames]
+  const shadow = [...input.columns, ...input.obsColumns]
+  const chans = new Set(input.channels)
+  const isChan = (c: string) => chans.has(c) || isIntensityColumn(c)
+  const vars = input.columns.filter(c => !STRUCTURAL_COL.test(c))
+  const morph = vars.filter(c => !isChan(c)).sort((a, b) => a.localeCompare(b))
+  const present = new Set(shadow)
+  const groups = measureGroups({
+    columns: [...morph, ...vars.filter(isChan)], channels: [...input.channels],
+    obsColumns: input.options.filter(o => present.has(o)),
+  })
+  // a marker's stored value IS its name, so the value doubles as the label
+  const named = groups.map(g => ({ title: g.title, cols: g.cols.map(c => isChan(c) ? channelColumnName(c, names, shadow) : c) }))
+  return measurePickGroups(named, c => c)
+}
