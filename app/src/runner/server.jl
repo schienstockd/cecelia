@@ -452,7 +452,11 @@ function _runner_stream(stream::HTTP.Stream)
         return
     end
     body_bytes = read(stream)
-    status, body = fetch(Threads.@spawn begin
+    # The same door check as the backend's (security audit F7): a project uid in the body must be a
+    # uid before `execute_chain` / a task joins it onto projects_dir().
+    bad = isempty(body_bytes) ? nothing : bad_uid_in_json(String(copy(body_bytes)))
+    status, body = bad !== nothing ? _json(400, (; error = "Invalid project id: $(repr(bad))")) :
+                   fetch(Threads.@spawn begin
         try
             _runner_handler(req, body_bytes)
         catch e

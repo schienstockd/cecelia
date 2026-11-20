@@ -52,13 +52,8 @@ anyone else even for a moment.
 function ensure_api_token!(cfg::AbstractString = config_dir())::String
     tok = read_api_token(cfg)
     tok === nothing || return tok
-    mkpath(cfg)
     tok = bytes2hex(rand(Random.RandomDevice(), UInt8, 32))
-    tmp = api_token_path(cfg) * ".tmp"
-    touch(tmp)
-    chmod(tmp, 0o600)
-    write(tmp, tok)
-    mv(tmp, api_token_path(cfg); force = true)
+    write_secret(api_token_path(cfg), tok)
     tok
 end
 

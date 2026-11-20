@@ -200,6 +200,41 @@ end
     end
 end
 
+# Security audit F7: a project uid from a request is checked at the door by a scan of the body.
+@testset "bad_uid_in_json — a request's project uid must be a uid" begin
+    @test Cecelia.bad_uid_in_json("""{"projectUid":"aB3_x-9","n":1}""") === nothing
+    @test Cecelia.bad_uid_in_json("""{"projectUid":""}""") === nothing
+    @test Cecelia.bad_uid_in_json("""{"projectUid" : "../etc"}""") == "../etc"
+    @test Cecelia.bad_uid_in_json("""{"a":{"b":[{"projectUid":"/home/x"}]}}""") == "/home/x"   # any depth
+    @test Cecelia.bad_uid_in_json("""{"projectUid":"ok1","x":{"projectUid":"..\\/x"}}""") !== nothing
+    @test Cecelia.bad_uid_in_json("""{"projectUid":"ab\\u002e"}""") !== nothing              # escaped: never a uid
+    @test Cecelia.bad_uid_in_json("""{"uid":"../x"}""") === nothing                             # key not asked for
+    @test Cecelia.bad_uid_in_json("""{"uid":"../x"}"""; keys = ("projectUid", "uid")) == "../x"
+    @test Cecelia.bad_uid_in_json(String(UInt8[0xff, 0xfe, 0x22])) === nothing                  # binary upload
+end
+
+# Security audit F4/F12: a secret is written owner-only from the first byte.
+@testset "write_json_atomic(mode) — owner-only secrets" begin
+    d = mktempdir()
+    p = joinpath(d, "secret.json")
+    Cecelia.write_json_atomic(p, Dict("token" => "t"); mode = 0o600)
+    @test JSON3.read(read(p, String)).token == "t"
+    Sys.iswindows() || @test filemode(p) & 0o077 == 0
+    @test isempty(filter(n -> occursin(".tmp.", n), readdir(d)))
+    q = Cecelia.write_secret(joinpath(d, "sub", ".plutosecret"), "s3cret")   # Pluto's launcher, the API token
+    @test read(q, String) == "s3cret" && !isfile(q * ".tmp")
+    Sys.iswindows() || @test filemode(q) & 0o077 == 0
+end
+
+# Security audit F6: the stored Rscript choice travels in a bundle and names a program we run.
+@testset "legacy migrate runs only a real Rscript" begin
+    tr(c) = Cecelia._trusted_rscript(c)
+    @test tr("") == "" && tr("Rscript") == "Rscript"
+    @test tr("/opt/R/4.4/bin/Rscript") == "/opt/R/4.4/bin/Rscript"
+    @test tr("/bin/sh") == "" && tr("sh") == "" && tr("/tmp/evil") == ""
+    @test tr(joinpath(projects_dir(), "abc123", "Rscript")) == ""          # a bundle could have put it there
+end
+
 # ── rscript_bin_path: macOS GUI PATH fallbacks ───────────────────────────────
 # macOS GUI apps inherit a bare PATH (`/usr/bin:/bin:/usr/sbin:/sbin`); Terminal-tested Rscript
 # is invisible to the app. The legacy-migrate scan then died with `FileNotFoundError: 'Rscript'`

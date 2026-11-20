@@ -101,6 +101,35 @@ end
     end
 end
 
+# Security audit F7: ~40 handlers join a request's project uid onto projects_dir(), most behind only an
+# `isdir` — which an absolute or `../` path to an existing directory passes. Refused at the door.
+@testset "API: a request's project uid must be a uid — checked at the door" begin
+    old = _API_TOKEN[]
+    _API_TOKEN[] = "t0ken"
+    srv = HTTP.listen!(handle_stream, "127.0.0.1", 0)
+    victim = mktempdir()
+    write(joinpath(victim, "keep.txt"), "x")
+    try
+        base = "http://127.0.0.1:$(HTTP.port(srv))"
+        h = ["Authorization" => "Bearer t0ken", "Content-Type" => "application/json"]
+        post(path, body) = HTTP.post(base * path, h, JSON3.write(body); status_exception = false, retry = false)
+        get(path) = HTTP.get(base * path, h; status_exception = false, retry = false)
+
+        r = post("/api/projects/delete", Dict("uid" => victim))
+        @test r.status == 400 && occursin("Invalid project id", String(r.body))
+        @test isfile(joinpath(victim, "keep.txt"))                                  # nothing discarded
+        @test post("/api/projects/delete", Dict("uid" => "../" * basename(victim))).status == 400
+        @test post("/api/projects/delete", Dict("uid" => "noSuch1")).status == 404   # a uid still reaches the handler
+        @test post("/api/push/target", Dict("projectUid" => victim, "socketPath" => "s", "token" => "t")).status == 400
+        @test get("/api/viewer/slab?projectUid=" * HTTP.escapeuri(victim)).status == 400  # binary route
+        @test get("/api/movies/file?projectUid=..%2F..&name=x.mp4").status == 400
+    finally
+        close(srv)
+        _API_TOKEN[] = old
+        rm(victim; recursive = true, force = true)
+    end
+end
+
 # The AI switch (AI_TOGGLE_PLAN D1, app/src/ai/ai_switch.jl): with AI off every request marked
 # `X-Cecelia-Client: claude` is refused in the stream handler — JSON routes, the binary routes that skip
 # `handle_http`, and the WebSocket upgrade — while the app's own requests go through.

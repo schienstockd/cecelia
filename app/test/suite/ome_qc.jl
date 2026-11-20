@@ -2954,6 +2954,27 @@ end
             @test readdir(projroot) == String[]
 
             @test all(Cecelia.valid_uid(Cecelia.gen_uid()) for _ in 1:200)
+
+            # Symlinks: a linked folder in the bundle used to have tar unpack THROUGH it (and the
+            # cleanup delete the archive there); links are dropped before the unpack and after it.
+            if !Sys.iswindows()
+                outside = mkpath(joinpath(tmp, "outside"))
+                payload = mkpath(joinpath(tmp, "payload", "x.zarr")); write(joinpath(payload, "0.0"), "c")
+                run(`tar -cf $(joinpath(outside, "x.zarr.tar")) -C $(dirname(payload)) x.zarr`)
+                b = hostile("symLnk1", ["evil/x.zarr.tar"])
+                symlink(outside, joinpath(b, "evil"))
+                @test isempty(import_project(b; on_log = _ -> nothing))
+                @test isfile(joinpath(outside, "x.zarr.tar"))                 # not unpacked-then-deleted
+                @test !ispath(joinpath(outside, "x.zarr"))                     # nothing extracted there
+                # a dangling link (a legacy-migrated store from another machine) just doesn't import
+                b2 = hostile("symLnk2")
+                symlink("/nonexistent/elsewhere", joinpath(b2, "old.zarr"))
+                logs = String[]
+                @test import_project(b2; on_log = l -> push!(logs, l)) == "symLnk2"
+                @test !islink(joinpath(projroot, "symLnk2", "old.zarr")) && !ispath(joinpath(projroot, "symLnk2", "old.zarr"))
+                @test any(occursin("dropped 1 symlink", l) for l in logs)
+                rm(joinpath(projroot, "symLnk2"); recursive = true)
+            end
         finally
             prev_env === nothing ? delete!(ENV, "CECELIA_DEV_DIR") :
                                    (ENV["CECELIA_DEV_DIR"] = prev_env)

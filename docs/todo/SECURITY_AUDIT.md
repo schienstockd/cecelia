@@ -1,7 +1,9 @@
 # SECURITY_AUDIT
 
-Status: **F1–F3 fixed** on branch `security-audit-fixes` (2026-11-20); F4–F16 and the free GitHub
-tooling open. Scoping audit run 2026-11-19 from the archived brief
+Status: **F1–F3 fixed** (#2386), **F4–F8, F12 and bundle symlinks fixed** (branch
+`security-audit-batch2`, 2026-11-20); F9–F11, F13–F16 open. GitHub secret scanning + push protection
+were already on (public-repo default); CodeQL default setup being enabled; Dependabot security
+updates off. Scoping audit run 2026-11-19 from the archived brief
 [`../archive/SECURITY_SCOPE_AUDIT_PROMPT.md`](../archive/SECURITY_SCOPE_AUDIT_PROMPT.md) by a subagent;
 F1, F2 and the plugin-install sink re-read by the parent session.
 
@@ -37,8 +39,29 @@ targeted model review of the hot spots in §6. Below the fix log is the audit as
   `API token` (`app/test/suite/config.jl`) and `API token gate — another localhost page is refused`
   (`api/test/suite/api_token_gate.jl`, a real listener) — fails without.
 
----
+## Fixed, batch 2 (2026-11-20, `security-audit-batch2`)
 
+- **F7:** a request's project uid is checked once at the door instead of in ~40 handlers: the query
+  and the body (`bad_uid_in_json`, a scan at any depth, `app/src/utils.jl`) in `handle_http`, the
+  query on the binary routes in `handle_stream`, every WebSocket message in `handle_message`, and the task runner's own listener (`_runner_stream`). The
+  key is `projectUid`; on the project-manager routes whose body is `{uid}` (load, rename, delete,
+  claim, unclaim, share) `uid` too. Test: `API: a request's project uid must be a uid` (live
+  listener; `/api/projects/delete` with an absolute path left the directory alone) — fails without.
+  **Limit:** a key written with a JSON `\u` escape is not recognised by the scan; it needs the token.
+- **Bundle symlinks (§6 item 1):** import drops every symlink after copying the bundle and again
+  after unpacking, and logs the count. Refusing was not an option: a legacy-migrated project can hold
+  store links, dead on any other machine. Without the first drop, tar unpacked through a linked folder
+  and the cleanup deleted the archive there (the test showed both).
+- **F4 / F12:** the Pluto secret (`pluto/launch.jl`) and `push_target.json` are written 0600 before
+  the content goes in — `write_secret` (Base-only, `config_dir.jl`; the API token uses it too) and `write_atomic(…; mode)`. The config dir itself is unchanged.
+- **F5:** the project's HPC account is validated on read (`read_hpc_project_settings`) as on save; a
+  malformed one is ignored with a warning.
+- **F6:** legacy migrate runs a stored Rscript (ccid.json or chain params) only if it is named
+  Rscript and lies outside the projects dir (`_trusted_rscript`); otherwise this machine's.
+- **F8:** `plugin_name_from_url` is anchored to `^https?://github.com/` and refuses `.`/`..`.
+  Plugin install still accepts any http(s) URL — a capability, so left for the maintainer.
+
+---
 
 Audited `origin/main` @ `3352caa66`, read-only. Nothing was exploited end to end and no server was started.
 

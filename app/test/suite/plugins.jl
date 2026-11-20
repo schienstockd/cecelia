@@ -718,6 +718,12 @@ end
     # the DIRECTORY takes the repo name, so one repo maps to one directory with no lookup table
     @test Cecelia.plugin_name_from_url("https://github.com/schienstockd/ccia-importTracks") == "ccia-importTracks"
     @test Cecelia.plugin_name_from_url("https://github.com/o/r.git") == "r"
+    # Security audit F8: the name becomes plugins/<name>, which install REPLACES — never `.` / `..`,
+    # and a github.com that is not the host (`evil.example/github.com/…`) is not a GitHub repo
+    @test Cecelia.plugin_name_from_url("https://github.com/o/..") == ""
+    @test Cecelia.plugin_name_from_url("https://github.com/o/.") == ""
+    @test Cecelia.plugin_name_from_url("https://evil.example/x/github.com/o/r") == "r"   # basename, not the repo match
+    @test Cecelia.plugin_tarball_url("https://evil.example/github.com/o/r", "") == "https://evil.example/github.com/o/r"
 
     cfg = mktempdir()
     src = joinpath(dirname(dirname(dirname(pathof(Cecelia)))),

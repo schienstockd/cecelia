@@ -525,12 +525,15 @@ function plugin_tarball_url(url::AbstractString, ref::AbstractString)::String
     "https://github.com/$(m.captures[1])/$(m.captures[2])/archive/$r.tar.gz"
 end
 
-"""Plugin directory name for a source URL — the repo name, so one repo maps to one directory."""
+"""Plugin directory name for a source URL — the repo name, so one repo maps to one directory. `""`
+when the URL gives no usable name: the name becomes `plugins/<name>`, which the installer REPLACES,
+so `.` / `..` (an unanchored match once allowed them) would delete the plugins dir or its parent
+(security audit F8)."""
 function plugin_name_from_url(url::AbstractString)::String
     u = strip(String(url))
-    m = match(r"github\.com/[^/]+/([^/#?]+?)(?:\.git)?/?$", u)
-    m !== nothing && return String(m.captures[1])
-    safe_name_part(splitext(basename(rstrip(u, '/')))[1])
+    m = match(r"^https?://github\.com/[^/]+/([^/#?]+?)(?:\.git)?/?$", u)
+    n = m !== nothing ? String(m.captures[1]) : safe_name_part(splitext(basename(rstrip(u, '/')))[1])
+    (occursin(r"^[A-Za-z0-9._-]+\z", n) && !all(==('.'), n)) ? n : ""
 end
 
 install_record_path(dir::AbstractString) = joinpath(String(dir), PLUGIN_INSTALL_RECORD)

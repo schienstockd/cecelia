@@ -234,6 +234,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
 
     handler = get(table, path, nothing)   # SubString hashes as its String — no copy per request
     handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
+    bad = _bad_request_uid(req, path, isempty(body_bytes) ? "" : String(copy(body_bytes)))
+    bad === nothing || return _bad_uid_response(bad)
     # Bind who's asking for the whole handler, so a writer stamps `author_stamp()` without threading it.
     _with_request_author(() -> handler(req, body_bytes), req)
 end
@@ -866,6 +868,27 @@ _request_from_own_page(req::HTTP.Request, path::AbstractString)::Bool =
                               HTTP.header(req, "Sec-Fetch-Mode", ""), HTTP.header(req, "Origin", ""),
                               HTTP.header(req, "Host", ""))
 
+# Security audit F7: a project uid from a request is joined onto `projects_dir()` by ~40 handlers, most
+# guarded only by `isdir` — which an absolute or `../` path to an existing directory passes. Checked
+# once at the door instead: the query and the body (a scan, any depth) of every request, and every
+# WebSocket message. On the project-manager routes whose body is `{uid, …}`, the bare `uid` is the
+# project's too (not on boards/canvases, whose nested `uid`s are panels and images).
+const _PROJECT_UID_ROUTES = Set(["/api/projects/load", "/api/projects/rename", "/api/projects/delete",
+                                 "/api/projects/claim", "/api/projects/unclaim", "/api/projects/share"])
+_uid_keys(path::AbstractString) = path in _PROJECT_UID_ROUTES ? ("projectUid", "uid") : ("projectUid",)
+
+function _bad_request_uid(req::HTTP.Request, path::AbstractString, body::AbstractString = "")::Union{String,Nothing}
+    keys = _uid_keys(path)
+    q = try HTTP.queryparams(HTTP.URI(req.target)) catch; Dict{String,String}() end
+    for k in keys
+        v = get(q, k, "")
+        isempty(v) || Cecelia.valid_uid(v) || return v
+    end
+    isempty(body) ? nothing : Cecelia.bad_uid_in_json(body; keys)
+end
+
+_bad_uid_response(v) = 400, JSON3.write((; error = "Invalid project id: $(repr(v))"))
+
 # Where `/api/auth` may redirect: a path on this server, never `//elsewhere` or a full URL.
 _safe_next(next::AbstractString)::String =
     (startswith(next, "/") && !startswith(next, "//") && !occursin('\\', next)) ? String(next) : "/"
@@ -956,6 +979,15 @@ function handle_stream(stream::HTTP.Stream)
     # when dist/ is absent (dev) or the path is /api/*.
     if req.method == "GET"
         spath = split(HTTP.URI(req.target).path, '?')[1]
+        # the binary routes below skip `handle_http`, so its uid check runs here for them
+        if spath in ("/api/board-assets", "/api/movies/file", "/api/viewer/slab")
+            bad = _bad_request_uid(req, spath)
+            if bad !== nothing
+                read(stream)
+                st, b = _bad_uid_response(bad)
+                return _write_response!(stream, st, b, "Content-Type" => "application/json")
+            end
+        end
         if spath == "/api/board-assets"
             try_serve_board_asset(stream, req.target) && return   # else falls through → 404 below
         elseif spath == "/api/movies/file"

