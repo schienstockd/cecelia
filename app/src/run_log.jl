@@ -475,7 +475,7 @@ function run_gates(fun_name::AbstractString, img::CciaImage, params::AbstractDic
     for (vn, path) in gated_pop_refs(p, leaves; all_pickers = true)
         pt = resolve_pop_type(img, vn, path)
         is_gating_pop_type(pt) || continue
-        hs = get!(() -> pop_gate_hashes(load_pop_map(img._dir, vn; pop_type = pt, backfill_save = false)),
+        hs = get!(() -> pop_gate_hashes(load_pop_tree(img._dir, vn; pop_type = pt, backfill_save = false)),
                   hashes, (vn, pt))
         h = get(hs, path, nothing)
         h === nothing && continue

@@ -898,8 +898,17 @@ docs/TODO.md.)
    (`colsFor ≠ current key`); `colsReady` is a fetch-watch source, so the deferred fetch re-fires the
    instant the columns land — by which point the measure-reset watch (declared earlier, so it flushes
    first) has already moved `measure` onto a valid option. Static-measure specs and cross-image mode
-   are unaffected (the guard is `measuresFromData`-only; the no-image path still stamps `colsFor`, so
-   it never deadlocks).
+   are unaffected (the guard is `measuresFromData`/`channelMeasures`-only; the no-image path still
+   stamps `colsFor`, so it never deadlocks).
+10. **A marker per population (`channelMeasures`).** `cell_properties` sets `dataSource.channelMeasures`:
+   its measure picker offers the image's markers, shape measures and the spec's own `measureOptions`,
+   grouped and searchable (`utils/measureGroups.ts` → `summaryMeasurePicks` → `SearchSelect`) — a
+   40-channel panel is unreadable as one flat `<select>`. A marker is **stored and requested by channel
+   NAME** (`channelColumnName`), so a saved panel and a multi-image plot read the same marker on every
+   image whatever its channel order; the backend names a raw request the same way
+   (`plot_data.jl` → `_named_measure`, against the first image) and errors when an image lacks the
+   marker. `_var_measure_set` lists each intensity column under its name too, so a named marker stays
+   numeric instead of falling to the categorical sniff.
 
 ## 9. Heatmaps (matrix) — DONE; tiled maps — roadmap
 

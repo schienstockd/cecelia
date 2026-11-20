@@ -18,7 +18,7 @@
 #             type, chart, measure and populations — by a dry run of the board builder, `expand_board`
 #
 # READ-ONLY by construction: every lookup is an existing reader, and the one reader that can write
-# (`load_pop_map`'s uid backfill) is called with `backfill_save = false`. Refs are project-relative;
+# (`load_pop_tree`'s uid backfill) is called with `backfill_save = false`. Refs are project-relative;
 # `projectUid` travels with the request.
 
 # ── The schema — loaded once, the same file the TS side imports ──────────────────────────────────────
@@ -144,7 +144,7 @@ function _kiwi_pop_type(img, vn::AbstractString, path::AbstractString)
     end
     is_root(path) && return (; popType = "flow", name = "all cells", fixed = true)
     for pt in Cecelia.POP_TYPE_PROBE_ORDER
-        m = try load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
+        m = try load_pop_tree(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
         has_pop(m, path) && return (; popType = pt, name = pop_at(m, path).name, fixed = false)
     end
     nothing

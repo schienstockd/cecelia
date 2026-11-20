@@ -39,9 +39,9 @@ end
 
 @testset "API: viewer overlay-legend — 404 when the image doesn't exist" begin
     # P9 replacement for `/api/napari/overlay-legend`. Same pure computation (`overlay_legend_content`
-    # walks pop maps + resolves colour-by categories against populations); the endpoint went to
+    # walks pop trees + resolves colour-by categories against populations); the endpoint went to
     # `viewer_api.jl` verbatim. Uses `_gating_image`, so a missing project/image is a 404 at the
-    # boundary rather than a 500 inside `load_pop_map`.
+    # boundary rather than a 500 inside `load_pop_tree`.
     dirs = Cecelia.cecelia_conf()["dirs"]
     old  = get(dirs, "projects", nothing)
     dirs["projects"] = mktempdir()

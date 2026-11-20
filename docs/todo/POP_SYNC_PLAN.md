@@ -100,7 +100,7 @@ The whole punch list landed together on 2026-09-29 as one PR. Highlights:
   `manualApply`/`stagedSel` staging surface (`hasStaged`, `stagedChangeCount`,
   `applyStaged`, `discardStaged`, `remapStaged`), used by summary + cluster + gate.
 - **`PopNode` / `FlatPop`** now carry `uid`; `flatten()` in `stores/gating.ts` passes it
-  through. Server side already emitted `uid` on every popmap node
+  through. Server side already emitted `uid` on every pop tree node
   (`app/src/gating/popmanager/persistence.jl:14`) — no server change needed.
 - **`CanvasSidePanel.vue`** gained a `reloadable` prop + `reload` emit + a refresh icon
   next to the manual-apply toggle. `PopulationManager.vue` and `SeriesPicker.vue`
@@ -131,7 +131,7 @@ Ordered by value / cost. Each item is standalone; you call which we take first.
   paths across a rename.
 - **Fix shape (draft — not decided)**:
   - **Preferred**: server side emits `renamed: {oldPath, newPath}` on
-    `/api/gating/pop/rename` response and on the WS `gating:popmap` broadcast; both
+    `/api/gating/pop/rename` response and on the WS `gating:pop-tree` broadcast; both
     watchers apply that map before pruning. Small server change,
     `app/src/gating/popmanager/mutations.jl:92`.
   - **Fallback**: diff pre/post `flat` snapshots keyed by a stable pop id — but
@@ -184,7 +184,7 @@ Ordered by value / cost. Each item is standalone; you call which we take first.
 - Not touching the auto-refresh-on-task chokepoint (`useDataRefresh`) — it works.
 - Not touching per-view `load()` buttons on self-fetching views — they work.
 - Not changing local-scope panel selection semantics (per-click commit, documented).
-- Not adding a new global "population changed" event bus — the WS `gating:popmap`
+- Not adding a new global "population changed" event bus — the WS `gating:pop-tree`
   broadcast is the source of truth and we're layering on top of it.
 
 ## Anchor
@@ -200,6 +200,6 @@ Ordered by value / cost. Each item is standalone; you call which we take first.
 
 ## Open questions to close before P1
 
-- Does the WS `gating:popmap` broadcast currently carry rename info, or would the
+- Does the WS `gating:pop-tree` broadcast currently carry rename info, or would the
   server change need to add `renamed: {oldPath, newPath}`?
 - Does `PopTree` carry a stable id we could diff by client-side? (Fork's guess: no.)

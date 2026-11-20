@@ -91,7 +91,7 @@ so the same panel/picker chrome works in a slot / right rail.
 - **Canvas state keyed by string** (`canvasPanels` store: `summary:universal`, `gate:flow`, …), panel
   geometry + per-panel state already persist across navigation → **tabs are just more keys**.
 - **Gating-hierarchy inputs already exist as routes** (`api/src/gating_api.jl`):
-  - `/api/gating/popmap` → nested tree `{name, gate, filter, children}` (the hierarchy + gate specs).
+  - `/api/gating/pop-tree` → nested tree `{name, gate, filter, children}` (the hierarchy + gate specs).
   - `/api/gating/density` → binary `Float32` `bins×bins` raster for a pop in x/y channels.
   - `/api/gating/plotdata` → binary interleaved points (scatter fallback for small pops).
   - `/api/gating/plotmeta` → `n`, extents, ticks, scatter-vs-density mode, axis labels.
@@ -150,10 +150,10 @@ leaves only, rows/cols. This maps 1:1 onto the routes above — no new aggregati
   - Controls (persisted in panel `state`): image (single, from selection), `valueName`, `popType`
     (flow/live), root pop, contours vs raster, show pop colours, direct-leaves-only, label size,
     grid rows/cols.
-  - Data flow (same stateless routes `GatePlotPanel` uses — no store mutation): `GET /api/gating/popmap`
+  - Data flow (same stateless routes `GatePlotPanel` uses — no store mutation): `GET /api/gating/pop-tree`
     → walk tree from root → group children by parent × gate channel-pair → per group:
     `GET /api/gating/plotmeta`+`density`/`plotdata` (parent pop, gate's x/y channels+transforms) + child
-    gate geometry from the popmap node + `GET /api/gating/stats` per child (pctParent). Render each group
+    gate geometry from the pop tree node + `GET /api/gating/stats` per child (pctParent). Render each group
     as a `GateScatterCell` (`mode='off'`, gate outlines + `name + %` labels), tiled in an internal CSS grid.
 - **Possible backend helper**: if the client-side tree walk / leaf-grouping gets heavy, add a thin
   `/api/gating/hierarchy` that returns the grouped plot plan (parent, x/y, child gates, stats) in one
@@ -213,12 +213,12 @@ labelled child name+%, arranged via `ggarrange(nrow, ncol)` (user-set grid).
 
 ## Open questions / risks
 
-- **Tree walk location** (client vs a new `/api/gating/hierarchy`): start client-side off `popmap`;
+- **Tree walk location** (client vs a new `/api/gating/hierarchy`): start client-side off `pop tree`;
   promote to a backend helper only if the per-child stats/density fan-out is too chatty.
 - **PDF fidelity for WebGL panels**: gating-strategy/UMAP are canvas pixels → raster pages (need
   `preserveDrawingBuffer`, already used by `plotHostToImageURL`). Observable-Plot panels can be true
   vector. Mixed-fidelity pages are acceptable; document it.
-- **`live` (track) gating** hierarchy: popmap supports `popType=track` with a separate sidecar; the
+- **`live` (track) gating** hierarchy: pop tree supports `popType=track` with a separate sidecar; the
   gating-strategy plot should work for `flow` first, then confirm `live`/`track`.
 - **Per-tab image source**: tabs share the page's image multi-select for now; revisit if a tab needs
   its own image set.
@@ -236,7 +236,7 @@ heatmap. These differ from the gating/summary plots in the CONTEXT they need:
 - `popType` is `clust` / `trackclust` (not `flow`/`live`).
 - a **suffix** (which clustering run) — page-level in `ClusterPlots`, like picking a segmentation.
 - **shownPops**: highlighted cluster populations resolved to `{path,name,colour,clusterIds}` (from the
-  clust popmap) — UMAP colours those clusters, the heatmap breaks out columns per population.
+  clust pop tree) — UMAP colours those clusters, the heatmap breaks out columns per population.
 
 `ClusterMapView` and `ClusterHeatmapPanel` already take all of this as **props** (fed by `ClusterPlots`), so
 they are reusable; what's missing for the analysis canvas is *where the context comes from*.
@@ -244,10 +244,10 @@ they are reusable; what's missing for the analysis canvas is *where the context 
 ### Two models (decision needed)
 
 - **A — self-contained cluster views (recommended).** Mirror `GatingStrategyView`: a slot-local wrapper
-  view owns its `popType` + `suffix` selectors in its own toolbar, loads the clust popmap + `shownPops`,
+  view owns its `popType` + `suffix` selectors in its own toolbar, loads the clust pop tree + `shownPops`,
   and manages its own highlight/labels. The shared right-rail pop picker stays *only* for summary plots.
   A board can then mix a flow gating slot and a clust UMAP slot with **no global popType entanglement**.
-  Cost: a thin wrapper per view + a shared `useClusterContext` composable (suffix list + popmap→shownPops)
+  Cost: a thin wrapper per view + a shared `useClusterContext` composable (suffix list + pop tree→shownPops)
   extracted from `ClusterPlots` so the logic isn't duplicated.
 - **B — canvas-level popType switch.** The right-rail picker gains a popType selector (flow/live/clust/
   trackclust); when clust, it lists cluster pops and cluster slots consume the shared suffix + highlight.

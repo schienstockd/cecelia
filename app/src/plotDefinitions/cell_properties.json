@@ -3,22 +3,30 @@
   "label": "Cell properties",
   "category": "compare",
   "sketch": "cell",
-  "answers": "How does a per-cell measure (speed, turning angle) differ between groups?",
-  "module": "behaviourAnalysis",
+  "answers": "How does a per-cell measure (a marker, shape, speed, turning angle) differ between groups?",
+  "modules": {
+    "phenotype": ["flow", "clust"],
+    "behaviourAnalysis": ["live", "track", "trackclust"],
+    "spatialAnalysis": ["region"]
+  },
   "family": "summary",
   "chartTypes": ["boxplot", "violin", "strip", "bar", "histogram"],
   "whiteboardCompatible": true,
   "dataSource": {
     "popTypes": [
-      { "popType": "live",       "granularity": "cell" },
-      { "popType": "track",      "granularity": "cell" },
-      { "popType": "trackclust", "granularity": "cell" }
+      { "popType": "flow",       "granularity": "cell", "label": "Gated" },
+      { "popType": "clust",      "granularity": "cell", "label": "Cell clusters" },
+      { "popType": "region",     "granularity": "cell", "label": "Regions" },
+      { "popType": "live",       "granularity": "cell", "label": "Tracked" },
+      { "popType": "track",      "granularity": "cell", "label": "Tracked (gated)" },
+      { "popType": "trackclust", "granularity": "cell", "label": "Track clusters" }
     ],
     "measure": "live.cell.speed",
     "measureOptions": [
       "live.cell.speed",
       "live.cell.angle"
     ],
+    "channelMeasures": true,
     "groupByOptions": ["centroid_t"]
   },
   "scopeModes": ["per_image", "summarised"],

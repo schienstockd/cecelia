@@ -95,16 +95,16 @@ proved.
 
 ### Decision 2 — A real `branch` pop type
 
-Add `POP_MAP_SUFFIX["branch"] = "__branch"` so branch populations persist to
+Add `POP_TREE_SUFFIX["branch"] = "__branch"` so branch populations persist to
 `gating/{vn}__branch.json`, exactly parallel to `track` → `gating/{vn}__tracks.json`.
 
 **Cost, measured against the current code (audit 2026-07-27):** The framework was deliberately
-generalised for third pop_types (`ACCEPT_TOKENS` is a tuple, `POP_MAP_SUFFIX` a Dict,
+generalised for third pop_types (`ACCEPT_TOKENS` is a tuple, `POP_TREE_SUFFIX` a Dict,
 `pop_category`/`_accept_permits`/`_accept_pop_types` are switch/dispatch). Adding "branch":
 
 | File | Sites | LOC |
 |---|---|---|
-| `population_manager.jl` | `POP_MAP_SUFFIX` (+1), `ACCEPT_TOKENS` (+1), `_accept_permits` (+1 arm), `_accept_pop_types` (+1 arm), `pop_category` (+1 arm), `pop_df` routing to `img_branch_props_path` + cache-key mtime (+1 real edit), `plot_pop_types`/`scope_pop_types` (+1-2 arms) | ~10 |
+| `population_manager.jl` | `POP_TREE_SUFFIX` (+1), `ACCEPT_TOKENS` (+1), `_accept_permits` (+1 arm), `_accept_pop_types` (+1 arm), `pop_category` (+1 arm), `pop_df` routing to `img_branch_props_path` + cache-key mtime (+1 real edit), `plot_pop_types`/`scope_pop_types` (+1-2 arms) | ~10 |
 | `image.jl` | `BRANCH_PROPS_SUFFIX`, `img_branch_props_path`, `is_reserved_value_name` | 3 |
 | `frontend/src/utils/popGroups.ts` | `GRAN_LABEL['branch']`, ORDER | 2 |
 | `frontend/src/stores/gating.ts` | popType union (comment + any `'track'` special-case that should read "non-cell") | 1-2 |
@@ -257,7 +257,7 @@ api/src/napari_api.jl                         EDIT branch-labels display path (i
 pixi.toml / pixi.lock                         EDIT skan
 THIRD_PARTY.md                                EDIT skan entry (BSD-3, Nunez-Iglesias 2018)
 frontend/src/utils/popGroups.ts               EDIT branch granularity label + order
-app/test/runtests.jl                          EDIT pop-map round-trip, accepts, dispatch,
+app/test/runtests.jl                          EDIT pop-tree round-trip, accepts, dispatch,
                                                    param validation, branch_labels round-trip
 docs/SEGMENTATION.md                          EDIT branching section
 docs/POPULATION.md                            EDIT branch pop type
@@ -346,7 +346,7 @@ QC. Registry entry. Checkpoint: runs end-to-end on a real fibrous image; `pixi r
 
 **Phase 2 — the `branch` pop type.** Decision 2's table + `ensure_filter_pop!` per branch type
 (Decision 3). Checkpoint: branch pops appear under a "Branches · Gated" header in a
-`popSelection`; pop-map round-trips; `pop_df` returns branch rows.
+`popSelection`; pop-tree round-trips; `pop_df` returns branch rows.
 
 **Phase 3 — anisotropy via structure tensor.** Wire `calcAnisotropy` / `calcFlattened` /
 `structureTensorSigma` / `anisotropyBoxSize` into `branching_run.py`; ~50 LOC that computes
@@ -369,7 +369,7 @@ Ship all four as one PR per the "finish feature before opening PR" rule.
 ## Risks
 
 1. **Decision 2's third granularity.** Now bounded — ~10 code sites + ~10 test assertions, all
-   inside pre-generalised dispatch (`ACCEPT_TOKENS`, `POP_MAP_SUFFIX`, switch-per-pop_type). Not
+   inside pre-generalised dispatch (`ACCEPT_TOKENS`, `POP_TREE_SUFFIX`, switch-per-pop_type). Not
    the biggest risk anymore. Fallback: sidecar + read via existing `labels` pop_type (ungated, no
    filter pops) — much cheaper, reversible later. But note that fallback kills Decision 3
    (`ensure_filter_pop!` per branch-type) which is the killer app of the whole task.

@@ -148,8 +148,8 @@ function _stale_entry(kind::AbstractString, abs_path::AbstractString, task_dir::
     e
 end
 
-# Count leaf pops in a gating sidecar without instantiating the PopulationMap struct — the map's own
-# constructor runs UID backfill + a save (`load_pop_map`), which the enumerator MUST NOT trigger on a
+# Count leaf pops in a gating sidecar without instantiating the PopulationTree struct — the map's own
+# constructor runs UID backfill + a save (`load_pop_tree`), which the enumerator MUST NOT trigger on a
 # read-only staleness scan. Falls back to 0 on any parse error (the report is advisory; a truncated
 # gating file is a separate issue). The tree layout is `pops: {path: Population}` (see
 # `population_manager.jl:96`).

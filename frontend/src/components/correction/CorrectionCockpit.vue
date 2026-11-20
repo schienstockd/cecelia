@@ -138,7 +138,7 @@ const currentT = computed<number | null>(() => {
 })
 
 /** Labels the viewer's pick selection currently holds — polled from the gating membership API
- *  on every pop-map change (see the pick-selection lifecycle in api/src/gating_api.jl). Empty
+ *  on every pop-tree change (see the pick-selection lifecycle in api/src/gating_api.jl). Empty
  *  when nothing is picked or when the fetch fails. */
 const pickedLabels = ref<number[]>([])
 let pickReq = 0
@@ -173,7 +173,7 @@ watch([mode, labelKey, () => viewerStore.pickSelectionTick],
       () => { void reloadPicked() }, { immediate: true })
 // Poll on localStorage tick so a pick from the popup viewer window refreshes here too.
 function onStorage(e: StorageEvent) {
-  if (e.key === 'cc.pickSelectionTick' || e.key === 'cc.gatingPopmapTick') void reloadPicked()
+  if (e.key === 'cc.pickSelectionTick' || e.key === 'cc.gatingPopTreeTick') void reloadPicked()
 }
 if (typeof window !== 'undefined') window.addEventListener('storage', onStorage)
 onBeforeUnmount(() => { if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage) })
@@ -364,7 +364,7 @@ const chipModel = computed<string[]>(() =>
 /** Click on a chip in the strip — ChipSelect emits the updated `string[]`; POST to the server so
  *  every downstream consumer (plots, viewer overlay, the other cockpit mode) reflects the change,
  *  then explicitly reload from `/api/gating/membership` so the local mirror is the SERVER's truth,
- *  not our best-effort echo. Same idempotent-reconcile pattern the popmap tick uses for other
+ *  not our best-effort echo. Same idempotent-reconcile pattern the pop tree tick uses for other
  *  cross-window changes — doing it explicitly here removes "the fetch didn't broadcast" as a
  *  possible failure mode. */
 async function onStripUpdate(next: string[] | string): Promise<void> {

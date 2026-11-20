@@ -1,4 +1,4 @@
-# ── The gate-plot read: `pop_plot_cols` / `computed_pop_map` / `pop_membership_fetch` ──
+# ── The gate-plot read: `pop_plot_cols` / `computed_pop_tree` / `pop_membership_fetch` ──
 # The gating API's plots (plotdata/plotmeta/density/summary/plot-image) read through `pop_plot_cols`,
 # which is `pop_df` plus gate units. These pin its contract on the real KDIeEm fixture against truth
 # read straight off the table: table order, one aligned read, per-column empty, unknown pop → empty,
@@ -33,10 +33,10 @@ end
         v = pop_plot_cols(img, "flow", ROOT, ["area", "not_a_col"]; value_name="B")
         @test length(v[1]) == 1377 && isempty(v[2])
 
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "dim"; gate=RectangleGate("mean_intensity_0", "area", 0.0, 1000.0, 0.0, 1e9))
         add_pop!(m, "none"; gate=RectangleGate("mean_intensity_0", "area", -2.0, -1.0, 0.0, 1e9))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         keep = (full.mean_intensity_0 .>= 0) .& (full.mean_intensity_0 .<= 1000) .& (full.area .<= 1e9)
         @test 0 < sum(keep) < 1377
         v = pop_plot_cols(img, "flow", "/dim", ["label", "area"]; value_name="B")
@@ -51,11 +51,11 @@ end
         v = pop_plot_cols(img, "flow", "/Pick selection", ["label"]; value_name="B", map_hook=hook)
         @test v[1] == Float64.(pick)                                # table order, not the given order
         @test isempty(pop_plot_cols(img, "flow", "/Pick selection", ["label"]; value_name="B")[1])
-        cm = computed_pop_map(img; value_name="B", pop_type="flow", map_hook=hook, labels_version="v1")
+        cm = computed_pop_tree(img; value_name="B", pop_type="flow", map_hook=hook, labels_version="v1")
         @test sort(cells_in_pop(cm, "/Pick selection")) == sort(pick)
         @test pop_stats(cm, "/dim").count == sum(keep) && cm.pinned_labels_version == "v1"
         # derived pops resolve the same way through the map as through pop_df / the plot read
-        lm = computed_pop_map(img; value_name="B", pop_type="live")
+        lm = computed_pop_tree(img; value_name="B", pop_type="live")
         for p in ("/_tracked", "/dim/_tracked")
             n = nrow(pop_df(img, "live", [p]; value_name="B", pop_cols=["label"]))
             @test 0 < pop_stats(lm, p).count == n
@@ -71,7 +71,7 @@ end
         # labels-version pin reaches membership AND the column read: `_latest` points at a missing file
         vimg = _ppc_image()
         vimg.label_props["B"] = Dict{String,Any}("v1" => "B.h5ad", "v2" => "gone.h5ad", "_latest" => "v2")
-        save_pop_map!(m, vimg)
+        save_pop_tree!(m, vimg)
         @test_throws Exception pop_plot_cols(vimg, "flow", "/dim", ["area"]; value_name="B")
         @test pop_plot_cols(vimg, "flow", "/dim", ["area"]; value_name="B", labels_version="v1")[1] ==
               Float64.(full.area[keep])
@@ -82,19 +82,19 @@ end
 
         # gate units: a µm-stamped map on a calibrated image shows centroids in µm; intensities stay
         cimg = _ppc_image(calibrated=true)
-        um = PopulationMap(pop_type="flow", value_name="B")
+        um = PopulationTree(pop_type="flow", value_name="B")
         um.spatial_unit = "um"
         add_pop!(um, "left"; gate=RectangleGate("centroid_x", "centroid_y", 0.0, 30.0, -1e9, 1e9))
-        save_pop_map!(um, cimg)
+        save_pop_tree!(um, cimg)
         cx = Float64.(full.centroid_x)
         v = pop_plot_cols(cimg, "flow", ROOT, ["centroid_x", "area"]; value_name="B")
         @test v[1] ≈ cx .* 0.5 && v[2] == Float64.(full.area)
-        @test gate_axis_scale(load_pop_map(cimg; value_name="B"), "centroid_x") == 0.5
-        @test gate_axis_scale(load_pop_map(cimg; value_name="B"), "centroid_t") == 1.0
+        @test gate_axis_scale(load_pop_tree(cimg; value_name="B"), "centroid_x") == 0.5
+        @test gate_axis_scale(load_pop_tree(cimg; value_name="B"), "centroid_t") == 1.0
         inleft = cx .* 0.5 .<= 30.0                                 # the gate is in µm too
         @test pop_plot_cols(cimg, "flow", "/left", ["label"]; value_name="B")[1] == Float64.(full.label[inleft])
         # the same map on an UNcalibrated image stays in pixels
-        save_pop_map!(um, img)
+        save_pop_tree!(um, img)
         @test pop_plot_cols(img, "flow", ROOT, ["centroid_x"]; value_name="B")[1] == cx
     end
 end
@@ -115,18 +115,18 @@ end
         # a gate on aggregates the plot does NOT name still evaluates (the membership source
         # aggregates what the gates need)
         thr = sort(tp[!, "mean_intensity_0.mean"])[31]
-        m = PopulationMap(pop_type="track", value_name="B")
+        m = PopulationTree(pop_type="track", value_name="B")
         add_pop!(m, "aggr"; gate=RectangleGate("mean_intensity_0.mean", "area.mean", -1e12, thr, -1e12, 1e12))
-        save_pop_map!(m, img)
+        save_pop_tree!(m, img)
         keep = tp[!, "mean_intensity_0.mean"] .<= thr
         v = pop_plot_cols(img, "track", "/aggr", ["label", speed]; value_name="B")
         @test v[1] == Float64.(tp.label[keep]) && v[2] == Float64.(tp[!, speed][keep])
         @test 0 < length(v[1]) < 62
         # pop_df agrees when the caller names no cell measures at all
         @test nrow(pop_df(img, "track", ["/aggr"]; value_name="B", granularity=:track)) == sum(keep)
-        # the pick-selection hook is the caller's to withhold on track maps; computed_pop_map evaluates
+        # the pick-selection hook is the caller's to withhold on track maps; computed_pop_tree evaluates
         # the per-track table
-        @test count(identity, pop_membership(computed_pop_map(img; value_name="B", pop_type="track"), "/aggr")) == sum(keep)
+        @test count(identity, pop_membership(computed_pop_tree(img; value_name="B", pop_type="track"), "/aggr")) == sum(keep)
 
         # the branching task's `refPops` → CELL labels, for every grain: a track gate is its tracks'
         # cells, a `_tracked` subset resolves, an unknown pop says so
@@ -144,14 +144,14 @@ end
         # the pop_df cache stamps the map file the read LOADS: a saved trackclust edit invalidates it
         # on a long-lived image (a REPL/notebook `img`), it doesn't serve the previous members
         if "clusters.movement" in names(tp)
-            tc = PopulationMap(pop_type="trackclust", value_name="B")
+            tc = PopulationTree(pop_type="trackclust", value_name="B")
             add_pop!(tc, "c"; filter_measure="clusters.movement", filter_fun="in", filter_values=[0])
-            save_pop_map!(tc, img)
+            save_pop_tree!(tc, img)
             n0 = nrow(pop_df(img, "trackclust", ["/c"]; value_name="B", granularity=:track))
             sleep(0.05)
-            tc = PopulationMap(pop_type="trackclust", value_name="B")
+            tc = PopulationTree(pop_type="trackclust", value_name="B")
             add_pop!(tc, "c"; filter_measure="clusters.movement", filter_fun="in", filter_values=[0, 1])
-            save_pop_map!(tc, img)
+            save_pop_tree!(tc, img)
             n1 = nrow(pop_df(img, "trackclust", ["/c"]; value_name="B", granularity=:track))
             @test n1 == count(v -> v in (0, 1), tp[!, "clusters.movement"]) > n0
         else
@@ -166,7 +166,7 @@ end
     else
         img = _ppc_image(tracks=true)
         # cell table: a filter on a cluster run this image wasn't in empties it and its child
-        m = PopulationMap(pop_type="flow", value_name="B")
+        m = PopulationTree(pop_type="flow", value_name="B")
         add_pop!(m, "big"; gate=RectangleGate("area", "mean_intensity_0", 0.0, 1e12, -1e12, 1e12))
         add_pop!(m, "imm"; parent="/big", filter_measure="clusters.gone", filter_fun="in", filter_values=[1])
         add_pop!(m, "t"; parent="/big/imm", filter_measure="centroid_t", filter_fun="gt", filter_values=-1)

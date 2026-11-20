@@ -377,7 +377,7 @@ in the task-param form turns it on (`ParamRenderer`: `chipSelect`, `channelSelec
 
 **Long lists collapse.** A pill list with more than `collapseAbove` options (default
 `CHIP_COLLAPSE_ABOVE` = 12; `0` = never) shows only the picked chips, a dashed **+N more** chip that
-expands to everything, and a filter box that narrows by label / value / path. Every long chip list
+expands to everything, and a filter box that narrows by label / value / path (every word must match — `utils/textQuery.ts`, the one list-search rule). Every long chip list
 gets this for free — no per-caller flag. **Hierarchical options** (`path: string[]` on each option —
 population pickers set it via `groupPopulations`) lay out as an indented tree: one line per parent,
 its leaf children inline after a `›`, each chip showing only its own segment with the full label in
@@ -1069,7 +1069,7 @@ The frontend never maintains a copy of task definitions — they're fetched from
 > `ModuleLayout` + `TaskRunner` page in the Analysis group **after Gate**. It uses the
 > `popSelection` param widget (added to `ParamRenderer.vue`): a dropdown listing
 > `NONE (whole segmentation)` plus the flow population paths for the selected image +
-> chosen segmentation (fetched from `/api/gating/popmap`). The widget reads its sibling
+> chosen segmentation (fetched from `/api/gating/pop-tree`). The widget reads its sibling
 > `valueName` value and the selected image via the extended `ParamContext`
 > (`{ images, projectUid, values }` from `TaskRunner`). It emits a population path string;
 > the Julia handler resolves membership. See `docs/MODULES.md` (Param types) and
@@ -2666,7 +2666,7 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
   (`useImageMetaRefresh(() => uids, reloadLabels)`, not gated by `autoRefreshOnTask` — labels only).
   Ratchet: `composables/imageMetaRefreshCoverage.test.ts`.
 
-This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old R app's success-time
+This mirrors the older gate path (`gating:pop-tree` → `reloadToken`) and the old R app's success-time
 `retrieveState`. The **image viewer** refresh is a separate, data-vs-image path.
 
 ---
@@ -3173,7 +3173,7 @@ page — and the Analysis board — reuses them unchanged:
   image* / *per image* (one series per selected image) / *pooled* — orthogonal to the chart type, so
   any chart works with any scope. Per-image series are coloured by image (stable palette); else by
   population colour. Has its own populations fetch + selection state (not the gating store), but
-  **subscribes to `gating:popmap`** so gate edits (gate page, napari, other clients) live-refresh the
+  **subscribes to `gating:pop-tree`** so gate edits (gate page, napari, other clients) live-refresh the
   population list and re-pull the panels' data. Series are keyed by every varying dimension (image ·
   segmentation · pop) so populations sharing a path across segmentations get **separate** boxes/bars
   (no overlap).
@@ -3204,7 +3204,7 @@ command (`{x,y,w,h,seq}`) to each panel — position is otherwise drag-controlle
 resize-controlled, so the command sets both imperatively (the `seq` bump forces re-apply). Plots
 are an array keyed by stable id (no fixed count); per-plot state (displayed parent, local
 highlight) lives in `GatingPlots` keyed by id. State otherwise lives in the canvas's gating store,
-`stores/gating.ts` (tree, columns, stats, CRUD, the `gating:popmap` WS push and the reconnect resync;
+`stores/gating.ts` (tree, columns, stats, CRUD, the `gating:pop-tree` WS push and the reconnect resync;
 `valueName` self-heals to a real segmentation). API: `docs/API.md` gating routes.
 
 **One gating store per canvas, owned by it.** The three canvases that work on a population tree —
@@ -3213,7 +3213,7 @@ Analysis board's cluster slots) — each call `provideGatingStore(popType)` and 
 directly. That includes their own composables: `useClusterContext` takes it as `g`, because `inject`
 cannot see a `provide` made by the same component. Everything below them calls `useGatingStore()`.
 The store is a page-owned `reactive()`, not a Pinia store, so it pauses and is disposed with its
-page (*Kept-alive pages*). Every store subscribes to the `gating:popmap` push for its own document,
+page (*Kept-alive pages*). Every store subscribes to the `gating:pop-tree` push for its own document,
 so two canvases on the same document (a cluster page and the board) stay in step through the
 server — milliseconds, and never both on screen. It used to be one app-wide store that each page
 rebound to its own document. That made returning to a page a full reload, and every page carried

@@ -61,7 +61,7 @@ function _cell_cards_stamp(pu::String, img::CciaImage, pool_uids::Vector{String}
         cluster_mt["$(u)/$(value_name)"] = _cluster_mtime(pm_img, value_name)
         specs_mt[u] = cards_specs_mtime(pm_img)
     end
-    m = load_pop_map(img._dir, value_name; pop_type="trackclust")
+    m = load_pop_tree(img._dir, value_name; pop_type="trackclust")
     # Order-insensitive: sorted by path, ids sorted.
     pop_rows = sort([Any[p.path, sort(p.cluster_ids), p.seed,
                          haskey(m.pops, p.path) ? m.pops[p.path].name : nothing,
@@ -278,7 +278,7 @@ function api_cell_cards(body_bytes::Vector{UInt8})
         d = get(pool_img_dirs, pm.uid, nothing); d === nothing && continue
         d in seen_dirs && continue   # multi-vn on the same image → one sidecar per image, not per (uid, vn)
         push!(seen_dirs, d)
-        # No stamp (couldn't read the pop map / an image) → write none, so the next call re-checks.
+        # No stamp (couldn't read the pop tree / an image) → write none, so the next call re-checks.
         _write_cell_cards_sidecar(_cell_cards_sidecar(d, vn, suffix), payload,
                                   something(stamp, Dict{String,Any}()), memo.keys)
     end

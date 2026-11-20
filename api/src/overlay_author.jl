@@ -595,9 +595,9 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
         # Track path — `pop_df(; granularity=:cell)` for track/trackclust: their gates live on
         # `track_props` and `resolve_pops`'s cell fetch cannot evaluate them.
         m = try
-            load_pop_map(img; value_name = vn, pop_type = pt)
+            load_pop_tree(img; value_name = vn, pop_type = pt)
         catch e
-            @warn "_build_overlay_state: load_pop_map failed" value_name pop_type exception = e
+            @warn "_build_overlay_state: load_pop_tree failed" value_name pop_type exception = e
             nothing
         end
         pop_meta = Dict{String,NamedTuple}()
@@ -1249,9 +1249,9 @@ function _mask_pop_layer(img, vn::String, pt::String, pops_filter, pop_eyes = no
         return pops
     end
     m = try
-        load_pop_map(img; value_name = vn, pop_type = pt)
+        load_pop_tree(img; value_name = vn, pop_type = pt)
     catch e
-        @warn "mask_id_colours: load_pop_map failed for track pop_type" value_name = vn pop_type = pt exception = e
+        @warn "mask_id_colours: load_pop_tree failed for track pop_type" value_name = vn pop_type = pt exception = e
         nothing
     end
     m === nothing && return pops

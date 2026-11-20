@@ -26,7 +26,7 @@ in (`live` → `flow`), whether it is hand-drawn gating, a cluster filter (and o
 its grain (cell / track / branch), picker category and whether it is a board track family. Every list
 of pop types derives from it — `STORED_POP_TYPES` (every walk of an image's gating maps),
 `GATING_POP_TYPES`, `CLUSTER_POP_TYPES`, `TRACK_FAMILY_POP_TYPES`, `POP_TYPE_PROBE_ORDER`,
-`POP_MAP_SUFFIX`. The frontend reads the same rows from `frontend/src/plots/popTypeRegistry.json`
+`POP_TREE_SUFFIX`. The frontend reads the same rows from `frontend/src/plots/popTypeRegistry.json`
 (`write_pop_type_registry_json()`; a test fails when it is stale) through `plots/popTypeRegistry.ts`
 — a static import, because the predicates run in render paths that can't wait on a fetch. A
 hand-written list of pop-type literals fails the `pop-type registry ratchet` (Julia, `ratchets.jl`)
@@ -142,7 +142,7 @@ Plain JSON — readable by Julia and Python. (This supersedes the earlier
 strategy and is overwritten in place; what a population or a run was made with is kept beside it:
 
 - **One writer.** Every gating write — the GUI routes, the MCP `add_gate` / `set_gate` / `delete_gate`
-  routes, gate copy, tasks, the REPL, a label-set rename — goes through `save_pop_map!`. When a write
+  routes, gate copy, tasks, the REPL, a label-set rename — goes through `save_pop_tree!`. When a write
   changes any population's DEFINITION, it first appends the previous state to
   `gating/{vn}[__type].history.jsonl` (one JSON per line, append-only, `append_jsonl!`):
   `{at, author, valueName, popType, kind, changes:[{kind, path, previousPath?, hash?, previousHash?}], previous}`.
@@ -164,7 +164,7 @@ strategy and is overwritten in place; what a population or a run was made with i
 - Absent history (projects from before it) = unknown; readers that list `gating/*.json` never see the
   `.jsonl`. No UI browses the history yet.
 
-**`authored_labels_version` is always `v1` — not a bug.** `save_pop_map!(m, img)` stamps
+**`authored_labels_version` is always `v1` — not a bug.** `save_pop_tree!(m, img)` stamps
 `resolve_version(img, :label_props, vn)`, the labels vN current at save. Segmentation and measurement
 overwrite their label set in place by design (only the pixel writers mint a `vN` under
 `keep_previous_version()`), so a label set never gets a `v2` and the breadcrumb (and its drift banner,
@@ -196,7 +196,7 @@ crops, so a cut is judged on the cells before it lands.
 
 `live` populations span multiple value_names (their path prefix names the segmentation). They are
 **derived populations** — membership from a column rule layered on the `flow` gates, not a stored
-gate — so they need **no** pop-map storage of their own: `pop_df` reads the `flow` gates and layers
+gate — so they need **no** pop-tree storage of their own: `pop_df` reads the `flow` gates and layers
 the derived filter on at read time (see "Reserved namespace" under `pop_df` below). The canonical
 case, a `live` **tracked** pop, is `flow gate ∩ track_id > 0`.
 
@@ -266,7 +266,7 @@ table (and a per-segment clustfeatures sidecar keyed by suffix). The *named* clu
 are authored under one value_name (whichever was active). Two mechanisms make them behave as run-global
 (matching old R `popDT(popType="clust", pops=c("A","B","C"))`, which returned those pops across every
 clustered segmentation):
-- **Auto-share** — `load_pop_map(img; pop_type=clust|trackclust)` for a value_name with no OWN sidecar
+- **Auto-share** — `load_pop_tree(img; pop_type=clust|trackclust)` for a value_name with no OWN sidecar
   BORROWS a co-clustered sibling's named pops, relabeled to itself, so the picker and membership both
   surface them. Read-side only (save still writes a per-vn sidecar). Guarded by the clustfeatures
   suffix so a segmentation not in the run never gets fabricated pops.
@@ -343,8 +343,8 @@ as **empty membership + a warning**, never a hard error — one absent column ca
 > centroids off disk — which `detectAggregates`/`cellContacts` used to do — is two reads for one
 > job and was measurably slower (953 ms → 458 ms at 1.5M cells).
 
-> **Home:** `pop_df`/`_pop_df` live in `gating/population_manager.jl`, alongside the `pop_map`
-> accessors (`load_pop_map`/`save_pop_map!`) — the generic, `pop_type`-neutral population layer.
+> **Home:** `pop_df`/`_pop_df` live in `gating/population_manager.jl`, alongside the population-tree
+> accessors (`load_pop_tree`/`save_pop_tree!`) — the generic, `pop_type`-neutral population layer.
 > Deliberately **not** in `gating_engine.jl`: the accessor serves all `pop_type`s (`flow`, `live`,
 > `clust`, transient) and gating is only one membership source. It builds on the gating engine's
 > `recompute!`/`cells_in_pop` at call time.
@@ -416,7 +416,7 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   **per-track table** itself (one point per track), so a gate on *average track speed* / *mean
   turning angle* excludes whole tracks. The data source is **`track_props`** (`docs/TRACKING.md`):
   motility from `{vn}__tracks.h5ad` + on-read cell→track aggregates. The track gate map is a
-  separate file `gating/{vn}__tracks.json` (loaded with `pop_type="track"`; `save_pop_map!` routes
+  separate file `gating/{vn}__tracks.json` (loaded with `pop_type="track"`; `save_pop_tree!` routes
   there by `m.pop_type`). `granularity=:track` returns the gated track rows; `granularity=:cell`
   **expands** each gated track to its member cells (`label`/`track_id`/`pop`/`value_name`) — the
   "select a track, pull in all its cells" behaviour for napari / membership. `cell_measures` and
@@ -540,8 +540,8 @@ a different pixel size would select a different *physical* region, silently. Ful
 
 Four rules hold this together:
 
-1. **The scale belongs to the IMAGE, not the gate.** `load_pop_map(img; …)` stamps that image's µm/px
-   onto the map (`PopulationMap.physical_sizes`, never persisted). So the same µm gate evaluated on two
+1. **The scale belongs to the IMAGE, not the gate.** `load_pop_tree(img; …)` stamps that image's µm/px
+   onto the map (`PopulationTree.physical_sizes`, never persisted). So the same µm gate evaluated on two
    images uses each one's own resolution — which is exactly what makes copying it meaningful. Folding
    the scale into the stored transform spec would bake one image's pixel size into the gate; don't.
 2. **`recompute!` applies it, and nothing else does.** It scales the fetched frame's centroid columns
@@ -550,7 +550,7 @@ Four rules hold this together:
    resolved it.
 3. **A `spatial_unit` stamp on the gating file, and NO migration.** `"um"` or `"px"`; **absent ⇒
    `"px"`**, which is every file written before this. The stamp only constrains a file that *already
-   holds position coordinates*: `load_pop_map(img; …)` upgrades the map to `"um"` whenever the image is
+   holds position coordinates*: `load_pop_tree(img; …)` upgrades the map to `"um"` whenever the image is
    calibrated and the map has **no spatial gate** (`has_spatial_gate`) — nothing to reinterpret — so an
    existing intensity-only strategy adopts µm the next time it is saved and the first position gate
    anyone draws is already physical. Left alone: a map that *does* carry a position gate (its numbers
@@ -621,7 +621,7 @@ now-deleted work branch — note that it needed the stamp for idempotency, becau
   `recompute!` — every row of the table is the root — so a whole-dataset read costs its own columns
   only. `pop_cols = ["label"]` reads the labels alone (an empty selection would read every column).
 
-### The gate-plot read — `pop_plot_cols`, `computed_pop_map`, `pop_membership_fetch`
+### The gate-plot read — `pop_plot_cols`, `computed_pop_tree`, `pop_membership_fetch`
 
 Every gating plot route (`plotdata`, `plotmeta`, `density`, `summary`, the MCP `plot-image`) reads its
 values through ONE package function built on `pop_df`; the API (`_plot_cols_raw`, `_live_map` in
@@ -651,11 +651,11 @@ What it adds on top of `pop_df`, and why each is a plot concern:
 **Membership has one data source**, `pop_membership_fetch(img, vn, pop_type; labels_version)` — the
 `fetch_cols` closure `recompute!` takes: the per-track table for `track`/`trackclust` (aggregating the
 cell measures the GATES name, so a track gate on `area.mean` evaluates even when nobody plots it), the
-branch sidecar for `branch`, else the cell table at the pinned version. `pop_df`, `computed_pop_map`,
+branch sidecar for `branch`, else the cell table at the pinned version. `pop_df`, `computed_pop_tree`,
 `tracked_pop_parents` and the cell-grained `resolve_pops` all evaluate through it (`resolve_pops` hands
 back CELL labels, so it always takes the cell-table branch; its track family goes through `pop_df`).
 The branching task's `refPops` resolves through `pop_df(granularity=:cell)`, so a track or `_tracked`
-ref yields its cells. `computed_pop_map(img;
+ref yields its cells. `computed_pop_tree(img;
 value_name, pop_type, labels_version, map_hook)` is the map itself, membership ready — for a caller
 that needs counts, the parent or the tree (`/api/gating/stats`, `/membership`, `cells-image`) rather
 than data.
@@ -678,7 +678,7 @@ transient napari-selection pop is excluded (it's the selection *source*). Cell p
 (`flow`/`clust`); track pops go through the Tracks overlay.
 
 REPL contract (headless, no API/UI): `add_pop!`, `set_gate!`, `recompute!`,
-`cells_in_pop`, `pop_df`, `pop_df_multi`, `resolve_pops`, `save_pop_map!`/`load_pop_map`.
+`cells_in_pop`, `pop_df`, `pop_df_multi`, `resolve_pops`, `save_pop_tree!`/`load_pop_tree`.
 
 ### `pop_df_multi` — mixed-type module-function inputs
 
@@ -760,7 +760,7 @@ Gating has no task run, so its QC is a **set check** (`app/src/qc_gating.jl`), r
 runs: the *Check cohort consistency* button on the Gating page (`gating.flow`) and the Tracking page
 (`gating.track`), and the end of every chain run (`chain_cohort_qc!`, docs/SCHEDULER.md → *Cohort QC at
 the end of a run*). Per included image and segmentation with a stored hand-drawn map, it evaluates the
-map (`computed_pop_map`, `pop_stats`, `missing_gate_columns`) and the pure `gating_qc_findings` flags:
+map (`computed_pop_tree`, `pop_stats`, `missing_gate_columns`) and the pure `gating_qc_findings` flags:
 
 | code | when |
 |---|---|
@@ -825,14 +825,14 @@ value_name, pop_type, run), capped at 50, held for the page's lifetime. Adding, 
 and deleting cluster pops are not in it. Same buttons and shortcuts as gating.
 
 The mechanism is small because the document is: every mutation here is load → mutate →
-`save_pop_map!` of the WHOLE tree, so "the state before this edit" is just `to_tree` of what is still
+`save_pop_tree!` of the WHOLE tree, so "the state before this edit" is just `to_tree` of what is still
 on disk when the handler is about to save. History is therefore a ring of snapshots, not a set of
 hand-written inverse operations — there is nothing to invert and nothing to keep in sync when a new
 mutation is added.
 
 - Recorded in **`_persist_and_broadcast!`** (`api/src/gating_api.jl`) — the one choke point every
   mutating handler already goes through, so a new mutation cannot forget to be undoable. It runs
-  under `_POPMAP_LOCK`, which the handler holds across load→save, so what is on disk at that moment
+  under `_POP_TREE_LOCK`, which the handler holds across load→save, so what is on disk at that moment
   is exactly what the edit is about to replace.
 - Snapshots use `to_tree(…; include_transient=false)`: the napari selection is ephemeral server state
   re-injected on every read, and restoring a stale one would resurrect a selection the user cleared.
@@ -844,7 +844,7 @@ mutation is added.
 - An entry is a *list* of (image, tree). Today every entry holds exactly one image;
   `api_gating_copy` — which replaces N targets' sidecars — is the case that would not, and is
   currently **not** undoable.
-- `canUndo`/`canRedo` ride on every mutation response, the popmap GET and the broadcast, so the
+- `canUndo`/`canRedo` ride on every mutation response, the pop tree GET and the broadcast, so the
   buttons settle in the same frame the edit lands in. Frontend: `useGatingStore().undo/redo`, the two
   buttons in `PopulationManager`, and Ctrl/⌘+Z · Ctrl/⌘+Shift+Z (window-level while the page is
   visible — `useWindowListener` — and guarded by `isTypingTarget` so it doesn't fire while you're
@@ -912,9 +912,9 @@ per-pop CSV.
 Besides gate (`flow`) and filter (`live`/`clust`) membership, a `Population` may carry
 `explicit_labels` — its cells **are** that label set (∩ parent), bypassing any gate. This backs
 the napari cell selection: `add_pop!(m, "Viewer selection"; explicit_labels=ids, transient=true)`.
-`transient` pops are kept in the in-memory map and the `gating:popmap` broadcast (so every
+`transient` pops are kept in the in-memory map and the `gating:pop-tree` broadcast (so every
 client and `pop_df`/`plotdata`/`stats` treat them like any population) but are **excluded from
-`save_pop_map!`** — they never reach `gating/{value_name}.json`. The API keeps the selection in
+`save_pop_tree!`** — they never reach `gating/{value_name}.json`. The API keeps the selection in
 an in-memory registry keyed by `(task_dir, value_name)` and re-injects it into every served/
 broadcast map; an empty selection clears it (the manager exposes a trash button →
 `store.clearViewerSelection`, since there's no persisted pop to delete). Because a transient pop
@@ -932,19 +932,19 @@ registry, a backend restart wipes it — but the browser keeps the old tree AND 
 that referenced it (`shared.hl` in `moduleCanvases.json`), so on the same image the plot stayed greyed
 (highlight → `showPops` on, but the membership fetch returns 0 points). `GatingPlots` now resyncs on WS
 **reconnect** (`ws.status` → `connected` after a drop, guarded so it skips the first connect): it
-refetches the popmap, the fresh tree drops the transient pop, and the existing stale-highlight prune
+refetches the pop tree, the fresh tree drops the transient pop, and the existing stale-highlight prune
 watch clears the dangling reference (which then autosaves the cleaned `hl` back). The fix is
 client-side; the server persistence was already correct.
 
 ## API & frontend
 
-- **Routes** (synchronous, in-process): `GET /api/gating/popmap`; `POST/PUT/DELETE
+- **Routes** (synchronous, in-process): `GET /api/gating/pop-tree`; `POST/PUT/DELETE
   /api/gating/pop`; `POST /api/gating/pop/rename`; `GET /api/gating/plotdata`
   (transformed `Float32`, binary + JSON sidecar with extents + axis ticks);
   `GET /api/gating/density` (2D-histogram fallback); `GET /api/gating/summary` (quantiles + 1D counts
   + the joint grid — `axis_summary`/`grid_summary` in `gating/density.jl`); `GET /api/gating/stats`;
   `GET /api/gating/membership` (label IDs; **binary `Int32`** for large pops).
-- **WS**: `gating:popmap` broadcast after any mutation (reuses `broadcast_ws`).
+- **WS**: `gating:pop-tree` broadcast after any mutation (reuses `broadcast_ws`).
 - **Frontend**: a 2D-canvas dot plot + a `canvas2D` overlay for gate drawing; density heatmap fallback above a point threshold; **re-entrancy guard**
   (`listeningToGating`) so server pushes don't re-emit gate mutations; multiple
   simultaneous panels; hierarchical population tree (generic for all 3 types). **No
@@ -1149,7 +1149,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
 - **Linked brushing.** The gating bar has `pi-mouse-pointer` *pick cell* and *pick rectangle* buttons
   that hand a click / drag off to the browser viewer's picker
   (`/api/viewer/pick-cell`, `/api/viewer/pick-rect`). The picked cells arrive back (via
-  `gating:popmap`) as a **transient "Pick selection" population** (cyan `pi-map-marker` row, no
+  `gating:pop-tree`) as a **transient "Pick selection" population** (cyan `pi-map-marker` row, no
   rename) which `GatingPlots` auto-adds to the highlight set, so the spatially-selected cells light
   up in channel space. Its row has a **trash button** (`store.clearSelection` →
   `/api/viewer/pick-clear`) that clears the selection and prunes it from every plot's highlight set
@@ -1158,7 +1158,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   column toggles a pop's viewer visibility (its `show` flag) and re-pushes via
   `store.refreshViewerPops` (silent); the Options box has a **Point size** slider (per-set
   `settings.get/setPointSize(setUid)`, re-pushes on release). The *Show populations* preference
-  re-pushes live on every `gating:popmap` while on, so the viewer overlay tracks gate edits / pop
+  re-pushes live on every `gating:pop-tree` while on, so the viewer overlay tracks gate edits / pop
   add-remove as you gate — driven by `handleGatingChange` in `composables/useViewerAutoShow`, which
   `App.vue` mounts app-level. The
   transient selection pop is **not** pushed back to the viewer (it is the selection *source* — a

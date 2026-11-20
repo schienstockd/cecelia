@@ -40,7 +40,7 @@
         post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
         gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
                                       "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
-        onDisk() = Set(pop_paths(load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")))
+        onDisk() = Set(pop_paths(load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")))
 
         post(api_gating_pop_add, Dict{String,Any}("name" => "qc", "gate" => gate(1.0)))
         post(api_gating_pop_add, Dict{String,Any}("name" => "B", "parent" => "/qc", "gate" => gate(2.0)))
@@ -155,7 +155,7 @@ end
         post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
         gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
                                       "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
-        loaded() = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        loaded() = load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
 
         post(api_gating_pop_add, Dict{String,Any}("name" => "gfp+", "gate" => gate(1.0)))
         post(api_gating_pop_add, Dict{String,Any}("name" => "tom+", "gate" => gate(2.0)))
@@ -259,7 +259,7 @@ end
         @test !JSON3.read(b6).canRedo
 
         # it is the ON-DISK document that moved, not just the response
-        m = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        m = load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
         @test Set(pop_name.(pop_paths(m))) == Set(["cd4", "cd8"])
 
         # a NEW edit after an undo drops the redo branch — the future you did not take is gone
@@ -272,10 +272,10 @@ end
 
         # a gate EDIT is undoable the same way a structural one is (the case this feature exists for)
         st, _  = post(api_gating_pop_set_gate, Dict{String,Any}("path" => "/cd4", "gate" => gate(9.0)))
-        m2 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        m2 = load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
         @test pop_at(m2, "/cd4").gate.x_max == 9.0
         st, _  = post(api_gating_undo, Dict{String,Any}())
-        m3 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        m3 = load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
         @test st == 200 && pop_at(m3, "/cd4").gate.x_max == 1.0
 
         # …including a change of gate KIND, which is what the panel's rectangle ⇄ polygon convert
@@ -284,10 +284,10 @@ end
         st, _  = post(api_gating_pop_set_gate, Dict{String,Any}("path" => "/cd4",
             "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "c1", "y_channel" => "c2",
                                        "vertices" => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])))
-        m4 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        m4 = load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
         @test st == 200 && pop_at(m4, "/cd4").gate isa PolygonGate
         st, _  = post(api_gating_undo, Dict{String,Any}())
-        m5 = load_pop_map(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
+        m5 = load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow")
         @test st == 200 && pop_at(m5, "/cd4").gate isa RectangleGate
         @test pop_at(m5, "/cd4").gate.x_max == 1.0
 
@@ -399,7 +399,7 @@ end
         w = r.warnings[:TgtImg]
         @test length(w) == 1 && String(w[1].column) == "clusters.immune"
         @test collect(String, w[1].pops) == ["/tracked/immune", "/tracked/immune/T"]
-        @test Set(pop_paths(load_pop_map(tgt, "B"; pop_type = "flow"))) ==
+        @test Set(pop_paths(load_pop_tree(tgt, "B"; pop_type = "flow"))) ==
               Set(["/tracked", "/tracked/immune", "/tracked/immune/T"])
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
@@ -411,7 +411,7 @@ end
 # ── the pop tree says which pops are empty for want of a column (#1769) ──────────────────────────
 # After a copy, a pop filtering on `clusters.<run>` on an image outside that run read 0 in the
 # Population Manager with no reason. Every tree payload now carries `missingColumns` (path → the
-# absent columns), from column names only: the popmap GET, the mutation response, and the broadcast.
+# absent columns), from column names only: the pop tree GET, the mutation response, and the broadcast.
 @testset "API: pop tree payload names the columns a population is missing" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"
@@ -439,7 +439,7 @@ end
         @test collect(String, mc[Symbol("/tracked/immune/T")]) == ["clusters.immune"]
 
         q = join(("$k=$v" for (k, v) in base), "&")
-        st, b = api_gating_popmap(HTTP.Request("GET", "/api/gating/popmap?" * q))
+        st, b = api_gating_pop_tree(HTTP.Request("GET", "/api/gating/pop-tree?" * q))
         @test st == 200
         mc = JSON3.read(b).missingColumns                           # the pop-tree GET
         @test Set(String.(keys(mc))) == Set(["/tracked/immune", "/tracked/immune/T"])

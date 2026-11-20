@@ -64,7 +64,7 @@ end
 function manual_check(::ManualGate, img::CciaImage, params::Dict{String,Any})::Union{String,Nothing}
     p = parse_manual_gate_params(params)
     isempty(p.requiredPops) && return nothing
-    m = load_pop_map(img; value_name = p.valueName, pop_type = p.popType, backfill_save = false)
+    m = load_pop_tree(img; value_name = p.valueName, pop_type = p.popType, backfill_save = false)
     absent = filter(path -> !has_pop(m, path), p.requiredPops)
     isempty(absent) ? nothing : "no $(join(absent, ", ")) on '$(p.valueName)'"
 end

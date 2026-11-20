@@ -317,7 +317,7 @@ Full plan (now archived / DONE):
 
 ### Gating strategy (read-only)
 `GatingStrategyView` renders the defining gate for a population (single plot) or the full hierarchy
-montage (⚙ toggle) from `popmap` + gate stats — the read-only counterpart of the gating page's
+montage (⚙ toggle) from `pop tree` + gate stats — the read-only counterpart of the gating page's
 `GatePlotPanel`. Ports the old R `plot_gating` lineage. **The gating page itself is intentionally NOT
 registry-hosted** (it is a write-capable gate-drawing workspace, the opposite of this contract).
 

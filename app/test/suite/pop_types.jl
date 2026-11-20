@@ -44,7 +44,7 @@ end
     @test endswith(gating_path(td, "B"; pop_type="track"),      joinpath("gating", "B__tracks.json"))
 
     # cluster pop membership = filter "in" over the cluster code column
-    m = PopulationMap(pop_type="clust", value_name="B")
+    m = PopulationTree(pop_type="clust", value_name="B")
     add_pop!(m, "myeloid"; filter_measure="clusters.default", filter_fun="in",
              filter_values=[1, 3], colour="#10b981")
     fetch = _ -> DataFrame("label" => [10, 11, 12, 13, 14],
@@ -53,10 +53,10 @@ end
     @test Set(cells_in_pop(m, "/myeloid")) == Set([11, 13, 14])   # codes ∈ {1,3}
 
     # save/load round-trip → own file, filter fields preserved, flow file untouched
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     @test isfile(gating_path(td, "B"; pop_type="clust"))
     @test !isfile(gating_path(td, "B"; pop_type="flow"))
-    m2 = load_pop_map(td, "B"; pop_type="clust")
+    m2 = load_pop_tree(td, "B"; pop_type="clust")
     @test pop_at(m2, "/myeloid").filter_measure == "clusters.default"
     @test pop_at(m2, "/myeloid").filter_fun == Cecelia.FILTER_IN
     @test Set(pop_at(m2, "/myeloid").filter_values) == Set([1, 3])
@@ -74,7 +74,7 @@ end
     @test !is_gating_pop_type("region")                            # filter/membership pop, not a gate
 
     # region membership = filter "in" over the region code column (same engine path as clust)
-    m = PopulationMap(pop_type="region", value_name="B")
+    m = PopulationTree(pop_type="region", value_name="B")
     add_pop!(m, "tumour_zone"; filter_measure="regions.niches", filter_fun="in",
              filter_values=[1, 3], colour="#10b981")
     fetch = _ -> DataFrame("label" => [10, 11, 12, 13, 14],
@@ -86,10 +86,10 @@ end
     @test Cecelia._referenced_cluster_suffixes(m) == Set(["niches"])
 
     # save/load round-trip → own __region file, flow file untouched
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     @test isfile(gating_path(td, "B"; pop_type="region"))
     @test !isfile(gating_path(td, "B"; pop_type="flow"))
-    m2 = load_pop_map(td, "B"; pop_type="region")
+    m2 = load_pop_tree(td, "B"; pop_type="region")
     @test pop_at(m2, "/tumour_zone").filter_measure == "regions.niches"
     @test Set(pop_at(m2, "/tumour_zone").filter_values) == Set([1, 3])
 
@@ -135,9 +135,9 @@ end
             JSON3.write(f, Dict("niches" => Dict("features" => ["flow.region.cd8"], "partOf" => ["u1"])))
         end
     end
-    am = PopulationMap(pop_type="region", value_name="A")
+    am = PopulationTree(pop_type="region", value_name="A")
     add_pop!(am, "TumourZone"; filter_measure="regions.niches", filter_fun="in", filter_values=[2], colour="#c061cb")
-    save_pop_map!(am, td)
+    save_pop_tree!(am, td)
 
     img = CciaImage(; dir=td)
     img.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad", "C" => "C.h5ad", "_active" => "A")
@@ -145,11 +145,11 @@ end
     @test Set(Cecelia.co_clustered_value_names(img, "niches"; granularity=:cell)) == Set(["A", "B"])
 
     # B has no sidecar but IS co-clustered → borrows A's region pops, relabeled to B
-    mb = load_pop_map(img; value_name="B", pop_type="region")
+    mb = load_pop_tree(img; value_name="B", pop_type="region")
     @test Set(keys(mb.pops)) == Set(["/TumourZone"]) && mb.value_name == "B"
     @test all(p.value_name == "B" for p in values(mb.pops))
     # C was not in the run → no borrow
-    @test isempty(load_pop_map(img; value_name="C", pop_type="region").pops)
+    @test isempty(load_pop_tree(img; value_name="C", pop_type="region").pops)
 
     # bare region-pop ref expands across all co-clustered segmentations
     @test Set(Cecelia._expand_cluster_pops(img, ["/TumourZone"], "region", "A")) ==
@@ -166,9 +166,9 @@ end
         Cecelia._write_clust_features!(joinpath(lpdir, "$(vn).h5ad"), "immune",
                                        ["spatial.comp.x.immune"], ["u1"]; family = "regions")
     end
-    m = PopulationMap(pop_type="region", value_name="B")
+    m = PopulationTree(pop_type="region", value_name="B")
     add_pop!(m, "Population 1"; filter_measure="regions.immune", filter_fun="in", filter_values=[1])
-    save_pop_map!(m, td)
+    save_pop_tree!(m, td)
     img = CciaImage(; dir=td)
     img.label_props = Dict("B" => "B.h5ad", "T" => "T.h5ad", "_active" => "B")
 
@@ -202,9 +202,9 @@ end
                 "regions.immune" => [Float64(l % 2) for l in lab])) |> save!
             Cecelia._write_clust_features!(p, "immune", ["spatial.comp.x.immune"], ["u1"]; family = "regions")
         end
-        m = PopulationMap(pop_type="region", value_name="B")
+        m = PopulationTree(pop_type="region", value_name="B")
         add_pop!(m, "R"; filter_measure="regions.immune", filter_fun="in", filter_values=[0, 1])
-        save_pop_map!(m, td)
+        save_pop_tree!(m, td)
         img = CciaImage(; dir=td)
         img.label_props = Dict("B" => "B.h5ad", "T" => "T.h5ad", "_active" => "B")
         n_b = nrow(label_props(img; value_name="B") |> v -> select_cols(v, String[]) |> as_df)
@@ -318,19 +318,19 @@ end
 # track clusters, `regions.` for regions (docs/POPULATION.md, the pop-type table). A pop on any other
 # column, or one that is not a cluster type, belongs to no run; and two ids in one run have one holder each.
 @testset "cluster_pop_suffix / cluster_id_owners — a cluster pop's run and who holds each id" begin
-    clust = Cecelia.PopulationMap(; pop_type = "clust", value_name = "B")
+    clust = Cecelia.PopulationTree(; pop_type = "clust", value_name = "B")
     add_pop!(clust, "T"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1, 2.0])
     add_pop!(clust, "B"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = ["3"])
     add_pop!(clust, "other run"; filter_measure = "clusters.movement", filter_fun = "in", filter_values = [1])
     add_pop!(clust, "big"; filter_measure = "area", filter_fun = "gt", filter_values = 50)
     @test cluster_pop_suffix(clust.pops["/T"]) == "immune"
     @test cluster_pop_suffix(clust.pops["/big"]) === nothing         # a cluster-type map, but not a cluster column
-    region = Cecelia.PopulationMap(; pop_type = "region", value_name = "B")
+    region = Cecelia.PopulationTree(; pop_type = "region", value_name = "B")
     add_pop!(region, "niche"; filter_measure = "regions.tissue", filter_fun = "in", filter_values = [0])
     add_pop!(region, "wrong family"; filter_measure = "clusters.tissue", filter_fun = "in", filter_values = [0])
     @test cluster_pop_suffix(region.pops["/niche"]) == "tissue"
     @test cluster_pop_suffix(region.pops["/wrong family"]) === nothing
-    flow = Cecelia.PopulationMap(; pop_type = "flow", value_name = "B")
+    flow = Cecelia.PopulationTree(; pop_type = "flow", value_name = "B")
     add_pop!(flow, "c3"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [3])
     @test cluster_pop_suffix(flow.pops["/c3"]) === nothing             # a gating filter pop, not a cluster pop
     # 1, 2.0 and "3" are the ids 1, 2, 3; the other run's 1 is not this run's

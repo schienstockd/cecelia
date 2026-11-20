@@ -26,6 +26,8 @@ import { orientGate } from '../../plots/gateGeometry'
 import { defaultTransformForCol } from '../../utils/gatingAxes'
 import { dotRadiusFor } from '../../plots/density'
 import { measureGroups } from '../../utils/measureGroups'
+import { measurePickGroups } from '../../utils/searchSelect'
+import SearchSelect from '../SearchSelect.vue'
 import { channelLabel } from '../../utils/channelNames'
 import { pairTransform } from '../../plots/pairsMatrix'
 import type { ColourBy, PanelDef } from '../../plots/montage'
@@ -92,6 +94,8 @@ const colourBy = computed<ColourBy | null>(() =>
 function colLabel(col: string): string {
   return channels.value.includes(col) ? channelLabel(col, channelNames.value) : col
 }
+const colourPickGroups = computed(() =>
+  measurePickGroups(colourGroups.value, colLabel, [{ value: '', label: 'density' }]))
 const tree = ref<PopTree | null>(null)
 
 const idQ = () => `projectUid=${props.projectUid}&imageUid=${imageUid.value}&valueName=${encodeURIComponent(valueName.value)}&popType=${popType.value}`
@@ -125,7 +129,7 @@ async function loadChannelsInner() {
 async function loadTreeInner() {
   if (!props.projectUid || !imageUid.value) { tree.value = null; return }
   try {
-    const d = await (await fetch(`/api/gating/popmap?${idQ()}`)).json() as { tree: PopTree }
+    const d = await (await fetch(`/api/gating/pop-tree?${idQ()}`)).json() as { tree: PopTree }
     tree.value = d.tree ?? null
   } catch { tree.value = null }
 }
@@ -288,12 +292,8 @@ useVisualPanel(
                    v-tooltip.bottom="'Draw the parent-child tree beside the plots'"
                    :model-value="showHierarchy" @update:model-value="showHierarchy = $event" />
             <label class="gs-row"><span class="gs-lbl">colour</span>
-              <select v-model="zChan" v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'">
-                <option value="">density</option>
-                <optgroup v-for="grp in colourGroups" :key="grp.title" :label="grp.title">
-                  <option v-for="c in grp.cols" :key="c" :value="c">{{ colLabel(c) }}</option>
-                </optgroup>
-              </select>
+              <SearchSelect v-model="zChan" :groups="colourPickGroups" aria-label="Colour the dots by"
+                            v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'" />
             </label>
             <label class="gs-row"><span class="gs-lbl">scale</span>
               <select v-model="zt" :disabled="!zChan" v-tooltip.bottom="'Colour scale'">

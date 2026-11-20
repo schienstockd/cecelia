@@ -77,13 +77,13 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
         return nothing
     end
 
-    # Load the flow pop map up-front (even for a whole-seg run) so the P3 orphan sweep in
+    # Load the flow pop tree up-front (even for a whole-seg run) so the P3 orphan sweep in
     # `_write_back` can see the current live UIDs and NaN any row still stamped by a deleted pop's
     # `track_source` — see MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 3. No sidecar → no live pops,
     # every non-whole_seg row is an orphan; `nothing` there disables the sweep entirely on the
     # Python side, so a legacy tracking task that never emits the param still lands somewhere sane.
     m = try
-        load_pop_map(img; value_name = p.valueName, pop_type = "flow")
+        load_pop_tree(img; value_name = p.valueName, pop_type = "flow")
     catch _
         nothing
     end

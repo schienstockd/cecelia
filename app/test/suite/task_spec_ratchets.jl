@@ -742,7 +742,7 @@ end
 # The legacy `popScope` shim claims a fixed set (cells → live+clust+region, tracks →
 # track+trackclust) whatever the task actually reads — which is how three built-ins advertised clust/
 # region or track gates their Julia never resolved. `accepts` is stated per param, so it can be true.
-# Single mode (neither `multiple` nor `acrossSegmentations`) lists ONE pop map for the sibling
+# Single mode (neither `multiple` nor `acrossSegmentations`) lists ONE pop tree for the sibling
 # segmentation — the frontend's `singlePopType` (utils/popGroups.ts) reads the first token — so a
 # single picker must declare exactly one token, or the declaration claims types the picker never offers.
 # Covers the copyable examples too (spec_dirs). `popScope` stays honoured for user custom modules.
