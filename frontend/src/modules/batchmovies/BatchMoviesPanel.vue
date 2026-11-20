@@ -683,8 +683,9 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
                               v-model:contrast="compareContrast" />
         <div v-if="compareSegmentations.length" class="bm-inset">
           <span class="bm-lbl cc-muted">mask colour</span>
-          <ChipSelect variant="segmented" :options="maskColourOpts" v-model="maskColour" aria-label="Colour mask by"
-                      v-tooltip.bottom="'What colours the mask'" />
+          <select v-model="maskColour" class="bm-mini" aria-label="Colour mask by" v-tooltip.bottom="'What colours the mask'">
+            <option v-for="o in maskColourOpts" :key="o.value" :value="o.value" :title="o.tip">{{ o.label }}</option>
+          </select>
         </div>
       </section>
 

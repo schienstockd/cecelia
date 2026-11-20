@@ -8,7 +8,6 @@
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
 import ColourPicker from '../ColourPicker.vue'
-import ChipSelect from '../ChipSelect.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { computed } from 'vue'
 import { maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
@@ -36,7 +35,9 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
 
+// A select, not chips: the choices outgrew the rail's width (as the Tracks section's Colour by)
 const colourOptions = computed(() => maskColourOptions(props.timecourse, settings.viewerMaskColour))
+const colourTip = computed(() => colourOptions.value.find(o => o.value === settings.viewerMaskColour)?.tip ?? 'What colours the mask')
 </script>
 
 <template>
@@ -90,11 +91,11 @@ const colourOptions = computed(() => maskColourOptions(props.timecourse, setting
       </div>
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
-        <ChipSelect
-          :options="colourOptions" :model-value="settings.viewerMaskColour"
-          variant="segmented" aria-label="Colour mask by" v-tooltip.bottom="'What colours the mask'"
-          @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
-        />
+        <select :value="settings.viewerMaskColour" class="cc-fs-2xs vw-grow" aria-label="Colour mask by"
+                v-tooltip.bottom="colourTip"
+                @change="settings.viewerMaskColour = ($event.target as HTMLSelectElement).value as MaskColour">
+          <option v-for="o in colourOptions" :key="o.value" :value="o.value" :title="o.tip">{{ o.label }}</option>
+        </select>
       </div>
       <div v-if="colourNote" class="cc-muted cc-fs-3xs">{{ colourNote }}</div>
       <div v-else-if="truncatedPast !== null" class="cc-muted-warn cc-fs-3xs">
