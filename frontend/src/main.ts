@@ -1,5 +1,5 @@
 import { createApp, watch } from 'vue'
-import { keepAlivePause } from './composables/useKeepAlive'
+import { installAppPlugins } from './appPlugins'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { openSettings } from './lib/settingsOpen'
@@ -14,8 +14,6 @@ import { useViewerStore } from './stores/viewer'
 import { clearsLinkedSelection } from './utils/viewer/markLifetime'
 import { installRoLoopTrace } from './utils/roLoopTrace'
 import { popoutRouteOfWindow } from './lib/popout'
-import { tooltip } from './directives/tooltip'
-import { rangeFill } from './directives/rangeFill'
 import { applyColourScheme, parseColourScheme, COLOUR_SCHEME_KEY } from './utils/colourScheme'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
@@ -132,12 +130,8 @@ router.beforeEach(async (to) => {
 applyColourScheme(parseColourScheme(localStorage.getItem(COLOUR_SCHEME_KEY)), document.documentElement)
 
 const app = createApp(App)
-app.use(pinia)
+installAppPlugins(app, pinia)   // pinia, keep-alive pause, v-tooltip, v-range-fill (shared with the browser tests)
 app.use(router)
-// module pages under App.vue's <KeepAlive> go inert while hidden — see composables/useKeepAlive.ts
-app.use(keepAlivePause)
-app.directive('tooltip', tooltip)
-app.directive('range-fill', rangeFill)
 
 // ── The browser's own failures → the console ─────────────────────────────────
 // The console reported everything the SERVER side could go wrong with and nothing this half could. A

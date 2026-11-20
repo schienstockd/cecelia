@@ -85,7 +85,47 @@ function add_image!(s::CciaSet;
     push!(s.image_uids, img.uid)
     push!(s._images, img)
     _commit_member!(s, "image_uids", img.uid)
+    _note_new_image!(s, img.uid)
     img
+end
+
+# ── Images a task run adds, discarded when the run does not finish ──────────────
+# A task that makes new images (crop, copy, project, bin, resample, register, split) registers each one
+# with `add_image!` BEFORE writing its pixels, and marks it done only after. A cancelled or failed run
+# therefore left registered images in the set, "pending" forever and unopenable. The scheduler runs
+# every task inside `tracking_new_images` and hands what it collected to `discard_new_images!` unless
+# the run ended done (`_execute_job!`) — one place, so no task carries its own cleanup.
+const _NEW_IMAGES_KEY = :cecelia_new_images
+
+_note_new_image!(s::CciaSet, uid::String) =
+    (t = get(task_local_storage(), _NEW_IMAGES_KEY, nothing); t === nothing || push!(t, (s, uid)); nothing)
+
+"""
+    tracking_new_images(f, added::Vector{Tuple{CciaSet,String}})
+
+Run `f()`, recording every `(set, uid)` that `add_image!` registers on this Julia task into `added`.
+`added` is the caller's, so it still holds what was registered when `f` throws.
+"""
+tracking_new_images(f, added::Vector{Tuple{CciaSet,String}}) = task_local_storage(f, _NEW_IMAGES_KEY, added)
+
+"""
+    discard_new_images!(added) -> Int
+
+Delete the images a run registered (`tracking_new_images`) — manifest entry, metadata and data dirs —
+and return how many went. One that fails to delete is warned about and skipped, never thrown.
+"""
+function discard_new_images!(added::Vector{Tuple{CciaSet,String}})::Int
+    n = 0
+    for (s, uid) in reverse(added)
+        try
+            delete_image!(s, uid)
+            n += 1
+        catch e
+            @warn "could not discard an unfinished image" uid = uid exception = e
+        end
+    end
+    empty!(added)
+    n
 end
 
 function images(s::CciaSet)::Vector{CciaImage}

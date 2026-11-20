@@ -166,6 +166,7 @@ include(joinpath(@__DIR__, "suite", "task_machinery.jl"))
 # defined earlier in suite.jl are still in scope for the extracted fragments (Julia
 # includes are lexical).
 include(joinpath(@__DIR__, "suite", "calibration_helpers.jl"))
+include(joinpath(@__DIR__, "suite", "split_tissues.jl"))
 
 
 # ── Plugin testsets ────────────────────────────────────────────────────────
@@ -209,6 +210,7 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 # earlier in suite.jl are still in scope for the chain fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "chain.jl"))
 include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
+include(joinpath(@__DIR__, "suite", "chain_after_live.jl"))   # "Queue after": wait for a run already going
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
 include(joinpath(@__DIR__, "suite", "channel_names_dotted.jl"))   # a dotted channel name is a name, not an aggregate
 # Gating + statistics QC and the chain's end-of-run cohort QC (CECELIA_STRUCTURE_PLAN rank 8).
@@ -356,6 +358,7 @@ include(joinpath(@__DIR__, "suite", "spatial_graph_knn.jl"))   # RESULT-REVIEW r
 # extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "plots.jl"))
 include(joinpath(@__DIR__, "suite", "summary_channel_measure.jl"))   # a marker per population, by name
+include(joinpath(@__DIR__, "suite", "pop_positions.jl"))   # the population positions plot read
 
 # ── track_props: per-track aggregation (ports tracksInfo; cell→track properties) ──
 # ── tracking + HMM testsets ────────────────────────────────────────────
@@ -378,6 +381,7 @@ include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_boundaries.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_sampling.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
 include(joinpath(@__DIR__, "suite", "claim_checks.jl"))
 include(joinpath(@__DIR__, "suite", "claim_checks_coverage.jl"))

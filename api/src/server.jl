@@ -379,6 +379,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/push/target" => (req, body_bytes) -> (api_push_target_get(req)),
     "/api/labels/ids" => (req, body_bytes) -> (api_labels_ids(req)),
     "/api/plots/cluster-map" => (req, body_bytes) -> (api_plots_cluster_map(req)),
+    "/api/plots/pop-positions" => (req, body_bytes) -> (api_plots_pop_positions(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
     "/api/plots/attrs" => (req, body_bytes) -> (api_plot_attrs(req)),

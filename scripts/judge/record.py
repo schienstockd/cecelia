@@ -420,15 +420,20 @@ _AGENT_CAUSES_HOW_TO = (
 def _render_fixture_requests(record: dict) -> list[str]:
     fr = record["fixture_requests"]
     out = ["Data tests need and no committed fixture has (`test-data/NEEDS.toml`). Candidates are listed "
-           "locally only — `pixi run judge-fixtures` — and cut with `pixi run fixture-cut` on your say-so: "
-           "it puts lab data into git.", ""]
+           "locally only — `pixi run judge-fixtures` — and the pass cuts one per request into a local staging "
+           "dir, never the repo. `pixi run fixture-accept -- <id>` moves a cut you have looked at into "
+           "`test-data/`; committing it is yours: it is lab data.", ""]
     if not fr.get("configured"):
-        out += ["No source projects configured (`CECELIA_FIXTURE_SOURCE_PROJECTS`), so nothing was matched.", ""]
+        out += ["No source projects configured (`CECELIA_FIXTURE_SOURCE_PROJECTS`, or `[dirs] projects` in "
+                "the judge worktree's Cecelia config), so nothing was matched.", ""]
+    if fr.get("cuts_ready"):
+        out += [f"**{fr['cuts_ready']} cut(s) ready for review** — `pixi run judge-fixtures` says where.", ""]
+    cut_note = {"ready": " · cut ready", "failed": " · every candidate failed to cut (local `failed.json`)"}
     for r in fr["requests"]:
         how = "synthetic — an agent builds it" if r.get("synthetic") else (
             f"{r['candidates']} candidate image(s)" if fr.get("configured") else "not matched")
         confirm = f" · confirm by eye: {', '.join(r['confirm'])}" if r.get("confirm") and r["candidates"] else ""
-        out.append(f"- `{r['id']}` — {how}{confirm}")
+        out.append(f"- `{r['id']}` — {how}{confirm}{cut_note.get(r.get('cut'), '')}")
     return out + [""]
 
 

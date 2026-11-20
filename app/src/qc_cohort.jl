@@ -46,6 +46,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # where the estimator is not converging.
     "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx", "meanFrameCorrelation"],
     "editImages.register"        => ["worstResidualUm", "minTissueCovered", "minTissueRetained"],
+    # slides prepared alike carry alike numbers of sections; one that split into far fewer (or far
+    # more) is a threshold that missed faint sections or cut one apart
+    "editImages.splitTissues"    => ["nTissues"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.importLabels"       => ["nCells"],

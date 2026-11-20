@@ -87,8 +87,9 @@ macOS: wire `scripts/judge/cron_pass.sh` into a `launchd` plist yourself. Window
 
 ## Matching fixture requests against your projects
 
-The pass matches `test-data/NEEDS.toml` requests against a projects dir only when one is named. Give
-the unit yours in a drop-in, so no path lands in the repo:
+The pass matches `test-data/NEEDS.toml` requests against your projects dir: `[dirs] projects` in the
+Cecelia config that the judge worktree's `.env` names (`CECELIA_DEV_DIR`), so nothing to set when
+that is your dev dir. To use another one, give the unit it in a drop-in, so no path lands in the repo:
 
 ```bash
 systemctl --user edit weekly-judge.service
@@ -96,5 +97,6 @@ systemctl --user edit weekly-judge.service
 # Environment=CECELIA_FIXTURE_SOURCE_PROJECTS=/path/to/your/projects
 ```
 
-The record then counts candidates per request; `pixi run judge-fixtures` (same variable, or
-`--projects-dir`) lists them. `docs/ai-assist/WEEKLY_JUDGE.md` → *Fixture requests*.
+The record then counts candidates per request and says when a cut is staged for review;
+`pixi run judge-fixtures` lists them and `pixi run fixture-accept` takes one into `test-data/`.
+`docs/ai-assist/WEEKLY_JUDGE.md` → *Fixture requests*.

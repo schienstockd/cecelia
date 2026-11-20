@@ -1420,6 +1420,8 @@ sequences the results so a slider drag can't land an out-of-order answer.
   with a registered validator (`stamp_backend_advisories!`), and `paramAdvisor` hands a stamped
   param to **`taskBackendAdvisor`**, which asks about the form's own task (`ctx.funName`). So a
   shared key (`channels`, `model`) asks the backend on the tasks that registered it and on no other.
+  A verdict that reads a sibling param passes `reload_on = ["graphSuffix"]`: the server stamps it as
+  `advisoryReloadOn`, and the form re-asks when that sibling changes (Cluster regions' pooling).
   The **channel-pick advisory** is the main user: picked channels saturated or not photon-limited,
   from the import's per-channel facts (`channel_signal_flags`, which the denoise gate and
   `import.photon_limited` also read); a cleanup task opts in with one row in the table at the end of
@@ -1451,7 +1453,8 @@ Two patterns it demonstrates:
   dir, then registers `filepath`/`imChannelNames` on the **new** image's `ccid.json`. It returns
   `{newImageUid, setUid}`; the frontend adds the image live via `/api/images/meta` + `addImagesFromApi`
   (see `stores/ws.ts`). Contrast with the correction tasks, which register a new **version** of the same
-  image via `versioned_set_field!`.
+  image via `versioned_set_field!`. A cancelled or failed run's new image is removed by the scheduler
+  (`docs/SCHEDULER.md` → *Task cancel is acknowledged…*), so the handler just returns `nothing`.
 
 ---
 

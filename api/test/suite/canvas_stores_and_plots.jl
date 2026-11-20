@@ -167,7 +167,7 @@ end
 
     # the guard must still hold for every OTHER plot — including the other matrix modes, which DO
     # aggregate a pop_df frame and are meaningless without a selection.
-    for mode in ("profile", "crosstab")
+    for mode in ("profile", "crosstab", "composition")
         r = _post(api_plot_data, merge(base, Dict("chartType" => "matrix", "matrixMode" => mode)))
         @test pops_required(r)
     end

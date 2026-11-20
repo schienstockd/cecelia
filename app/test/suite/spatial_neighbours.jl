@@ -51,6 +51,70 @@ end
     @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7, 0.8))["code"] == "spatial.many_isolated"
 end
 
+@testset "fixed-window graphs: no edges is not a finding" begin
+    # a window graph places cells on tiles and has no edges by design — the edge checks must not fire
+    @test isempty(Cecelia._window_graph_qc_findings(500))
+    @test only(Cecelia._window_graph_qc_findings(0))["code"] == "spatial.no_cells"
+    win = Dict{String,Any}("method" => "windows", "nCells" => 500, "nEdges" => 0, "tile" => 25.0)
+    @test isempty(Cecelia._loaded_graph_findings(win, "w50"))
+    # the same metrics without the method tag are an edgeless cell graph, and do flag
+    @test only(Cecelia._loaded_graph_findings(delete!(copy(win), "method"), "w50"))["code"] == "spatial.no_edges"
+    p = Cecelia.parse_cell_neighbours_params(Dict{String,Any}("neighbourMethod" => "windows", "windowSize" => 40))
+    @test p.neighbourMethod == "windows" && p.windowSize === 40.0
+    @test Cecelia.parse_cell_neighbours_params(Dict{String,Any}()).windowSize === 50.0
+    # region pooling: the closed set the runner understands (spatial_utils.POOLINGS)
+    @test Cecelia.REGION_POOLINGS == ("frame", "track", "movie")
+    d = mktempdir(); q = joinpath(d, "region_qc.json")
+    write(q, JSON3.write(Dict("windowGraph" => true)))
+    @test Cecelia._region_qc_flag(q, "windowGraph") && !Cecelia._region_qc_flag(q, "otherAllZero")
+    @test !Cecelia._region_qc_flag(joinpath(d, "absent.json"), "windowGraph")
+end
+
+# "Neighbourhood over" follows the picked graph: a window graph pools per frame or over the movie, a cell
+# graph per frame or per track, and a track needs frames. The form check and Run share this one rule.
+@testset "region pooling follows the graph kind" begin
+    P = Cecelia.region_pooling_problem
+    for k in (:window, :frames, :pooled)
+        @test P("frame", [k, k]) === nothing                    # per frame works on any graph
+    end
+    @test P("track", [:frames]) === nothing
+    @test P("movie", [:window]) === nothing
+    @test occursin("needs a cell graph", P("track", [:window]))
+    @test occursin("built per frame", P("track", [:frames, :pooled]))
+    @test occursin("needs a window graph", P("movie", [:frames]))
+    @test occursin("on some images", P("frame", [:window, :frames]))
+    @test P("track", [nothing]) === nothing                     # no graph: Run reports that itself
+    @test occursin("pick one of", P("tile", [:frames]))
+
+    # the kind is read off the file: the window fixture carries its grid, the cross graph is per frame
+    cross = normpath(joinpath(test_projects_dir(), "..", "graph-cross"))
+    if !isdir(cross)
+        @test_skip "graph-cross fixture (missing)"
+    else
+        @test Cecelia.region_graph_kind(joinpath(cross, "win.h5ad")) === :window
+        @test Cecelia.region_graph_kind(joinpath(cross, "cross.h5ad")) === :frames
+        @test Cecelia.region_graph_kind(joinpath(cross, "absent.h5ad")) === nothing
+    end
+
+    # the form's verdict: silent with no graph, a fail naming the mismatch, else the graph's kind
+    A = Cecelia._region_pooling_advisory
+    @test A("track", "w50", [nothing, nothing]) === nothing
+    bad = A("track", "w50", [:window, nothing])
+    @test bad.severity == "fail" && occursin("needs a cell graph", bad.message)
+    ok = A("movie", "w50", [:window])
+    @test ok.severity == "ok" && ok.message == "\"w50\" is a window graph"
+    @test A("frame", "r30", [:frames]).message == "\"r30\" is a cell graph"
+    @test A("frame", "all", [:pooled]).tip == "Each frame"
+
+    # the form re-asks when the graph changes: the server stamps the sibling it reads
+    spec = Dict{String,Any}("params" => Any[Dict{String,Any}("key" => "pooling"),
+                                            Dict{String,Any}("key" => "graphSuffix")])
+    Cecelia.stamp_backend_advisories!(spec, "clustRegions.cluster")
+    @test spec["params"][1]["backendAdvisory"] === true
+    @test spec["params"][1]["advisoryReloadOn"] == ["graphSuffix"]
+    @test !haskey(spec["params"][2], "backendAdvisory")
+end
+
 @testset "clustRegions carries the neighbour graph's sparse-graph QC (#1771)" begin
     # the region runner banks per-image `graphMetrics` of the graph it loaded; the run's QC must flag a
     # sparse one with the graph task's own finding — per image, not pooled across the set

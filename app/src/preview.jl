@@ -97,7 +97,9 @@ _is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
 # 21: the AF-reference mask removes the leak into the reference first; a protocol-20 worker hollows
 # bright cells.
 # 22: new backend `segment.ridgesMeasure`; a protocol-21 worker answers "no preview backend" for it.
-const PREVIEW_PROTOCOL = 22
+# 23: new backend `editImages.splitTissues` (whole image, `wholeImage`/`countNoun` in the reply); a
+# protocol-22 worker answers "no preview backend" for it.
+const PREVIEW_PROTOCOL = 23
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 # `env` is the pixi env the worker runs in — `nothing` for the default (cellpose 4), `:cellpose_v3` for

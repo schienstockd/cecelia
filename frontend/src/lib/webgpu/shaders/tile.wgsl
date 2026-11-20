@@ -24,6 +24,7 @@
 // The uniform block and the projection live in `tile_common.wgsl`, shared with the overlay passes.
 
 #include "tile_common.wgsl"
+#include "lens.wgsl"
 @group(0) @binding(1) var atlas: texture_3d<u32>;
 @group(0) @binding(2) var lut: texture_2d<f32>;
 // The segmentation mask, one 'r32uint' layer per slot — layer `slot` holds the mask for the tile in
@@ -125,8 +126,9 @@ fn labAt(vi: vec3<i32>) -> u32 {
   let base = in.slot * zpc;
 
   var acc = vec3(0.0);
+  let inLens = lensIn(in.pos.xy);   // the channel lens draws its own set (lens.wgsl)
   for (var c = 0; c < nch; c = c + 1) {
-    if (p.ch[c].z < 0.5) { continue; }
+    if (!chOn(c, inLens)) { continue; }
     let v = f32(textureLoad(atlas, vec3<i32>(sx, sy, base + c), 0).r);
     let win = clamp((v - p.ch[c].x) / max(p.ch[c].y - p.ch[c].x, 1.0), 0.0, 1.0);
     acc = acc + ramp(c, win);
@@ -140,5 +142,5 @@ fn labAt(vi: vec3<i32>) -> u32 {
       acc = mix(min(acc, vec3(1.0)), labColour(id).rgb, p.lab.x);
     }
   }
-  return vec4(min(acc, vec3(1.0)), 1.0);
+  return vec4(lensRim(min(acc, vec3(1.0)), in.pos.xy), 1.0);
 }

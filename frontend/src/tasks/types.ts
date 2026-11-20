@@ -59,6 +59,8 @@ export interface ParamDef {
   // Set by the SERVER (`stamp_backend_advisories!`), never authored: a Julia form-time validator is
   // registered for this task + key, so the form shows its advisory (`taskBackendAdvisor`).
   backendAdvisory?: boolean
+  // Set by the SERVER beside `backendAdvisory`: sibling keys that validator reads (`reload_on`).
+  advisoryReloadOn?: string[]
   /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown.
    *  text: `'chips'` types a comma-separated list as chips (ChipInput); `max` caps how many. */
   variant?: 'chips'
@@ -251,6 +253,9 @@ export interface ChainNodeSpec {
   params: Record<string, unknown>
   barrier_policy: string
   resource_pool: string
+  // "Queue after" wait step (app/src/tasks/chain/after_live.jl): starts nothing, waits for the runs of
+  // `fn` already going. Only on the runner's inline chains; absent on every saved template.
+  after_live?: boolean
 }
 
 export interface ChainEdgeSpec {

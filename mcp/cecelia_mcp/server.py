@@ -645,6 +645,8 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
       - "gatingStrategy" {image?, valueName?, popType?, pop?, hierarchy?} — the gates leading to `pop`
         (popType "live" for a segmentation's gates); `hierarchy: true` draws every gate below it.
       - "trackPaths" {pops?, mode?: paths|star|rose} · "trackDiagnostics" {pops?} — tracked populations.
+      - "popPositions" {pops?, frame?} — where the populations' cells sit on the image (x/y), at one frame;
+        any population type, but ONE type per plot (regions, or behaviour clusters, not both).
       - "hmmStateCards" {valueName?, hmmCol?} · "motifCards" {valueName?} — example-cell cards.
       - "figure" {name} — a rendered figure (list_figures for the names), shown as made.
       - clustering plots "clusterMap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
@@ -916,7 +918,13 @@ def get_region_clusters(project_uid: str, image_uid: str = "", set_uid: str = ""
       - `suffix` is the run id.
       - `largestFrac` near 1.0 (one niche swallowing most points) or a very low `nRegions` vs peers
         means a near-uninformative / collapsed region clustering for that image — worth flagging.
-    Use this to answer "what spatial niches exist in this tissue"; pair with get_contact_stats for
+      - `composition`: how many cells of each named cell-cluster population sit in each region —
+        `{popType, pops, regions, counts}`, `counts[i][j]` = cells of `pops[i]` in `regions[j]` (regions
+        read by the names the user gave them). null when the segmentation has no cluster populations.
+        Divide by the column total for "what is region R made of", by the row total for "where does
+        this type live". Compare images by these per-image fractions, never pooled cells.
+    Use this to answer "what spatial niches exist in this tissue" and "how many B cells are in which
+    region"; pair with get_contact_stats for
     "who co-localises with whom". Summary-level, reads current on-disk state (region columns in the
     per-image label props)."""
     return _spatial_only("regionRuns", project_uid, image_uid, set_uid)
@@ -2430,7 +2438,11 @@ def get_viewer_screenshot(project_uid: str, image_uid: str, max_side: int = 1600
     same shape `set_viewer_view` takes, so read it, change a field, send it back.
 
     `max_side` caps the picture's long side in px (never upscales). Waits for the frame to finish
-    loading. Nothing changes. `{reason: "no_viewer"}` ⇒ no viewer of that image is open: ask the
+    loading. Nothing changes. With the channel lens on (2D) there is a `lens` too: `{pinned, x, y, r}`
+    (level-0 px; pinned = the user parked it on the tissue), `channels` it draws (none = a spotlight:
+    the view inside, the rest dimmed), `cells` inside and `pops` `[{name, n, share}]` (gated + cell
+    clusters, share of `cells`); when drawn, `trackClusters` `{tracks, pops}` (share of the clustered
+    tracks inside) and `regions` `{pops}` (share of `cells`) — the user's "look at the lens" means this. `{reason: "no_viewer"}` ⇒ no viewer of that image is open: ask the
     user to open it. `{error: "no frame drawn …"}` ⇒ the viewer shows nothing yet (3D still loading,
     or stuck): tell the user, don't retry in a loop. Use it to check what a change looks like, not to
     guess from numbers.
@@ -2452,6 +2464,9 @@ def set_viewer_view(project_uid: str, image_uid: str, view: dict) -> dict:
       • `{"layers": {"CTV": {"visible": false}}}` — hide a channel
       • `{"dims": {"ndisplay": 3}}` — 3D; `{"dims": {"current_step": [40]}}` — timepoint 40, same z
       • `{"camera": {"zoom": 2, "angles": [30, 0, 0]}}` — zoom / tilt (3D angles in degrees)
+      • `{"lens": {"x": 1200, "y": 800, "r": 150, "channels": ["CD3", "CD20"]}}` — pin the channel
+        lens there (level-0 px, 2D only; `channels` omitted = keep the picks, [] = a spotlight);
+        `{"lens": false}` switches it off
     Channel names and current values come from `get_viewer_screenshot`'s `view`; take one first.
 
     Applied through the same restore a keyframe uses, and SAVED as that image's viewer settings

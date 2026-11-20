@@ -233,6 +233,16 @@ region_enrichment(img; region=("region","arrest_zone"),
 
 Both return **flat, MCP-friendly tables** (Decision 9), not matrices.
 
+**Built (2026-11-19) — the "how many of type X in region Y" readout.** Not a join: both labels sit on
+the same cell row, so it is a crosstab of `pop` × `regions.{suffix}`. One count grid, read four ways
+(CytoMAP region heatmap, Stoltzfus 2020 doi:10.1016/j.celrep.2020.107523; CN composition + enrichment,
+Schürch 2020 doi:10.1016/j.cell.2020.07.005 and Hickey 2023 doi:10.1038/s41586-023-05915-x): % of region,
+% of population, log2 enrichment, counts. It is the heatmap's `composition` matrix mode
+(`_composition_matrix`, plot_data.jl) behind the **Region composition** plot (`region_composition.json`:
+heatmap + stacked/box per image), and the SAME call fills `composition` on MCP `get_region_clusters`
+(`ai/spatial.jl`). Margins are over the selected populations. Region density (cells/mm²) is parked — it
+needs a region area. `region_membership`/`region_enrichment` stay REPL helpers.
+
 ### Decision 7 — temporal handling is a user parameter (`perTimepoint`)
 
 Carried from legacy `cellRegions.json`: `perTimepoint` (default off). Off → aggregate all timepoints
@@ -481,7 +491,7 @@ Spatial Analysis population selectors show **all poptypes** (`flow`/`clust`/`liv
 | Spatial association / null | **stronger** (`nhood_enrichment`, `co_occurrence`, `ripley`, Moran's I) | **squidpy** (Phase 5); RDP not ported as a test |
 | Positional remapping (region-colored dots) | `sq.pl.spatial_scatter` (trivial) | interactive **PositionalScatterView** + napari points (Phase 5/8) |
 | Region adjacency (% shared-border force graph) | `interaction_matrix` approximates | **custom** border-% metric + network overlay (Phase 8) |
-| Per-region population frequency | none (one-line groupby) | **summary plot**, `popType:"region"` (Phase 5) |
+| Per-region population frequency | none (one-line groupby) | **Region composition** plot — heatmap `composition` mode (built 2026-11-19) |
 | UMAP of composition colored by region | (scanpy umap) | reuse `X_umap.{suffix}` + `ClusterMapView` (Phase 4) |
 
 ---
@@ -601,6 +611,49 @@ scale+units), region-fill via `colour_labels` on `regions.{suffix}`, region-adja
 **Phase 8 — Live-imaging behaviour regions.** Composition basis = spatial distribution of HMM behaviour
 clusters (`clust`); aggregated-across-time default (Decision 7). Scoped separately so it never delays
 static-image support (prompt constraint).
+
+**Phase 8b — behaviour regions per track and in fixed windows (2026-11-19).** Why: on a T cell set
+(16 movies, 6 behaviour groups, 50 µm per-frame radius graph, mean degree 12.4) per-frame regions came out
+as one ball on the UMAP — each cell-frame is clustered separately, so a track's region churns frame to
+frame, and nothing aggregates over time as Decision 7 asked. The maintainer's 2021 review (Schienstock &
+Mueller, *Immunol Rev*, doi:10.1111/imr.13038, §4.5) names the two region definitions CytoMAP offers —
+the image "tiled into overlapping squares", or a circle/sphere around each cell — and proposes defining
+behaviour over time in different areas. Mockup: the *Behaviour Regions Plan* artifact.
+
+- **The pooling follows the graph** (`clustRegions/graph.jl`): `region_graph_kind` reads the picked
+  graph (window / cell per frame / cell over all frames); one rule, `region_pooling_problem`, names
+  the kind on the form (re-asked when the graph changes) and refuses a mismatch at Run.
+- **A — "Neighbourhood over: whole track"** (`clustRegions` `pooling = "track"`, default `"frame"`).
+  Neighbour COUNTS are summed over a track's frames and only then normalised
+  (`spatial_utils.neighbourhood_counts` → `sum_rows_by_group` → `normalise_counts`), so a frame with one
+  neighbour doesn't weigh as much as one with twenty. Tracks are clustered (one UMAP point per track: the
+  point sits on the track's first cell, the rest NaN, which the cluster map drops); every cell takes its
+  track's region and composition. Untracked cells get no region. Refused on a graph pooled over frames.
+  **BUILT** (`feat/behaviour-regions`).
+- **B1 — "Fixed windows" graph method** (`cellNeighbours`). Overlapping SQUARE windows of side S on a
+  grid of step S/2 over the field of view (CytoMAP raster scan, 50% overlap); a cell belongs to the tile
+  (S/2 square) it sits in, i.e. the nearest window centre. Columns through Z unless the cells span two
+  windows in Z (the T cell movies, 55 µm, are columns at S = 50); a set whose images disagree is refused. The graph file stores the grid (origin, tile, S)
+  and each node's tile per frame, beside the cell-to-cell graphs, so the window definition stays in the
+  one graph task (Decision 17). `clustRegions` on a window graph clusters WINDOWS — counted over the whole
+  movie (default: a region is a place) or per frame — with the window's cell count as an extra density
+  column so empty windows form their own region; cells take their tile's region. Sizes: 50 µm windows on
+  a 266 × 265 µm field = 25 µm tiles, 11 × 11 = 121 per frame. Contact stats refuse a window graph.
+  **BUILT** (`feat/behaviour-regions`): grid from the cells' extent starting at 0 µm (not the image's
+  field of view — empty margins past the last cell are not windows); empty windows are dropped from the
+  clustering (no cell takes its region from one), so the "empty" region waits for the map in B3; a
+  window's UMAP point sits on one cell of its tile, so windows with no cell of their own don't show on it.
+  The density column is cells per window PER FRAME (so movie length doesn't scale it) and per FULL
+  window: an edge window, part outside the field, is divided by its inside fraction (`window_coverage`).
+  Caveat: pooling over the movie assumes the tissue holds still — a drifting field blurs its map.
+- **B2 — window graph on the image.** The tile borders as static lines on the graph-line path
+  (`spatial_graph_lines.jl` → skeleton segments), so viewer and movie draw them alike (recording parity).
+- **B3 — region map fill + one shared tile model.** A `TileGrid` (geometry, A1 names, legend, palette,
+  one JSON shape) shared by the landscape (viewport frame, on-screen aid, not recorded) and the region
+  map (tissue frame, recorded). NOT one shared SVG overlay: the two live in different coordinate frames
+  and only one is recorded. Region fill = a coarse 2D region raster through the region colouring path in
+  viewer AND movie; `get_region_map` MCP tool returns the landscape's tile JSON so `mark_tile` works on it.
+  Open: whether the viewer/movie can draw a Z-flattened coarse raster without a new primitive.
 
 ---
 

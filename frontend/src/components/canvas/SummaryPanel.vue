@@ -27,7 +27,7 @@ import { centroidLabel } from '../../utils/gatingAxes'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
-import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, MatrixMode } from '../../plots/types'
+import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, MatrixMode, MatrixNormalize } from '../../plots/types'
 import { isRunMatrixMode } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { visControlsFor } from '../../plots/plotControls'
@@ -64,13 +64,14 @@ const props = defineProps<{
   imageUids?: string[]                 // cross-image: optional image subset (default = whole set)
   scope?: 'per_image' | 'summarised'   // cross-image scope (default per_image)
   groupAttr?: string[]                 // group cross-image series by these image attributes (combined; else per-image)
+  groupOrder?: string[]                // the attribute groups in the user's order (the picker's "attribute order")
   series: SeriesTarget[]               // selected (segmentation, pop) targets — each one a series
   seriesColor: (s: PlotSeries) => string
   vis?: VisProps                       // visual properties (log scale, legend, point size/opacity)
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: MatrixNormalize; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median'   // datapoint = each cell/track, or each image's mean/median (one dot per image)
         metricPop?: string    // per-image metric: which of the run's populations (or pairs) to plot
         statsPair?: string    // legacy name of metricPop, from boards saved before the pair plot became a metric
@@ -378,10 +379,16 @@ const zscore = computed<boolean>({ get: () => props.ui.zscore ?? false, set: v =
 // — a crosstab (counts/probs) and an interaction matrix (the log-odds effect size). NB the panel always
 // sends a boolean, so `buildHeatmap`'s own `??` default can never fire; this is the only default.
 const heatmapValues = computed<boolean>({
-  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab' || isRunMatrixMode(matrixMode.value)),
+  get: () => props.ui.heatmapValues ?? (matrixMode.value !== 'profile'),
   set: v => (props.ui.heatmapValues = v) })
-const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
-  get: () => props.ui.matrixNormalize ?? 'row', set: v => (props.ui.matrixNormalize = v) })
+// composition defaults to "fraction of region" (what is each region made of — the CytoMAP / CN
+// composition view); a crosstab to P(to|from). Enrichment is composition-only, so a crosstab never sends it.
+const matrixNormalize = computed<MatrixNormalize>({
+  get: () => {
+    const v = props.ui.matrixNormalize ?? (matrixMode.value === 'composition' ? 'col' : 'row')
+    return v === 'enrichment' && matrixMode.value !== 'composition' ? 'row' : v
+  },
+  set: v => (props.ui.matrixNormalize = v) })
 // effective category: the user's chosen column, else the spec's pinned hint (if available), else a
 // sensible default for the mode. Crosstab needs a "from_to" transitions column; profile needs a real
 // multi-level state column — NB `track_state` also contains "state" but is usually constant, so match
@@ -389,6 +396,9 @@ const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
 // `track_state` → a single "5" column). Transitions are pair-encoded, so they're excluded from the
 // profile fallback.
 const matrixCategory = computed<string>(() => {
+  // a composition crosses the populations with the plot's MEASURE (the region run picked in the Measure
+  // dropdown, discovered via obsMeasurePatterns) — one control for the heatmap and the stacked/box views
+  if (matrixMode.value === 'composition') return measure.value
   if (groupBy.value) return groupBy.value
   const opts = groupByOpts.value
   if (!opts.length) return ''
@@ -420,6 +430,10 @@ const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', st
 const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 
 const crossImage = computed(() => !!props.setUid)
+// "compare by attribute" — the attributes to group by and the user's order of the groups, in every
+// request that draws the data (plot, CSV, raw export)
+const groupAttrBody = () => props.groupAttr?.length && crossImage.value
+  ? { groupAttr: props.groupAttr, ...(props.groupOrder?.length ? { groupOrder: props.groupOrder } : {}) } : {}
 const result = ref<PlotDataResponse | null>(null)
 // default to the run's first population once the response names them; drop a pick the run lacks
 // (declared after `result`: a watch evaluates its source at setup)
@@ -562,7 +576,11 @@ async function fetchData(isCurrent: () => boolean) {
     try {
       const cat = isRunMatrix.value ? '' : matrixCategory.value
       if (!isRunMatrix.value && !cat) {
-        result.value = null; error.value = 'Pick a Category column (plot options) for the heatmap.'; return
+        result.value = null
+        error.value = matrixMode.value === 'composition'
+          ? 'No region run on these images yet — run Cluster regions first.'
+          : 'Pick a Category column (plot options) for the heatmap.'
+        return
       }
       const body: Record<string, unknown> = isRunMatrix.value ? {
         projectUid: props.projectUid,
@@ -644,7 +662,7 @@ async function fetchData(isCurrent: () => boolean) {
         ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
         ...(composition.value ? { composition: true } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
-        ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+        ...groupAttrBody(),
         ...(vis.value.statsEnabled && canCompareGroups.value
               ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
       }
@@ -676,7 +694,7 @@ async function fetchData(isCurrent: () => boolean) {
 watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'), popType,
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, statsSuffix, zscore, matrixNormalize, matrixCategory, colsReady,
-       () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
+       () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','), () => (props.groupOrder ?? []).join('\u0000'),
        () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto',
        // the run (interaction matrix / per-image metric) and the metric's population are fetch inputs
@@ -852,7 +870,7 @@ function imageMetricBody(source: string, raw = false): Record<string, unknown> {
     // response names the run's populations — the server then plots them all
     ...(metricPicksPops.value ? { pops: ownSeries.value.map(t => `${t.valueName}${t.pop}`) }
       : metricPop.value ? { pop: metricPop.value } : {}),
-    ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+    ...groupAttrBody(),
     ...(vis.value.statsEnabled && canCompareGroups.value
           ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
     ...(raw ? { raw: true } : {}),
@@ -894,7 +912,7 @@ async function fetchRawCsv(): Promise<string | null> {
       ...(groupBy.value ? { groupBy: groupBy.value } : {}),
       ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
       ...(composition.value ? { composition: true } : {}),
-      ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+      ...groupAttrBody(),
     }
     applyImageSelector(body)
     const res = await fetch('/api/plot_data', {
@@ -1393,7 +1411,17 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
               <span>Z-score rows</span>
               <CcToggle aria-label="Z-score rows" v-model="zscore" />
             </div>
-            <label v-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.top="'Normalise the transition matrix'">
+            <label v-if="hmCtl.normalize && matrixMode === 'composition'" class="sp-pop-row cc-muted"
+                   v-tooltip.top="'What each cell shows'">
+              <span>Show</span>
+              <select v-model="matrixNormalize">
+                <option value="col">% of region</option>
+                <option value="row">% of population</option>
+                <option value="enrichment">enrichment (log2)</option>
+                <option value="none">counts</option>
+              </select>
+            </label>
+            <label v-else-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.top="'Normalise the transition matrix'">
               <span>Normalize</span>
               <select v-model="matrixNormalize">
                 <option value="row">row · P(to|from)</option>
@@ -1495,7 +1523,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <div v-if="!series.length && !isPrecomputed" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
-      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
+      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" :host-busy="showSpinner"
                  @auto-override="autoOverrides = $event"
                  @point-click="onPlotPointClick"
                  @point-brush="onPlotPointBrush" />

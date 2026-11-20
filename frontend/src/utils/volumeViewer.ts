@@ -17,8 +17,25 @@ export interface ViewerChannel {
   lo: number
   hi: number
   visible: boolean
+  /** Drawn inside the channel lens (`ViewerLens`) — a set of its own, independent of `visible`. */
+  lens?: boolean
   /** Black→colour (or white→colour) ramp stops, 0-1 RGB. viewer owns its palette; we interpolate. */
   lut: number[][]
+}
+
+/** The channel lens: a circle that draws the channels marked `lens` instead of the visible ones
+ *  (`shaders/lens.wgsl`). Framebuffer px, top-left origin — where the pointer is, not a place on
+ *  the image. `r` 0 = no lens. */
+export interface ViewerLens { x: number; y: number; r: number; rimPx: number }
+
+/** A lens into a uniform block's `lens` lanes (`uniformLayout(…).at.lens`) — zeros, i.e. off, for
+ *  `null`. ONE writer for the three renderers, so they cannot place it differently. */
+export function writeLens(u: Float32Array, at: Readonly<Record<string, number>>, lens: ViewerLens | null): void {
+  const on = !!lens && lens.r > 0
+  u[at.x] = on ? lens.x : 0
+  u[at.y] = on ? lens.y : 0
+  u[at.r] = on ? lens.r : 0
+  u[at.rimPx] = on ? lens.rimPx : 0
 }
 
 export interface ViewerLevel {

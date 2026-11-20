@@ -68,9 +68,12 @@ export const BU = {
   TRAIL: BRICK_LAYOUT.base.trail,
   /** Shown planes inside the held ones `(off, shown, _, _)`, current-level voxels — `voxelAt` in `brick_common.wgsl`. */
   ZWIN: BRICK_LAYOUT.base.zwin,
-  /** Per-channel `(lo, hi, visible, unused)`. `visible < 0.5` means "skip this channel". */
+  /** Per-channel `(lo, hi, visible, in lens)`. `visible < 0.5` means "skip this channel". */
   CH0: BRICK_LAYOUT.base.ch,
 }
+
+/** The channel lens lanes `(x, y, r, rimPx)` — `writeLens` (`utils/volumeViewer.ts`). */
+export const BRICK_LENS = BRICK_LAYOUT.at.lens
 
 
 

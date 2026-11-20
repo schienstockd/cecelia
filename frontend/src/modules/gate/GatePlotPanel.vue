@@ -21,7 +21,7 @@ import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import { useGatingStore, type GateSpec, type TransformSpec } from '../../stores/gating'
-import { popNameError } from '../../utils/popName'
+import { popNameError, popDisplayLabels } from '../../utils/popName'
 import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
@@ -407,9 +407,11 @@ function buildCsv(): string {
     for (let i = 0; i < arr.length / 2; i++) rows.push({ [xName]: arr[2 * i], [yName]: arr[2 * i + 1],
       ...(vals ? { [zName]: vals[i] } : {}), population: pop })
   }
-  push(pts, parent.value === 'root' ? 'root' : (parent.value.split('/').filter(Boolean).pop() ?? parent.value),
+  // one `population` column: the parent + its drawn pops, named apart where they share a name
+  const names = popDisplayLabels([parent.value, ...popLayers.value.map(pl => pl.path)])
+  push(pts, parent.value === 'root' ? 'root' : names.get(parent.value)!,
        colourOn.value && zVals?.length === pts.length / 2 ? zVals : null)
-  if (showPops.value) for (const pl of popLayers.value) push(pl.points, pl.path.split('/').filter(Boolean).pop() ?? pl.path)
+  if (showPops.value) for (const pl of popLayers.value) push(pl.points, names.get(pl.path)!)
   return rowsToCsv(rows)
 }
 

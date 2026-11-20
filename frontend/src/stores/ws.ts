@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { useLogStore } from './log'
 import { useTaskStore } from './tasks'
 import { useProjectStore } from './project'
-import { frameTargetsOpenProject } from '../utils/taskScope'
+import { frameTargetsOpenProject, newImageUidsOf } from '../utils/taskScope'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
@@ -667,14 +667,15 @@ export const useWsStore = defineStore('ws', () => {
         }
         // cropImage (and any task that produces a NEW image) reports the new uid + its set; pull the
         // fresh image payload and add it to the set so it appears without a full project reload.
-        const newImageUid    = meta.newImageUid as string | undefined
+        // A task that makes several (split into tissues) reports `newImageUids`.
+        const newImageUids   = newImageUidsOf(meta)
         const newImageSetUid = meta.setUid as string | undefined
         // ONLY into the project the frame belongs to. A task outlives the switch that leaves it
         // running, so a crop/copy finishing in the project you just left used to `ensureSet` ITS set
         // into the project you just opened and add its image to it — foreign rows in the image table,
         // indistinguishable from your own, until the next project load wiped them. See
         // `utils/taskScope.frameTargetsOpenProject` for why an unattributed frame still writes.
-        if (newImageUid && newImageSetUid
+        if (newImageUids.length && newImageSetUid
             && frameTargetsOpenProject(data.projectUid as string | undefined,
                                        useProjectMetaStore().current?.uid)) {
           const projectUid = String((data.projectUid as string | undefined) ?? '')
@@ -684,10 +685,11 @@ export const useWsStore = defineStore('ws', () => {
             // (no-op if already present; addImagesFromApi silently drops images for an unknown set).
             const newImageSetName = meta.setName as string | undefined
             if (newImageSetName) useProjectStore().ensureSet(newImageSetUid, newImageSetName)
-            fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${newImageUid}`)
-              .then(r => (r.ok ? r.json() : null))
-              .then(d => { if (d?.image) useProjectStore().addImagesFromApi(newImageSetUid, [d.image]) })
-              .catch(() => {})
+            for (const uid of newImageUids)
+              fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${uid}`)
+                .then(r => (r.ok ? r.json() : null))
+                .then(d => { if (d?.image) useProjectStore().addImagesFromApi(newImageSetUid, [d.image]) })
+                .catch(() => {})
           }
         }
 

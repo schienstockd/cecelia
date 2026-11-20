@@ -10,7 +10,9 @@ import type { QcFinding } from '../lib/qc'
  * `proximity` (proximityProfile: population × distance band, log2 enrichment). A run-backed grid is fixed
  * by its run, carries a signed effect size (diverging colours pivoted at 0), and needs a run picker.
  */
-export type MatrixMode = 'profile' | 'crosstab' | 'interaction' | 'proximity'
+export type MatrixMode = 'profile' | 'crosstab' | 'composition' | 'interaction' | 'proximity'
+// a heatmap's normalisation: crosstab uses none|row|col|total; composition adds log2 enrichment
+export type MatrixNormalize = 'none' | 'row' | 'col' | 'total' | 'enrichment'
 export const RUN_MATRIX_MODES: readonly MatrixMode[] = ['interaction', 'proximity']
 export const isRunMatrixMode = (m: string | undefined | null): boolean =>
   !!m && (RUN_MATRIX_MODES as readonly string[]).includes(m)
@@ -241,7 +243,7 @@ export interface PlotDataResponse {
   rows?: RawRow[]          // chartType "raw": per-datapoint export rows (identity + value)
   valueLabel?: string      // colour-scale label ("mean" / "z-score" / "count" / "P(to|from)" …)
   zscore?: boolean         // profile: rows standardised → diverging colour scale
-  normalize?: string       // crosstab normalisation (none|row|col|total)
+  normalize?: string       // crosstab/composition normalisation (none|row|col|total|enrichment)
   category?: string        // the categorical column the matrix was built from
   curves?: HmmFitCurve[]   // chartType "elbow": one curve per family of HMM runs differing only in K
   fit?: HmmFitSummary      // profile over an HMM state column: the run's fit record (rows = its modelled measures first)

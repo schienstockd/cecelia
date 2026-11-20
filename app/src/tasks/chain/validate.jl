@@ -73,6 +73,13 @@ function validate_chain_template(t::ChainTemplate)
         (n.scope == CHAIN_INCREMENTAL && !isnothing(task_manual(task))) &&
             throw(ChainTemplateError("node '$(n.id)': a manual step can't be incremental — " *
                                      "use image or set scope"))
+        # A "Queue after" step waits per image for runs already going; it never runs, so its params are
+        # the record of the run it waits for, not something to check against the spec.
+        if n.after_live
+            n.scope == CHAIN_IMAGE ||
+                throw(ChainTemplateError("node '$(n.id)': a Queue-after step waits per image — use image scope"))
+            continue
+        end
         _validate_node_params(t, n, task, n.params)
     end
 
@@ -120,7 +127,7 @@ re-run.
 function _validate_run_params(t::ChainTemplate, overrides::Dict{String,Any};
                               skip::Set{String} = Set{String}())
     for n in t.nodes
-        n.id in skip && continue
+        (n.id in skip || n.after_live) && continue
         task = try _task_from_fun_name(n.fn) catch; continue end
         _validate_node_params(t, n, task, _node_run_params(task, n, overrides, _ -> nothing))
     end
@@ -134,9 +141,7 @@ end
 function _template_json(t::ChainTemplate)::String
     JSON3.write((;
         name  = t.name,
-        nodes = [(; id=n.id, fn=n.fn, scope=string(n.scope), params=n.params,
-                   barrier_policy=string(n.barrier_policy), resource_pool=n.resource_pool)
-                 for n in t.nodes],
+        nodes = [_node_doc(n) for n in t.nodes],
         edges = [(; from=e.from, to=e.to) for e in t.edges],
         startTargets = t.start_targets,
     ))

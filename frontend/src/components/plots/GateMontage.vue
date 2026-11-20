@@ -32,6 +32,7 @@ import ColourBarLegend from './ColourBarLegend.vue'
 import type { RenderMode } from './RenderModeToggle.vue'
 import type { Frame, FrameCell } from '../../plots/frame'
 import { PAPER, PAPER_INK } from '../../plots/fixedColours'
+import { popDisplayLabels } from '../../utils/popName'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
@@ -341,10 +342,12 @@ function exportSvg(bg = PAPER, light = true): string {
 // channel labels + parent population — a tidy long table you can filter/pivot in Prism.
 function exportCsv(): string {
   const rows: Record<string, unknown>[] = []
+  // tiles' parents named apart where they share a name (two branches' "CD8")
+  const names = popDisplayLabels(props.defs.filter(isScatter).map(d => d.parentPath))
   for (const d of props.defs.filter(isScatter)) {
     const pd = panelData.value[d.key]; if (!pd?.points) continue
     const xL = props.colLabel(d.xChan), yL = props.colLabel(d.yChan)
-    const pop = d.parentPath === 'root' ? 'root' : (d.parentPath.split('/').filter(Boolean).pop() ?? d.parentPath)
+    const pop = d.parentPath === 'root' ? 'root' : names.get(d.parentPath)!
     const p = pd.points, v = pd.values
     const zL = props.colourBy?.col ? props.colLabel(props.colourBy.col) : ''
     for (let i = 0; i < p.length / 2; i++) rows.push({ xChan: xL, yChan: yL, x: p[2 * i], y: p[2 * i + 1],

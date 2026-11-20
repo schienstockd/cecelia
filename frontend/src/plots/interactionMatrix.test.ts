@@ -32,7 +32,7 @@ describe('heatmapControls', () => {
   })
 
   it('never offers both z-score and normalize — they belong to different modes', () => {
-    for (const m of ['profile', 'crosstab', 'interaction', undefined]) {
+    for (const m of ['profile', 'crosstab', 'composition', 'interaction', undefined]) {
       const c = heatmapControls(m)
       expect(c.zscore && c.normalize).toBe(false)
     }
@@ -145,5 +145,50 @@ describe('buildPlotOptions — interaction matrix encoding', () => {
     expect(opts.color.scheme).toBe('viridis')
     expect(opts.color.domain).toEqual([0, 1])
     expect(opts.marks.find((m: { mark: string }) => m.mark === 'cell').opts.fill).toBe('norm')
+  })
+})
+
+// The COMPOSITION mode (population × region): a fourth matrix mode. Its category is the plot's measure,
+// so the panel must not offer a Category control; its fractions are on a common 0–1 scale (sequential,
+// never per-row rescaled); its log2 enrichment is signed like a log-odds (diverging, symmetric).
+describe('composition matrix (population × region)', () => {
+  const resp = (normalize: string, values: number[]): PlotDataResponse => ({
+    chartType: 'matrix', matrixMode: 'composition', measure: '', granularity: 'cell', series: [],
+    category: 'regions.default', normalize,
+    valueLabel: normalize === 'enrichment' ? 'log2 enrichment' : 'fraction of region',
+    xLabels: ['Crypt', 'Lamina'], yLabels: ['/B', '/T'],
+    cells: [
+      { x: 'Crypt', y: '/B', value: values[0]!, count: 30 },
+      { x: 'Lamina', y: '/B', value: values[1]!, count: 10 },
+      { x: 'Crypt', y: '/T', value: values[2]!, count: 5 },
+      { x: 'Lamina', y: '/T', value: values[3]!, count: 55 },
+    ],
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const build = (r: PlotDataResponse): any => buildPlotOptions(PlotStub, r, { ...OPTS } as never)
+
+  it('offers Show (normalise) and cell values, never a Category, z-score or Mode', () => {
+    expect(heatmapControls('composition')).toEqual(
+      { mode: false, category: false, zscore: false, normalize: true, cellValues: true })
+  })
+
+  it('draws fractions on one sequential scale from the raw value', () => {
+    const o = build(resp('col', [0.86, 0.15, 0.14, 0.85]))
+    expect(o.color.scheme).toBe('viridis')
+    const cell = o.marks.find((m: { mark: string }) => m.mark === 'cell')
+    expect(cell.opts.fill).toBe('value')
+  })
+
+  it('draws log2 enrichment diverging and symmetric about 0', () => {
+    const color = build(resp('enrichment', [1.2, -0.8, -1.6, 0.4])).color
+    expect(color.scheme).toBe('rdbu')
+    expect(color.domain[0]).toBeCloseTo(-1.6)
+    expect(color.domain[1]).toBeCloseTo(1.6)
+  })
+
+  it('exports each value with the cell count behind it', () => {
+    const [head, first] = plotDataToCsv(resp('col', [0.86, 0.15, 0.14, 0.85])).trim().split('\n')
+    expect(head).toBe('population,regions.default,fraction of region,cells')
+    expect(first).toBe('/B,Crypt,0.86,30')
   })
 })

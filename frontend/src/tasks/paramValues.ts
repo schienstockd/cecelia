@@ -13,6 +13,7 @@
 // left those keys absent. Reconcile a draft through `buildParamValues` (same as a server record) and the
 // gap closes: known keys survive, new params get their defaults, params that no longer exist drop out.
 
+import type { WatchSource } from 'vue'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 import { imageAxes, type Axis } from '../utils/taskGating'
@@ -851,4 +852,35 @@ export function pruneChannelSelections(params: readonly ParamDef[] | undefined, 
   const emptied: string[] = []
   if (!available.length) return { values: vals, emptied }
   return { values: pruneEntry(params, vals, new Set(available), false, emptied), emptied }
+}
+
+/** What a population / measure picker reloads on, as SEPARATE watch sources. Vue compares a
+ *  multi-source watch per source; one getter returning a fresh array is never === the last, so it
+ *  re-fetched on every param write — including a pick in that same picker, which flashed it empty.
+ *  The image's `labels` is watched BY IDENTITY: on task:done `refreshImageMeta` merges freshly parsed
+ *  metadata into the store image in place, so `labels` becomes a new object and both pickers re-read
+ *  what the task added — while a param write leaves it untouched. */
+export interface ReloadContext {
+  images?: { uid?: string; labels?: Record<string, unknown>; channelNames?: string[] }[]
+  params?: ParamDef[]
+  values?: ParamValues
+}
+export function popReloadSources(ctx: () => ReloadContext | undefined): WatchSource[] {
+  return [() => ctx()?.images?.[0]?.uid ?? '',
+          () => ctx()?.images?.[0]?.labels,
+          () => scopeValueName(ctx()?.params, ctx()?.values, Object.keys(ctx()?.images?.[0]?.labels ?? {}))]
+}
+/** + the channel names (a rename relabels the chips), the segmentation value and the picked pops —
+ *  found BY TYPE, since specs name them differently (`popsToCluster`, `pops`). */
+export function colsReloadSources(ctx: () => ReloadContext | undefined): WatchSource[] {
+  const valueOf = (type: 'seg' | 'pops') => {
+    const c = ctx()
+    const key = type === 'seg' ? segmentationKey(c?.params) : siblingKeyOfType(c?.params, 'popSelection')
+    return key ? JSON.stringify(c?.values?.[key] ?? null) : ''
+  }
+  return [() => ctx()?.images?.[0]?.uid ?? '',
+          () => ctx()?.images?.[0]?.labels,
+          () => ctx()?.images?.[0]?.channelNames?.join('|') ?? '',
+          () => valueOf('seg'),
+          () => valueOf('pops')]
 }

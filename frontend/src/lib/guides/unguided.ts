@@ -60,6 +60,17 @@ export const UNGUIDED: UnguidedFeature[] = [
       ],
       next: [todo('A pixel test per op (max projection, bin mean)'), todo('A bit-depth test')],
     }) },
+  { id: 'split-tissues', title: 'Split a slide into tissues', group: 'Data', maturity: covering(
+    ['editImages.splitTissues'], {
+      tier: 'experimental', testedOn: 'One PhenoCycler slide scan; synthetic slides',
+      evidence: [
+        { path: 'python/cecelia/tests/test_tissue_split_utils.py', test: 'test_interlaced_sections_have_disjoint_masks',
+          failsIf: 'two interlaced sections share mask pixels' },
+        { path: 'python/cecelia/tests/test_tissue_split_utils.py', test: 'test_thin_neck_splits_but_a_dent_does_not',
+          failsIf: 'touching sections stay joined, or one section is cut at a dent' },
+      ],
+      next: [todo('Check the split on TMA cores; brightfield (H&E) is not handled')],
+    }) },
   { id: 'stack-align', title: 'Within-stack alignment', group: 'Data', maturity: covering(['cleanupImages.stackAlign'], {
     tier: 'experimental', testedOn: 'Synthetic',
     evidence: [

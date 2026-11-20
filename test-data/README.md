@@ -65,8 +65,9 @@ reads (`make_aniso_fixture.py` writes both).
 `graph-cross/` (outside `projects/`, so no other test sees a second segmentation or a fourth graph):
 `T.h5ad` is B's cells on frames 0–2 whose label is divisible by 3, moved 7 px along x — a second
 segmentation whose labels are B's; `cross.h5ad` is the real graph builder over B and T. A test copies
-both into a temp project (`labelProps/T.h5ad`, `spatialGraph/cross.h5ad`). Regenerate with
-`make_spatial_graph_fixture.py`.
+both into a temp project (`labelProps/T.h5ad`, `spatialGraph/cross.h5ad`). `win.h5ad` is the builder's
+FIXED-WINDOW graph over B's frames 0–2 (60 µm windows, 30 µm tiles; no edges, the grid in `uns`).
+Regenerate with `make_spatial_graph_fixture.py`.
 
 `testpr/1/KDIeEx/` is a SECOND image derived from KDIeEm so the two disagree: `labelProps/B.h5ad` is
 KDIeEm's B without whole tracks whose id is divisible by 3 and untracked cells whose label is (933 of

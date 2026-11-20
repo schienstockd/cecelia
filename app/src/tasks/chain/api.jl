@@ -114,10 +114,18 @@ run from before overrides were recorded replays its template alone, and says so 
 
     run_chain(proj, String[]; from_run="abc12345")
 
+## Inline template
+Pass `template` (a `ChainTemplate`) instead of a `chain` name: a fresh run of a chain built on the spot
+and never saved — the runner's "Queue after" (chain/after_live.jl). It is validated like a saved one;
+the run record keeps its frozen copy as always, so resume and replay work the same.
+
+    run_chain(proj, uids; template = ChainTemplate("Queue after", nodes, edges))
+
 Every execution records its `overrides` and each node's params (`node_params`) in run.json.
 """
 function run_chain(proj::CciaProject, image_uids::Vector{String};
                    chain::String                  = "",
+                   template::Union{ChainTemplate,Nothing} = nothing,
                    run_id::Union{String,Nothing}  = nothing,
                    from_run::Union{String,Nothing} = nothing,
                    start_node::Union{String,Nothing} = nothing,
@@ -130,6 +138,9 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
 
     isnothing(run_id) || isnothing(from_run) ||
         error("run_chain: `run_id` resumes a run and `from_run` starts a new one from it — pass one")
+    isnothing(template) || (isnothing(run_id) && isnothing(from_run) && isempty(chain)) ||
+        error("run_chain: `template` starts a fresh run of its own — pass it without `chain`, `run_id` or `from_run`")
+    inline = template
     if !isnothing(run_id)
         # Resume: restore run from disk, reset stale/failed nodes, keep :done ones. An explicit
         # `start_node` additionally force-restarts that node + everything downstream (re-run from here).
@@ -169,6 +180,9 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                                           "so any it ran with are unknown — replaying its frozen template only")
             end
             overrides = _merge_overrides(something(src.overrides, Dict{String,Any}()), overrides)
+        elseif !isnothing(inline)
+            validate_chain_template(inline)
+            template = _prune_to_start(inline)
         else
             isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
             # UML start dot: if the template has start targets, run ONLY the reachable subgraph (the rest
@@ -266,7 +280,8 @@ end
 # The fns of the steps that finished (:done) on at least one image — what the end-of-run cohort QC checks.
 _chain_done_funs(run::ChainRun)::Vector{String} =
     unique!(String[n.fn for n in run.template_snapshot.nodes
-                   if any(s -> haskey(s, n.id) && s[n.id].status == NODE_DONE, values(run.image_states))])
+                   if !n.after_live &&   # a "Queue after" step ran nothing here
+                      any(s -> haskey(s, n.id) && s[n.id].status == NODE_DONE, values(run.image_states))])
 
 # The overrides as recorded: node_id => a plain params Dict (the caller's dict is never aliased).
 _copy_overrides(ov::AbstractDict)::Dict{String,Any} =

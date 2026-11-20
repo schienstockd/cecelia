@@ -5,9 +5,10 @@
 # request here, and let the test skip until a fixture arrives. A PR that says "not run on <X> data"
 # names the request id.
 #
-# The weekly judge matches open requests against the maintainer's projects and lists candidates
-# locally (`pixi run judge-fixtures`; docs/ai-assist/WEEKLY_JUDGE.md → *Fixture requests*). A cut —
-# `pixi run fixture-cut` — is lab data going into git, so it needs their yes. A request with
+# The weekly judge matches open requests against the maintainer's projects and stages a cut of one
+# candidate outside the repo (`pixi run judge-fixtures`; docs/ai-assist/WEEKLY_JUDGE.md → *Fixture
+# requests*). Taking it into git — `pixi run fixture-accept` — is lab data going public, so it needs
+# their yes. A request with
 # `synthetic = true` an agent meets itself (like CONTMESH). When a fixture that meets a request is registered, the `fixture registry`
 # testset fails until the request is marked met — so this list cannot go stale silently.
 #

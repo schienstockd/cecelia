@@ -584,6 +584,7 @@ function onKey(ev: KeyboardEvent) {
     removeMark(selectedIdx.value); ev.preventDefault(); return
   }
   if (ev.key === 'Escape') {
+    if (ev.defaultPrevented) return   // a popover or dialog on top already took it
     if (draftKind.value) clearDraft()
     else if (selectedIdx.value !== null) selectedIdx.value = null
     else cancel()

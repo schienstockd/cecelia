@@ -12,7 +12,8 @@
       { "name": "pan",  "lanes": ["x", "y", "ribbonLo", "ribbonHi"] },
       { "name": "trail", "lanes": ["head", "length", "umPerSize", "unused1"] },
       { "name": "zwin", "lanes": ["off", "shown", "unused0", "unused1"] },
-      { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
+      { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "lens"] },
+      { "name": "lens", "lanes": ["x", "y", "r", "rimPx"] }
     ]
   },
   "tile": {
@@ -26,7 +27,8 @@
       { "name": "lab",  "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
       { "name": "ov",   "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
       { "name": "ovx",  "lanes": ["ribbonLo", "ribbonHi", "trailHead", "trailLength"] },
-      { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
+      { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "lens"] },
+      { "name": "lens", "lanes": ["x", "y", "r", "rimPx"] }
     ]
   },
   "brick": {
@@ -47,7 +49,8 @@
       { "name": "prevDims", "lanes": ["nx", "ny", "nz", "unused"] },
       { "name": "trail",    "lanes": ["head", "length", "umPerSize", "unused1"] },
       { "name": "zwin",     "lanes": ["off", "shown", "unused0", "unused1"] },
-      { "name": "ch",       "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
+      { "name": "ch",       "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "lens"] },
+      { "name": "lens", "lanes": ["x", "y", "r", "rimPx"] }
     ]
   }
 }

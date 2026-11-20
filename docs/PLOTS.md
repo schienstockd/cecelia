@@ -244,6 +244,29 @@ Hosts declare it, renderers consume it: `GatePlotPanel` and `GateMontage` pass
 it simply sets Observable Plot's `y: { reverse: true }`. `density.ts` is exempt — it bins the grid in
 DATA order and never touches pixels; `gridToPx` converts those back through the shared mapping.
 
+## Population positions — where the populations sit on the image
+
+`popPositions` (`components/plots/PopPositionsView.vue`, an interactive view) draws every cell of the
+segmentations the picked populations live on (a co-clustered run or a multi-segmentation pick draws
+each; with nothing picked, the active one) at its centroid — µm when calibrated, y downward like the image — in the gate plot's
+density colours (dimmed once populations are shown), with each picked population's cells in its colour, one square tile per selected image, at one frame (a slider)
+or all frames at once. It is the old R version's read-only gating plot of X/Y with populations on top.
+Any population type: a track family (behaviour clusters, tracked cells) resolves to its member cells
+in every frame, so a behaviour cluster is coloured along its tracks and a region shows the cells it
+holds at each timepoint. One family per plot, like every plot here. A cell in several picked
+populations takes the colour of the deepest (a child picked after its parent stays visible). An image
+the picked populations are not on draws no tile, rather than another segmentation's cells. Captions are
+image uids (the name on hover): names run to two lines and push the maps down.
+
+It is offered on the Analysis board, on the Cluster and Region pages (`clusterPage` — there it draws
+the populations the page's manager has switched on, the way the UMAP does) and on the Phenotype,
+Behaviour and Spatial pages through the registry's **`modules`** field: a view names the summary
+module pages that offer it, with each page's families — the same shape and curation as a summary
+spec's `modules`. `SummaryCanvas` reads it (`moduleViewKeys`, `popTypesFor(key, module)`), so a page
+lists only its own families. Data: `GET /api/plots/pop-positions` (`app/src/plotting/pop_positions.jl`
+→ `pop_positions`; population membership through `pop_index_by_label`, shared with the UMAP's
+colour-by-population). Layers: `plots/popPositions.ts` (tested). Drawn by `GateScatterCell`, read-only.
+
 ## 0. Rendering engine — Observable Plot
 
 The summary canvas renders with **Observable Plot** (`@observablehq/plot`), NOT Vega-Lite. We started
@@ -464,9 +487,15 @@ add a new plot with its own popover/menu, follow this pattern — a plain absolu
    **Axis order.** The series axis is category-sorted (`_sort_cats`: numeric-when-all-numeric, else
    lex) on the primary axis (attribute value when `attr_map` is set, else `uID`). So a two-attribute
    cross like "Treatment.Mouse" groups cleanly ("MerTK.M2" → "WT.M1" → "WT.M3") instead of reading in
-   image-insertion order. Within an image key the **populations follow the user's pick order** (the
+   image-insertion order. **By attribute, the user can override it**: the picker's *attribute order*
+   strip (shown while comparing by attribute, one chip per group the selected images form) drags the
+   groups, and the panel sends them as `groupOrder` — those groups lead in that order, any it doesn't
+   name follow category-sorted (`_ordered_cats`). The order is kept per attribute combination
+   (`attrOrder` in the canvas's shared view state); the track plots take the same `groupOrder`. Within an image key the **populations follow the user's pick order** (the
    request's targets, `_pop_rank`) — the picker's *plot order* strip drags them; a population nobody
-   picked sorts after, by name. The colour legend inherits the same domain. Same image rule in
+   picked sorts after, by name. The strip shows only picks the active plot's picker lists — on a mixed
+   board the selection also holds other slots' families, which a reorder keeps in place
+   (`mergePickOrder`). The colour legend inherits the same domain. Same image rule in
    `_track_image_groups` for the track-plot family.
 
    **`groupBy` — a generic categorical sub-axis.** Optionally split the measure by the levels of any
@@ -889,7 +918,7 @@ Observable Plot covers both natively.
 
 **Heatmap (`heatmap` ChartType, backend `chartType: "matrix"`) — implemented.** A matrix POOLS the
 whole `pop_df` frame (every selected population/segmentation/image) into ONE grid — a composition view,
-not a per-series overlay. Two **modes** (generic, reusable for any data):
+not a per-series overlay. Three **modes** (generic, reusable for any data):
 - **profile** — rows = `measures` (the spec's `measureOptions`), columns = the levels of a categorical
   `category` column; each cell = the **mean** of that measure for cells in that level: the **"state
   signature"** (what properties do cells in each HMM state have). Each row is normalised so
@@ -904,6 +933,12 @@ not a per-series overlay. Two **modes** (generic, reusable for any data):
   transitions `"1_2"`, or the cross-model hybrid `"1.2_3.4"` — the hybrid joins state columns with
   `.`, so the FIRST `sep` splits prev|cur). Cell = count, or a rate (`row` = P(to|from), `col` =
   P(from|to), `total` = fraction): the **transition matrix**.
+- **composition** — rows = the selected populations, columns = the levels of a categorical column
+  (the spatial region run, `regions.{suffix}` — the plot's **measure**, so no Category control). Cell =
+  `col` fraction of the region (default — what is the region made of), `row` fraction of the population
+  (where does it live), `enrichment` log2(observed/expected) on a diverging scale symmetric about 0 (a
+  zero count is a blank tile), or counts. Margins are over the selected populations; named regions read
+  by name. Plot def: `region_composition.json`, which also offers the per-image stacked/box views.
 
 Backend: `_matrix_agg(df; mode, measures, category, separator, zscore, normalize)` in
 `plot_data.jl`, dispatched from `_summary_agg` when `chart_type == "matrix"` (and threaded through all

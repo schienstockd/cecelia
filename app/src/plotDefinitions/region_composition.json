@@ -1,0 +1,26 @@
+{
+  "id": "region_composition",
+  "label": "Region composition",
+  "category": "makeup",
+  "sketch": "regions",
+  "answers": "How many cells of each type sit in each spatial region — what each region is made of, where each type lives, and which types a region is enriched for?",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["heatmap", "stacked100", "stacked", "frequency", "boxplot", "strip", "bar"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "clust", "granularity": "cell", "label": "Cell clusters" },
+      { "popType": "flow",  "granularity": "cell", "label": "Gated" }
+    ],
+    "composition": true,
+    "obsMeasurePatterns": [
+      { "match": "regions.", "label": "Regions" }
+    ],
+    "matrix": { "mode": "composition" }
+  },
+  "scopeModes": ["per_image", "summarised", "by_attr"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}

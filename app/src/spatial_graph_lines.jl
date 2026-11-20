@@ -37,6 +37,9 @@ names no axes. A node's frame is the graph's `_t` (built per timepoint), else it
 function spatial_graph_segments(img::CciaImage, suffix::AbstractString)
     path = img_spatial_graph_path(img, suffix)
     isfile(path) || return nothing
+    grid = spatial_graph_window_grid(path)
+    grid === nothing || return window_grid_segments(grid, first(img_physical_sizes(img));
+                                                    is_stack = :Z in img_axes(img))
     g = spatial_graph_edges(path)
     n = length(g.label)
     x = fill(NaN32, n); y = fill(NaN32, n); z = zeros(Float32, n)
@@ -87,6 +90,31 @@ function spatial_graph_segments(img::CciaImage, suffix::AbstractString)
 end
 
 """
+    window_grid_segments(grid, sizes_zyx; is_stack=false) -> SpatialGraphSegments
+
+A fixed-window graph drawn as its TILE BORDERS: one line per tile edge across the grid, in native voxel
+coordinates (the grid is µm, `sizes_zyx` µm per voxel), on every frame (`t` -1) and — through a stack —
+every plane (`flat`, plane -1). The tiles are what a cell is placed on; each window spans the 2 × 2
+tiles around its centre. A grid over Z (windows as cubes) is drawn as its XY grid. A line has no cells
+at either end (value_name ""), which "only between shown populations" keeps (`spatial_graph_between`).
+"""
+function window_grid_segments(grid, sizes_zyx; is_stack::Bool = false)
+    t = grid.tile
+    ext(ax) = (i = findfirst(==(ax), grid.axes); i === nothing ? 0.0 : grid.shape[i] * t)
+    n(ax)   = (i = findfirst(==(ax), grid.axes); i === nothing ? 0 : grid.shape[i])
+    ux = physical_size_for_axis(sizes_zyx, :x); uy = physical_size_for_axis(sizes_zyx, :y)
+    X, Y = ext("x") / ux, ext("y") / uy
+    segs = SkeletonSegments((Float32[] for _ in 1:6)..., Int[], Int[], Int[], is_stack)
+    line!(x0, y0, x1, y1) = (push!(segs.x0, x0); push!(segs.y0, y0); push!(segs.z0, 0f0);
+                             push!(segs.x1, x1); push!(segs.y1, y1); push!(segs.z1, 0f0);
+                             push!(segs.t, -1); push!(segs.plane, is_stack ? -1 : 0); push!(segs.type, -1))
+    for k in 0:n("x"); line!(Float32(k * t / ux), 0f0, Float32(k * t / ux), Float32(Y)); end
+    for k in 0:n("y"); line!(0f0, Float32(k * t / uy), Float32(X), Float32(k * t / uy)); end
+    m = length(segs)
+    SpatialGraphSegments(segs, fill("", m), fill(-1, m), fill("", m), fill(-1, m), 0, 0, false)
+end
+
+"""
     spatial_graph_between(g, cells) -> SkeletonSegments
 
 `g`'s segments whose two cells are both in `cells` (a set of `(valueName, label)`) — the edges between
@@ -95,6 +123,8 @@ the populations shown, for "only between shown populations". The viewer filters 
 """
 function spatial_graph_between(g::SpatialGraphSegments, cells::AbstractSet{Tuple{String,Int}})
     s = g.segs
-    k = [i for i in 1:length(s) if (g.a_vn[i], g.a_label[i]) in cells && (g.b_vn[i], g.b_label[i]) in cells]
+    # a window graph's tile borders join no cells (value_name "") — they are kept whatever is shown
+    k = [i for i in 1:length(s) if isempty(g.a_vn[i]) ||
+         ((g.a_vn[i], g.a_label[i]) in cells && (g.b_vn[i], g.b_label[i]) in cells)]
     SkeletonSegments(s.x0[k], s.y0[k], s.z0[k], s.x1[k], s.y1[k], s.z1[k], s.t[k], s.plane[k], s.type[k], s.flat)
 end

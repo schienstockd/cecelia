@@ -18,6 +18,7 @@ or a fourth graph):
                finds a node's cell by label alone (not segmentation AND label) puts a T end where the
                B cell of that label is — 7 px off.
   cross.h5ad   per timepoint, over TWO segmentations: B (as net.h5ad) and T.
+  win.h5ad     FIXED WINDOWS (`WINDOW` µm): no edges, the grid in `uns`, each node's frame in `_t`.
 
 Not a TestCase (the discovery pattern is `test_*.py`) — a generator for the fixtures the Julia API
 suite reads (`api/test/suite/spatial_graph_lines.jl`).
@@ -35,6 +36,7 @@ PHYS = [1.0, 1.0, 1.0]
 RADIUS = 60.0
 FRAMES = 3
 T_SHIFT_X = 7.0      # pixels
+WINDOW = 60.0        # µm (= px here): 30 µm tiles
 CROSS = os.path.normpath(os.path.join(_ROOT, "..", "graph-cross"))
 T_TABLE = os.path.join(CROSS, "T.h5ad")
 
@@ -62,11 +64,12 @@ def _write_t_table():
     return tx.obs.index.astype(int).tolist()
 
 
-def _write(name, per_timepoint, method="delaunay", n_neighs=6, extra=(), out_dir=None):
+def _write(name, per_timepoint, method="delaunay", n_neighs=6, extra=(), out_dir=None, window_size=WINDOW):
     segs = [{"valueName": "B", "propsPath": os.path.join(IMG, "labelProps", "B.h5ad"), "labels": _labels()},
             *extra]
     adata, obs = spatial_utils.build_pooled_image_graph(
-        segs, PHYS, method=method, radius=RADIUS, n_neighs=n_neighs, per_timepoint=per_timepoint)
+        segs, PHYS, method=method, radius=RADIUS, n_neighs=n_neighs, per_timepoint=per_timepoint,
+        window_size=window_size)
     meta = {"method": method, "radius": RADIUS, "nNeighbours": n_neighs, "perTimepoint": per_timepoint,
             "valueNames": [sg["valueName"] for sg in segs]}
     path = os.path.join(out_dir or os.path.join(IMG, "spatialGraph"), f"{name}.h5ad")
@@ -85,3 +88,4 @@ if __name__ == "__main__":
     os.makedirs(CROSS, exist_ok=True)
     _write("cross", True, extra=[{"valueName": "T", "propsPath": T_TABLE, "labels": _write_t_table()}],
            out_dir=CROSS)
+    _write("win", True, method="windows", out_dir=CROSS)

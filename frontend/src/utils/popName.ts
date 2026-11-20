@@ -9,6 +9,9 @@
 //    toast); this catches the same-list duplicate immediately as the user types.
 // Returns a human-readable message, or null when the name is acceptable.
 
+import { popTypeInfo } from '../plots/popTypeRegistry'
+import type { ClusterPopType } from './clusterMeasure'
+
 export const DERIVED_POP_PREFIX = '_'
 
 export function popNameError(
@@ -42,3 +45,78 @@ export const popPath = (parent: string, name: string) =>
 // Is `path` inside `sub`'s own subtree (or `sub` itself)? The cycle guard a re-parent needs — a
 // population cannot be moved under one of its own descendants (Julia `move_pop!` rejects it too).
 export const isInSubtree = (path: string, sub: string) => path === sub || path.startsWith(sub + '/')
+
+const segsOf = (path: string) => path.split('/').filter(Boolean)
+
+/**
+ * Display labels for populations SHOWN TOGETHER, by path: each pop's own name, unless another pop in
+ * the same list shares it — then each clashing pop climbs its path one step at a time until they
+ * differ ("/qc/OTI/_tracked" + "/qc/non-OTI/gBT/_tracked" → "OTI/_tracked", "gBT/_tracked"). Every
+ * tracked pop is called `_tracked`, so a flat list of leaf names alone is a list of identical rows.
+ *
+ * `nameOf` overrides a pop's own (leaf) name — a payload's `name` field — when it can differ from the
+ * path's last segment; the climbed parents always come from the path. A path listed twice gets one
+ * label. The Julia twin is `pop_display_labels` (`app/src/gating/popmanager/types.jl`).
+ */
+export function popDisplayLabels(
+  paths: readonly string[], nameOf?: (path: string) => string | undefined,
+): Map<string, string> {
+  const uniq = [...new Set(paths)]
+  const segs = new Map(uniq.map(p => [p, segsOf(p)]))
+  const depth = new Map(uniq.map(p => [p, 1]))
+  const label = (p: string) => {
+    const s = segs.get(p)!, d = depth.get(p)!
+    const own = nameOf?.(p) ?? s[s.length - 1] ?? p
+    return s.length <= 1 || d <= 1 ? own : [...s.slice(-d, -1), own].join('/')
+  }
+  for (;;) {
+    const byLabel = new Map<string, string[]>()
+    for (const p of uniq) byLabel.set(label(p), [...(byLabel.get(label(p)) ?? []), p])
+    let climbed = false
+    for (const clash of byLabel.values()) {
+      if (clash.length < 2) continue
+      for (const p of clash) {
+        if (depth.get(p)! < segs.get(p)!.length) { depth.set(p, depth.get(p)! + 1); climbed = true }
+      }
+    }
+    if (!climbed) break
+  }
+  return new Map(uniq.map(p => [p, label(p)]))
+}
+
+/**
+ * Swap a display label's own (last) name for `own`, keeping the parents it climbed: for a list whose
+ * pops come from several segmentations, where the same path can carry a different name in each.
+ */
+export const withOwnName = (label: string, own: string | undefined) => {
+  if (!own) return label
+  const i = label.lastIndexOf('/')
+  return i > 0 ? `${label.slice(0, i + 1)}${own}` : own
+}
+
+/**
+ * Labels for a list of pop ROWS shown together, possibly from several segmentations: each row's own
+ * name, its parents climbed where names clash (`popDisplayLabels`), and its segmentation in front
+ * only when the same label still appears for two segmentations. Index-aligned with `rows`.
+ */
+export function popRowLabels(rows: readonly { vn?: string; path: string; name?: string }[]): string[] {
+  const climbed = popDisplayLabels(rows.map(r => r.path))
+  const base = rows.map(r => withOwnName(climbed.get(r.path) ?? r.path, r.name))
+  const vnsOf = new Map<string, Set<string>>()
+  base.forEach((b, i) => vnsOf.set(b, (vnsOf.get(b) ?? new Set()).add(rows[i]!.vn ?? '')))
+  return base.map((b, i) => (vnsOf.get(b)!.size > 1 && rows[i]!.vn ? `${rows[i]!.vn} ${b}` : b))
+}
+
+// What the manager's "+" names a new cluster population: its run and kind, then the first free number
+// — `win50 region 1`. A segmentation's populations of every run share ONE name space (and pop types
+// share it too, `pop_name_conflict`), so a name numbered within the run alone collides with another
+// run's `Population 1`. The kind keeps a region run and a cluster run of the same name apart.
+export function nextClusterPopName(suffix: string, popType: ClusterPopType, existingNames: string[]): string {
+  // the kind is the pop-type registry's label, singular: "Regions" → "region"
+  const kind = (popTypeInfo(popType)?.label ?? 'clusters').toLowerCase().replace(/s$/, '')
+  const base = `${suffix} ${kind}`
+  const taken = new Set(existingNames.map(e => e.trim().toLowerCase()))
+  let k = 1
+  while (taken.has(`${base} ${k}`.toLowerCase())) k++
+  return `${base} ${k}`
+}
