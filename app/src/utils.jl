@@ -18,6 +18,19 @@ outside the process (a bundle manifest, a request) before it becomes a path. Sam
 valid_uid(uid::AbstractString) = occursin(r"^[A-Za-z0-9_-]+\z", uid)
 
 """
+    path_inside(root, path; or_root = false) -> Bool
+
+Is `path` (made absolute, `..` resolved) strictly inside directory `root` — or, with `or_root`, `root`
+itself? Compares with a trailing separator, so `/x/dist_old/a` is not inside `/x/dist` — the
+bare-prefix bug (security audit F14). Lexical: symlinks are not followed.
+"""
+function path_inside(root::AbstractString, path::AbstractString; or_root::Bool = false)::Bool
+    r = rstrip(abspath(root), ['/', '\\'])
+    p = abspath(path)
+    (or_root && rstrip(p, ['/', '\\']) == r) || startswith(p, r * Base.Filesystem.path_separator)
+end
+
+"""
     bad_uid_in_json(text; keys = ("projectUid",)) -> Union{String,Nothing}
 
 The first value of a `"<key>": "…"` pair anywhere in a JSON text (any depth) that fails `valid_uid`,

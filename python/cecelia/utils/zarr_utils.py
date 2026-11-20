@@ -82,6 +82,13 @@ IMAGE_COMPRESSOR_ENV = 'CECELIA_IMAGE_COMPRESSOR'
 LABEL_COMPRESSOR = dict(cname='zstd', clevel=3, shuffle='noshuffle')
 
 
+def path_inside(root, path) -> bool:
+    """Is `path` (absolute, `..` resolved) strictly inside directory `root`? Lexical, like Julia's
+    `path_inside` — a trailing separator, so `/x/store_old` is not inside `/x/store`."""
+    r = os.path.abspath(root).rstrip("/\\") + os.sep
+    return os.path.abspath(path).startswith(r)
+
+
 def image_compressor_name():
     """The configured image-compressor choice, falling back to `IMAGE_COMPRESSOR_DEFAULT`.
 
@@ -812,6 +819,9 @@ def set_ngff_axes(path, axis_names, scale=None, units=None, channels=None):
     ms0.pop("labels", None)
 
     # sanity: the level-0 array's ndim must match the axis list we're about to annotate
+    # `.zattrs` is the file's author's text: a dataset path must stay inside the store (audit F15)
+    if not all(path_inside(grp_path, os.path.join(grp_path, str(d.get("path", "0")))) for d in datasets):
+        return False
     try:
         arr = zarr.open_array(os.path.join(grp_path, str(datasets[0].get("path", "0"))), mode='r')
         if arr.ndim != len(axis_names):

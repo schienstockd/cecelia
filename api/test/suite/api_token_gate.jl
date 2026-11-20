@@ -130,6 +130,20 @@ end
     end
 end
 
+# Same containment shapes elsewhere in the API (security audit F14/F15, found by recital's fanout).
+@testset "API: confinement is by separator; .zattrs paths stay in the store" begin
+    r = mktempdir()
+    @test _fs_confined(joinpath(r, "a"), r) && _fs_confined(r, r) && _fs_confined(r * "/", r)
+    @test !_fs_confined(r * "_other", r) && !_fs_confined(r * "2/x", r)
+    @test _fs_confined("/anything", "")                                         # no sandbox configured
+    store = mkpath(joinpath(r, "s.ome.zarr"))
+    write(joinpath(store, ".zattrs"), """{"multiscales":[{"datasets":[{"path":"../evil"},{"path":"0"}]}]}""")
+    mkpath(joinpath(r, "evil")); write(joinpath(r, "evil", ".zarray"), """{"shape":[7,4,4],"chunks":[1,4,4]}""")
+    mkpath(joinpath(store, "0")); write(joinpath(store, "0", ".zarray"), """{"shape":[1,2,2],"chunks":[1,2,2]}""")
+    lv = store_pyramid_levels(store)
+    @test lv !== nothing && [l.path for l in lv] == ["0"]
+end
+
 # The AI switch (AI_TOGGLE_PLAN D1, app/src/ai/ai_switch.jl): with AI off every request marked
 # `X-Cecelia-Client: claude` is refused in the stream handler — JSON routes, the binary routes that skip
 # `handle_http`, and the WebSocket upgrade — while the app's own requests go through.

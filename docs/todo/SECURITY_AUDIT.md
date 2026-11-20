@@ -1,9 +1,9 @@
 # SECURITY_AUDIT
 
-Status: **F1–F3 fixed** (#2386), **F4–F8, F12 and bundle symlinks fixed** (branch
-`security-audit-batch2`, 2026-11-20); F9–F11, F13–F16 open. GitHub secret scanning + push protection
-were already on (public-repo default); CodeQL default setup being enabled; Dependabot security
-updates off. Scoping audit run 2026-11-19 from the archived brief
+Status: **F1–F9, F12–F15 and bundle symlinks fixed** (#2386, #2390, branch `security-audit-batch3`,
+2026-11-20); F10, F11, F16 left by decision (below). GitHub secret scanning + push protection were
+already on (public-repo default); CodeQL default setup enabled; Dependabot security updates off.
+Scoping audit run 2026-11-19 from the archived brief
 [`../archive/SECURITY_SCOPE_AUDIT_PROMPT.md`](../archive/SECURITY_SCOPE_AUDIT_PROMPT.md) by a subagent;
 F1, F2 and the plugin-install sink re-read by the parent session.
 
@@ -60,6 +60,24 @@ targeted model review of the hot spots in §6. Below the fix log is the audit as
   Rscript and lies outside the projects dir (`_trusted_rscript`); otherwise this machine's.
 - **F8:** `plugin_name_from_url` is anchored to `^https?://github.com/` and refuses `.`/`..`.
   Plugin install still accepts any http(s) URL — a capability, so left for the maintainer.
+
+## Fixed, batch 3 (2026-11-20, `security-audit-batch3`)
+
+- **F9:** a notebook revision (`revise_notebook`, Claude's only) writes every cell it adds or changes
+  **disabled**, in Pluto's own on-disk form; one still disabled from an earlier revision stays so
+  (`_cells_to_disable`). Pluto's auto-reload runs added and changed cells (`update_from_file` →
+  `update_save_run!`), so a revision ran in an open notebook with no click. Checked against Pluto's
+  loader: the cell reads back `is_disabled`. The user reads the greyed cell and enables it.
+  **Not covered:** a notebook Claude *creates* runs all its cells when the user opens it.
+- **lodash-es** 4.17.23 → 4.18.1 inside mermaid's range (lock only); `npm audit` reports 0.
+- **F13:** sandboxed agents may not read `~/.cecelia` or the `CECELIA_DEV_DIR` in their env.
+- **F14 / F15:** containment by `path_inside` (separator, not bare prefix): the static frontend, and
+  the OME-Zarr `.zattrs` dataset path in the Julia reader and `set_ngff_axes`.
+- **Plugin install** takes https only.
+
+**Left by decision:** F10 (autonomous server path params — evals only), F11 (the AI-off switch is a
+label; documented), F16 (Actions pinned by tag, bioformats downloads without a checksum — churn for
+little gain).
 
 ---
 

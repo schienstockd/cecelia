@@ -977,7 +977,9 @@ end
 const FS_ROOT = get(ENV, "CECELIA_FS_ROOT", "")
 
 # Whether a path is inside the sandbox (always true when no sandbox is configured).
-_fs_confined(path::AbstractString)::Bool = isempty(FS_ROOT) || startswith(path, FS_ROOT)
+# By separator, not a bare prefix: `/data/lab_other` is not inside `/data/lab` (security audit F14 shape).
+_fs_confined(path::AbstractString, root::AbstractString = FS_ROOT)::Bool =
+    isempty(root) || Cecelia.path_inside(root, path; or_root = true)
 
 # Parent dir, or `nothing` at the navigable ceiling (the filesystem root `/` or a Windows drive, or
 # FS_ROOT when sandboxed) so the UI stops offering "up".

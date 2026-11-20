@@ -21,6 +21,11 @@ from cecelia.effectiveness.claude_cli import limit_resets_at, rate_limit, synthe
 #: The keyring's, ssh-agent's and gpg-agent's sockets (Linux): out of Bash's reach.
 _RUNTIME = [p for p in ([f"/run/user/{os.getuid()}"] if hasattr(os, "getuid") else []) if os.path.isdir(p)]
 
+#: Cecelia's config dirs hold `api-token` — with it, the agent could drive the live backend (security
+#: audit F13). The installed app's, and a dev dir named in this process's env. Tests never need them:
+#: `app/test/runtests.jl` makes its own temp config.
+_CECELIA_CONFIG = ["~/.cecelia"] + [d for d in [os.environ.get("CECELIA_DEV_DIR", "").strip()] if d]
+
 # Probed against Claude Code: the sandbox wraps Bash only (bubblewrap on Linux; needs an AppArmor profile
 # for `bwrap` on Ubuntu 24.04); `permissions.deny` covers the file tools, and still holds under
 # skip-permissions. CLAUDE.md still loads.
@@ -32,13 +37,15 @@ SANDBOX_SETTINGS = {
         "network": {"deniedDomains": ["*"]},  # `allowedDomains` is auto-approved under skip-permissions
         # Julia's caches only, so `julia --project=app` can precompile; the installed packages
         # (`environments`, `packages`, `registries`) stay read-only.
-        "filesystem": {"denyRead": ["~/.ssh", "~/.gnupg", "~/.config/gh", "~/.claude", *_RUNTIME],
+        "filesystem": {"denyRead": ["~/.ssh", "~/.gnupg", "~/.config/gh", "~/.claude", *_CECELIA_CONFIG,
+                                    *_RUNTIME],
                        "allowWrite": ["~/.julia/compiled", "~/.julia/logs", "~/.julia/scratchspaces"]},
     },
     "permissions": {
         "deny": ["Write(~/**)", "Edit(~/**)", "NotebookEdit(~/**)",
                  "Read(~/.ssh/**)", "Read(~/.gnupg/**)", "Read(~/.config/gh/**)",
-                 "Read(~/.claude/**)", "WebFetch", "WebSearch"],
+                 "Read(~/.claude/**)", *(f"Read({d.rstrip('/')}/**)" for d in _CECELIA_CONFIG),
+                 "WebFetch", "WebSearch"],
     },
 }
 

@@ -290,6 +290,24 @@ class CalibrationRestampTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_dataset_path_outside_the_store_is_refused(self):
+        # security audit F15: `.zattrs` is the file author's text; a dataset path may not leave the store
+        p = os.path.join(self.tmp, 'evil.ome.zarr')
+        zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, zarr_format=2)
+        import json
+        za = os.path.join(p, '.zattrs')
+        with open(za, encoding='utf-8') as f:
+            attrs = json.load(f)
+        attrs['multiscales'][0]['datasets'][0]['path'] = '../elsewhere'
+        with open(za, 'w', encoding='utf-8') as f:
+            json.dump(attrs, f)
+        # a real array there, so only the containment check (not a missing array) can refuse it
+        shutil.copytree(os.path.join(p, '0'), os.path.join(self.tmp, 'elsewhere'))
+        self.assertFalse(zarr_utils.set_ngff_axes(p, ['t', 'c', 'z', 'y', 'x']))
+        self.assertTrue(zarr_utils.path_inside(p, os.path.join(p, '0')))
+        self.assertFalse(zarr_utils.path_inside(p, p + '_old'))
+        self.assertTrue(zarr_utils.path_inside(p + '/', os.path.join(p, '0')))   # a root typed with its slash
+
     def test_restamp_is_readable_back_in_both_formats(self):
         for fmt in (2, 3):
             p = os.path.join(self.tmp, f'restamp{fmt}.ome.zarr')

@@ -26,7 +26,7 @@ import sys
 import time
 
 import cecelia.utils.script_utils as script_utils
-from cecelia.utils.zarr_utils import STAGING_SUFFIX, SUPERSEDED_SUFFIX
+from cecelia.utils.zarr_utils import STAGING_SUFFIX, SUPERSEDED_SUFFIX, path_inside
 
 _SUFFIXES = (STAGING_SUFFIX, SUPERSEDED_SUFFIX)
 
@@ -139,8 +139,9 @@ def _incomplete_levels(path):
     else:
         series = os.path.join(path, '0')
         base = series if os.path.isdir(series) else path
-    present = sum(1 for d in datasets
-                  if os.path.isdir(os.path.join(base, str(d.get('path', '')))))
+    present = sum(1 for d in datasets      # `.zattrs` may not point outside the store (audit F15)
+                  if path_inside(base, os.path.join(base, str(d.get('path', ''))))
+                  and os.path.isdir(os.path.join(base, str(d.get('path', '')))))
     return (len(datasets), present)
 
 

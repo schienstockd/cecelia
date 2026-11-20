@@ -34,8 +34,8 @@ function api_plugins_install(body::Vector{UInt8})
     url = strip(string(get(req, "url", "")))
     ref = strip(string(get(req, "ref", "")))
     isempty(url) && return 400, JSON3.write((; error = "url is required"))
-    startswith(url, "http://") || startswith(url, "https://") ||
-        return 400, JSON3.write((; error = "url must be http(s)"))
+    # https only: a plugin is code that runs as you, and plain http lets anyone on the network swap it
+    startswith(url, "https://") || return 400, JSON3.write((; error = "url must be https"))
 
     name = Cecelia.plugin_name_from_url(url)
     was_loaded = _plugin_restart_needed(name)

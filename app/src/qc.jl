@@ -525,8 +525,9 @@ function pyramid_layout(zarr_path::AbstractString)
 
     # L0 shape + chunks. Both are XY-only for this finding — T/C/Z stay at 1 across every level and
     # do not enter the "how many tiles cover a frame" question the pyramid depth is being scored on.
-    l0_meta = try zarr_array_meta(joinpath(base, string(get(first(datasets), :path, "0"))))
-              catch; nothing end
+    l0_path = joinpath(base, string(get(first(datasets), :path, "0")))
+    path_inside(base, l0_path) || return nothing            # `.zattrs` may not point outside (audit F15)
+    l0_meta = try zarr_array_meta(l0_path) catch; nothing end
     isnothing(l0_meta) && return nothing
     l0_shape = collect(Int, get(l0_meta, :shape, Int[]))
     l0_chunk = _pyramid_chunk_shape(l0_meta)
@@ -540,7 +541,9 @@ function pyramid_layout(zarr_path::AbstractString)
     # Deepest level's actual chunk grid, computed from what is on disk rather than assumed 2× per
     # step. bf2raw's cap-to-frame keeps deepest at 1×1 even when levels are short (see FtGoJO);
     # a re-tiling writer might not.
-    deep_meta = try zarr_array_meta(joinpath(base, string(get(last(datasets), :path, "0"))))
+    deep_path = joinpath(base, string(get(last(datasets), :path, "0")))
+    path_inside(base, deep_path) || return nothing          # (audit F15, as L0 above)
+    deep_meta = try zarr_array_meta(deep_path)
                 catch; nothing end
     deep_shape = isnothing(deep_meta) ? Int[] : collect(Int, get(deep_meta, :shape, Int[]))
     deep_chunk = isnothing(deep_meta) ? Int[] : _pyramid_chunk_shape(deep_meta)
