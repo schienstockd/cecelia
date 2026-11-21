@@ -613,6 +613,46 @@ function _replicate_frame(df::DataFrame, unit_map::AbstractDict, attr_map)
     (out, am)
 end
 
+# The SuperPlot layer (Lord et al. 2020, SuperPlots, J Cell Biol 219(6):e202001064,
+# doi:10.1083/jcb.202001064): with the replicate as the unit, a dot is a replicate's mean, and the cells
+# it summarises are drawn underneath, coloured by the replicate they belong to — the spread between
+# cells stays visible while the test runs on the means. Per series group, its finite values sorted and
+# strided down to `max_points`, each with its unit (the frame's `uID`, the replicate key after
+# `_replicate_frame`). Keyed like `_superplot!` reads it.
+function _superplot_values(groups, m::AbstractString, max_points::Int)
+    out = Dict{NTuple{4,String},Tuple{Vector{Float64},Vector{String}}}()
+    for g in groups
+        (:uID in propertynames(g.sub) && m in names(g.sub)) || continue
+        v = g.sub[!, m]; u = g.sub[!, :uID]
+        keep = [i for i in eachindex(v) if v[i] isa Real && isfinite(v[i])]
+        vals = Float64[v[i] for i in keep]; units = String[string(u[i]) for i in keep]
+        perm = sortperm(vals); vals = vals[perm]; units = units[perm]
+        if max_points > 0 && length(vals) > max_points
+            idx = round.(Int, range(1, length(vals); length = max_points))
+            vals = vals[idx]; units = units[idx]
+        end
+        out[(String(g.sid), String(g.vn), String(g.uid), String(g.grp))] = (vals, units)
+    end
+    out
+end
+
+# Give each series its replicate means with their units (`points` + `pointUnits`) and the cells under
+# them (`cellPoints` + `cellUnits`). `groups` and `series` are parallel (the series are mapped from them).
+function _superplot!(series, groups, cell_groups, m::AbstractString, max_points::Int)
+    means = _superplot_values(groups, m, max_points)
+    cells = _superplot_values(cell_groups, m, max_points)
+    for (s, g) in zip(series, groups)
+        k = (String(g.sid), String(g.vn), String(g.uid), String(g.grp))
+        if haskey(means, k)
+            s["points"], s["pointUnits"] = means[k]
+        end
+        if haskey(cells, k)
+            s["cellPoints"], s["cellUnits"] = cells[k]
+        end
+    end
+    series
+end
+
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
@@ -717,6 +757,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # groups within each population (`_stats_within_pops`); otherwise the populations ARE the comparison.
     # Pooled series (`collapse_series`) never carry the attribute — they are the groupBy levels alone.
     stats_fn = (attr_map !== nothing && !collapse_series) ? _stats_within_pops : _stats_from_series
+    cells_df = nothing    # set when the replicate is the unit: the cells under each replicate mean
     # matrix/heatmap pools the whole frame into one grid — handled before the per-series charts below.
     if chart_type == "matrix"
         matrix_mode === nothing && error("plot_summary_data: matrix needs a `matrix_mode` (profile | crosstab)")
@@ -771,6 +812,8 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # `_replicate_frame`): the images of one replicate pool into one unit before the collapse below,
         # so each dot is a mouse and n counts mice.
         unit_map === nothing || ((df, attr_map) = _replicate_frame(df, unit_map, attr_map))
+        # the cells under each replicate, before the collapse — the SuperPlot layer (`_superplot!`)
+        unit_map === nothing || (cells_df = df)
         # IMAGE is the statistical unit: collapse each image to its per-series MEAN/MEDIAN, then plot
         # those per-image summaries (each dot = one image). Pool images into ONE series (by_image=false)
         # unless grouping by an image attribute — then keep one series per attribute value, points = its
@@ -886,6 +929,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
             base_rec = merge(base(g), Dict("points" => pts, "pointIds" => pids))
             has_uid_here ? merge(base_rec, Dict("pointUids" => puids)) : base_rec
         end
+        cells_df === nothing || _superplot!(series, groups, sgroups(cells_df), m, max_points)
         result = withgb(Dict{String,Any}("chartType" => "points", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
         any_ids && (result["pointIdKind"] = granularity == :track ? "track" : "cell")
@@ -1039,6 +1083,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
             end
             has_uid_here ? merge(base_rec, Dict("pointUids" => puids)) : base_rec
         end
+        (cells_df === nothing || !raw_points) || _superplot!(series, groups, sgroups(cells_df), m, max_points)
         result = withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
         any_ids && (result["pointIdKind"] = granularity == :track ? "track" : "cell")

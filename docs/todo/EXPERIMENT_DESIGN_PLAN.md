@@ -232,9 +232,9 @@ Design check and the Acquisition check cover them. In order:
 1. Merge the record (#2415), MCP tools (#2416) and dialog + plots (#2417).
 2. **T3 — the claim check reads the design** (build step 3).
 3. **Plot n + replicate dots**: the n drawn ("5 vs 3 mice") in the plot's footer — built
-   (`unitCountLabel`). Still open: the SuperPlot layer — cell dots coloured by replicate under the
-   replicate means (the rest of build step 2). It needs the server to send each series' cell values
-   with their replicate beside the replicate-level series, so it is its own PR.
+   (`unitCountLabel`), and the SuperPlot layer — built: with the replicate as the unit, the box and
+   strip charts draw each replicate's mean over its cells, both in the replicate's colour
+   (`plots/superplot.ts`, `_superplot!`).
 4. **Freeze and stale (T6)** (build step 5).
 
 Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate

@@ -1528,7 +1528,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
-      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="`One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
+      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="statUnit === 'replicate' ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
                   :measure="hasMeasure ? measure : ''" :ui="ui" />

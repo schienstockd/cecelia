@@ -145,6 +145,11 @@ export interface PlotSeries {
   // one panel-level `defaultImageUid` fallback and the brush picks up numeric collisions from
   // every image. Absent when the series already carries a single uid (per-image plots).
   pointUids?: string[]
+  // The SuperPlot layer (replicate as the unit; plot_data.jl `_superplot!`): each point's replicate
+  // (parallel to `points`, which are then the replicate means), and the cells under them with theirs.
+  pointUnits?: string[]
+  cellPoints?: number[]
+  cellUnits?: string[]
 }
 
 // A series target = a population on a specific segmentation, plus the pop_type it's fetched under.

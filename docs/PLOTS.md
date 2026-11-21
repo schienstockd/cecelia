@@ -665,7 +665,7 @@ each. An image with no replicate stays its own unit. The test and its findings t
 `statUnit` reads as the replicate (resolved at read, never written to `ui`), the Datapoint control
 offers it by name ("mouse"), and a canvas still on the untouched compare default switches once to the
 design's group (`designCompareApply`, the `designApplied` view-state flag); a bullseye in the compare
-row says so. The SuperPlot layer (cell dots under the replicate means) is not built yet. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`.
+row says so. The SuperPlot layer (cell dots under the replicate means) is not built yet. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`. With the replicate as the unit, the box and strip charts are SuperPlots (Lord et al. 2020, doi:10.1083/jcb.202001064): each dot is a replicate's mean, larger, in the replicate's colour, and the cells it summarises sit beneath it, small and faint, in the same colour — one colour per replicate across groups (`plots/superplot.ts`; the server sends `pointUnits` / `cellPoints` / `cellUnits`, `_superplot!` in `plot_data.jl`). The test runs on the means.
 
 **Grouped by image attribute, the test runs within each population.** With `attr_map` the boxes are
 population × attribute group (× `groupBy` level), so `_summary_agg` tests through `_stats_within_pops`:
