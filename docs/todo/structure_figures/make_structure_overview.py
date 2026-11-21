@@ -1,12 +1,14 @@
 """Cecelia structure overview, in the style of the other README figures (`readme-findings.svg`).
 
     python3 make_structure_overview.py structure_overview.svg                      # plan copy
-    python3 make_structure_overview.py ../../../frontend/public/readme-structure.svg  # README copy
+
+The README figure moved to make_readme_overview.py (v3, design first); this v2 figure stays as the
+plan's record of the per-step chips and their evidence.
 
 The pipeline, one record chip per step (what that step leaves on record), the chips funnelling into
 one Checks band (per-step checks, and a claim from a plot as the worked example), then replay, with
 optional AI on top. Each chip names what the code records; evidence per chip is in
-CECELIA_STRUCTURE_PLAN.md → *P2. The schematic*. No gaps are open, so both copies are the same figure.
+CECELIA_STRUCTURE_PLAN.md → *P2. The schematic*.
 """
 import importlib.util
 import sys
