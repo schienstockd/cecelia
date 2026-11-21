@@ -1840,10 +1840,11 @@ const frame = usePlotResize(canvas, () => {
   // Tile mode owns the canvas when a whole-slide plane is active — see `useTiles`. Dispatched HERE
   // rather than upstream because every camera/pointer path funnels through this closure; a second
   // dispatch site would drift from this one.
-  if (useTiles.value) { drawTiles(); return }
+  if (useTiles.value) { drawTiles(); syncLensScale(); return }
   const r = renderer.value
   if (!r) return
   r.resize()
+  syncLensScale()
   // The scale bar is a function of the camera, so it is recomputed exactly where the frame is — not in
   // a watcher that could disagree with what is on screen.
   seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
@@ -4353,7 +4354,7 @@ void taskDefs.ensureLoaded()
 // the frame and planes the markers show, cell pops, track clusters and regions each a group of its own.
 const {
   lensOn, lensPin, lensAllFrames, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
-  trackLens, toggleLensPin, applyLens, lensChannelNames, recordedLens, savedPin: lensSavedPin,
+  trackLens, toggleLensPin, applyLens, syncLensScale, lensChannelNames, recordedLens, savedPin: lensSavedPin,
   restorePin: restoreLensPin, lensReport, placeLens,
 } = useVwLens({
   meta: () => meta.value,
@@ -6905,7 +6906,7 @@ onUnmounted(() => {
         <VwAnnotationsSection :landscape="landscape" :timed="(meta?.nT ?? 0) > 1" :lens-range="lensRange" />
 
         <VwLensesSection v-if="lensQuery.lensFigures.value.length" :lenses="lensQuery.lensFigures.value"
-                         :shown-column="lensQuery.shownScores.value" :error="lensQuery.error.value"
+                         :shown-column="lensQuery.shownScores.value" :image-uid="imageUid" :error="lensQuery.error.value"
                          @show-scores="lensQuery.setShowScores" @go-to="lensQuery.goToLens" @rename="lensQuery.renameLens" @remove="lensQuery.deleteLens" />
 
         <VwChannelsSection :channels="meta!.channels.slice(0, MAX_CHANNELS)" :n-c="meta!.nC" :clipped="clipped" :lens-on="lensOn"

@@ -1041,9 +1041,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    other half, and it needs the MEASURED height — see `legendTopPad` / PlotChart's corrective render. */
 .plot-legend-overlay {
   position: absolute; top: 4px; right: 8px; display: flex; flex-wrap: wrap; gap: 3px 12px;
-  width: max-content; max-width: 58%; justify-content: flex-start;
+  width: max-content; max-width: calc(100% - 16px); justify-content: flex-start;
   border-radius: var(--cc-radius-xs); padding: 1px 2px;
 }
+/* Only a title overlay (top-left) needs the legend kept to the right-hand side; without one the legend
+   uses the panel width, so it wraps only when it has to. */
+.plot-legend-overlay:has(~ .plot-title-overlay) { max-width: 58%; }
+/* The `gap` above spaces the swatches; Plot's own `margin-right: 1em` on each would double it. */
+.plot-legend-overlay > * { margin-right: 0; }
 /* Plot's own swatch styles would otherwise override the theme ink the host sets inline */
 .plot-legend-overlay * { color: inherit !important; }
 .plot-title-overlay {
