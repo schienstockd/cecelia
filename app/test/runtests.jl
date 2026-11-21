@@ -141,6 +141,14 @@ Cecelia._run_task(::_RunEnvTask, ::CciaImage, ::Dict{String,Any};
                   on_process::Function = _ -> nothing) =
     Dict{String,Any}("ok" => true, "runEnv" => Dict{String,Any}("device" => "cuda", "seed" => 0))
 
+# A task that finishes having written nothing (`segment.correct` with every op a no-op) — used to assert
+# the scheduler logs the run `unchanged` and drops the `replaces` stamped at open.
+struct _UnchangedTask <: CciaTask end
+Cecelia._run_task(::_UnchangedTask, ::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    Dict{String,Any}("ok" => true, "skipDownstream" => true, "unchanged" => true)
+
 # A task that computes in microns (declares `requires.scale = [xy]`, as cellNeighbours does) — used to
 # assert the scheduler records and warns about a scale it had to assume (a 3D image's z step).
 struct _ScaleTask <: CciaTask end

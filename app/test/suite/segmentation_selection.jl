@@ -131,6 +131,18 @@ end
         @test only(t.area[t.label .== 35]) == 72                 # 2 × 36 px
         @test read(joinpath(img._dir, "labelProps", "B.h5ad")) == b_before   # B untouched
         @test !haskey(read_ccid_raw(state_file(img))["label_props"], "default")
+        @test get(res, "unchanged", false) !== true              # pixels changed: a real overwrite
+
+        # a correction whose every op is a no-op (36 is already merged away) rewrites nothing: the run
+        # says so, and the scheduler logs it `unchanged` with no `replaces` (`run_unchanged`)
+        t_before = read(joinpath(img._dir, "labelProps", "T.h5ad"))
+        res2 = Cecelia._run_task(Cecelia._task_from_fun_name("segment.correct_measures"), img,
+            Dict{String,Any}("valueName" => "T", "labelOps" => JSON3.write(
+                [Dict("op" => "label.remove", "t" => 0, "ids" => [36])]));
+            on_log = l -> push!(logs, l))
+        @test res2 !== nothing || error(join(logs, "\n"))
+        @test Cecelia.run_unchanged(res2)
+        @test read(joinpath(img._dir, "labelProps", "T.h5ad")) == t_before
     end
 end
 

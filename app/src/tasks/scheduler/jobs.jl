@@ -194,7 +194,8 @@ function _execute_job!(job::TaskJob)
                 close_run_log!(tgt, job.id, string(final);
                                fun_name = fun_name, value_name = value_name, params = job.params,
                                pool = rec.pool_name, by = rec.by, caller = rec.caller,
-                               env = _run_env_with_scale(run_env_of(result), get(defaulted, tgt.uid, nothing)))
+                               env = _run_env_with_scale(run_env_of(result), get(defaulted, tgt.uid, nothing)),
+                               unchanged = final === TASK_DONE && run_unchanged(result))
             end
         catch e
             @warn "run-log close failed" task_id = job.id exception = e

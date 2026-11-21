@@ -1215,6 +1215,7 @@ what says it happened. All three fields are absent on older entries and when the
 |---|---|
 | `inputs` | `[{param, name, ns?, version?, pinned?}]` — every `valueNameSelection` param that does not write (the leaves `_history_leaves` reads for pre-flight and chain-from-history). An empty picker is resolved to the active name it meant. `version` is the pin (`params["version"]`, `pinned: true`) for `valueName`, else `_latest` of a fresh `ccid.json` read — on image versions and label sets; other namespaces carry the name only. Populations stay in `params` (`run_pop_reads`) |
 | `gates` | `[{valueName, path, hash, popType?}]` — every gated population the run reads (`run_gates`: every population picker, track pickers included — `B/qc/_tracked` reads the cell gate `/qc`; `popType: "track"` for a track gate; cluster/region pops are not gates), with the content hash of its gate definition when the run started (`pop_gate_hashes`; covers the parent chain — it names the gate, not the data: a re-segmentation changes cells under the same hash). Gates are edited in place; `gate_state_for_hash` finds the gate a hash names in the sidecar or `gating/{vn}.history.jsonl` (`docs/POPULATION.md` → Storage). A population not in the sidecar is left out |
+| `unchanged` | `true` on a `done` run that left its output byte-identical (its task returned `"unchanged" => true` — a `segment.correct` whose every op was a no-op). Stamped at close, which drops `replaces`: nothing was overwritten, and the run is never anyone's maker |
 | `replaces` | `{name, ns?, version?, taskId?, at?, fun?}` when the output already existed and this run overwrites it: an image version (unless `keepPreviousVersion`), a label set (always — label writers never version), or for a write-into task (tracking, `segment.measureLabels`) the newest earlier run that shares a step with it and wrote that label set — a re-measure names the segment + measure run, a re-track the tracking composite, never the segmentation the tracks went into. `taskId`/`at`/`fun` name the newest `done` run that made it, from the log or its archive; absent = the output predates the log or came from outside it |
 
 **What is stale downstream** — `stale_outputs_for(img)` (`app/src/correction_staleness.jl`, beside the
@@ -1233,7 +1234,9 @@ tracking rebuilds the centroids tracking read and drops the track columns, so it
 re-track after a re-measure only adds track columns, so the measures stay current. A label correction
 with measures (`segment.correct_measures`) rebuilds the table the same way: its tracks are flagged (they
 were linked on the pre-correction labels; the carried-over track columns are not re-linked), as the
-correction report above flags the per-track table. Known gaps (not flagged, as before): a write-into
+correction report above flags the per-track table — unless it rewrote no pixel: a `done` run whose task
+returned `"unchanged" => true` is logged `unchanged` with no `replaces` (`run_unchanged`, stamped by
+`close_run_log!`), and the walk and `_run_maker` pass over it, as it made nothing. Known gaps (not flagged, as before): a write-into
 whose chain does not reach a plain writer — the label set came from a bare segmenter
 (`segment.cellpose`, `importLabels`), so the first standalone measure records no `replaces` — and a bare
 `segment.correct`. The record cannot tell those apart from a re-track without a spec-level "rebuilds
