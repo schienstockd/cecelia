@@ -16,6 +16,22 @@
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "smoothed",
+  "tests": [
+    {
+      "name": "keeps the shape of a 3D two-channel still",
+      "fixture": {"properties": ["image-store", "still", "3d", "marker-names"], "technology": "synthetic"},
+      "params": {"valueName": "default"},
+      "outputs": [
+        {"image": "smoothed", "assert": [
+          {"type": "width", "value": 32},
+          {"type": "height", "value": 16},
+          {"type": "channels", "value": 2},
+          {"type": "depth", "value": 4},
+          {"type": "frames", "value": 1}
+        ]}
+      ]
+    }
+  ],
   "params": [
     {
       "key": "valueName",

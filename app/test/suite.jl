@@ -508,6 +508,11 @@ include(joinpath(@__DIR__, "suite", "correct_carryover_sidecars.jl"))
 # import labels + measure → btrack + track measures → a rectangle gate → clustPops, asserted against
 # the truth by construction. ~22 s in the full suite (~45 s alone), mostly the Python subprocesses.
 include(joinpath(@__DIR__, "suite", "pipeline_golden.jl"))
+# ── Declared task-spec tests ─────────────────────────────────────────────────
+# Every `tests` block in a spec (built-ins, docs/examples/, CECELIA_SPEC_TEST_MODULES) run against its
+# fixture, plus the evaluator's own unit tests. After plugins.jl and the `spec_dirs` helpers.
+include(joinpath(@__DIR__, "suite", "task_spec_tests.jl"))
+include(joinpath(@__DIR__, "suite", "spec_test_output_written.jl"))
 
 # ── chipSelect param type ────────────────────────────────────────────────────
 # "1,2,4,8" was a raw text field, which is a parse error waiting to happen and reads as unfinished.

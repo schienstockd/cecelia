@@ -28,7 +28,7 @@ Each box that has a mechanical gate names the ratchet — a green suite means th
 - [ ] **Bank QC** — `write_qc` with an objective `metrics` count + a `warn` finding for the bad case, under the task's **`value_name`/`outputValueName`** (NOT hardcoded `"default"` — per label set, so cohort works). §1 → *QC*.
 - [ ] **Cohort metrics** — add the keys to `COHORT_METRICS` (built-in) or call `register_cohort_metrics!` (custom). A task that banks QC without either needs `# COHORT-EXEMPT: <reason>` in its `.jl` file. §1 → *QC*. Enforced by `cohort-metrics ratchet` in `app/test/suite.jl`.
 - [ ] **Observer summary layer** — does this task produce analysable data (measures / pops / clusters / behaviour / **phenotype** / lineage) the AI observer should see? If so, extend the read-only summary route + MCP tool (or add a field), per [`docs/todo/OBSERVER_DATA_ACCESS_PLAN.md`](todo/OBSERVER_DATA_ACCESS_PLAN.md). Don't let a new data type land with the observer blind to it.
-- [ ] **Tests** — dispatch + a bad-param `ParamValidationError`, and a QC finding unit test. §7
+- [ ] **Tests** — dispatch + a bad-param `ParamValidationError`, and a QC finding unit test; a `tests` block in the spec when a committed fixture gives a known answer. §7 → *Declared tests*
 - [ ] **Module page + route + nav** if it needs its own page. §7–§9
 - [ ] **Persist every user-settable option** (no bare `ref()`). §7 → *RULE*
 
@@ -1596,6 +1596,67 @@ if isfile(bioformats2raw_bin())
     @testset "omezarr real import" begin ... end
 end
 ```
+
+### Declared tests — a `tests` block in the spec
+
+A spec can also say how to check its own output: run on a fixture named by its **properties**, with
+these params, and the outputs must satisfy these assertions. One runner,
+`app/test/suite/task_spec_tests.jl`, executes every declared test — built-in specs, the shipped examples
+under `docs/examples/`, and a plugin author's own modules dir when `CECELIA_SPEC_TEST_MODULES` points at
+one ([`CUSTOM_MODULES.md`](CUSTOM_MODULES.md) → *Declared tests*). Parsing and evaluation are
+`app/src/tasks/task/spec_tests.jl` (`parse_spec_tests`, `evaluate_spec_assertion`). The assertion
+names follow [Galaxy's image assertions](https://github.com/galaxyproject/galaxy/blob/dev/lib/galaxy/tool_util/verify/asserts/image.py)
+(`has_image_n_labels` → `n_labels`, …), read through our own readers. Plan:
+`docs/todo/GALAXY_LESSONS_PLAN.md` → L2.
+
+```json
+"tests": [
+  {
+    "name": "six planted cubes",
+    "fixture": {"properties": ["cells", "image-store", "label-store", "marker-names"], "technology": "synthetic"},
+    "params": {"outputValueName": "seg"},
+    "outputs": [
+      {"cells": "seg", "assert": [
+        {"type": "n_labels", "value": 6},
+        {"type": "center_of_mass", "value": {"x": 11.5, "y": 7.5, "z": 1.5}, "delta": 0.01},
+        {"type": "mean_intensity", "channel": "pop", "value": 200, "delta": 0.01}
+      ]}
+    ]
+  }
+]
+```
+
+- **`fixture`** — `properties` (the `test-data/fixtures.toml` vocabulary), optional `technology`, and
+  `need`: what `fixture_for(props...; technology, need)` takes. No match + a `need` → the test is
+  skipped and names its `test-data/NEEDS.toml` request; no match and no `need` fails. The runner
+  runs the task on a fresh temp copy of the fixture's project, never on the committed files, and
+  fails any declared output the run did not write (`spec_output_stamp`: `store_rev` for a store, inode +
+  mtimes for the cell table, before and after) — so a fixture that already holds the output can't pass the assertions for a task that wrote
+  nothing.
+- **`params`** — passed to `run_task` as is (validated like any run). Image-scoped tasks only.
+- **`outputs`** — each names exactly one output by value name — `image` (an image version),
+  `labels` (a label set) or `cells` (a cell table) — and lists its `assert`ions.
+- **Tolerance** — every assertion has `value` (with optional `delta`, default 0: pass when
+  `|observed − value| ≤ delta`) or `min`/`max` (inclusive), or both (both must hold).
+
+| `type` | Output | Measures |
+|---|---|---|
+| `width`, `height`, `channels`, `depth`, `frames` | `image`, `labels` | Level-0 size of the store's x / y / c / z / t axis (`store_axis_sizes`); 1 for an axis the store lacks |
+| `n_labels` | `cells` | Rows in the cell table (one per object per frame) |
+| `mean_object_size` | `cells` | Mean `area`: pixels in 2D, voxels in 3D |
+| `center_of_mass` | `cells` | `Σ area·centroid / Σ area` per axis, in pixels. `value` is `{"x":…, "y":…, "z":…, "t":…}` (any subset); `delta` is a Euclidean distance; no `min`/`max` |
+| `mean_intensity` | `cells` | Mean over objects of a `channel`, named as the user sees it (resolved per image) |
+| `mean_measure` | `cells` | Mean over objects of any measure `column`, finite values only |
+
+Pixel statistics on a store (Galaxy's image-wide `mean_intensity`, `n_labels` counted in the label
+image) are not offered: Julia reads store metadata only (the zarr-access ratchet), so they would need a
+Python evaluator. A cell table answers the same questions for every segmentation task.
+
+**Expected values come from a definition or the fixture's construction, never from a previous run** —
+the measure test's numbers are the cubes `python/cecelia/tests/make_contacts_mesh_fixture.py` plants.
+A test that can only be written from the code's own output belongs to another task. Choose
+properties that pick the fixture the numbers describe; if a later fixture with the same properties
+sorts first, the test fails loudly and the properties get narrower.
 
 ---
 
