@@ -737,6 +737,26 @@ def get_image_attributes(project_uid: str, set_uid: str, image_uids: str = "") -
 
 
 @_tool
+def get_experiment_design(project_uid: str, set_uid: str) -> dict:
+    """The set's EXPERIMENT DESIGN — the question it answers and which image attributes are its group,
+    unit and parents — with the grid placing each image: `{design, version, hash, grid, history}`.
+
+    `design`: `{question, expect (none|higher|lower), mode (designed|exploratory), status
+    (inferred|confirmed), group, unit, parents, plannedParents, plannedUnits}`. `unit = []` means the
+    image is the unit; `parents` are the replicates above it, outermost first (e.g. Date, Mouse).
+    `grid.cells` is one row per group × parent with its units; `grid.groups` gives n parents / units /
+    images per group; `grid.unassigned` lists images with a blank role attribute; `grid.missingAttrs`
+    names role attributes no image has yet.
+
+    When a set has a design, compare by its group, count n by its parents (or its units when there are
+    no parents), and say so; a choice that departs from it is the user's to make, not yours. `status:
+    inferred` means nobody confirmed it — say that. `mode: exploratory` means the set was declared not
+    to test a question: describe, don't test. `design: null` = the set has none: fall back to
+    get_image_attributes and say the design is not set. Read-only."""
+    return _client.get_experiment_design(project_uid, set_uid)
+
+
+@_tool
 def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """The synthesized ANALYSIS LINEAGE — how each image's data was produced, so you don't have to ask
     the user to re-explain the workflow. Scope with `image_uid` (one image) or `set_uid` (one set);
