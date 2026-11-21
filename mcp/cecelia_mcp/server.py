@@ -741,12 +741,15 @@ def get_experiment_design(project_uid: str, set_uid: str) -> dict:
     """The set's EXPERIMENT DESIGN — the question it answers and which image attributes are its group,
     unit and parents — with the grid placing each image: `{design, version, hash, grid, history}`.
 
-    `design`: `{question, expect (none|higher|lower), mode (designed|exploratory), status
-    (inferred|confirmed), group, unit, parents, plannedParents, plannedUnits}`. `unit = []` means the
+    `design`: `{question, expect (unsure|same|higher|lower), expectIn (the group value for higher /
+    lower), mode (designed|exploratory), status (inferred|confirmed), group, unit, parents,
+    plannedParents, plannedUnits}`. `unit = []` means the
     image is the unit; `parents` are the replicates above it, outermost first (e.g. Date, Mouse).
     `grid.cells` is one row per group × parent with its units; `grid.groups` gives n parents / units /
     images per group; `grid.unassigned` lists images with a blank role attribute; `grid.missingAttrs`
-    names role attributes no image has yet.
+    names role attributes no image has yet; `grid.confounded` names attributes every value of which falls
+    in one group (e.g. each group imaged on its own days) — a group difference cannot be told apart
+    from them, so say so with any comparison.
 
     When a set has a design, compare by its group, count n by its parents (or its units when there are
     no parents), and say so; a choice that departs from it is the user's to make, not yours. `status:
