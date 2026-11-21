@@ -1,7 +1,7 @@
 module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
-export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user,
+export init_cecelia!, cecelia_conf, cecelia_version, cecelia_commit, config_dir, ensure_config_dir, custom_toml_path, expand_user,
        pluto_secret_path, read_pluto_secret
 export service_port, port_slot
 export read_api_token, ensure_api_token!, api_auth_header, api_launch_url

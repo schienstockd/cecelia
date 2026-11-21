@@ -132,6 +132,19 @@ function _keyframe_mask(label_vns)::Union{Nothing,String}
     String(only(label_vns))
 end
 
+# The one image version a keyframe animation renders (`""` = the default). Same reasoning as
+# `_keyframe_mask`: an animation has no compare grid, so 2+ `valueNames` would silently render only
+# the first. And it never draws legacy `branchValueNames` skeletons (skeletons ride in the look's
+# `skeletons`), so a request naming any is refused rather than recorded without them.
+function _keyframe_version(value_names, branch_vns)::String
+    (branch_vns === nothing || isempty(branch_vns)) ||
+        throw(ArgumentError("an animation draws skeletons from its look, not branchValueNames — got $(length(branch_vns))"))
+    isempty(value_names) && return ""
+    length(value_names) == 1 ||
+        throw(ArgumentError("an animation renders one image version — got $(length(value_names)) valueNames"))
+    String(only(value_names))
+end
+
 # The mask a keyframe request's `look` shows, for a request that names none at the top level (the
 # viewer's 3D Record and the animation page send only the look). One mask, or `nothing`: the look's
 # `labelValueNames` is what `viewerLook` writes from the viewer's mask picker, 0 or 1 long.
@@ -464,9 +477,10 @@ function handle_movie_record(ws, data)
         label_vns = [kf_look_mask.name]
         haskey(data, :labelContour) || (contour = kf_look_mask.contour)
     end
+    kf_version = ""
     if keyframes !== nothing
-        kf_mask = try
-            _keyframe_mask(label_vns)
+        kf_mask, kf_version = try
+            _keyframe_mask(label_vns), _keyframe_version(value_names, branch_vns)
         catch e
             e isa ArgumentError || rethrow()
             ws_log(ws, task_id, "[ERROR] $(e.msg)")
@@ -512,7 +526,7 @@ function handle_movie_record(ws, data)
     n_bvns = branch_vns === nothing ? 0 : length(branch_vns)
     is_compare = n_vns > 1 || n_lvns > 1 || n_bvns > 1
     if keyframes !== nothing
-        first_vn  = isempty(value_names) ? "" : String(first(value_names))
+        first_vn  = kf_version   # the one version — `_keyframe_version` refused 2+ above
         # `renderQuality` picks the 3D ray-cast sample density: a preset, or the viewer's Steps (the
         # look's `steps`). Meaningless for 2D keyframes — one plane is one sample — but harmless to thread.
         rq_sym = _render_quality(data, get(data, :look, nothing))

@@ -2,6 +2,7 @@
   "task": "motifDiscovery",
   "fun_name": "behaviour.motif_discovery",
   "label": "Motif discovery",
+  "citations": ["10.21105/joss.01504"],
   "purpose": "Find short movement patterns shared across tracks",
   "useWhen": ["Recurring patterns shorter than a whole track"],
   "notWhen": [

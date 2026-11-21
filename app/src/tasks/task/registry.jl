@@ -117,6 +117,43 @@ function register_task!(fun_name::AbstractString, task::CciaTask; spec::Abstract
 end
 
 """
+    task_source_stamp(fun_name) -> Union{Dict{String,Any},Nothing}
+
+Where a registered non-built-in task came from, for its run-log entry (`source`, see the run-log
+header): `{tier: "plugin", plugin, version, ref?}` from the plugin's manifest and install record, or
+`{tier: "hand-dropped", file}` for a hand-dropped module (tiers spelled by `tier_name`, as the clash report does). `nothing` for a built-in or an unknown name: the
+app version and commit already name a built-in's code. Never throws.
+"""
+function task_source_stamp(fun_name::AbstractString)::Union{Dict{String,Any},Nothing}
+    src = lock(_CUSTOM_TASK_LOCK) do
+        get(_CUSTOM_TASK_SOURCE, String(fun_name), nothing)
+    end
+    src === nothing && return nothing
+    src.tier == TIER_PLUGIN && src.plugin !== nothing ||
+        return Dict{String,Any}("tier" => tier_name(src.tier), "file" => basename(src.path))
+    d = Dict{String,Any}("tier" => tier_name(src.tier), "plugin" => String(src.plugin))
+    dir = _plugin_dir_of(src.path, String(src.plugin))
+    dir === nothing && return d
+    m = read_plugin_manifest(dir)
+    isempty(m.version) || (d["version"] = m.version)
+    ref = string(get(read_install_record(dir), "ref", ""))
+    isempty(ref) || (d["ref"] = ref)
+    d
+end
+
+# The plugin directory holding `path`: the nearest ancestor named `plugin`. Walks the path instead of
+# re-deriving `plugins_dir`, which depends on the dev dir the modules were loaded with.
+function _plugin_dir_of(path::AbstractString, plugin::AbstractString)::Union{String,Nothing}
+    cur = dirname(abspath(String(path)))
+    while true
+        basename(cur) == plugin && return cur
+        parent = dirname(cur)
+        parent == cur && return nothing
+        cur = parent
+    end
+end
+
+"""
     _unregister_task!(fun_name) -> Bool
 
 Remove a custom task from the runtime registry (used by `load_custom_modules!` when a module file is

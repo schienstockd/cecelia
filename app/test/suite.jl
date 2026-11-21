@@ -233,6 +233,7 @@ include(joinpath(@__DIR__, "suite", "methods_report.jl"))
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 # …and its follow-ups: re-measure `replaces`, format number, custom weights, raw source check.
 include(joinpath(@__DIR__, "suite", "run_log_followups.jl"))
+include(joinpath(@__DIR__, "suite", "run_record_fields.jl"))
 include(joinpath(@__DIR__, "suite", "gate_history.jl"))
 
 

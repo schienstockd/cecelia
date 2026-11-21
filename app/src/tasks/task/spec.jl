@@ -60,6 +60,54 @@ end
 
 _task_spec(task::CciaTask) = _task_spec(task, Dict{String,Any}())
 
+# A DOI as Crossref mints them: `10.<registrant>/<suffix>`, no scheme or `doi.org/` prefix.
+const _DOI_RE = r"^10\.\d{4,9}/\S+$"
+
+"""
+    task_citations(spec, params = nothing) -> Vector{String}
+    task_citations(task::CciaTask, params = nothing) -> Vector{String}
+
+The DOIs a task spec declares under `"citations"` (the published methods it runs), for a Methods
+table: the `cite` column of `history_params_table`. An entry is a bare DOI, or
+`{"doi": "...", "showIf": {"<param>": <value>}}` for a method only one setting runs (region clustering
+cites Leiden only when `clusterMethod` is `"leiden"`). The condition is a param's `showIf`, read by the
+same evaluator (`_show_if_satisfied`, with the spec defaults for a param the run did not record); with
+no params at all a conditional entry is left out rather than guessed. Entries that are not a
+bare DOI are dropped, so a plugin spec's typo shows as no citation rather than a broken one. The task
+form adds a composite's steps' citations after its own (a segment + measure run cites the segmenter).
+`docs/MODULES.md` → *citations*; `docs/todo/GALAXY_LESSONS_PLAN.md` (L0).
+"""
+function task_citations(spec, params = nothing)::Vector{String}
+    spec isa AbstractDict || return String[]
+    c = get(spec, "citations", nothing)
+    c isa AbstractVector || return String[]
+    out = String[]
+    defaults = nothing
+    for d in c
+        if d isa AbstractDict
+            get(d, "showIf", nothing) isa AbstractDict || continue
+            params isa AbstractDict || continue
+            sp = get(spec, "params", nothing)
+            defaults === nothing && (defaults = sp isa AbstractVector ? _spec_defaults(collect(sp)) : Dict{String,Any}())
+            p = Dict{String,Any}(String(k) => v for (k, v) in params)
+            _show_if_satisfied(d, p; defaults) || continue
+            d = get(d, "doi", nothing)
+        end
+        d isa AbstractString && occursin(_DOI_RE, strip(d)) && push!(out, String(strip(d)))
+    end
+    out
+end
+
+function task_citations(task::CciaTask, params = nothing)::Vector{String}
+    out = task_citations(try _task_spec(task) catch; nothing end, params)
+    if task isa CompositeTask
+        for sub in _composite_steps(task)
+            append!(out, task_citations(sub, params))
+        end
+    end
+    unique!(out)
+end
+
 function _task_spec(task::CciaTask, form::AbstractDict)::Union{Dict{String,Any}, Nothing}
     key = string(typeof(task))
     lock(_SPEC_CACHE_LOCK) do

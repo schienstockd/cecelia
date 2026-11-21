@@ -120,6 +120,8 @@ export function resolveParamsExport(snap: ParamsSnapshot | null | undefined,
 /** `GET /api/analysis/board-provenance` (`board_export_provenance` + `author`). */
 export interface BoardProvenanceResponse {
   ceceliaVersion: string
+  /** git commit of a checkout or dev install (`cecelia_commit`); '' or absent for a release */
+  ceceliaCommit?: string
   project: { uid: string; name: string }
   images: { uid: string; name: string }[]
   populations: { key: string; popType: string; valueName: string; pop: string; gateFiles: string[] }[]
@@ -183,6 +185,8 @@ export interface ProvenanceRecord {
   schema: typeof PROVENANCE_SCHEMA
   exportedAt: string
   ceceliaVersion: string
+  /** absent for a release and in records written before it was added */
+  ceceliaCommit?: string
   author: Record<string, string>
   project: { uid: string; name: string }
   images: { uid: string; name: string }[]
@@ -206,7 +210,8 @@ export function buildProvenanceRecord(boards: readonly ProvenanceBoardIn[], expo
   for (const b of boards) for (const d of b.server.designs ?? []) if (!designs.has(d.setUid)) designs.set(d.setUid, d)
   return {
     schema: PROVENANCE_SCHEMA, exportedAt,
-    ceceliaVersion: first.ceceliaVersion, author: first.author, project: first.project,
+    ceceliaVersion: first.ceceliaVersion, ...(first.ceceliaCommit ? { ceceliaCommit: first.ceceliaCommit } : {}),
+    author: first.author, project: first.project,
     images: [...images.values()],
     ...(designs.size ? { designs: [...designs.values()] } : {}),
     boards: boards.map(b => {

@@ -221,6 +221,15 @@ export function checkShotSets(sets: ShotSet[]): ShotIssue[] {
     if (new Set(set.themes).size !== set.themes?.length) bad('a colour scheme is listed twice')
     if (set.page === 'app' && COLOUR_SCHEMES.some(c => !set.themes?.includes(c.value)))
       bad('an app set is captured in every colour scheme, so the app shows its user\'s and never mixes them')
+    // a gate's facts are keyed by image + gateKey (no parent): two gates sharing one would overwrite each other's numbers
+    for (const [proj, p] of Object.entries(fx.projects ?? {})) {
+      const keys = new Set<string>()
+      for (const g of p.gates ?? []) {
+        const k = `${g.image}.${gateKey(g)}`
+        if (keys.has(k)) bad(`project "${proj}": two gates on image "${g.image}" share the fact name "${gateKey(g)}" (rename one)`)
+        keys.add(k)
+      }
+    }
     for (const x of set.shots) {
       if (shotIds.has(x.id)) bad(`shot id "${x.id}" is used twice`)
       shotIds.add(x.id)

@@ -142,6 +142,13 @@ plot — a `plotDefinitions/*.json` registry id (e.g. `segment.cellposeMeasure` 
 `segment.measureLabels` → `"segmentation_qc"`). The whiteboard Live view then auto-shows a QC
 thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wiring needed.
 
+**`citations` (optional).** The published methods the task runs, as bare DOIs:
+`"citations": ["10.1038/s41592-020-01018-x"]`. A method only one setting runs takes a param-style
+condition: `{ "doi": "10.1038/s41598-019-41695-z", "showIf": { "clusterMethod": "leiden" } }`. A
+composite cites its steps' citations too. They fill the `cite` column of the Parameters CSV
+(`history_params_table`, read through `task_citations`, which drops anything that is not a bare DOI).
+Check every DOI against Crossref before adding it; a testset fails on a malformed one in a built-in spec.
+
 **`purpose` / `useWhen` / `notWhen` (required on every visible task).** What the task is for, and
 when it is — and is not — the right step. `purpose` is one line; `useWhen` takes 1–3 lines and
 `notWhen` 0–3. A `hidden` task may skip them.
