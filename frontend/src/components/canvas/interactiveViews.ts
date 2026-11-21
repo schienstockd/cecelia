@@ -178,6 +178,8 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     answers: 'What does each motif class look like on real cells?',
     component: MotifCardsView, analysisBoard: true,
     category: 'look', sketch: 'motifCard', rail: 'none',
+    // a behaviour question, so the Behaviour page offers it too; no families — it reads h5ad obs
+    modules: { behaviourAnalysis: [] },
   },
   // HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
   // column. Server enumerates eligible segmentations + hmm cols; panel exposes both pickers.
@@ -189,6 +191,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     answers: 'What does each HMM state look like on a real track?',
     component: HmmStateCardsView, analysisBoard: true,
     category: 'look', sketch: 'statesCard', rail: 'none',
+    modules: { behaviourAnalysis: [] },
   },
   // Where each population's cells sit on the image, frame by frame. Read-only, so it belongs on the board and every page that defines or compares populations:
   // on the rail where the page has one, and on the Cluster / Region pages (`clusterPage`) it draws the
