@@ -12,6 +12,7 @@ import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import CcToggle from '../../components/CcToggle.vue'
 import SuggestInput from '../../components/SuggestInput.vue'
+import { createImageAttr, deleteImageAttr, setImageAttr } from '../../utils/imageAttrApi'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
 // This panel does NOT own its width — `CollapsiblePanel` (its host, via ModuleLayout's `#right`) does.
@@ -81,13 +82,8 @@ async function createAttr() {
   const projectUid = projectMeta.current?.uid
   if (!projectUid || !props.setUid) return
 
-  const res = await fetch('/api/images/attr/create', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUids: setImages.value.map(i => i.uid), attrName: name }),
-  })
-  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
+  try { await createImageAttr(projectUid, setImages.value.map(i => i.uid), name) }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
 
   project.addAttrKey(props.setUid, name)
   selectedAttr.value = name
@@ -101,13 +97,8 @@ async function deleteAttr() {
   const projectUid = projectMeta.current?.uid
   if (!projectUid || !props.setUid) return
 
-  const res = await fetch('/api/images/attr/delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUids: setImages.value.map(i => i.uid), attrName: name }),
-  })
-  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
+  try { await deleteImageAttr(projectUid, setImages.value.map(i => i.uid), name) }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
 
   project.removeAttrKey(props.setUid, name)
   selectedAttr.value = ''
@@ -126,15 +117,11 @@ async function assignSingleValue() {
   const values: Record<string, string> = {}
   for (const uid of targetUids.value) values[uid] = singleValue.value
 
-  const res = await fetch('/api/images/attr/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, attrName: selectedAttr.value, values }),
-  })
-  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
+  let stored: Record<string, string>
+  try { stored = await setImageAttr(projectUid, selectedAttr.value, values) }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
 
-  project.setAttrValues(selectedAttr.value, body.values ?? values)
+  project.setAttrValues(selectedAttr.value, stored)
   log.info(`Assigned "${singleValue.value}" to ${targetUids.value.length} image(s).`, { source: 'metadata' })
 }
 
@@ -202,15 +189,11 @@ async function assignRegexp() {
     values[uid] = extractWith(regexpValue.value, regexSampleFor(img, regexpSource.value))
   }
 
-  const res = await fetch('/api/images/attr/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, attrName: selectedAttr.value, values }),
-  })
-  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
+  let stored: Record<string, string>
+  try { stored = await setImageAttr(projectUid, selectedAttr.value, values) }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
 
-  project.setAttrValues(selectedAttr.value, body.values ?? values)
+  project.setAttrValues(selectedAttr.value, stored)
   log.info(`Applied regex to ${Object.keys(values).length} image(s).`, { source: 'metadata' })
 }
 
@@ -239,23 +222,15 @@ async function assignGroupSequences() {
     uids.forEach((uid, i) => { values[uid] = String(i + 1) })
 
   // Ensure GroupSeq key exists
-  const createRes = await fetch('/api/images/attr/create', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUids: setImages.value.map(i => i.uid), attrName: 'GroupSeq' }),
-  })
-  if (!createRes.ok) { log.error(`HTTP ${createRes.status}`, { source: 'metadata' }); return }
+  try { await createImageAttr(projectUid, setImages.value.map(i => i.uid), 'GroupSeq') }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
   project.addAttrKey(props.setUid, 'GroupSeq')
 
-  const setRes = await fetch('/api/images/attr/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, attrName: 'GroupSeq', values }),
-  })
-  const body = await setRes.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!setRes.ok) { log.error(body.error ?? `HTTP ${setRes.status}`, { source: 'metadata' }); return }
+  let stored: Record<string, string>
+  try { stored = await setImageAttr(projectUid, 'GroupSeq', values) }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
 
-  project.setAttrValues('GroupSeq', body.values ?? values)
+  project.setAttrValues('GroupSeq', stored)
   log.info('Assigned group sequences.', { source: 'metadata' })
 }
 

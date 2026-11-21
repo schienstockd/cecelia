@@ -80,6 +80,7 @@ end
     @test isempty(g["missingAttrs"]) && g["planned"]["parents"] == 3
     # each panel imaged on its own day: Date is confounded with Panel; Mouse (M1 in both) is not
     @test g["confounded"] == ["Date"]
+    @test isempty(g["paired"])            # no date and no mouse holds both panels
 
     # values the dialog has not written yet place the image without touching it
     uid = s._images[end].uid
@@ -102,5 +103,30 @@ end
     add_image!(s; name = "M3-1", attr = attr("B", "25 Nov", "M3", "M3-1"))
     @test isempty(experiment_design_grid(s, d)["confounded"])
     @test isempty(experiment_design_grid(s._images[1:3], d)["confounded"])
+    rm(proj.root; recursive = true)
+end
+
+@testset "Experiment design — paired and blocked levels" begin
+    # every mouse carries both conditions → paired on Mouse; every day images both, but each mouse one
+    # condition → blocked on Date, not paired on Date × Mouse
+    proj = create_project!(name = "xd-paired-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "pairs")
+    for (m, c) in (("M1", "ctrl"), ("M1", "drug"), ("M2", "ctrl"), ("M2", "drug"))
+        add_image!(s; name = "$(m)-$(c)", attr = Dict("Cond" => c, "Mouse" => m, "Date" => "d1"))
+    end
+    by_mouse = experiment_design_from(Dict("group" => "Cond", "parents" => "Mouse"))
+    @test experiment_design_grid(s, by_mouse)["paired"] == ["Mouse"]
+
+    t = add_set!(proj; name = "blocks")
+    for (d, m, c) in (("d1", "M1", "ctrl"), ("d1", "M2", "drug"), ("d2", "M1", "ctrl"), ("d2", "M2", "drug"))
+        add_image!(t; name = "$(d)$(m)", attr = Dict("Cond" => c, "Mouse" => m, "Date" => d))
+    end
+    nested = experiment_design_from(Dict("group" => "Cond", "parents" => ["Date", "Mouse"]))
+    gt = experiment_design_grid(t, nested)
+    @test gt["paired"] == ["Date"]
+    # each mouse holds one condition: nested by design, so the replicate is not reported as confounded
+    @test isempty(gt["confounded"])
+    # one group: nothing to pair
+    @test isempty(experiment_design_grid(t._images[[1, 3]], nested)["paired"])
     rm(proj.root; recursive = true)
 end

@@ -197,7 +197,8 @@ show the grid for values it has not written yet.
 
 Reply: `{cells: [{group, parent, units: [{unit, images: [uid]}]}], groups: [{group, nParents, nUnits,
 nImages}], unassigned: [{uid, name, missing: [attr]}], missingAttrs: [attr], confounded: [attr],
-planned}`. `confounded` names the attributes the group cannot be told apart from (`_design_confounded`). An image is
+paired: [level], planned}`. `confounded` names the attributes the group cannot be told apart from (`_design_confounded`);
+`paired` the parent levels every group shares (`_design_paired`). An image is
 unassigned when one of its role attributes is blank; `missingAttrs` names role attributes no image
 carries. With no unit attribute the image is the unit (its name), and with no parents every cell's
 `parent` is [].
@@ -241,16 +242,18 @@ function experiment_design_grid(images::AbstractVector, d::ExperimentDesign;
         "unassigned" => unassigned,
         "missingAttrs" => [r for r in roles if !(r in seen)],
         "confounded" => _design_confounded(placed, d),
+        "paired" => _design_paired(placed, d),
         "planned" => Dict{String,Any}("parents" => d.planned_parents, "units" => d.planned_units))
 end
 
 # Attributes that cannot be told apart from the group: set on every placed image, and every value of it
 # falls in one group only (groups imaged on different days make Date one). Needs two
-# groups or more. Leaves out the group's own attributes, the unit's, and identifiers (no value on two
-# images), which are trivially in one group each.
+# groups or more. Leaves out the group's own attributes, the unit's, the innermost parent (the replicate
+# n counts sits inside its group by design: a mouse given one condition is nested, not confounded), and
+# identifiers (no value on two images), which are trivially in one group each.
 function _design_confounded(placed, d::ExperimentDesign)::Vector{String}
     length(unique(first.(placed))) >= 2 || return String[]
-    skip = Set(vcat(d.group, d.unit))
+    skip = Set(vcat(d.group, d.unit, isempty(d.parents) ? String[] : [last(d.parents)]))
     names = sort!(collect(setdiff(intersect((Set(k for (k, v) in a if !isempty(strip(v))) for (_, a) in placed)...), skip)))
     out = String[]
     for n in names
@@ -263,6 +266,28 @@ function _design_confounded(placed, d::ExperimentDesign)::Vector{String}
         end
         all(c -> c == 1, values(count_of)) && continue              # an identifier
         all(gs -> length(gs) == 1, values(groups_of)) && push!(out, n)
+    end
+    out
+end
+
+# The parent levels the design is paired (blocked) on — the opposite of confounded: every identity at
+# that level holds every group, as when each mouse carries both conditions or each day images every
+# group. A level is a prefix of `parents`, so a mouse is named within its date when both are parents
+# ("mouse 1" on two days is two mice). Linked replicates call for a paired test, or a two-way ANOVA with
+# the replicate as a factor; testing them as independent is too conservative. Lord et al. 2020,
+# SuperPlots, J Cell Biol 219(6):e202001064, doi:10.1083/jcb.202001064; Zweifach 2024, J Cell Biol
+# 223(8):e202401074, doi:10.1083/jcb.202401074. Returns each level as its attributes joined by " × ".
+function _design_paired(placed, d::ExperimentDesign)::Vector{String}
+    groups = unique(first.(placed))
+    length(groups) >= 2 || return String[]
+    out = String[]
+    for k in eachindex(d.parents)
+        level = d.parents[1:k]
+        groups_of = Dict{Vector{String},Set{Vector{String}}}()
+        for (g, a) in placed
+            push!(get!(groups_of, String[strip(a[p]) for p in level], Set{Vector{String}}()), g)
+        end
+        all(gs -> length(gs) == length(groups), values(groups_of)) && push!(out, join(level, " × "))
     end
     out
 end
