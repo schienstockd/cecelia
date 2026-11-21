@@ -32,7 +32,7 @@ import time
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness.claude_sessions import Session, live_sessions, sessions_in, under  # noqa: E402
+from cecelia.effectiveness.claude_sessions import Session, live_sessions, sessions_in, under, under_resolved  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, main_checkout, merged_pr_heads  # noqa: E402
 
 #: A worktree created this recently is never SAFE: an agent that has just bootstrapped one has no
@@ -253,8 +253,9 @@ def scan_processes(own_pid: int | None = None) -> list[tuple[int, str, list[str]
 def pids_under(root: str, procs: list[tuple[int, str, list[str]]] | None) -> list[tuple[int, str]] | None:
     if procs is None:
         return None
+    # /proc cwd readlinks are physical; `root` may keep a symlinked prefix.
     return [(pid, cmd) for pid, cmd, paths in procs
-            if any(under(p, root) or root + os.sep in p for p in paths)]
+            if any(under_resolved(p, root) or root + os.sep in p for p in paths)]
 
 
 def sessions_under(root: str, sessions: list[Session]) -> list[tuple[str, str]]:

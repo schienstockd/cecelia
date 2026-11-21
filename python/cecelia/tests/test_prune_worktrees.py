@@ -155,6 +155,19 @@ class HelpersTest(unittest.TestCase):
         procs = [(1, "dev", [f"{sep}ws{sep}cecelia-x2"]), (2, "vite", [f"{sep}ws{sep}cecelia-x{sep}frontend"])]
         self.assertEqual(P.pids_under(f"{sep}ws{sep}cecelia-x", procs), [(2, "vite")])
 
+    def test_a_process_counts_when_the_root_goes_through_a_symlink(self):
+        """`/proc` cwds are physical; a worktree root registered via a symlink is not."""
+        with tempfile.TemporaryDirectory() as tmp:
+            real = pathlib.Path(tmp).resolve() / "ws"
+            (real / "cecelia-x" / "frontend").mkdir(parents=True)
+            link = pathlib.Path(tmp).resolve() / "ws-link"
+            try:
+                link.symlink_to(real, target_is_directory=True)
+            except OSError:
+                self.skipTest("cannot create symlinks here")
+            procs = [(2, "vite", [str(real / "cecelia-x" / "frontend")])]
+            self.assertEqual(P.pids_under(str(link / "cecelia-x"), procs), [(2, "vite")])
+
     def test_unknown_processes_stay_unknown(self):
         self.assertIsNone(P.pids_under("/ws/cecelia-x", None))
 
