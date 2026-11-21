@@ -907,7 +907,10 @@ end
                      "item", "items",
                      # tracking several pops in one run (bayesian_tracking `_tracking_qc!`) — the
                      # picked pops that formed no tracks, see tracking.no_tracks_pops
-                     "pops"])
+                     "pops",
+                     # claim checks over groups of images (claim_checks.jl) — `group` the compared
+                     # attribute(s), `design` the experiment design's group or replicate
+                     "group", "design"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
