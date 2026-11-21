@@ -233,6 +233,7 @@ include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 include(joinpath(@__DIR__, "suite", "run_log_followups.jl"))
 include(joinpath(@__DIR__, "suite", "run_record_fields.jl"))
 include(joinpath(@__DIR__, "suite", "gate_history.jl"))
+include(joinpath(@__DIR__, "suite", "run_usage.jl"))   # `usage`: peak memory, host, cluster accounting
 
 
 

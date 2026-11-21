@@ -98,6 +98,7 @@ export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_
 export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, run_entry_format, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces, run_gates
 export open_run_log!, close_run_log!, reap_run_log!, skip_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED, RUN_LOG_SKIPPED
 export run_author, run_env_of, read_run_env
+export RunUsage, with_run_usage, record_run_usage!, run_usage, merge_run_usage!, read_local_py_usage, run_usage_from_hpc
 export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, lab_log_author_kind, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
@@ -314,6 +315,7 @@ include("single_instance.jl")  # at-most-one Cecelia per host — before any HTT
 # stdio). Early — napari, the preview worker and the notebook server all launch through it.
 include("lifeline.jl")       # Base-only: also included standalone by pluto/launch.jl
 include("log_stream.jl")
+include("run_usage.jl")     # the per-run usage accumulator run_py and the HPC dispatch report into
 include("py_runner.jl")
 # OS process control (kill primitives) + the background-job registry (track/cancel by task_id) shared
 # by data patches and project export/import. Foundational; before the scheduler + jobs that use it.

@@ -47,6 +47,12 @@
 #                    call, a chain node — see `run_author`).
 #   env            — facts decided at run time (device, engine version, seed), stamped at close from the
 #                    task result's `"runEnv"` (`run_env_of`). A task that reports none gets none.
+#   usage          — not what made it but what it USED, by the same rule: `{source, host?,
+#                    peakRssBytes?, runs, …}` — a local run's peak Python memory and host, a cluster
+#                    job's scheduler accounting (shape and merge rules: app/src/run_usage.jl). Stamped
+#                    at close from the accumulator the scheduler binds around the task; absent when
+#                    nothing reported (a task with no Python, a runner killed before exit, a site with
+#                    no accounting).
 #
 # ── Format: `format` ───────────────────────────────────────────────────────────────────────────────
 # Every entry written since formats were numbered carries `format` = RUN_LOG_FORMAT, stamped on the path
@@ -576,12 +582,14 @@ before this process started, or a caller that never opened one) the outcome is a
 terminal status is never silently dropped; that is what makes `append_run_log!` below just a
 convenience wrapper rather than a second storage path.
 
-`env` (see `run_env_of`) is stamped as the entry's `env` when non-empty.
+`env` (see `run_env_of`) is stamped as the entry's `env` when non-empty, and `usage` (the run's
+`RunUsage` total, app/src/run_usage.jl) as its `usage`.
 """
 function close_run_log!(img::CciaImage, task_id::AbstractString, status::AbstractString;
                         fun_name::AbstractString = "", value_name::AbstractString = "",
                         params = nothing, pool::AbstractString = "", by::AbstractString = "",
                         caller::AbstractDict = Dict{String,Any}(), env::AbstractDict = Dict{String,Any}(),
+                        usage::AbstractDict = Dict{String,Any}(),
                         unchanged::Bool = false, at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         # newest-first: a re-run of the same task id should close its own entry, not an older one
@@ -594,6 +602,7 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
                 "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
             _run_log_stamp!(e, by, caller)
             isempty(env) || (e["env"] = Dict{String,Any}(String(k) => v for (k, v) in env))
+            isempty(usage) || (e["usage"] = Dict{String,Any}(String(k) => v for (k, v) in usage))
             unchanged && (e["unchanged"] = true)
             push!(entries, e)
         else
@@ -601,6 +610,7 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
             e["status"] = string(status)
             e["finishedAt"] = String(at)
             isempty(env) || (e["env"] = Dict{String,Any}(String(k) => v for (k, v) in env))
+            isempty(usage) || (e["usage"] = Dict{String,Any}(String(k) => v for (k, v) in usage))
             # nothing was overwritten: the `replaces` stamped at open would claim otherwise
             unchanged && (e["unchanged"] = true; delete!(e, "replaces"))
             entries[i] = e
