@@ -149,7 +149,7 @@ Safe and reproducible — `pixi.lock` is committed, and nothing user-owned lives
 
 ```bash
 grep -rIl <old-directory-name> .pixi/envs/default | wc -l   # expect 0
-pixi run test-py
+pixi run python -c "import cecelia.utils.zarr_utils"      # expect no output
 ```
 
 The same applies to a **git worktree**: it is a different path, so it needs its own
