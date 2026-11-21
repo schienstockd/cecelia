@@ -637,9 +637,12 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         reports one because that is what got stored — do not copy it back: a `popType` that disagrees
         with a population's own type produced a board where every panel said "Select one or more
         populations", and the request is now rejected rather than written.
-      - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
-                   `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
-                   every track across images treats one image's 400 tracks as 400 replicates.
+      - `statUnit` "individual" (every cell/track a point), "image" (each image collapsed to one
+                   `imageAgg`, "mean"/"median") or "replicate" (each replicate of the set's experiment
+                   design, e.g. each mouse). PREFER "image" when per-image n is
+                   small — pooling every track across images treats one image's 400 tracks as 400
+                   replicates. On a set with a design, leave `statUnit` and `compare_by` unset: the
+                   board then compares the design's group with its replicate as the unit.
       - `title`    optional slot caption, on any plot.
     `plot` may instead be a board VIEW key — the plots that are not specs — with its own fields:
       - "gatingStrategy" {image?, valueName?, popType?, pop?, hierarchy?} — the gates leading to `pop`
@@ -706,7 +709,8 @@ def get_analysis_boards(project_uid: str) -> dict:
 
     `statUnit` is the SUMMARY LEVEL, and two boards that differ only there are NOT duplicates:
     "individual" plots every cell/track as its own point, "image" collapses each image to one
-    `imageAgg` (e.g. mean) value first — the same measures asked at two different levels, which is a
+    `imageAgg` (e.g. mean) value first, "replicate" each replicate of the set's experiment design
+    (e.g. each mouse) — the same measures asked at two different levels, which is a
     normal and deliberate pair to keep side by side. Read it before saying a board repeats another.
     It is stored explicitly and removed where a plot has no summary level, so an ABSENT `statUnit`
     means exactly that — not "left at the default". `imageAgg` ("mean"/"median") comes with it and

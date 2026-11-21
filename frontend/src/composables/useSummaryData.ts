@@ -14,6 +14,8 @@ import { makePopPathRemap, type PopIdent } from '../utils/popRenameRemap'
 import { usePopSelectionMode } from './usePopSelectionMode'
 import { gateSignatures, changedPopPaths, booleanDeps, popChangeKey, seriesReloadToken, type SigNode } from '../utils/popChanges'
 import { UNASSIGNED_POP } from '../plots/fixedColours'
+import { useSetDesign } from './useSetDesign'
+import { designCompare, designCompareApply, designMark, designReplicateAttrs } from '../utils/experimentDesign'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
 // float freely (SummaryCanvas, per-module) or sit in a grid (LayoutCanvas, /analysis). Extracted so the
@@ -51,7 +53,7 @@ export function useSummaryData(opts: {
   const ws = useWsStore()
   const imageUid = computed(() => imageUids.value[0] ?? null)
 
-  const { compareMode, compareAttr, compareAttr2, attrOrder, scope, sel: gSel, vis: gVis, poolGroups } =
+  const { compareMode, compareAttr, compareAttr2, attrOrder, scope, sel: gSel, vis: gVis, poolGroups, designApplied } =
     useViewState(opts.shared, {
       // DEFAULT = per_image, not 'image'. `'image'` means "the first selected image only", so with the
       // old default you could tick five images and see one, with nothing but a dropdown labelled
@@ -69,6 +71,8 @@ export function useSummaryData(opts: {
       sel: [] as string[],
       vis: defaultVis() as VisProps,
       poolGroups: false as boolean,
+      // the set's experiment design was applied to the compare row once (designCompareApply)
+      designApplied: false as boolean,
     })
   // MANUAL APPLY (opt-in) — for a user with many pops/images where every toggle firing a fetch
   // trickles pops into the plot. When on, the picker's toggles stage into `stagedSel` and the
@@ -102,6 +106,29 @@ export function useSummaryData(opts: {
         || !setAttrs.value.some(a => a.name === compareAttr2.value)))
       compareAttr2.value = ''
   })
+  // The set's experiment design (T1, T2): an untouched canvas compares by its group, once; the plots
+  // take its replicate as the unit they offer (`designReplicateAttrs`).
+  const { design } = useSetDesign(projectUid, setUid)
+  watch([design, setAttrs], () => {
+    const patch = designCompareApply({ compareMode: compareMode.value, compareAttr: compareAttr.value,
+      compareAttr2: compareAttr2.value, designApplied: designApplied.value }, design.value, setAttrs.value.map(a => a.name))
+    if (!patch) return
+    if (patch.compareAttr !== undefined) compareAttr.value = patch.compareAttr
+    if (patch.compareAttr2 !== undefined) compareAttr2.value = patch.compareAttr2
+    if (patch.compareMode !== undefined) compareMode.value = patch.compareMode as typeof compareMode.value
+    designApplied.value = true
+  })
+  const designReplicate = computed(() => designReplicateAttrs(design.value))
+  const designMarkState = computed(() =>
+    designMark(design.value, compareMode.value, panelGroupAttr.value, setAttrs.value.map(a => a.name)))
+  // the bullseye's click: compare as the design does (the user can change it again; it sticks)
+  function useDesignCompare() {
+    const c = designCompare(design.value)
+    if (!c) return
+    compareMode.value = 'by_attr'
+    compareAttr.value = c.compareAttr
+    compareAttr2.value = c.compareAttr2
+  }
   const panelGroupAttr = computed<string[]>(() =>
     compareMode.value === 'by_attr' && crossImage.value
       ? [compareAttr.value, compareAttr2.value].filter(Boolean) : [])
@@ -297,7 +324,7 @@ export function useSummaryData(opts: {
     // manual-apply staging (opt-in)
     manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
     // compare-derived
-    canCompare, crossImage, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2,
+    canCompare, crossImage, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, designReplicate, designMarkState, useDesignCompare,
     attrGroups, setAttrOrder,
   }
 }

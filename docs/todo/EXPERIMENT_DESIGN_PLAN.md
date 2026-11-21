@@ -90,11 +90,16 @@ Two things to note:
    promoted to designed later, and the history keeps the step.
 4. **The question is part of the design.** One sentence, plus the expectation: not sure, no
    difference, or higher / lower in one group (a null is a valid design, and differs from not sure). The acquisition check's plan sentence reads it instead of keeping its own.
-5. **The design is set up on the Metadata page, after the metadata** (the maintainer, 2026-11-21;
+5. **The design is set up once the metadata is in, from the Design check** (the maintainer, 2026-11-21;
    replaces "the dialog opens after register"). A design is built from attributes, and right after
    register most sets have none yet: names and original paths, nothing else. So no dialog pops up when
-   files land. The Metadata page has an *Experiment design* section, amber while the set has no design
-   or an unconfirmed one ("Add the metadata, then set up the design"). The dialog still suggests from
+   files land. The entry is the **Design check** in the Checks cluster (beside Acquisition and QC, on
+   every page with an image table, the Metadata page included): amber while the set has no design or
+   an unconfirmed one ("Add the metadata, then set up the design"), and amber with a count when images
+   sit outside a confirmed design — added after it was set up, or missing a design attribute. What the
+   dialog showed at confirm (confounding, few replicates) is not raised again. A first version put a
+   section on the Metadata page; it was dropped because a design set up once there is forgotten when
+   the set grows (the maintainer, 2026-11-21). The dialog still suggests from
    attributes, file names and original paths, and a suggested design stays *inferred* until confirmed.
    - *Set already designed, files added later*: a short "place these images" step (later PR). Each
      image goes into a grid cell or Unassigned, and the grid's reservations update.
@@ -196,7 +201,7 @@ notices. A build step is done when its rows are.
 | T4 | **Kiwi / MCP**: `guidance.py` tells the model to size groups itself and pass `unit_attrs`/`compare_by`; `add_analysis_board(compare_by="")`; board summaries and `kiwi_refs` omit the compare attribute | `get_experiment_design` first (#2416); `compare_by`, `unit_attrs`, `statUnit` default to the design; summaries carry group + unit | Kiwi's boards and claims match the design without being told |
 | T5 | **Acquisition plan**: `AcqPlanForm.vue` free-text "Expected"; `planSentence` | The design's question and expectation (Decision 4); the check compares against the declared group | One question, typed once |
 | T6 | **Export**: stats CSV (`plotStatsToCsv`) has no unit or group attribute; PDF/SVG provenance (`boardProvenance.ts`) carries neither; captions blank | Group, replicate, n of each, design version; the caption (step 5) | A figure says how it was computed |
-| T7 | **Tables**: image table and Movies show attribute columns, no group counts | Images outside the grid marked (Unassigned) | Low — the dialog's grid already shows this |
+| T7 | **Tables**: image table and Movies show attribute columns, no group counts | Images outside the grid marked (Unassigned) | The Design check counts images outside the design (built); per-row marks in the table are still open |
 | T8 | **Notebooks**: `CeceliaNb` pools cells, never reads `img.attr` | A per-replicate summary helper | Low — notebook users choose their own unit |
 
 T1 and T2 are built (branch `feat/experiment-design-dialog`, uncommitted): a canvas on the untouched
@@ -217,10 +222,27 @@ Pairing: for intravital, each mouse is imaged in one group only (transferred wit
 cells), so a replicate never spans groups and an unpaired test is right. `paired` matters only for
 designs where one subject appears in several groups.
 
+## Road forward (the maintainer, 2026-11-21)
+
+The Checks row is the workflow's status surface. The design adds one check to it and otherwise works
+quietly through the plots and the claim check. No second place says the same thing: the mock's
+readiness panel (frame 4), the design pill and question line in the set bar are **not built** — the
+Design check and the Acquisition check cover them. In order:
+
+1. Merge the record (#2415), MCP tools (#2416) and dialog + plots (#2417).
+2. **T3 — the claim check reads the design** (build step 3).
+3. **Plot header n + replicate dots**: "per mouse · 8 mice (5 / 3)" in the header, dots coloured by
+   replicate with the replicate means (the rest of build step 2).
+4. **Freeze and stale (T6)** (build step 5).
+
+Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate
+"place these images" step (frame 3b; the Design check counts them and opens the dialog), per-row marks
+in the image table (T7), a notebook helper (T8).
+
 ## Build order
 
-1. **Record + dialog.** The design record and versions; the dialog on the Metadata page (suggest,
-   confirm), "Set up a design" on an empty set, and the "place these images" step; the grid; the
+1. **Record + dialog.** The design record and versions; the dialog behind the Design check (suggest,
+   confirm); the grid; the
    no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
    metadata comes with it, because neither example set has attributes yet. The suggestion reuses the
    Metadata panel's extraction (`frontend/src/utils/regexBuilder.ts`: file name or original path,
@@ -237,7 +259,7 @@ designs where one subject appears in several groups.
    One rule each, shared with the grid: paired vs unpaired (S2's `ev["design"]` and the grid's
    `paired` disagree on a partial overlap today), and confounded (S1's `claim.confounded` over record
    variables and the grid's `confounded` over design attributes — one finding code, two subjects).
-4. **Reservations as work progresses + the readiness view (T5).** The acquisition check compares against
+4. **Reservations as work progresses (T5).** No readiness view: the Checks row is it. The acquisition check compares against
    the declared group. Processing consistency (S1) runs after each task, not only at claim time.
 5. **Freeze and stale (T6).** Stats runs and exported figures carry the design version and are marked
    stale when the design changes. An exported figure's caption carries the n of units and parents and

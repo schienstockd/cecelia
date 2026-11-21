@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { checkLook, acqCheckView, qcCheckView, cohortCheckView, cohortFindingsOf, type CohortState } from './checks'
+import { checkLook, acqCheckView, qcCheckView, cohortCheckView, cohortFindingsOf, designCheckView, type CohortState } from './checks'
+import { emptyDesign, type DesignGrid } from '../utils/experimentDesign'
 import { SEVERITY } from './severity'
 import type { AcqCheckResult } from '../utils/acqCheckApi'
 
@@ -72,5 +73,32 @@ describe('cohortFindingsOf', () => {
   it('reads the cohort docs for these funs only — not the task own QC, not info', () => {
     expect(cohortFindingsOf(img, ['segment.cellpose']).map(x => x.code)).toEqual(['cohort.nCells'])
     expect(cohortFindingsOf(img, ['gating.flow']).map(x => x.code)).toEqual(['gating.x'])
+  })
+})
+
+describe('designCheckView', () => {
+  const confirmed = { ...emptyDesign(), status: 'confirmed' as const, group: ['Panel'], parents: ['Date', 'Mouse'] }
+  const grid = (unassigned: DesignGrid['unassigned'] = [], missingAttrs: string[] = []): DesignGrid =>
+    ({ cells: [], groups: [], unassigned, missingAttrs, confounded: ['Date'], paired: [], planned: { parents: null, units: null } })
+  it('says nothing before it loads or on a set with no images', () => {
+    expect(designCheckView(null, null, false, 5).state).toBe('none')
+    expect(designCheckView(null, null, true, 0).state).toBe('none')
+  })
+  it('warns with no design, or one not confirmed', () => {
+    expect(designCheckView(null, null, true, 5).state).toBe('warn')
+    expect(designCheckView({ ...confirmed, status: 'inferred' }, grid(), true, 5)).toEqual({ state: 'warn', count: 0, tip: 'Design not confirmed' })
+  })
+  it('an exploratory set has nothing to check', () => {
+    expect(designCheckView({ ...confirmed, mode: 'exploratory' }, grid(), true, 5).state).toBe('none')
+  })
+  it('counts images added since that sit outside the design', () => {
+    const v = designCheckView(confirmed, grid([{ uid: 'a', name: 'x', missing: ['Mouse'] }, { uid: 'b', name: 'y', missing: ['Panel'] }]), true, 7)
+    expect(v).toEqual({ state: 'warn', count: 2, tip: '2 images outside the design' })
+  })
+  it('names a design attribute no image has', () => {
+    expect(designCheckView(confirmed, grid([], ['Mouse']), true, 5)).toEqual({ state: 'warn', count: 1, tip: 'No image has Mouse' })
+  })
+  it('a confounded group accepted at confirm is not re-raised', () => {
+    expect(designCheckView(confirmed, grid(), true, 5).state).toBe('ok')
   })
 })

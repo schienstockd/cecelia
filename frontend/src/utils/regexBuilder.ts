@@ -118,3 +118,30 @@ export function extractWith(regexSrc: string, sample: string): string {
   if (!m) return ''
   return m[1] ?? m[0]
 }
+
+// ── A builder's settings, kept with the rule they built ─────────────────────────
+// The builder writes a regex, and a regex cannot be read back into builder settings. A rule that
+// should reopen as the builder (the design dialog's rules) keeps the settings beside the regex.
+
+/** The separators the builder offers; `folder` = both platforms' path separators. */
+export type SepChoice = '-' | '_' | '.' | 'space' | 'folder' | 'custom'
+
+export type BuilderSpec =
+  | { mode: 'field'; sep: SepChoice; customSep: string; pos: FieldPos; stripExt: boolean }
+  | { mode: 'around'; before: Ctx; extract: { kind: ExtractKind; text: string }; after: Ctx }
+
+/** The separator characters a `SepChoice` stands for. */
+export function sepChars(sep: SepChoice, custom = ''): string {
+  return sep === 'space' ? ' ' : sep === 'folder' ? '/\\' : sep === 'custom' ? custom : sep
+}
+
+/** The regex a builder spec makes ("" when it makes none). */
+export function buildRegex(spec: BuilderSpec): string {
+  return spec.mode === 'field'
+    ? buildFieldRegex(sepChars(spec.sep, spec.customSep), spec.pos, spec.stripExt)
+    : buildLookaroundRegex(spec.before, spec.extract, spec.after)
+}
+
+export const defaultSpec = (mode: BuilderSpec['mode'] = 'field'): BuilderSpec => mode === 'field'
+  ? { mode, sep: '-', customSep: '', pos: 'last', stripExt: true }
+  : { mode, before: { text: '', cls: 'none' }, extract: { kind: 'digits', text: '' }, after: { text: '', cls: 'none' } }

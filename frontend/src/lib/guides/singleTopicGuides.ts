@@ -204,6 +204,17 @@ export const fixMetadataGuide: GuideDef = {
       },
     },
     {
+      anchor: 'checks.design',
+      route: '/metadata',
+      placement: 'bottom',
+      title: 'Then set up the experiment design',
+      text: 'Say which attribute you compare and which one is the n — a mouse, not a cell.',
+      bullets: [
+        'Plots then group by it and count one point per replicate.',
+        'The check stays amber until the design is confirmed, and when new images fall outside it.',
+      ],
+    },
+    {
       title: 'Do this before you segment',
       text: 'Metadata is read at run time, so fixing it later means re-running what you already ran.',
     },

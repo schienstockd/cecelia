@@ -15,7 +15,7 @@
 // reader could not tell a real setting from a leftover. Presence now means "this slot has a summary
 // level, and it is this one"; absence means "this slot has no summary level".
 
-export type StatUnit = 'individual' | 'image'
+export type StatUnit = 'individual' | 'image' | 'replicate'   // replicate: the set's design names it (utils/experimentDesign.ts)
 export type ImageAgg = 'mean' | 'median'
 
 export interface StatUnitState {

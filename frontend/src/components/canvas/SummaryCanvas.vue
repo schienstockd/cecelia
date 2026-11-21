@@ -120,7 +120,7 @@ const {
   specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
-  canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs, designReplicate, designMarkState, useDesignCompare,
   attrGroups, setAttrOrder,
 } = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared,
   // The population picker follows the ACTIVE plot's spec, exactly as on the Analysis board. This used
@@ -511,6 +511,11 @@ watch(segPops, () => {
               </select>
             </template>
           </template>
+          <button v-if="designMarkState" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense design-mark"
+                  :class="`design-mark-${designMarkState.state}`" aria-label="Experiment design"
+ v-tooltip.bottom="designMarkState.tip" @click="useDesignCompare">
+            <i class="pi pi-bullseye" />
+          </button>
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
@@ -545,7 +550,7 @@ watch(segPops, () => {
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
                         :project-uid="projectUid" :image-uid="imageUid"
                         :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                        :group-attr="panelGroupAttr" :group-order="attrGroups"
+                        :group-attr="panelGroupAttr" :group-order="attrGroups" :replicate-attrs="designReplicate"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
                         :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
@@ -635,4 +640,7 @@ watch(segPops, () => {
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
 .sc-hint { opacity: 0.7; margin-left: auto; }
+
+.design-mark-follows { cursor: default; }
+.design-mark-differs { color: var(--cc-sev-warn); }
 </style>

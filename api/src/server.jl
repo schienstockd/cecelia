@@ -469,6 +469,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/attr/create" => (req, body_bytes) -> (api_images_attr_create(body_bytes)),
     "/api/images/attr/delete" => (req, body_bytes) -> (api_images_attr_delete(body_bytes)),
     "/api/images/attr/set" => (req, body_bytes) -> (api_images_attr_set(body_bytes)),
+    "/api/images/attr/rename" => (req, body_bytes) -> (api_images_attr_rename(body_bytes)),
     "/api/images/channelnames" => (req, body_bytes) -> (api_images_channelnames(body_bytes)),
     "/api/images/meta/set" => (req, body_bytes) -> (api_images_meta_set(body_bytes)),
     "/api/images/inclusion/set" => (req, body_bytes) -> (api_images_inclusion_set(body_bytes)),

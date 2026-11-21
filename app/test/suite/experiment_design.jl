@@ -80,6 +80,7 @@ end
     @test isempty(g["missingAttrs"]) && g["planned"]["parents"] == 3
     # each panel imaged on its own day: Date is confounded with Panel; Mouse (M1 in both) is not
     @test g["confounded"] == ["Date"]
+    @test isempty(g["paired"])            # no date and no mouse holds both panels
 
     # values the dialog has not written yet place the image without touching it
     uid = s._images[end].uid
@@ -103,4 +104,59 @@ end
     @test isempty(experiment_design_grid(s, d)["confounded"])
     @test isempty(experiment_design_grid(s._images[1:3], d)["confounded"])
     rm(proj.root; recursive = true)
+end
+
+@testset "Experiment design — paired and blocked levels" begin
+    # every mouse carries both conditions → paired on Mouse; every day images both, but each mouse one
+    # condition → blocked on Date, not paired on Date × Mouse
+    proj = create_project!(name = "xd-paired-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "pairs")
+    for (m, c) in (("M1", "ctrl"), ("M1", "drug"), ("M2", "ctrl"), ("M2", "drug"))
+        add_image!(s; name = "$(m)-$(c)", attr = Dict("Cond" => c, "Mouse" => m, "Date" => "d1"))
+    end
+    by_mouse = experiment_design_from(Dict("group" => "Cond", "parents" => "Mouse"))
+    @test experiment_design_grid(s, by_mouse)["paired"] == ["Mouse"]
+
+    t = add_set!(proj; name = "blocks")
+    for (d, m, c) in (("d1", "M1", "ctrl"), ("d1", "M2", "drug"), ("d2", "M1", "ctrl"), ("d2", "M2", "drug"))
+        add_image!(t; name = "$(d)$(m)", attr = Dict("Cond" => c, "Mouse" => m, "Date" => d))
+    end
+    nested = experiment_design_from(Dict("group" => "Cond", "parents" => ["Date", "Mouse"]))
+    gt = experiment_design_grid(t, nested)
+    @test gt["paired"] == ["Date"]
+    # each mouse holds one condition: nested by design, so the replicate is not reported as confounded
+    @test isempty(gt["confounded"])
+    # one group: nothing to pair
+    @test isempty(experiment_design_grid(t._images[[1, 3]], nested)["paired"])
+    rm(proj.root; recursive = true)
+end
+
+@testset "design replicate as the plot unit" begin
+    # design_replicates: every parent needed — Mouse 1 with no date is no replicate, never "M1"
+    mk(ps...) = (; attr = Dict{String,Any}(ps...))
+    imgs = [mk("Date" => "D1", "Mouse" => "M1"), mk("Date" => "D2", "Mouse" => "M1"), mk("Mouse" => "M1")]
+    reps = design_replicates(imgs, ["a", "b", "c"], ["Date", "Mouse"])
+    @test reps == Dict("a" => "D1 × M1", "b" => "D2 × M1")              # same mouse number, two dates: two mice; the claim check's key
+    @test isempty(design_replicates(imgs, ["a", "b", "c"], String[]))
+
+    # four images: u1 + u2 are one mouse (M1) in panel A, u3 is M2 in A, u4 is M1 again in panel B;
+    # u5 has no replicate and stays its own unit. Expected values from the definition — one value per
+    # replicate per group, the mean over all that replicate's cells (Lord et al. 2020).
+    df = DataFrame("value_name" => fill("A", 10), "pop" => fill("/p", 10),
+                   "uID" => ["u1", "u1", "u2", "u3", "u3", "u3", "u4", "u4", "u5", "u5"],
+                   "m"   => [1.0, 3.0, 5.0, 10.0, 10.0, 10.0, 2.0, 4.0, 7.0, 9.0])
+    unit_map = Dict("u1" => "D1 × M1", "u2" => "D1 × M1", "u3" => "D1 × M2", "u4" => "D1 × M1")
+    attr_map = Dict("u1" => "A", "u2" => "A", "u3" => "A", "u4" => "B", "u5" => "B")
+    r = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                             normalize = :none, by_image = true, stat_unit = :image,
+                             unit_map = unit_map, attr_map = attr_map, stats_enabled = true)
+    byg = Dict(s["uID"] => s for s in r["series"])
+    @test byg["A"]["n"] == 2 && byg["A"]["median"] == (3.0 + 10.0) / 2  # M1 = mean(1,3,5) = 3, M2 = 10
+    @test byg["B"]["n"] == 2 && byg["B"]["median"] == (3.0 + 8.0) / 2   # M1 in B = mean(2,4); u5 = mean(7,9)
+    codes = [f["code"] for f in r["comparisons"]["findings"]]
+    @test !("stats.cells_as_replicates" in codes)                      # n counts mice, not cells
+    # the same frame with cells as the unit: the finding is there
+    r0 = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, attr_map = attr_map, stats_enabled = true)
+    @test "stats.cells_as_replicates" in [f["code"] for f in r0["comparisons"]["findings"]]
 end
