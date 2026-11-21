@@ -6,6 +6,7 @@ import { lightPathStages, type LightPathImage } from './acquisitionLightPath'
 import type { AcquisitionSettings } from './acquisitionSettings'
 import REAL from './acquisitionChannelTable.fixture.json'
 import FV4000 from './acquisitionLightPath.fixture.json'
+import CARD from './acquisitionCard.fixture.json'
 
 const cyclic = REAL.cyclic as unknown as AcquisitionSettings
 const noXpd = REAL.cyclicNoXpd as unknown as AcquisitionSettings
@@ -114,11 +115,44 @@ describe('summariseStages', () => {
     expect(s.stack).toContain('CD68 cycle 2')
   })
 
+  it('summarises per-channel illumination intensity with the bands', () => {
+    const chans = cyclic.channels!.map((c, i) => ({ ...c, illuminationIntensity: 10 + i }))
+    expect(summary({ ...cyclic, channels: chans }).illumination)
+      .toEqual(['XCiteMultiBandLed', `4 excitation bands · intensity 10–${9 + chans.length}`])
+  })
+
   it('summarises the detectors of a lambda stack, and lasers lose their 33-name target list', () => {
     const s = summary(spectral)
     expect(s.detectors).toEqual(['HV 300–630 · gain 1'])
     expect(s.laser[0]).toBe('HeNe633 · 633 nm')
     expect(s.filters).toEqual(['Dichroics not recorded', 'Emission filters not recorded'])
+  })
+
+  it('keeps the per-track beam splitters of a many-channel .czi in the summary', () => {
+    // Real LSM 980 reader output (4 tracks, each its own splitters, no shared dichroic slots), its
+    // channels repeated to pass MANY_CHANNELS so the stage is summarised
+    const lsm = CARD.lsm980_airyscan as unknown as AcquisitionSettings
+    const chans = [0, 1, 2].flatMap(k => lsm.channels!.map(c => ({ ...c, order: c.order + k * 4 })))
+    const acq = { ...lsm, channels: chans }
+    expect(manyChannels(acq)).toBe(true)
+    const splitLine = 'Beam splitters: MBS 488/561/639 · Plate · MBS 488/561 · SBS SP 615 · SBS SP 550 · MBS -405 · SBS SP 505'
+    expect(summary(acq).filters).toContain(splitLine)
+    expect(summary(acq, 2).filters).toContain(splitLine)
+    // each track's own pinhole is summarised too, not dropped until a channel is picked
+    expect(summary(acq).pinhole).toEqual(['5.24–5.61 AU · 225.84–356.32 µm'])
+    // shared dichroic slots are lines of their own, so no splitter summary then
+    const shared = { ...acq, dichroics: [{ slot: 'MBS', name: 'MBS 488/561' }] } as unknown as AcquisitionSettings
+    expect(summary(shared).filters.some(t => t.startsWith('Beam splitters'))).toBe(false)
+  })
+
+  it('leaves the recorded HV out of the detector summary under Auto HV', () => {
+    const real = FV4000 as unknown as LightPathImage
+    const acq = real.acquisition!
+    const det = summariseStages(lightPathStages(real), acq, null).find(s => s.key === 'detectors')!.items.map(i => i.text)
+    expect(det.filter(t => !t.startsWith('Auto HV') && /\bHV\b/.test(t))).toEqual([])
+    expect(det.some(t => t.startsWith('Auto HV on'))).toBe(true)
+    // nor in the channel table's detector column
+    expect(channelList(acq).filter(r => /\bHV\b/.test(r.detector))).toEqual([])
   })
 
   it('points at the table for the measured per-channel signal, and shows the selected channel’s', () => {
