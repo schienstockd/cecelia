@@ -74,7 +74,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
-  add, remove, removeAll, arrangeGrid, arrangeCascade,
+  add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<ClusterPanelState>(
   ckey,
@@ -152,8 +152,8 @@ function setVis(patch: Partial<VisProps>) {
 
 // duplicate a panel: a new panel with a deep copy of the source's state (so the user can tweak one
 // thing — measure, styling — without disturbing the original). Mirrors SummaryCanvas.duplicatePanel.
-function duplicatePanel(s: ClusterPanelState) {
-  const id = add()
+function duplicatePanel(srcId: number, s: ClusterPanelState) {
+  const id = duplicate(srcId)   // same size as the source, offset
   const p = panels.value.find(x => x.id === id)
   if (p) p.state = { ...s, features: s.features ? [...s.features] : undefined,
                      hl: s.hl ? [...s.hl] : undefined, vis: s.vis ? { ...s.vis } : undefined }
@@ -360,14 +360,14 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                             :active="p.id === activeId" :view="p.state.kind"
                             :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
                             :persist-key="`${ckey}:${p.id}`"
-                            @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
+                            @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.id, p.state)" />
           <!-- cluster panels (heatmap / HMM behaviour) → GENERIC render from the CLUSTER_PANELS
                registry — the SAME mechanism the Analysis board uses (LayoutCanvas). Adding a cluster
                plot is one registry line; no per-plot branch here. -->
           <component v-else-if="isClusterPanel(p.state.kind)" :is="CLUSTER_PANELS[p.state.kind].component"
                             :index="i" :arrange="p.arrange" :active="p.id === activeId"
                             v-bind="clusterPanelProps(p)" :persist-key="`${ckey}:${p.id}`"
-                            @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
+                            @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.id, p.state)" />
         </template>
         <!-- Share mode: dim veil + drag/click selection + toolbar. Same shape as SummaryCanvas. -->
         <CanvasSelectionOverlay v-if="shareSel.active.value"

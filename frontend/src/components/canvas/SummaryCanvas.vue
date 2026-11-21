@@ -104,7 +104,7 @@ interface PanelState {
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
-  add, remove, removeAll, arrangeGrid, arrangeCascade,
+  add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PanelState>(
   ckey,
@@ -453,8 +453,9 @@ function addPanel(value: string) {
 
 // Duplicate a panel: new panel with a deep copy of the source's state (spec, series selection,
 // chart type/measure/groupBy/vis) — so the user can change one thing (e.g. measure speed → angle).
-function duplicatePanel(src: { state: PanelState }) {
-  add()
+// `duplicate` also copies the source's size, offset so both stay visible.
+function duplicatePanel(src: { id: number; state: PanelState }) {
+  duplicate(src.id)
   const p = panels.value.at(-1)
   if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis } }
 }

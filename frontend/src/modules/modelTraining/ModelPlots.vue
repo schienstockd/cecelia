@@ -55,7 +55,7 @@ const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
 // gating and summary canvases (useFloatingCanvas + FloatingCanvasHost).
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, shared, add, remove, removeAll, arrangeGrid, arrangeCascade,
+  panels, activeId, shared, add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<FlowPanelState>(ckey, () => ({ kind: 'flowMetrics' }))
 
@@ -95,8 +95,8 @@ function addKind(kind: string) {
   if (p) p.state = { ...(INTERACTIVE_VIEWS[kind]?.initialState?.() ?? {}), kind }
   activeId.value = id
 }
-function duplicatePanel(s: FlowPanelState) {
-  const id = add()
+function duplicatePanel(srcId: number, s: FlowPanelState) {
+  const id = duplicate(srcId)   // same size as the source, offset
   const p = panels.value.find(x => x.id === id)
   if (p) p.state = JSON.parse(JSON.stringify(s))
   activeId.value = id
@@ -145,7 +145,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
                             :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
                             :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)"
-                            @duplicate="duplicatePanel(p.state)" />
+                            @duplicate="duplicatePanel(p.id, p.state)" />
         </template>
         <!-- outside the zoom layer, like the population manager: the vault stays full-size -->
         <template #overlay>
