@@ -18,8 +18,9 @@
 <script setup lang="ts">
 import { tooManyClustersToDraw, tooManyClustersText } from '../../utils/clusterLimit'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef, toRaw } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
+import { resizePaint } from '../../utils/resizePaint'
 import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from './PlotPointOutMark.vue'
@@ -153,11 +154,16 @@ const boxW = ref(0), boxH = ref(0)
 // warps if x and y stretch independently to fill a non-square box (e.g. after hiding the legend). Used
 // by BOTH the dot canvas and the HTML labels so they stay aligned.
 function mapPx(x: number, y: number, w: number, h: number): [number, number] {
-  const { xMin, xMax, yMin, yMax } = extents.value
+  return rectMap({ px: 0, py: 0, pw: w, ph: h })(x, y)
+}
+// The data→px map for one rect, with the extents read ONCE: the paint loops call it per point, and
+// re-reading the reactive `extents` (a proxy) per point made a 100k-point repaint several times slower.
+function rectMap(r: { px: number; py: number; pw: number; ph: number }): (x: number, y: number) => [number, number] {
+  const { xMin, xMax, yMin, yMax } = toRaw(extents.value)
   const xr = xMax > xMin ? xMax - xMin : 1, yr = yMax > yMin ? yMax - yMin : 1
-  const sc = Math.min(w / xr, h / yr) || 0
-  const offX = (w - xr * sc) / 2, offY = (h - yr * sc) / 2
-  return [offX + (x - xMin) * sc, offY + (yMax - y) * sc]   // y flips (screen down)
+  const sc = Math.min(r.pw / xr, r.ph / yr) || 0
+  const ox = r.px + (r.pw - xr * sc) / 2, oy = r.py + (r.ph - yr * sc) / 2
+  return (x, y) => [ox + (x - xMin) * sc, oy + (yMax - y) * sc]   // y flips (screen down)
 }
 // Centroid label chips, placed whole inside a WxH box and clear of each other (plots/chipPlacement) —
 // a chip on a cluster at the edge used to hang off it and clip. The on-screen overlay and the SVG
@@ -215,11 +221,7 @@ function facetCell(fi: number, nf: number, w: number, h: number) {
 }
 // data→px into an arbitrary sub-rect, SHARED extents (uniform isotropic scale, letterboxed)
 function mapRect(x: number, y: number, r: { px: number; py: number; pw: number; ph: number }): [number, number] {
-  const { xMin, xMax, yMin, yMax } = extents.value
-  const xr = xMax > xMin ? xMax - xMin : 1, yr = yMax > yMin ? yMax - yMin : 1
-  const sc = Math.min(r.pw / xr, r.ph / yr) || 0
-  const offX = (r.pw - xr * sc) / 2, offY = (r.ph - yr * sc) / 2
-  return [r.px + offX + (x - xMin) * sc, r.py + offY + (yMax - y) * sc]
+  return rectMap(r)(x, y)
 }
 // A facet title wider than its cell is middle-shortened to it (#1770, same cut as the plot facet
 // headers); the full name goes on hover. Bold, so the estimate is the label chip's 0.6·font per char.
@@ -256,40 +258,37 @@ function dot(c: CanvasRenderingContext2D, px: number, py: number, r: number) {
 }
 // centroid labels + facet titles scale with the pop-manager font-size slider (vis.fontSize)
 const labelFont = computed(() => props.vis?.fontSize ?? 11)
-// paint a set of point indices via `toPx`, bucketed by category so fillStyle is set once per colour
-function paintInto(c: CanvasRenderingContext2D, idx: number[], toPx: (i: number) => [number, number]) {
-  const cats = categories.value!, pal = palette.value
+// paint point indices `idx` (all points when null) through `toPx`, bucketed by category so fillStyle
+// is set once per colour. Everything reactive is read once up front, not per point.
+function paintInto(c: CanvasRenderingContext2D, pts: Float32Array, idx: number[] | null,
+                   toPx: (x: number, y: number) => [number, number], r: number) {
+  const cats = toRaw(categories.value)!, pal = palette.value
   const groups: number[][] = pal.map(() => [])
-  for (const i of idx) { const g = groups[cats[i]]; if (g) g.push(i) }
+  if (idx) for (const i of idx) { const g = groups[cats[i]]; if (g) g.push(i) }
+  else for (let i = 0, n = pts.length / 2; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
   for (let gi = 0; gi < pal.length; gi++) {
     const g = groups[gi]; if (!g.length) continue
     c.fillStyle = pal[gi]
-    for (const i of g) { const [px, py] = toPx(i); dot(c, px, py, dotR.value) }
+    for (const i of g) { const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); dot(c, px, py, r) }
   }
 }
 function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
-  const pts = points.value, cats = categories.value, pal = palette.value
+  const pts = toRaw(points.value), cats = categories.value, pal = palette.value
   if (!pts || !cats || !pal.length) return
-  const alpha = dotAlpha.value
+  const alpha = dotAlpha.value, r = dotR.value
   c.globalAlpha = alpha
   const fs = facets.value
   if (facetBy.value === 'none' || fs.length <= 1) {
-    const n = pts.length / 2, groups: number[][] = pal.map(() => [])
-    for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
-    for (let gi = 0; gi < pal.length; gi++) {
-      const g = groups[gi]; if (!g.length) continue
-      c.fillStyle = pal[gi]
-      for (const i of g) { const [px, py] = mapPx(pts[2 * i], pts[2 * i + 1], w, h); dot(c, px, py, dotR.value) }
-    }
+    paintInto(c, pts, null, rectMap({ px: 0, py: 0, pw: w, ph: h }), r)
   } else {
     const n = pts.length / 2
     for (let fi = 0; fi < fs.length; fi++) {
-      const cell = facetCell(fi, fs.length, w, h)
+      const toPx = rectMap(facetCell(fi, fs.length, w, h))
       // GHOST: the whole cloud in faint grey behind each facet, so the UMAP shape stays legible and
       // facets are comparable (you see where this facet's points sit within the full embedding).
       c.globalAlpha = alpha; c.fillStyle = ghostColour()
-      for (let i = 0; i < n; i++) { const [px, py] = mapRect(pts[2 * i], pts[2 * i + 1], cell); dot(c, px, py, dotR.value) }
-      paintInto(c, fs[fi].idx, i => mapRect(pts[2 * i], pts[2 * i + 1], cell))
+      for (let i = 0; i < n; i++) { const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); dot(c, px, py, r) }
+      paintInto(c, pts, fs[fi].idx, toPx, r)
     }
   }
   c.globalAlpha = 1
@@ -305,6 +304,17 @@ function redraw() {
   dctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   dctx.clearRect(0, 0, w, h)
   paintDots(dctx, w, h)
+}
+// A content change paints at once; a resize step paints live only while painting is cheap, else the
+// browser stretches the old bitmap until the drag settles (utils/resizePaint). The box is square
+// (SquarePlot), so the stretch keeps the embedding isotropic and the labels — which follow boxW/boxH
+// on EVERY step — stay on their dots.
+const painter = resizePaint(redraw)
+const repaint = () => nextTick(() => painter.paint())
+function onBoxResize() {
+  const el = dotsEl.value
+  if (el) { boxW.value = el.clientWidth; boxH.value = el.clientHeight }
+  painter.resized()
 }
 // hi-res export: re-paint at scale× onto an offscreen canvas (crisp; a 2D canvas can't clip)
 async function exportDots(scale: number): Promise<HTMLCanvasElement | null> {
@@ -580,23 +590,23 @@ watch(colourAttr, () => { if (colourBy.value === 'attribute') recolour() })
 watch(usePopIdx, () => load())
 // facet controls only re-partition + redraw (no refetch, except the popIdx case above); attribute
 // faceting reads the store-derived facets computed, so a redraw is enough
-watch([facetBy, facetAttr, facets], () => nextTick(redraw))
+watch([facetBy, facetAttr, facets], repaint)
 // lazily fill the population picker when population mode (colour or facet) is first entered
 watch(usePopIdx, v => { if (v && !popGroups.value.length) loadPopGroups() }, { immediate: true })
 // redraw the 2D dots when the data / colouring / extents change; also on theme flip (the facet ghost
 // backdrop is theme-coloured — dark grey on dark, light grey on light/export)
-watch([points, categories, palette, extents], () => nextTick(redraw), { deep: true })
-watch(dark, () => nextTick(redraw))
+watch([points, categories, palette, extents], repaint, { deep: true })
+watch(dark, repaint)
 // styling knobs that only affect the canvas paint (no refetch): point size + opacity
-watch([() => props.vis?.pointSize, () => props.vis?.pointOpacity], () => nextTick(redraw))
+watch([() => props.vis?.pointSize, () => props.vis?.pointOpacity], repaint)
 onMounted(() => {
   load()
   // observe the STABLE square box (present from mount) so a panel resize always repaints + repositions
-  // the HTML labels/titles (which read boxW/boxH set in redraw)
-  if (plotBoxEl.value) dro = observeBoxChanges(plotBoxEl.value, redraw)
-  nextTick(redraw)
+  // the HTML labels/titles (which read boxW/boxH, set on every step by onBoxResize)
+  if (plotBoxEl.value) dro = observeBoxChanges(plotBoxEl.value, onBoxResize)
+  repaint()
 })
-onBeforeUnmount(() => { dro?.disconnect(); dro = null })
+onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel() })
 
 // ── export (surfaced by the host InteractivePanel via defineExpose) ──
 // PNG composites the 2D dot canvas + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
@@ -649,25 +659,26 @@ function exportSvg(): string {
   const fs = facets.value
   if (facetBy.value === 'none' || fs.length <= 1) {
     const n = pts.length / 2, groups: number[][] = pal.map(() => [])
+    const toPx = rectMap({ px: 0, py: 0, pw: S, ph: S })
     for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
     for (let gi = 0; gi < pal.length; gi++) {
       const g = groups[gi]; if (!g.length) continue
-      body += svgCircles(g.map(i => mapPx(pts[2 * i], pts[2 * i + 1], S, S)),
+      body += svgCircles(g.map(i => toPx(pts[2 * i], pts[2 * i + 1])),
                          { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
     }
     if (labels.value) for (const c of placedChips(S, S, fsz)) body += chip(c.x, c.y, c.label)
   } else {
     const n = pts.length / 2
     for (let fi = 0; fi < fs.length; fi++) {
-      const cell = facetCell(fi, fs.length, S, S)
+      const cell = facetCell(fi, fs.length, S, S), toPx = rectMap(cell)
       const ghost: [number, number][] = []
-      for (let i = 0; i < n; i++) ghost.push(mapRect(pts[2 * i], pts[2 * i + 1], cell))
+      for (let i = 0; i < n; i++) ghost.push(toPx(pts[2 * i], pts[2 * i + 1]))
       body += svgCircles(ghost, { fill: ghostLight, opacity: alpha, r, label: 'ghost' })
       const groups: number[][] = pal.map(() => [])
       for (const i of fs[fi].idx) { const g = groups[cats[i]]; if (g) g.push(i) }
       for (let gi = 0; gi < pal.length; gi++) {
         const g = groups[gi]; if (!g.length) continue
-        body += svgCircles(g.map(i => mapRect(pts[2 * i], pts[2 * i + 1], cell)),
+        body += svgCircles(g.map(i => toPx(pts[2 * i], pts[2 * i + 1])),
                            { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
       }
       body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fitFacetTitle(fs[fi].label, cell.cw, fsz), { fill: PAPER_INK, size: fsz, anchor: 'middle', weight: 700 })
@@ -776,7 +787,7 @@ useVisualPanel(
 // BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='cluster-map'`,
 // `plotId=persistKey`); a mark's `cell` field selects a facet on faceted layouts. Positions
 // computed in plotBoxEl-local px — the same letterbox math `singleFrame` / `facetInnerRect` use,
-// via `boxW`/`boxH` (kept in sync by the ResizeObserver in `redraw()`) so a resize repositions
+// via `boxW`/`boxH` (kept in sync on every resize step by `onBoxResize`) so a resize repositions
 // the marker without extra wiring.
 const viewer = useViewerStore()
 const umapMarks = computed(() => {
