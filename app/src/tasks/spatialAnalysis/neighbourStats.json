@@ -2,6 +2,7 @@
   "task": "neighbourStats",
   "fun_name": "spatialAnalysis.neighbourStats",
   "label": "Interaction matrix",
+  "citations": ["10.1016/j.cell.2018.07.010"],
   "purpose": "Score which population pairs neighbour more or less than chance",
   "useWhen": [
     "Testing whether two cell types associate or avoid each other",

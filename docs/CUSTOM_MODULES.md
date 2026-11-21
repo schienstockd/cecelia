@@ -134,6 +134,11 @@ Identical schema to the built-in specs in `app/src/tasks/*/*.json` (see
 `resource_pool` is required (`"cpu"` / `"gpu"` / `"io"` / `"hpc"`). `scope` is `"image"`
 (default) or `"set"`.
 
+Optional `"citations": ["10.xxxx/…"]` (bare DOIs) puts the methods your task runs in the `cite` column
+of the Parameters CSV. Every run of a custom task is recorded with where it came from (`source` in the
+run log): `{tier: "hand-dropped", file}` for a hand-dropped module, `{tier: "plugin", plugin, version, ref}`
+for a plugin, read from `plugin.json` and the install record. So bump `version` when you change behaviour.
+
 ### 2. `<category>/<name>.jl` — the code
 
 The file is `include`d **into the `Cecelia` module**, so reference package names with the `Cecelia.`
