@@ -798,9 +798,9 @@ mounted in `App.vue` and toggled by a persisted setting:
   (`PANEL_Z_BASE` + one step per open panel, always well below the modal layer); `FloatingPanel`
   binds the result inline, so don't reintroduce a flat `z-index` in its stylesheet.
   **While a module page's plot canvas is maximised** (`.is-plots-maximised`, z 200, covers the header
-  and sidebar) the whole stack lifts to `PANEL_Z_LIFTED` = 210, and the sidebar's four launchers
-  (`PanelLaunchers.vue`) appear compact in the maximised action bar — so Viewer / Lab log / Kiwi /
-  Correction stay openable and on top there.
+  and sidebar) the whole stack lifts to `PANEL_Z_LIFTED` = 210, and the header's launchers
+  (`HeaderLaunchers.vue`) appear in the maximised set row — so Viewer / Lab log / Help / Kiwi stay
+  openable and on top there.
   Point-out marks (`PointerBubble`, Kiwi's and Claude's "look here") on page content sit at
   `PANEL_Z_BASE - 1` — under every panel, so an open Kiwi / Viewer / Lab log covers them; a mark on
   something inside a panel stays above the panels, or its own panel would hide it.
@@ -2778,7 +2778,7 @@ viewer panel. Design: [`docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md`](todo/VIEWER_ON_T
   (main window), so it runs whether or not the viewer is open.
 
 **Getting there**: the image table's eye opens the window; the header's Viewer chip (`AppHeader.vue`)
-and the sidebar launcher (`PanelLaunchers.vue`) bring it forward or reopen it on the last image
+and its copy in the maximised set row (`HeaderLaunchers.vue`) bring it forward or reopen it on the last image
 (`composables/useViewerLauncher.ts` → `raiseViewerWindow`). The viewer's ← back returns to the main
 window.
 

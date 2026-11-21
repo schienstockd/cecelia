@@ -63,7 +63,7 @@ import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
-import PanelLaunchers from './PanelLaunchers.vue'
+import HeaderLaunchers from './HeaderLaunchers.vue'
 import NextStep from './NextStep.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
@@ -365,10 +365,10 @@ const visibleUids = computed<string[]>(() =>
               @click="taskOpen = true" v-tooltip.left="'Filtered by processing history — click to change'">
               <i class="pi pi-list-check" /><span class="filter-label">Task •</span>
             </button>
-            <!-- Maximised, the sidebar and header are covered — so their Viewer / Correction / Lab log /
-                 Kiwi launchers ride along here; the panels lift above the maximised canvas
+            <!-- Maximised, the header is covered — so its launchers (Viewer / Lab log / Help / Ask Kiwi)
+                 ride along here, the same component; the panels lift above the maximised canvas
                  (PANEL_Z_LIFTED, utils/panelStack.ts). Restore stays a button while maximised (Esc too). -->
-            <PanelLaunchers v-if="isMaximised" compact />
+            <HeaderLaunchers v-if="isMaximised" />
             <button v-if="plotsMaximised && $slots.plots" class="filter-toggle active"
               @click="togglePlotsMaximised" v-tooltip.left="'Restore layout (Esc)'" aria-label="Restore layout">
               <i class="pi pi-window-minimize" /><span class="filter-label">Restore</span>
