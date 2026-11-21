@@ -367,7 +367,7 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
 
 @_tool
 def check_claim(project_uid: str, set_uid: str, populations: list[str], measure: str,
-                unit_attrs: list[str] | None = None) -> dict:
+                unit_attrs: list[str] | None = None, group_attrs: list[str] | None = None) -> dict:
     """The claim recital's rule checks: before a comparison leaves Cecelia as a claim ("T cells move
     faster than B cells"), does the RECORD let it be made? Read-only, no model, no significance test.
 
@@ -375,6 +375,10 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     ("live.track.speed") and `unit_attrs`, the image attributes whose values together name one
     replicate — the statistical unit (["Mouse"], or ["Mouse", "Location"] when each site in each mouse
     counts once). Leave it unset only if the claim really has none — that is itself a finding.
+    `group_attrs`: the image attributes whose values are the compared groups (["Panel"]: panel A vs
+    B) when the claim compares groups of images rather than populations — the plot's compare
+    attribute. On a set with an experiment design (get_experiment_design), the design's group and
+    replicate are the defaults to pass; a claim that departs from them is allowed, and noted.
 
     Returns {findings, checks, ran, skipped, notCompared, nRows, nUsed}. `checks` is one line per check
     ({id, state: ok|warn|skipped, text}) — read it first: it is the list of facts. Each finding has
@@ -384,16 +388,20 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     setting differing across images — preprocessing steps and parent gates included — or between the
     compared populations, `claim.confounded` when it splits them completely; `claim.dims_differ` when
     they were measured in 2D vs 3D on the same image), S2
-    conventions (no unit, too few units for a per-unit test, several images per unit, uncalibrated).
+    conventions (no unit, too few units for a per-unit test, several images per unit, uncalibrated;
+    the design: an exploratory set, an unconfirmed design, a group or replicate other than the
+    design's). With `group_attrs`, S1 also names an attribute the groups can't be told apart from
+    (`claim.group_confounded`: each date holds one panel).
     `ran` / `skipped` say what was checked: no findings is NOT a pass when checks were skipped.
     Report findings as questions back to the analyst ("this comparison can't support the claim yet,
     because…"), with the finding's `long` text as the options. Never as a verdict on the biology."""
-    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attrs)
+    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attrs, group_attrs)
 
 
 @_tool
 def state_claim(project_uid: str, set_uid: str, populations: list[str], measure: str, text: str,
-                unit_attrs: list[str] | None = None, entry_id: str | None = None) -> dict:
+                unit_attrs: list[str] | None = None, entry_id: str | None = None,
+                group_attrs: list[str] | None = None) -> dict:
     """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry listing
     the check_claim results by category (Images, Processing record, Same processing, Replicates, Units)
     — each problem with what to do. The checks are mechanical, so they carry no good / bad marks.
@@ -404,7 +412,7 @@ def state_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     on the entry — rewording to fit the data is a new round, not a fix); unchanged just re-checks.
     Returns {entryId, round, findings, ran, skipped}. Nothing is blocked or certified: say what the
     findings ask of the analysis, and which checks did not run."""
-    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attrs, entry_id)
+    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attrs, entry_id, group_attrs)
 
 
 # Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out
@@ -637,9 +645,12 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         reports one because that is what got stored — do not copy it back: a `popType` that disagrees
         with a population's own type produced a board where every panel said "Select one or more
         populations", and the request is now rejected rather than written.
-      - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
-                   `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
-                   every track across images treats one image's 400 tracks as 400 replicates.
+      - `statUnit` "individual" (every cell/track a point), "image" (each image collapsed to one
+                   `imageAgg`, "mean"/"median") or "replicate" (each replicate of the set's experiment
+                   design, e.g. each mouse). PREFER "image" when per-image n is
+                   small — pooling every track across images treats one image's 400 tracks as 400
+                   replicates. On a set with a design, leave `statUnit` and `compare_by` unset: the
+                   board then compares the design's group with its replicate as the unit.
       - `title`    optional slot caption, on any plot.
     `plot` may instead be a board VIEW key — the plots that are not specs — with its own fields:
       - "gatingStrategy" {image?, valueName?, popType?, pop?, hierarchy?} — the gates leading to `pop`
@@ -706,7 +717,8 @@ def get_analysis_boards(project_uid: str) -> dict:
 
     `statUnit` is the SUMMARY LEVEL, and two boards that differ only there are NOT duplicates:
     "individual" plots every cell/track as its own point, "image" collapses each image to one
-    `imageAgg` (e.g. mean) value first — the same measures asked at two different levels, which is a
+    `imageAgg` (e.g. mean) value first, "replicate" each replicate of the set's experiment design
+    (e.g. each mouse) — the same measures asked at two different levels, which is a
     normal and deliberate pair to keep side by side. Read it before saying a board repeats another.
     It is stored explicitly and removed where a plot has no summary level, so an ABSENT `statUnit`
     means exactly that — not "left at the default". `imageAgg` ("mean"/"median") comes with it and

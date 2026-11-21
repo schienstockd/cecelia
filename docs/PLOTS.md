@@ -654,6 +654,19 @@ proportions per image are a follow-up). Per-plot, persisted in the panel's `ui.s
 the raw CSV export honours it (rows become the per-image means/medians). Surfaced as the **Datapoint**
 control (+ a **Per image** mean/median select when set to image) in the plot options popover.
 
+**The replicate from the set's experiment design** (`statUnit:"replicate"` + `replicateAttrs`, the
+design's parents outermost first; `docs/todo/EXPERIMENT_DESIGN_PLAN.md` → T2). `design_replicates`
+names each image's replicate (every parent needed — Mouse 1 with no date is no replicate), and
+`_replicate_frame` relabels the frame's `uID` with it, so the same per-image collapse becomes one value
+per replicate: the mean over all its cells (Lord et al. 2020, SuperPlots, doi:10.1083/jcb.202001064).
+Grouped by attribute, the unit carries its group too, so a mouse imaged in two panels is a unit in
+each. An image with no replicate stays its own unit. The test and its findings then count replicates
+(`stats.cells_as_replicates` no longer fires). On a set with a design, a panel with no saved
+`statUnit` reads as the replicate (resolved at read, never written to `ui`), the Datapoint control
+offers it by name ("mouse"), and a canvas still on the untouched compare default switches once to the
+design's group (`designCompareApply`, the `designApplied` view-state flag); a bullseye in the compare
+row says so. The SuperPlot layer (cell dots under the replicate means) is not built yet. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`. With the replicate as the unit, the box and strip charts are SuperPlots (Lord et al. 2020, doi:10.1083/jcb.202001064): each dot is a replicate's mean, larger, in the replicate's colour, and the cells it summarises sit beneath it, small and faint, in the same colour — one colour per replicate across groups (`plots/superplot.ts`; the server sends `pointUnits` / `cellPoints` / `cellUnits`, `_superplot!` in `plot_data.jl`). The test runs on the means.
+
 **Grouped by image attribute, the test runs within each population.** With `attr_map` the boxes are
 population × attribute group (× `groupBy` level), so `_summary_agg` tests through `_stats_within_pops`:
 one test per (population, level) over its attribute groups, each its own Bonferroni family, as if

@@ -2,19 +2,21 @@
 // app's own setup (`installAppPlugins`), a fresh pinia per mount, and nothing else. No
 // `@vue/test-utils`: the tests measure the real DOM, so a real app on a real host element is all
 // they need. Plan: docs/todo/GUI_TESTING_PLAN.md (Decision 2).
-import { createApp, type Component } from 'vue'
+import { createApp, type App, type Component } from 'vue'
 import { createPinia } from 'pinia'
 import { installAppPlugins } from '../../appPlugins'
 
 const mounted: Array<() => void> = []
 
 /** Mount `root` into a fresh element on <body>. `root` is usually a small render function that builds
- *  the scenario around the component under test (a scroll box, a wrapper, a section). */
-export function mountInto(root: Component): HTMLElement {
+ *  the scenario around the component under test (a scroll box, a wrapper, a section). `extend` adds
+ *  what the app's setup leaves out (a router, for a component with a RouterLink). */
+export function mountInto(root: Component, extend?: (app: App) => void): HTMLElement {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const app = createApp(root)
   installAppPlugins(app, createPinia())
+  extend?.(app)
   app.mount(host)
   mounted.push(() => { app.unmount(); host.remove() })
   return host

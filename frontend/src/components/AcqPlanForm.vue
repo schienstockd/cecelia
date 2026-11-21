@@ -5,13 +5,20 @@
 // form, not parsed text — the sentence is only echoed. Logic: utils/acqCheck.ts.
 import { computed, ref } from 'vue'
 import ChipSelect from './ChipSelect.vue'
+import DesignQuestionFields from './DesignQuestionFields.vue'
+import { designExpectPhrase, type DesignQuestion } from '../utils/experimentDesign'
 import type { AcqDesign, AcqPlan, AcqPlanChannel, AcqStage } from '../utils/acqCheckApi'
 import { ACQ_MEASURES, ACQ_STAGES, cleanPlan, planByName, planProblems, planSentence } from '../utils/acqCheck'
 
 // `items`: the set's noun from the check ("movies" only when every image is a time-lapse)
-const props = withDefaults(defineProps<{ plan: AcqPlan; designs: AcqDesign[]; saving?: boolean; items?: string }>(),
+// `question`: the set's experiment design's question and expectation — asked here too, saved into the
+// design by the host (one question for the set, docs/todo/EXPERIMENT_DESIGN_PLAN.md → T5)
+const props = withDefaults(defineProps<{ plan: AcqPlan; designs: AcqDesign[]; saving?: boolean; items?: string
+                                         question: DesignQuestion; groupValues: string[]; groupLabel: string }>(),
                            { items: 'images' })
-const emit = defineEmits<{ save: [AcqPlan]; cancel: [] }>()
+const emit = defineEmits<{ save: [AcqPlan, DesignQuestion]; cancel: [] }>()
+const q = ref<DesignQuestion>({ ...props.question })
+const phrase = computed(() => designExpectPhrase(q.value))
 
 // a working copy: the form edits it, Save hands it back cleaned
 const designOf = (id: string) => props.designs.find(d => d.id === id)
@@ -30,7 +37,7 @@ const measureOptions = ACQ_MEASURES.map(m => ({ value: m, label: m[0].toUpperCas
 const compareOptions = computed(() =>
   draft.value.objects.filter(o => o.name.trim()).map(o => ({ value: o.name.trim(), label: o.name.trim() })))
 const problems = computed(() => planProblems(draft.value))
-const sentence = computed(() => planSentence(cleanPlan(draft.value)))
+const sentence = computed(() => planSentence(cleanPlan(draft.value, phrase.value), phrase.value))
 </script>
 
 <template>
@@ -97,17 +104,14 @@ const sentence = computed(() => planSentence(cleanPlan(draft.value)))
       <ChipSelect v-model="draft.compare" :options="compareOptions" multiple aria-label="Objects you will compare"
                   v-tooltip.top="'Objects you will compare'" />
     </div>
-    <div class="cc-row">
-      <span class="cc-muted cc-fs-xs lbl">Expected</span>
-      <input v-model="draft.expectation" class="expect" placeholder="optional, e.g. naive — the same"
-             v-tooltip.top="'What you expect if nothing differs'" />
-    </div>
+    <DesignQuestionFields compact v-model:question="q.question" v-model:expect="q.expect" v-model:expect-in="q.expectIn"
+                          :group-values="groupValues" :group-label="groupLabel" />
 
     <p v-if="sentence" class="echo">{{ sentence }}</p>
     <p v-for="p in problems" :key="p" class="cc-muted-warn cc-fs-xs">{{ p }}</p>
     <div class="cc-row actions">
       <button class="cc-btn" @click="emit('cancel')">Cancel</button>
-      <button class="cc-btn cc-btn-primary" :disabled="!!problems.length || saving" @click="emit('save', cleanPlan(draft))">
+      <button class="cc-btn cc-btn-primary" :disabled="!!problems.length || saving" @click="emit('save', cleanPlan(draft, phrase), q)">
         <i v-if="saving" class="pi pi-spin pi-spinner" /> Check
       </button>
     </div>
@@ -119,7 +123,6 @@ const sentence = computed(() => planSentence(cleanPlan(draft.value)))
 .grid { display: grid; grid-template-columns: 9rem repeat(var(--n), minmax(9rem, 1fr)) 5.5rem 1.75rem; gap: 0.3rem; align-items: center; }
 .ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lbl { width: 4.5rem; }
-.expect { flex: 1; }
 .echo { margin: 0.2rem 0 0; padding: 0.35rem 0.55rem; background: var(--cc-surface-2); border-radius: var(--cc-radius-sm); font-style: italic; }
 .actions { justify-content: flex-end; }
 </style>

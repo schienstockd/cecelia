@@ -798,9 +798,9 @@ mounted in `App.vue` and toggled by a persisted setting:
   (`PANEL_Z_BASE` + one step per open panel, always well below the modal layer); `FloatingPanel`
   binds the result inline, so don't reintroduce a flat `z-index` in its stylesheet.
   **While a module page's plot canvas is maximised** (`.is-plots-maximised`, z 200, covers the header
-  and sidebar) the whole stack lifts to `PANEL_Z_LIFTED` = 210, and the sidebar's four launchers
-  (`PanelLaunchers.vue`) appear compact in the maximised action bar — so Viewer / Lab log / Kiwi /
-  Correction stay openable and on top there.
+  and sidebar) the whole stack lifts to `PANEL_Z_LIFTED` = 210, and the header's launchers
+  (`HeaderLaunchers.vue`) appear in the maximised set row — so Viewer / Lab log / Help / Kiwi stay
+  openable and on top there.
   Point-out marks (`PointerBubble`, Kiwi's and Claude's "look here") on page content sit at
   `PANEL_Z_BASE - 1` — under every panel, so an open Kiwi / Viewer / Lab log covers them; a mark on
   something inside a panel stays above the panels, or its own panel would hide it.
@@ -2778,7 +2778,7 @@ viewer panel. Design: [`docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md`](todo/VIEWER_ON_T
   (main window), so it runs whether or not the viewer is open.
 
 **Getting there**: the image table's eye opens the window; the header's Viewer chip (`AppHeader.vue`)
-and the sidebar launcher (`PanelLaunchers.vue`) bring it forward or reopen it on the last image
+and its copy in the maximised set row (`HeaderLaunchers.vue`) bring it forward or reopen it on the last image
 (`composables/useViewerLauncher.ts` → `raiseViewerWindow`). The viewer's ← back returns to the main
 window.
 
@@ -2832,7 +2832,7 @@ doi:10.1109/TVCG.2021.3114786); no code is taken from it.
   registry entry carries the lens (`lens`: image, x/y/r, frame, region run, score column, the run's
   images, and the **look** toggled at the click — `LensLook`: the view, the segmentation shown, population
   types and eyes, tracks, graphs; `_clean_lens`, `api/src/movies_api.jl`). Movies & figures is where a
-  lens is renamed, tagged, starred, put on the board. **Open** (there, or Go to here) restores the view and
+  lens is renamed, tagged, starred, put on the board. **Open** (there, or Go to here — shown only on the image the lens was drawn on) restores the view and
   the look and re-pins the lens (`lensOpenPending` → `pendingViewState.lens` → `applyLensLook`); it never
   turns scores on. **Delete** removes the figure and its score column on every image it scored
   (`_drop_lens_scores!`, the `lensScores` run kind).

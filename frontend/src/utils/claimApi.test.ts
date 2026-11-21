@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { claimPopRef, reviewClaim, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, parseClaimResult } from './claimApi'
+import { claimPopRef, reviewClaim, claimScopeOf, claimUnitsDefault, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, parseClaimResult } from './claimApi'
 import { reviewGroups } from './modelReview'
 
 const s = (valueName: string, pop: string) => ({ valueName, pop, popType: 'flow' })
@@ -15,7 +15,20 @@ describe('claimApi', () => {
     expect(claimScopeOf({ setUid: 'X', series: [], measure: 'live.track.speed' })).toBeNull()
     expect(claimScopeOf({ setUid: 'X', series: [s('B', '/qc')], measure: '' })).toBeNull()
     expect(claimScopeOf({ setUid: 'X', series: [s('B', '/qc'), s('B', '/qc'), s('T', '/qc')], measure: 'm' }))
-      .toEqual({ setUid: 'X', populations: ['B/qc', 'T/qc'], measure: 'm' })
+      .toEqual({ setUid: 'X', populations: ['B/qc', 'T/qc'], measure: 'm', groupAttrs: [] })
+  })
+  it('a plot compared by an attribute makes a claim between groups of images', () => {
+    expect(claimScopeOf({ setUid: 'X', series: [s('B', '/qc')], measure: 'm', groupAttrs: ['Panel'] }))
+      .toEqual({ setUid: 'X', populations: ['B/qc'], measure: 'm', groupAttrs: ['Panel'] })
+  })
+  it('the replicate picker starts from what the panel stored, then the design, then the name', () => {
+    const attrs = ['Date', 'Mouse', 'Panel']
+    expect(claimUnitsDefault(['Panel'], ['Date', 'Mouse'], attrs)).toEqual(['Panel'])
+    expect(claimUnitsDefault([], ['Date', 'Mouse'], attrs)).toEqual([])               // cleared on purpose
+    expect(claimUnitsDefault(null, ['Date', 'Mouse'], attrs)).toEqual(['Date', 'Mouse'])
+    expect(claimUnitsDefault(null, ['Date', 'Cage'], attrs)).toEqual(['Date'])         // a renamed-away attribute dropped
+    expect(claimUnitsDefault(null, [], attrs)).toEqual(['Mouse'])
+    expect(claimUnitsDefault(null, [], [])).toEqual([])
   })
   it('defaults the unit to the attribute naming the animal', () => {
     expect(defaultUnitAttr(['Location', 'Mouse', 'Treatment'])).toBe('Mouse')

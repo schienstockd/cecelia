@@ -45,13 +45,14 @@ export function claimPopRef(s: SeriesTarget): string {
   return `${s.valueName}${p === '/' ? '' : p}`
 }
 
-/** The claim scope a summary plot shows, or null when it can't be one: a claim compares populations
- *  across a SET on one measure. */
-export function claimScopeOf(o: { setUid?: string | null; series: SeriesTarget[]; measure?: string }):
-  { setUid: string; populations: string[]; measure: string } | null {
+/** The claim scope a summary plot shows, or null when it can't be one: a claim compares populations,
+ *  or groups of images by the plot's compare attributes (`groupAttrs`: Panel A vs B), across a SET on
+ *  one measure. */
+export function claimScopeOf(o: { setUid?: string | null; series: SeriesTarget[]; measure?: string; groupAttrs?: string[] }):
+  { setUid: string; populations: string[]; measure: string; groupAttrs: string[] } | null {
   if (!o.setUid || !o.measure || !o.series.length) return null
   const pops = [...new Set(o.series.map(claimPopRef))]
-  return { setUid: o.setUid, populations: pops, measure: o.measure }
+  return { setUid: o.setUid, populations: pops, measure: o.measure, groupAttrs: [...(o.groupAttrs ?? [])] }
 }
 
 /** The attribute most likely to name the animal, for the replicate picker's default: an exact
@@ -59,6 +60,14 @@ export function claimScopeOf(o: { setUid?: string | null; series: SeriesTarget[]
 export function defaultUnitAttr(attrs: string[]): string {
   const want = /^(mouse|mice|animal|donor|subject|patient|individual)(_?id)?$/i
   return attrs.find(a => want.test(a.trim())) ?? attrs[0] ?? ''
+}
+
+/** The replicate picker's first value: what the panel stored, else the set's design replicate (those of
+ *  its attributes the set still has), else the attribute most likely to name the animal. */
+export function claimUnitsDefault(stored: string[] | null, designReplicate: string[], attrs: string[]): string[] {
+  if (stored) return stored
+  const fromDesign = designReplicate.filter(a => attrs.includes(a))
+  return fromDesign.length ? fromDesign : [defaultUnitAttr(attrs)].filter(Boolean)
 }
 
 /** A panel's stored replicate attributes: `claimUnits`, or the single `claimUnit` a panel kept before
@@ -128,7 +137,7 @@ export function parseClaimResult(r: Record<string, unknown> | null): ClaimResult
 
 /** POST /api/claim/state — state (no `entryId`) or restate a claim. */
 export async function stateClaim(body: {
-  projectUid: string; setUid: string; populations: string[]; measure: string; unitAttrs: string[]; text: string
+  projectUid: string; setUid: string; populations: string[]; measure: string; unitAttrs: string[]; groupAttrs?: string[]; text: string
   entryId?: string; source?: Record<string, unknown>
 }, apiBase = ''): Promise<ClaimResult | null> {
   return parseClaimResult(await postJson(`${apiBase}/api/claim/state`, body))

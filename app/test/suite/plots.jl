@@ -1123,6 +1123,22 @@ end
     rp = Cecelia._summary_agg(df, "boxplot"; measure = nothing, granularity = :cell, nbins = 10,
                               normalize = :none, by_image = false, stats_enabled = true)
     @test !isnan(rp["comparisons"]["pValue"])
+
+    # cells as replicates in every population: ONE note, not one per population (each population's
+    # copy carries its own cell counts, so they are not equal and `unique` kept them all)
+    nc = 40
+    pc = DataFrame("value_name" => fill("A", 2nc), "pop" => vcat(fill("/a", nc + 8), fill("/b", nc - 8)),
+                   "uID" => repeat(["w1", "w2", "k1", "k2"], nc ÷ 2), "m" => Float64.(1:2nc))
+    am2 = Dict(u => startswith(u, "w") ? "WT" : "KO" for u in ("w1", "w2", "k1", "k2"))
+    rr = Cecelia._summary_agg(pc, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, stat_unit = :cell, attr_map = am2,
+                              stats_enabled = true)
+    @test length(rr["comparisons"]["groups"]) == 4
+    @test [f["code"] for f in rr["comparisons"]["findings"]] == ["stats.cells_as_replicates"]
+    # the replicate floor keeps the population that binds hardest (highest minP)
+    fl(p) = Dict{String,Any}("code" => "stats.few_replicates", "short" => "p=$p",
+                             "detail" => Dict{String,Any}("minP" => p))
+    @test [f["short"] for f in Cecelia._merge_part_findings([fl(0.1), fl(0.4), fl(0.2)])] == ["p=0.4"]
 end
 
 @testset "grouped by image attribute — compact letters within each population" begin

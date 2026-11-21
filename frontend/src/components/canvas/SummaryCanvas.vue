@@ -14,6 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
+import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { defaultSpecIds, shouldSeedDefaults } from '../../utils/defaultPlots'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, ref, watch } from 'vue'
@@ -104,7 +105,7 @@ interface PanelState {
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
-  add, remove, removeAll, arrangeGrid, arrangeCascade,
+  add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PanelState>(
   ckey,
@@ -117,10 +118,10 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, localSelRemap, reload,
+  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, anyPopChange, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
-  canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs, designReplicate, designMarkState, useDesignCompare,
   attrGroups, setAttrOrder,
 } = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared,
   // The population picker follows the ACTIVE plot's spec, exactly as on the Analysis board. This used
@@ -453,8 +454,9 @@ function addPanel(value: string) {
 
 // Duplicate a panel: new panel with a deep copy of the source's state (spec, series selection,
 // chart type/measure/groupBy/vis) — so the user can change one thing (e.g. measure speed → angle).
-function duplicatePanel(src: { state: PanelState }) {
-  add()
+// `duplicate` also copies the source's size, offset so both stay visible.
+function duplicatePanel(src: { id: number; state: PanelState }) {
+  duplicate(src.id)
   const p = panels.value.at(-1)
   if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis } }
 }
@@ -510,6 +512,11 @@ watch(segPops, () => {
               </select>
             </template>
           </template>
+          <button v-if="designMarkState" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense design-mark"
+                  :class="`design-mark-${designMarkState.state}`" aria-label="Experiment design"
+ v-tooltip.bottom="designMarkState.tip" @click="useDesignCompare">
+            <i class="pi pi-bullseye" />
+          </button>
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
@@ -544,10 +551,10 @@ watch(segPops, () => {
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
                         :project-uid="projectUid" :image-uid="imageUid"
                         :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                        :group-attr="panelGroupAttr" :group-order="attrGroups"
+                        :group-attr="panelGroupAttr" :group-order="attrGroups" :replicate-attrs="designReplicate"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
-                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
+                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`" :any-pop-change="anyPopChange"
                         @activate="activeId = p.id" @remove="removePanel(p.id)"
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />
@@ -607,7 +614,7 @@ watch(segPops, () => {
           <!-- Floating population picker: `position: absolute` on the undocked CanvasSidePanel
                anchors it to the nearest positioned ancestor, so it stays in the overlay slot
                (inside `.floating-canvas`) alongside the share chip — not below the host. -->
-          <SeriesPicker v-if="showManager" :family-note="familyNote" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
+          <SeriesPicker v-if="showManager" :family-note="familyNote" :tracks="isTrackFamily(listedPopType)" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"
@@ -634,4 +641,7 @@ watch(segPops, () => {
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
 .sc-hint { opacity: 0.7; margin-left: auto; }
+
+.design-mark-follows { cursor: default; }
+.design-mark-differs { color: var(--cc-sev-warn); }
 </style>

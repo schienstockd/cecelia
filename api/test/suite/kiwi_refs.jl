@@ -164,6 +164,12 @@ end
             r = res(pref)
             @test r["label"] == "Track measures · speed"
             @test startswith(r["detail"], "B/qc, T/qc · by hmm.state · ") && length(r["detail"]) > 30
+            # the unit is said: per image, or per replicate of the set's experiment design
+            cross = Dict{String,Any}("series" => ["B/qc"], "setUid" => "noSuchSet", "imageUids" => ["a", "b"])
+            @test endswith(_kiwi_plot_detail("testpr", merge(cross, Dict{String,Any}("statUnit" => "image"))), "one point per image")
+            @test endswith(_kiwi_plot_detail("testpr", merge(cross, Dict{String,Any}("statUnit" => "replicate",
+                                                       "replicateAttrs" => ["Date", "Mouse"]))), "one point per Date × Mouse")
+            @test !occursin("one point", _kiwi_plot_detail("testpr", merge(cross, Dict{String,Any}("statUnit" => "individual"))))
         finally
             lock(_PLOTS_LOCK) do; delete!(_PLOTS_BY_PROJECT, "testpr") end
         end

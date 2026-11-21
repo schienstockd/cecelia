@@ -68,7 +68,7 @@ export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, rename_set!, set_recipe!,
        ExperimentDesign, experiment_design, experiment_design_from, experiment_design_dict, experiment_design_hash,
-       set_experiment_design!, experiment_design_history, experiment_design_version, experiment_design_grid, set_name_taken, move_image!
+       set_experiment_design!, rename_design_attr, experiment_design_history, experiment_design_version, experiment_design_grid, design_replicates, design_expect_phrase, set_name_taken, move_image!
 export discard!, move_aside, discard_later, sweep_discarded!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes, img_defaulted_scale, run_scale_defaults,
        image_included, IMAGE_EXCLUDED_REASON, ImageRating, RATING_NONE, RATING_GOOD, RATING_CAUTION,
@@ -287,7 +287,7 @@ export validate_chain_template, ChainTemplateError, chain_template_from_raw, cha
 export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
-export chain_from_history, chain_preflight, history_params_table, board_export_provenance, gate_file_edits
+export chain_from_history, chain_preflight, history_params_table, board_export_provenance, board_designs, gate_file_edits
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────

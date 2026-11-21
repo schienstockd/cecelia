@@ -183,10 +183,50 @@ end
 set_experiment_design!(proj::CciaProject, s::CciaSet, d::Union{ExperimentDesign,Nothing}; kw...)::CciaSet =
     set_experiment_design!(proj, s.uid, d; kw...)
 
+"""The design with attribute `from` renamed to `to` in every role (unchanged when it names neither)."""
+function rename_design_attr(d::ExperimentDesign, from::AbstractString, to::AbstractString)::ExperimentDesign
+    re(v) = String[a == from ? String(to) : a for a in v]
+    ExperimentDesign(d.question, d.expect, d.expect_in, d.mode, d.status, re(d.group), re(d.unit), re(d.parents),
+                     d.planned_parents, d.planned_units)
+end
+
 # ── The grid ───────────────────────────────────────────────────────────────────────────────────────
 
 _design_values(attrs::Dict{String,String}, names::Vector{String}) =
     String[strip(get(attrs, a, "")) for a in names]
+
+"""
+    design_expect_phrase(d) -> String
+
+The design's expectation as words, for a sentence or a prompt: "the same", "higher in A", "lower in
+B"; "" when unsure (or higher/lower with no group named). The acquisition check states it from here,
+not from a field of its own (docs/todo/EXPERIMENT_DESIGN_PLAN.md → T5).
+"""
+function design_expect_phrase(d::ExperimentDesign)::String
+    d.expect == EXPECT_SAME && return "the same"
+    d.expect in (EXPECT_HIGHER, EXPECT_LOWER) || return ""
+    isempty(d.expect_in) && return ""
+    string(d.expect == EXPECT_HIGHER ? "higher" : "lower", " in ", d.expect_in)
+end
+
+"""
+    design_replicates(imgs, uids, parents) -> Dict{String,String}
+
+uID → its replicate under the design's `parents` (outermost first): the claim check's own replicate
+key (`_claim_unit_of`, values joined " × "), so a plot and a claim count the same units. An image
+missing any of them has no replicate and is left out (it stays its own unit), never merged by the
+values it does have: Mouse 1 with no date would otherwise pool with Mouse 1 of every date.
+"""
+function design_replicates(imgs, uids, parents::AbstractVector{<:AbstractString})::Dict{String,String}
+    attrs = claim_unit_attrs(parents)
+    out = Dict{String,String}()
+    isempty(attrs) && return out
+    for (im, uid) in zip(imgs, uids)
+        k = _claim_unit_of(im, attrs)
+        isempty(k) || (out[string(uid)] = k)
+    end
+    out
+end
 
 """
     experiment_design_grid(images, d; attrs = Dict()) -> Dict
@@ -197,7 +237,8 @@ show the grid for values it has not written yet.
 
 Reply: `{cells: [{group, parent, units: [{unit, images: [uid]}]}], groups: [{group, nParents, nUnits,
 nImages}], unassigned: [{uid, name, missing: [attr]}], missingAttrs: [attr], confounded: [attr],
-planned}`. `confounded` names the attributes the group cannot be told apart from (`_design_confounded`). An image is
+paired: [level], planned}`. `confounded` names the attributes the group cannot be told apart from (`_design_confounded`);
+`paired` the parent levels every group shares (`_design_paired`). An image is
 unassigned when one of its role attributes is blank; `missingAttrs` names role attributes no image
 carries. With no unit attribute the image is the unit (its name), and with no parents every cell's
 `parent` is [].
@@ -241,16 +282,18 @@ function experiment_design_grid(images::AbstractVector, d::ExperimentDesign;
         "unassigned" => unassigned,
         "missingAttrs" => [r for r in roles if !(r in seen)],
         "confounded" => _design_confounded(placed, d),
+        "paired" => _design_paired(placed, d),
         "planned" => Dict{String,Any}("parents" => d.planned_parents, "units" => d.planned_units))
 end
 
 # Attributes that cannot be told apart from the group: set on every placed image, and every value of it
 # falls in one group only (groups imaged on different days make Date one). Needs two
-# groups or more. Leaves out the group's own attributes, the unit's, and identifiers (no value on two
-# images), which are trivially in one group each.
+# groups or more. Leaves out the group's own attributes, the unit's, the innermost parent (the replicate
+# n counts sits inside its group by design: a mouse given one condition is nested, not confounded), and
+# identifiers (no value on two images), which are trivially in one group each.
 function _design_confounded(placed, d::ExperimentDesign)::Vector{String}
     length(unique(first.(placed))) >= 2 || return String[]
-    skip = Set(vcat(d.group, d.unit))
+    skip = Set(vcat(d.group, d.unit, isempty(d.parents) ? String[] : [last(d.parents)]))
     names = sort!(collect(setdiff(intersect((Set(k for (k, v) in a if !isempty(strip(v))) for (_, a) in placed)...), skip)))
     out = String[]
     for n in names
@@ -263,6 +306,28 @@ function _design_confounded(placed, d::ExperimentDesign)::Vector{String}
         end
         all(c -> c == 1, values(count_of)) && continue              # an identifier
         all(gs -> length(gs) == 1, values(groups_of)) && push!(out, n)
+    end
+    out
+end
+
+# The parent levels the design is paired (blocked) on — the opposite of confounded: every identity at
+# that level holds every group, as when each mouse carries both conditions or each day images every
+# group. A level is a prefix of `parents`, so a mouse is named within its date when both are parents
+# ("mouse 1" on two days is two mice). Linked replicates call for a paired test, or a two-way ANOVA with
+# the replicate as a factor; testing them as independent is too conservative. Lord et al. 2020,
+# SuperPlots, J Cell Biol 219(6):e202001064, doi:10.1083/jcb.202001064; Zweifach 2024, J Cell Biol
+# 223(8):e202401074, doi:10.1083/jcb.202401074. Returns each level as its attributes joined by " × ".
+function _design_paired(placed, d::ExperimentDesign)::Vector{String}
+    groups = unique(first.(placed))
+    length(groups) >= 2 || return String[]
+    out = String[]
+    for k in eachindex(d.parents)
+        level = d.parents[1:k]
+        groups_of = Dict{Vector{String},Set{Vector{String}}}()
+        for (g, a) in placed
+            push!(get!(groups_of, String[strip(a[p]) for p in level], Set{Vector{String}}()), g)
+        end
+        all(gs -> length(gs) == length(groups), values(groups_of)) && push!(out, join(level, " × "))
     end
     out
 end

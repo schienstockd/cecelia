@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildFieldRegex, buildLookaroundRegex, extractWith, regexSampleFor } from './regexBuilder'
+import { buildFieldRegex, buildLookaroundRegex, buildRegex, defaultSpec, extractWith, regexSampleFor, sepChars } from './regexBuilder'
 
 // End-to-end: build a regex for a common case, then apply it to the sample the user would type it for.
 const field = (sample: string, sep: string, pos: Parameters<typeof buildFieldRegex>[1], stripExt = true) =>
@@ -173,5 +173,22 @@ describe('extractWith', () => {
   it('returns "" on no match or invalid pattern', () => {
     expect(extractWith('zzz', 'abc')).toBe('')
     expect(extractWith('(', 'abc')).toBe('')                     // invalid regex
+  })
+})
+
+describe('buildRegex — a kept builder spec makes the same regex as the builder', () => {
+  it('field mode, the folder above a file', () => {
+    const spec = { mode: 'field' as const, sep: 'folder' as const, customSep: '', pos: 'secondLast' as const, stripExt: false }
+    expect(buildRegex(spec)).toBe(buildFieldRegex('/\\', 'secondLast', false))
+    expect(extractWith(buildRegex(spec), '/data/TCELL/20211125/M1-2_0001.oir')).toBe('20211125')
+  })
+  it('around mode, the digits after M', () => {
+    const spec = { mode: 'around' as const, before: { text: 'M', cls: 'none' as const }, extract: { kind: 'digits' as const, text: '' }, after: { text: '', cls: 'none' as const } }
+    expect(extractWith(buildRegex(spec), 'M12-2-B6-naive')).toBe('12')
+  })
+  it('separator choices', () => {
+    expect(sepChars('space')).toBe(' ')
+    expect(sepChars('custom', '+')).toBe('+')
+    expect(defaultSpec('around').mode).toBe('around')
   })
 })

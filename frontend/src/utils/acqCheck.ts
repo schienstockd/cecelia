@@ -17,13 +17,16 @@ export function listWords(xs: string[]): string {
 }
 
 /** The plan as one sentence — what the modal echoes and the entry stores: "Compare movement of P14,
- *  OT-I and gBT (naive — expected the same)". Falls back to the objects when nothing is compared. */
-export function planSentence(plan: AcqPlan | null): string {
+ *  OT-I and gBT (expected the same)". Falls back to the objects when nothing is compared. The
+ *  expectation is the set's experiment design's (`designExpectPhrase`, asked once there); a plan saved
+ *  before carries its own `expectation`, used when the design says nothing. */
+export function planSentence(plan: AcqPlan | null, expectPhrase = ''): string {
   if (!plan || !plan.objects.length) return ''
   const what = plan.measure.length ? listWords(plan.measure) : 'measurements'
   const between = plan.compare.length ? plan.compare : plan.objects.map(o => o.name)
   const verb = between.length > 1 ? `Compare ${what} of ${listWords(between)}` : `Measure ${what} of ${between[0]}`
-  return plan.expectation.trim() ? `${verb} (${plan.expectation.trim()})` : verb
+  const expected = expectPhrase ? `expected ${expectPhrase}` : plan.expectation.trim()
+  return expected ? `${verb} (${expected})` : verb
 }
 
 /** A plan to start the form from: the suggested designs, no objects yet. */
@@ -50,8 +53,9 @@ export function planProblems(plan: AcqPlan): string[] {
   return out
 }
 
-/** The plan as saved: names trimmed, unnamed rows dropped, `compare` limited to existing objects. */
-export function cleanPlan(plan: AcqPlan): AcqPlan {
+/** The plan as saved: names trimmed, unnamed rows dropped, `compare` limited to existing objects. With
+ *  the design's expectation (`expectPhrase`), the plan's own is dropped: the design holds it. */
+export function cleanPlan(plan: AcqPlan, expectPhrase = ''): AcqPlan {
   const objects = plan.objects.filter(o => o.name.trim()).map(o => ({ ...o, name: o.name.trim() }))
   const names = new Set(objects.map(o => o.name))
   return {
@@ -59,8 +63,8 @@ export function cleanPlan(plan: AcqPlan): AcqPlan {
     objects,
     references: plan.references.filter(o => o.name.trim()).map(o => ({ ...o, name: o.name.trim() })),
     compare: plan.compare.filter(c => names.has(c)),
-    expectation: plan.expectation.trim(),
-    text: planSentence({ ...plan, objects, compare: plan.compare.filter(c => names.has(c)) }),
+    expectation: expectPhrase ? '' : plan.expectation.trim(),
+    text: planSentence({ ...plan, objects, compare: plan.compare.filter(c => names.has(c)) }, expectPhrase),
   }
 }
 

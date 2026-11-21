@@ -20,7 +20,7 @@ export const MAP: Record<string, MapEntry> = {
   // Data
   '/manage-images':  { what: 'Add, organise, copy, move and export images', guide: 'import-images' },
   '/preprocess':     { what: 'Crop, project or resample into a new image', guide: 'preprocess-images' },
-  '/metadata':       { what: 'Pixel size, channel names, colours — fix before segmenting', guide: 'fix-metadata' },
+  '/metadata':       { what: 'Pixel size, channel names, groups and the experiment design', guide: 'fix-metadata' },
   '/cleanup':        { what: 'Drift correction, bleedthrough and autofluorescence, denoise', guide: 'drift-correct' },
   '/model-training': { what: 'Train your own denoise or flow models', guide: 'train-flow-model' },
   '/segment':        { what: 'Find cells, with segmentation QC', guide: 'segment-an-image' },
