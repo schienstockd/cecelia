@@ -58,6 +58,7 @@ function _hp_on_shown(params, lv, shown::Dict{String,Vector{String}})::Bool
         l = get(lv, k, nothing)
         (l === nothing || l.writes) && continue
         if l.type == "popSelection"
+            _whole_pop(str) && continue        # an older run's "NONE": the whole segmentation, as `[]` is
             ls, path = _split_pop_ref(str, own)
             haskey(shown, ls) || continue
             picked = true

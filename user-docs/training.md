@@ -104,7 +104,7 @@ One or two images are enough for this session and for session 3. Comparing condi
 
 **You’ll see:** The checks, without AI: are the images there, was everything processed the same way, how many replicates, are the units calibrated. Each line is a fact, or a problem with what to do.
 
-**If it goes wrong:** No ✓ button: the plot is not across a set. The check needs a set of processed images, a few per condition.
+**If it goes wrong:** No ✓ button: the plot is not across a set. The check needs a set of processed images, a few per condition. ✓ greyed out: pick a measure and at least one population; a count or share of populations is not a claim.
 
 > [!NOTE]
 > Trainees usually bring one or two images, which is enough for steps 1–5 but not for a claim. Say so: this is how they check a result once they have a set with conditions, all processed the same way. Nothing is blocked: the checks inform, they don’t decide.

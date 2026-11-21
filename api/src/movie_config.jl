@@ -53,9 +53,11 @@ Base.@kwdef struct MovieRecordConfig <: MovieConfig
     titleCard::Any                          = nothing
     valueNames::Vector{String}              = String[]
     # Absent (nothing) differs from empty ([]) — absent leaves the canvas' masks alone (plain
-    # "record what's on screen"), empty is an explicit "no masks". Same three-valued contract for
-    # branch (skeleton) value names.
+    # "record what's on screen"), empty is an explicit "no masks".
     labelValueNames::Union{Vector{String},Nothing}  = nothing
+    # LEGACY-ONLY: the skeletons of a recording made before skeletons rode in the look as `skeletons`.
+    # Kept so such a config round-trips and `lookRestore` (movieRestore.ts) can carry it over; nothing
+    # on the frontend sends it now.
     branchValueNames::Union{Vector{String},Nothing} = nothing
     labelContour::Int                       = 0
     show3D::Bool                            = false

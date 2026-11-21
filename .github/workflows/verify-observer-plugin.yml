@@ -28,6 +28,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Explicit token scope (CodeQL actions/missing-workflow-permissions): read the repo, nothing else
+# writes to it. `actions: write` lets julia-actions/cache prune its old entries (see ci.yml).
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   verify:
     name: ${{ matrix.os }} — observer plugin setup

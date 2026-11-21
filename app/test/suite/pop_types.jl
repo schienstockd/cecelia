@@ -338,4 +338,8 @@ end
     @test cluster_id_owners(clust, "immune"; except = "/T") == Dict(3 => "/B")
     @test cluster_id_owners(clust, "movement") == Dict(1 => "/other run")
     @test as_cluster_id(true) === nothing && as_cluster_id(2.5) === nothing && as_cluster_id("x") === nothing
+    # a population that doesn't SELECT its values holds none of them: `neq 4` is every cluster but 4
+    add_pop!(clust, "not 4"; filter_measure = "clusters.immune", filter_fun = "neq", filter_values = [4])
+    add_pop!(clust, "above 5"; filter_measure = "clusters.immune", filter_fun = "gt", filter_values = 5)
+    @test cluster_id_owners(clust, "immune") == Dict(1 => "/T", 2 => "/T", 3 => "/B")
 end

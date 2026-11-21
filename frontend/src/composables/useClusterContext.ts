@@ -14,7 +14,7 @@ import type { GatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
 import { useDataRefresh } from './useDataRefresh'
 import { useImageMetaRefresh } from './useImageMetaRefresh'
-import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
+import { clusterMeasure, clusterPopIds, type ClusterPopType } from '../utils/clusterMeasure'
 import { channelColumnName } from '../utils/channelNames'
 import { clusterFeatureOptions } from '../utils/clusterHeatmapFeatures'
 import { clusterStoreBinding, sameClusterStoreBinding } from '../utils/clusterStoreBinding'
@@ -114,11 +114,12 @@ export function useClusterContext(opts: {
   // resolve a highlight set (pop paths) to shown populations (colour + owned cluster IDs) via the store.
   // Scoped to the CURRENT run: only pops filtering this run's `clusters.{suffix}` — the store holds every
   // run's pops for the segmentation in one sidecar, so a stale highlight from another run is ignored here
-  // (keeps the per-population heatmap / UMAP colouring on the run you're viewing).
+  // (keeps the per-population heatmap / UMAP colouring on the run you're viewing). The owned ids are
+  // `clusterPopIds` over the run's ids: a `neq 3` pop holds every cluster but 3, never 3 itself.
   const shownPopsFor = (hl: string[]): ShownPop[] => g.flat
     .filter(p => hl.includes(p.path) && p.filter?.measure === clusterMeasure(popType.value, suffix.value))
     .map(p => ({ path: p.path, name: p.name, colour: p.colour,
-                 clusterIds: Array.isArray(p.filter?.values) ? (p.filter!.values as unknown[]).map(Number) : [] }))
+                 clusterIds: clusterPopIds(p.filter, clusterIds.value[suffix.value] ?? []) }))
 
   // drive the caller's gating store for the pop tree: primary = first valid image,
   // the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.

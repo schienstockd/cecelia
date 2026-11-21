@@ -225,13 +225,18 @@ def _num(s):
 
 
 def _objective(text, na):
-    """`{name, magnification, na}` from an objective string like `Plan-Neofluar 10x/0.3`."""
+    """`{name, magnification, na}` from an objective string like `Plan-Neofluar 10x/0.3`. The `/NA`
+    suffix is optional — `UPlanSApo 20x` or `20x LWD` still give the magnification (the NA then
+    comes from `NumericalAperture` alone)."""
     if not text:
         return None
-    m = re.search(r'(\d+(?:\.\d+)?)\s*[xX×]\s*/\s*(\d+(?:\.\d+)?)', text)
+    # `MAGx/NA` first: a bare `Nx` earlier in the name (`Objective 1 XLUMPLFLN 20x/1.0`) is not it.
+    # Without one, a bare `20x` — digits right against the `x` (`20x LWD`, also with no space before the next word).
+    m = (re.search(r'(\d+(?:\.\d+)?)\s*[xX×]\s*/\s*(\d+(?:\.\d+)?)', text)
+         or re.search(r'(?<!\w)(\d+(?:\.\d+)?)[xX×]()', text))
     return {'name': text.strip(),
             'magnification': float(m.group(1)) if m else None,
-            'na': na if na is not None else (float(m.group(2)) if m else None),
+            'na': na if na is not None else (float(m.group(2)) if m and m.group(2) else None),
             'immersion': None}
 
 

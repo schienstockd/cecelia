@@ -104,6 +104,29 @@
         run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "default", "outputValueName" => "B"))
         run!("tracking.bayesian_track_measures", tp)
         @test isempty(stale_outputs_for(img).stale)
+
+        # A label correction that rewrote no pixel (`segment.correct` → "unchanged") left the labels and
+        # the h5ad byte-identical: it is logged `unchanged` with no `replaces`, so the tracks stay current
+        # and the next correction's `replaces` names the run that really made the measures.
+        Cecelia.cecelia_conf()["dirs"]["projects"] = _rl_prov_fixture()
+        img = init_object("testpr", "KDIeEm")
+        seg = run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "default", "outputValueName" => "B"))
+        trk = run!("tracking.bayesian_tracking", tp)
+        cp  = Dict{String,Any}("valueName" => "B", "outputValueName" => "B")   # as a chain or the REPL names it
+        pv  = run_provenance("segment.correct_measures", img, cp)
+        @test pv.replaces !== nothing && pv.replaces["taskId"] == seg      # stamped at open, as for any run
+        Cecelia.open_run_log!(img, "segment.correct_measures", "B", cp; task_id = "noop",
+                              inputs = pv.inputs, replaces = pv.replaces)
+        close_run_log!(img, "noop", "done"; unchanged = true)
+        e = _rl_find(img, "noop")
+        @test e["unchanged"] === true && !haskey(e, "replaces")
+        @test isempty(stale_outputs_for(img).stale)
+        @test !any(d -> d["run"]["taskId"] == trk, stale_outputs_for(img).unknown)
+        @test run_replaces("segment.correct_measures", img, cp)["taskId"] == seg
+        # …while a correction that did change pixels still stales them
+        fix = run!("segment.correct_measures", cp)
+        s = only(filter(d -> d["run"]["taskId"] == trk, stale_outputs_for(img).stale))
+        @test only(s["because"])["replacedBy"]["taskId"] == fix
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
         had_kpv ? (zarr["keepPreviousVersion"] = old_kpv) : delete!(zarr, "keepPreviousVersion")

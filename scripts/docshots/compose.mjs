@@ -25,7 +25,7 @@ import { chromium, findChromium, repo } from '../lib/chromium.mjs'
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, imageFile, imageStem, isPicture, setImages, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, imageFile, imageStem, isPicture, setImages, shotFile, shotPicked, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { figureGeometry } = await import(pathToFileURL(join(dir, 'figure.ts')).href)
 
 function parseArgs(argv) {
@@ -78,8 +78,7 @@ if (issues.length) {
   process.exit(1)
 }
 // a shot and the one it sits beside are one image: picking either composes both (the hero first)
-const picked = (s, x) => !a.only || a.only === s.id || [x.id, x.beside, ...s.shots.filter(o => o.beside === x.id).map(o => o.id)].includes(a.only)
-const shots = SHOT_SETS.flatMap(s => s.shots.filter(x => picked(s, x))
+const shots = SHOT_SETS.flatMap(s => s.shots.filter(x => shotPicked(s, x, a.only))
   .flatMap(x => shotThemes(s, x).map(theme => [x, theme, s])))
 if (a.only && shots.length === 0) throw new Error(`no shot or set "${a.only}"`)
 mkdirSync(a.out, { recursive: true })

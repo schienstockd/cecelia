@@ -41,7 +41,7 @@ import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
 import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import { DOT_R } from '../../plots/density'
 import { assignHistoryFor, recordStep, takeStep, toggleStep, writePlan, type Assign } from '../../utils/clusterAssignHistory'
-import { clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale } from '../../utils/clusterMeasure'
+import { clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale, claimsClusterIds, clusterPopIds } from '../../utils/clusterMeasure'
 import { eyeKey, offPaths, popEyeOn, popTypeSwitch } from '../../utils/viewer/popEyes'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
@@ -249,17 +249,18 @@ const visiblePops = computed<FlatPop[]>(() =>
   clusterMode.value
     ? g.flat.filter(p => p.filter?.measure === clusterMeasure(props.popType, props.suffix))
     : g.flat)
-const popClusterIds = (p: FlatPop): number[] => {
-  const v = p.filter?.values
-  return Array.isArray(v) ? (v as unknown[]).map(Number) : []
-}
+// the ids a pop OWNS — none for a `neq`/`gt` pop (clusterPopIds), never the ones it excludes
+const popClusterIds = (p: FlatPop): number[] => clusterPopIds(p.filter)
+// the pops the strip assigns ids to: those that claim their values. A `neq`/`gt` pop can't be armed or
+// rewritten by a tick — writing a ticked id list into it would keep its fun and invert the meaning.
+const assignablePops = computed<FlatPop[]>(() => visiblePops.value.filter(p => p.filter && claimsClusterIds(p.filter)))
 // a cluster ID belongs to at most one pop WITHIN the current run (scope to visiblePops so ticking is
 // exclusive per run, not across runs that happen to share the segmentation's sidecar)
 const clusterOwner = (id: number): FlatPop | undefined => visiblePops.value.find(p => popClusterIds(p).includes(id))
 
 // every population of this run → its cluster IDs: the state the assignment history checks against
 const currentAssign = (): Assign =>
-  Object.fromEntries(visiblePops.value.filter(p => p.filter).map(p => [p.path, popClusterIds(p)]))
+  Object.fromEntries(assignablePops.value.map(p => [p.path, popClusterIds(p)]))
 // write lists back, drops before gains so a cluster is never in two pops at once (server refuses that)
 async function writeAssign(target: Assign) {
   for (const [path, values] of writePlan(currentAssign(), target)) await g.updatePop(path, { filter: { values } })
@@ -300,7 +301,7 @@ async function addClusterPopulation() {
 
 // the shared strip's target: the selected row, if it is one of THIS run's cluster pops
 const armedPop = computed(() => clusterMode.value
-  ? visiblePops.value.find(p => p.path === props.selected && p.filter) : undefined)
+  ? assignablePops.value.find(p => p.path === props.selected) : undefined)
 const hoverPath = ref<string | null>(null)
 const hoverPop = computed(() => hoverPath.value ? visiblePops.value.find(p => p.path === hoverPath.value) : undefined)
 // strip focus: the hovered row, else the selected (armed) one — so filling a pop keeps its clusters lit

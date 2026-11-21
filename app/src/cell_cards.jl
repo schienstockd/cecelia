@@ -99,7 +99,8 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
 end
 
 # The run's features as the frame columns `clustering_features_pooled` reads — intensities by channel
-# name, a run recorded before that named against its first image (docs/todo/CHANNEL_NAMES_PLAN.md).
+# name, a run recorded before that named against the segment it was picked on (`run_reference_names`,
+# docs/todo/CHANNEL_NAMES_PLAN.md).
 _card_features(img::CciaImage, value_name::AbstractString, suffix::AbstractString, family::AbstractString) =
     _clustfeatures_features(img_track_props_path(img, value_name), String(suffix); family = family,
                             chans_of = run_channel_names(img, String(value_name)), own_uid = img.uid)

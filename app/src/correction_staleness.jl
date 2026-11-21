@@ -309,6 +309,7 @@ function stale_outputs_for(img::CciaImage)
     for (i, e) in enumerate(entries)
         run_entry_status(e) == "done" || continue
         _rl_get(e, "params", nothing) isa AbstractDict || continue
+        run_entry_unchanged(e) && continue              # wrote nothing: not a writer, maker or replacer
         push!(done, i)
         r = run_log_row(e)
         l = lv(r.fn); l === nothing && continue

@@ -72,6 +72,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/version"),          # the running version, stamped on a report_issue draft
         ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
         ("GET", "/api/plots/definitions"),  # available plot types (chart types, data needs, scope modes)
+        ("GET", "/api/sets/experiment-design"),  # the set's design: question, group/unit/parents, grid. Read-only
         ("GET", "/api/plots/attrs"),     # per-set image ATTRIBUTES (name + distinct values) — the axes a
                                          # board can compare by; the same route the summary canvas and the
                                          # UMAP colour/facet picker use, not a second attribute surface
@@ -391,6 +392,11 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         if image_uids:
             params["imageUids"] = image_uids
         return self._request("GET", "/api/plots/attrs", params)
+
+    def get_experiment_design(self, project_uid: str, set_uid: str):
+        return self._request(
+            "GET", "/api/sets/experiment-design", {"projectUid": project_uid, "setUid": set_uid}
+        )
 
     def get_image_meta(self, project_uid: str, image_uid: str):
         return self._request(

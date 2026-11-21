@@ -54,6 +54,7 @@
         universe = sort!(Int.(collect(ch.clusterIds[:immune])))
         @test length(universe) >= 4
         @test String(ch.clusterRunAt[:immune]) == at1
+        @test String.(ch.clusterMembers[:immune]) == ["KDIeEm", "TgtImg"]
         c1, c2, c3, c4 = universe[1:4]
         col = label_props(img_label_props_path(a, "B")) |> select_cols(["clusters.immune"]) |> as_df
         colb = label_props(img_label_props_path(b, "B")) |> select_cols(["clusters.immune"]) |> as_df
@@ -142,6 +143,9 @@
         st, body = add(Dict("groups" => [Dict("name" => "Solo", "clusters" => [c4])], "dryRun" => true))
         r = JSON3.read(body)
         @test st == 200 && String.(r.images) == ["KDIeEm"] && String.(r.skipped) == ["TgtImg"]
+        # …and the GUI agrees: the members it replays a tick to (g.mirrorUids) no longer include it,
+        # though the anchor's own `partOf` still names it
+        @test String.(channels().clusterMembers[:immune]) == ["KDIeEm"]
         record_run!(at2)
 
         # delete-own: Claude's grouping goes from every image of the run; the user's edit made T theirs
@@ -318,6 +322,18 @@ end
         @test set([Dict("path" => "/nope", "clusters" => [c1])])[1] == 404
         @test set([Dict("path" => "/T cells", "clusters" => [c1])], Dict{String,Any}("run" => "nope"))[1] == 404
         @test (clustmap(a).pops["/T cells"].filter_values, clustmap(b).pops["/B cells"].filter_values) == before
+        # a population that doesn't SELECT its ids (`neq`) is never given an id list — kept, it would hold
+        # every cluster but the ones it was given
+        for im in (a, b)
+            m = clustmap(im); m.pops["/B cells"].filter_fun = Cecelia.FILTER_NEQ; Cecelia.save_pop_tree!(m, im)
+        end
+        st, body = set([Dict("path" => "/B cells", "clusters" => [c3])])
+        @test st == 422
+        @test string(clustmap(b).pops["/B cells"].filter_fun) == "neq" &&
+              clustmap(b).pops["/B cells"].filter_values == before[2]
+        for im in (a, b)
+            m = clustmap(im); m.pops["/B cells"].filter_fun = Cecelia.FILTER_IN; Cecelia.save_pop_tree!(m, im)
+        end
 
         # the user's edit makes Claude's population theirs
         @test gui(api_gating_pop_update, Dict("path" => "/B cells", "colour" => "#abcdef"))[1] == 200
@@ -328,4 +344,19 @@ end
         empty!(_GATING_HISTORY)
     end
   end
+end
+
+# the ids a population HOLDS (the set-cluster-pops reply, its `had` set): none for one that doesn't
+# select its values — `neq 3` holds every cluster but 3
+@testset "_cluster_ids_of — only an in/eq cluster population holds its values" begin
+    m = Cecelia.PopulationTree(; pop_type = "clust", value_name = "B")
+    add_pop!(m, "T"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1, 2.0])
+    add_pop!(m, "Motile"; filter_measure = "clusters.immune", filter_fun = "neq", filter_values = [3])
+    @test _cluster_ids_of(m.pops["/T"]) == Set([1, 2])
+    @test isempty(_cluster_ids_of(m.pops["/Motile"]))
+    # …so writing it is never refused for a cluster another population holds; an `in` one is
+    add_pop!(m, "Not T"; filter_measure = "clusters.immune", filter_fun = "neq", filter_values = [1])
+    @test _cluster_ids_taken(m, "/Not T", [1]) === nothing
+    add_pop!(m, "Dup"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1])
+    @test _cluster_ids_taken(m, "/Dup", [1])[1] == 409
 end

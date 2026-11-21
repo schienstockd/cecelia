@@ -29,8 +29,19 @@ export interface DataPathChannel {
 const n = (x: number | null | undefined): string => (x == null ? '—' : fmtNum(x))
 const pct = (x: number) => (x >= 1 ? fmtNum(Math.round(x * 10) / 10) : fmtNum(+x.toPrecision(2)))
 
+/** Whether a camera recorded store channel `index` (0-based): the settings record `camera`, and the
+ *  channel's `acquisitionMode` is `WideField`, or it records none and no channel records another (a
+ *  `.czi` can mix camera and scanning tracks). The import probe's rule (`not_photon_counting`). */
+export function cameraChannel(acq: LightPathImage['acquisition'], index: number): boolean {
+  if (acq?.camera == null) return false
+  const chans = acq.channels ?? []
+  const mode = chans.find(c => c.order === index + 1)?.acquisitionMode
+  if (mode != null) return mode === 'WideField'
+  return !chans.some(c => (c.acquisitionMode ?? 'WideField') !== 'WideField')
+}
+
 /** Why the zeros are there, with what the call rests on; nothing when it can't be told. A camera
- *  (`acquisition.camera`) never counts photons: a "photon-counted" floor measured on one is a misread
+ *  channel (`cameraChannel`) never counts photons: a "photon-counted" floor measured on one is a misread
  *  of its histogram, so it is read as no call at all. */
 function zeroCause(fl: ChannelFloor | null | undefined, camera: boolean): string {
   if (fl?.kind === 'photon-counted') return camera ? '' : `: likely no photon detected (photon-counted: ${fl.evidence})`
@@ -154,7 +165,7 @@ export function dataPathChannels(img: LightPathImage): DataPathChannel[] {
       index: f.index,
       name: img.channelNames?.[f.index] || f.name,
       attention: channelAttention(f, clipped.has(f.index), profile.get(f.index)),
-      items: channelItems(f, recorded, acq?.camera != null),
+      items: channelItems(f, recorded, cameraChannel(acq, f.index)),
       hist: f.range?.hist.counts ?? null,
       byZ: z.length > 1 ? z : null,
       byT: t.length > 1 ? t : null,

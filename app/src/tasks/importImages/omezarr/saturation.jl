@@ -7,10 +7,10 @@
 The acquisition clipping + sparsity probe (`saturation_run.py`): one streamed histogram pass over
 `zarr_path`, returning the `meta["saturation"]` value `Dict("channels" => [...])` — plus a
 `"partialTimepoint"` entry when the acquisition stopped mid-volume, which callers pop into its own
-meta field — or `nothing` when
-the probe failed or the store is not integer data. `acquisition` is the image's
+meta field — or `nothing` when the probe failed or the store is not integer data. `acquisition` is the image's
 `meta["acquisition"]` (or `nothing`): channels it says were processed before writing get no photon
-fit (`photons_untestable`). The ONE implementation — import runs it on every
+fit (`photons_untestable`), and on a camera channel no floor is read as photon-counted
+(`not_photon_counting`). The ONE implementation — import runs it on every
 new store, `ensure_saturation_meta!` on images imported before the field existed. Advisory: never
 throws. No drift estimate: that is the drift correction task's (`data_path` docstring).
 """
@@ -22,7 +22,8 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
     result_file = joinpath(run_dir, "saturation.$(string(rand(UInt32); base = 16)).result.json")
     ok = run_py("tasks/importImages/saturation_run.py",
                 (; imPath = zarr_path, resultPath = result_file,
-                   photonsUntestable = photons_untestable(acquisition)), run_dir;
+                   photonsUntestable = photons_untestable(acquisition),
+                   notPhotonCounting = not_photon_counting(acquisition)), run_dir;
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     (ok && isfile(result_file)) || return nothing
     try
@@ -64,6 +65,30 @@ function photons_untestable(acquisition)::Dict{String,String}
 end
 
 """
+    not_photon_counting(acquisition) -> Dict{String,String}
+
+Channels (0-based index as a string → reason) a camera recorded (`acquisition.camera`), whose floor
+is never photon-counted: a camera does not count photons, so a comb-like histogram is a misread
+(the probe, `data_path.measure_store`, reads it `indeterminate`). As the data-path panel
+(`acquisitionDataPath.ts` `cameraChannel`): `"*"` — every store channel, listed or not — unless a
+channel records an `acquisitionMode` other than `WideField` (a `.czi` mixing camera and scanning
+tracks), when only the `WideField` channels count.
+"""
+function not_photon_counting(acquisition)::Dict{String,String}
+    out = Dict{String,String}()
+    cam = _ag(acquisition, "camera")
+    cam === nothing && return out
+    name = _ag(cam, "name")
+    why = "a camera does not count photons" * (name isa AbstractString && !isempty(name) ? " ($name)" : "")
+    chans = something(_ag(acquisition, "channels"), Any[])
+    any(ch -> something(_ag(ch, "acquisitionMode"), "WideField") != "WideField", chans) || return Dict("*" => why)
+    for (i, ch) in enumerate(chans)
+        _ag(ch, "acquisitionMode") == "WideField" && (out[string(i - 1)] = why)
+    end
+    out
+end
+
+"""
     _saturation_from_result(res) -> Union{Dict,Nothing}
 
 The `meta["saturation"]` value from `saturation_run.py`'s result: `nothing` without channels.
@@ -89,18 +114,22 @@ const SATURATION_CURRENT_KEYS = ("profile", "range", "floor", "noise", "photons"
 
 """Whether a stored `meta` carries a probe with every `SATURATION_CURRENT_KEYS` field on every channel.
 Through `_saturation_channels`, which normalises JSON3's Symbol keys — a raw `haskey(ch, "profile")`
-on the persisted ccid would never match. Also not current: a channel `photons_untestable` names
-whose `photons` has no `notMeasured` (fitted before the scanner skip existed)."""
+on the persisted ccid would never match. Also not current: a `photons_untestable` channel with no
+`notMeasured`, or a `not_photon_counting` channel with a `photon-counted` floor."""
 function _saturation_is_current(meta::AbstractDict)::Bool
     chans = _saturation_channels(meta)
     isempty(chans) && return false
     all(ch -> all(k -> haskey(ch, k), SATURATION_CURRENT_KEYS), chans) || return false
-    # a channel the settings say the scanner processed must carry the skip, not a photon fit from a
-    # probe that ran before the skip existed
+    # a channel the scanner processed must carry the skip, and a camera channel no photon-counted
+    # floor — not what a probe that ran before either check wrote
     skip = photons_untestable(get(meta, "acquisition", nothing))
+    on_camera = not_photon_counting(get(meta, "acquisition", nothing))
     all(chans) do ch
         idx = _ag(ch, "index")
-        idx === nothing || !haskey(skip, string(Int(idx))) || _ag(_ag(ch, "photons"), "notMeasured") !== nothing
+        idx === nothing && return true
+        (!haskey(skip, string(Int(idx))) || _ag(_ag(ch, "photons"), "notMeasured") !== nothing) &&
+            (!haskey(on_camera, string(Int(idx))) && !haskey(on_camera, "*") ||
+             _ag(_ag(ch, "floor"), "kind") != "photon-counted")
     end
 end
 

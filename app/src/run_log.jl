@@ -27,6 +27,10 @@
 #              chain). Gates are edited in place; `gate_state_for_hash` finds the gate a hash names in
 #              the sidecar or its history (`gating/{vn}.history.jsonl`).
 # All three are ABSENT on entries written before they were recorded, and on runs that read/replace nothing.
+#   unchanged — `true` on a `done` run that wrote nothing (`run_unchanged`: its result says `"unchanged"`,
+#              e.g. a label correction whose every op was a no-op). Stamped at close, which also DROPS the
+#              `replaces` stamped at open: the output is byte-identical, nothing was overwritten. Such a run
+#              made nothing — `_run_maker` and the staleness walk (`stale_outputs_for`) pass over it.
 #
 # ── What made it: `ceceliaVersion`, `author`, `env` ────────────────────────────────────────────────
 # So a result can say which code, which launcher and which machine made it. All three are ABSENT on
@@ -284,6 +288,19 @@ function run_env_of(result)::Dict{String,Any}
 end
 
 """
+    run_unchanged(result) -> Bool
+
+Did the run leave its output exactly as it was? A task says so by returning `"unchanged" => true` (a
+`segment.correct` whose ops rewrote no pixel); a composite hands back its last step's result. The
+scheduler passes it to `close_run_log!`, which stamps `unchanged` and drops `replaces` (see the header).
+"""
+run_unchanged(result)::Bool =
+    result isa AbstractDict && get(result, "unchanged", get(result, :unchanged, false)) === true
+
+# a `done` run that wrote nothing — never the maker of anything (see `unchanged` in the header)
+run_entry_unchanged(e)::Bool = _rl_get(e, "unchanged", false) === true
+
+"""
     read_run_env(sidecar_path) -> Dict{String,Any}
 
 The `"runEnv"` a Python runner wrote into the JSON sidecar it already hands back (its `qcOutPath`),
@@ -412,6 +429,7 @@ function _run_maker(entries, fun_name::AbstractString, name::AbstractString, ns:
         # no params at all = logged before params were recorded: its output name is unknowable. (Not
         # `r.legacy`, which also reads a run whose only param was its `valueName` as legacy.)
         _rl_get(e, "params", nothing) isa AbstractDict || continue
+        run_entry_unchanged(e) && continue          # wrote nothing, so made nothing
         r = run_log_row(e)
         into && isdisjoint(mine, get!(() -> _run_step_funs(r.fn), steps_cache, r.fn)) && continue
         lv = get!(() -> _history_leaves(r.fn), leaves_cache, r.fn)
@@ -555,7 +573,7 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
                         fun_name::AbstractString = "", value_name::AbstractString = "",
                         params = nothing, pool::AbstractString = "", by::AbstractString = "",
                         caller::AbstractDict = Dict{String,Any}(), env::AbstractDict = Dict{String,Any}(),
-                        at::AbstractString = _run_log_now())
+                        unchanged::Bool = false, at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         # newest-first: a re-run of the same task id should close its own entry, not an older one
         i = findlast(e -> _rl_str(e, "taskId") == string(task_id) &&
@@ -567,12 +585,15 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
                 "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
             _run_log_stamp!(e, by, caller)
             isempty(env) || (e["env"] = Dict{String,Any}(String(k) => v for (k, v) in env))
+            unchanged && (e["unchanged"] = true)
             push!(entries, e)
         else
             e = Dict{String,Any}(String(k) => v for (k, v) in pairs(entries[i]))
             e["status"] = string(status)
             e["finishedAt"] = String(at)
             isempty(env) || (e["env"] = Dict{String,Any}(String(k) => v for (k, v) in env))
+            # nothing was overwritten: the `replaces` stamped at open would claim otherwise
+            unchanged && (e["unchanged"] = true; delete!(e, "replaces"))
             entries[i] = e
         end
         entries
@@ -692,6 +713,7 @@ function _params_for_output_in(entries, task, fun::AbstractString, value_name::A
         # for :done/:failed only — see the header). `running` is skipped with the rest: a run in
         # flight has not written its output yet, so the picker is not offering that name either.
         run_entry_status(e) == "done" || continue
+        run_entry_unchanged(e) && continue       # wrote nothing, so it did not produce the output
         _rl_str(e, "fun") == String(fun) || continue
         p = _rl_get(e, "params", nothing)
         p isa AbstractDict || continue

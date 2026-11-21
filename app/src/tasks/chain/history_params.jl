@@ -143,6 +143,7 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
             (l !== nothing && l.type == "imagePicker") && (push!(changed, "$k=(set per image)"); continue)
             vals = [haskey(f, k) ? f[k][1] : nothing for f in flats]
             dflt = first(f[k][2] for f in flats if haskey(f, k))
+            vals = [_history_value(v, l) for v in vals]
             counts = Dict{String,Tuple{Any,Int}}()
             for v in vals
                 kk = _hp_key(v)

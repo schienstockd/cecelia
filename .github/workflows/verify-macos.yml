@@ -26,6 +26,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only token: nothing here writes to the repo (CodeQL actions/missing-workflow-permissions).
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: macOS — Cecelia.app structural + visual check
