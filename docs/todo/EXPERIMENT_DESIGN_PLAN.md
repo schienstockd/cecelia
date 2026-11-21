@@ -90,20 +90,39 @@ Two things to note:
    promoted to designed later, and the history keeps the step.
 4. **The question is part of the design.** One sentence, plus the expected direction (none, higher,
    lower). The acquisition check's plan sentence reads it instead of keeping its own.
-5. **One setup dialog, two ways in, one record:**
-   - *Design first*: state the question and the grid, then each imported image lands in a grid cell
-     or is flagged as unassigned.
-   - *Images first*: Cecelia suggests a design from the attributes, channel lists, metadata and names,
-     then shows it as a grid with n per cell to confirm. A suggested design stays *inferred* until
-     confirmed. The record says "inferred, then confirmed".
+5. **The dialog opens after register, before import** (the maintainer, 2026-11-21). A new set is empty,
+   so there is nothing to suggest from. Adding images already happens in two steps
+   (`frontend/src/modules/ManageImagesModule.vue`, `submitRegister`):
+   - *register* (`POST /api/images/register`) creates image records with name and original path, and
+     converts nothing;
+   - *import* (the `importImages` task) converts later.
+
+   The dialog sits between the two, when names and original paths exist and nothing has been
+   processed. One record, three moments:
+   - *Empty set*: no dialog. The set bar offers "Set up a design" for anyone who wants to design first
+     (declare the grid and planned n, then images land in it).
+   - *First files registered into a set with no design*: the dialog opens with a suggestion (question,
+     mode, layout, confirm). Cecelia suggests from attributes, file names and original paths. A
+     suggested design stays *inferred* until confirmed, and the record says "inferred, then confirmed".
+   - *Files registered into a designed set*: a short "place these images" step. Each image goes into a
+     grid cell or Unassigned, and the grid's reservations update.
+
+   After import, channel lists and acquisition settings arrive. They never change a confirmed design.
+   Where they disagree with it (a "panel A" movie with panel B's channel list), that is a reservation.
 6. **Warn, never block.** No step refuses to run. A design differing from the data is a reservation,
    not an error.
-7. **Overrides are free and recorded.** Grouping by date to look for a batch effect is allowed. The
+7. **A claim is taken from the plot, not typed.** The claim check already takes a structured scope
+   (set, populations, measure, unit attributes; `ClaimScope`, `app/src/claim_checks.jl:24`) started
+   from the plot. The design adds the group. A sentence is only the claim's label, so the check never
+   has to parse wording. One question per set; several claims against it are allowed. The readiness
+   view counts the comparisons checked on the set and shows them. It does not correct alpha (the
+   claim-recital decision: show rounds, don't charge them).
+8. **Overrides are free and recorded.** Grouping by date to look for a batch effect is allowed. The
    plot and its export record "grouped by Date; design group is Panel", and the claim check reads that.
    An override is *exploration* until it is the grouping a claim rests on.
-8. **The design is versioned like gate history.** A stats run and an exported figure freeze the
+9. **The design is versioned like gate history.** A stats run and an exported figure freeze the
    design version they used. A later change marks them stale, and earlier runs keep their design.
-9. **Blackboard profile stays separate.** It is per project and holds aims and free text. The design
+10. **Blackboard profile stays separate.** It is per project and holds aims and free text. The design
    is per set and is data that plots and checks read. They only overlap in the question, and the
    question moves to the design. No migration needed: existing projects keep their profile, and their
    sets start in the no-design state.
@@ -153,15 +172,26 @@ set: what the data can and cannot support yet.
 | Calibration missing or differing | import | partly — claim S2 `uncalibrated` |
 | Unit not declared; no design; inferred design unconfirmed; exploratory set used for a confirmatory claim | everywhere the design is read | no |
 | Design changed after a stats run | stats, export | no |
+| A confound that can't be checked: no attribute that could reveal it (no date, no parent) | design confirm | no — say what cannot be checked rather than stay silent |
+| Imported metadata disagrees with the design (channel list, acquisition settings vs the declared group) | after import | no |
+| Shared acquisition claimed but not in the record ("one scan") | design confirm | no — derive it from a common source file or run; otherwise word it as unverified |
+| Comparisons checked on this set | claim | no — a count, not a correction |
 
 The wording comes from the design. It does not depend on the technology. For few units nested in
 few parents, the claim check must say so outright: for example "Movie-level, from 2 mice:
 descriptive, not confirmatory."
 
+## Target UX
+
+[`experiment-design/mock.html`](experiment-design/mock.html) is the layout spec: one frame per moment,
+from registering files to the claim check. A static mock: the T cell set's names, runs, folders, panels
+and mice are real; plot values, parameters and history entries are placeholders.
+
 ## Build order
 
-1. **Record + dialog.** The design record and versions; the setup dialog, both ways in; the grid;
-   the no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
+1. **Record + dialog.** The design record and versions; the dialog after register (suggest,
+   confirm), "Set up a design" on an empty set, and the "place these images" step; the grid; the
+   no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
    metadata comes with it, because neither example set has attributes yet. The suggestion reuses the
    Metadata panel's extraction (`frontend/src/utils/regexBuilder.ts`: file name or original path,
    split-and-take and look-around builders). It does not add a second parser.
