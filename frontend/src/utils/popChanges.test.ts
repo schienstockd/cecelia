@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gateSignatures, changedPopPaths, seriesReloadToken, type SigNode } from './popChanges'
+import { gateSignatures, changedPopPaths, seriesReloadToken, clusterAwareFetchToken, type SigNode } from './popChanges'
 
 const rect = (x: number) => ({ kind: 'rectangle', x_min: x })
 const tree = (tGate = 1, bGate = 2): SigNode[] => [
@@ -50,5 +50,21 @@ describe('seriesReloadToken', () => {
   })
   it('the base (manual reload, task completion) always counts', () => {
     expect(seriesReloadToken(4, {}, [s('/B')], 9)).toBe(4)
+  })
+})
+
+describe('clusterAwareFetchToken', () => {
+  // Track cluster frequency of /P14/_tracked: the measure is the track-cluster column, whose
+  // categories are the cluster pops' names — editing one must refetch though the series didn't change
+  it('follows every pop change while a cluster column is read', () => {
+    expect(clusterAwareFetchToken(2, 5, ['clusters.default', '', ''])).toBe(7)
+    expect(clusterAwareFetchToken(2, 5, ['speed', 'regions.niches', ''])).toBe(7)
+    expect(clusterAwareFetchToken(2, 5, ['speed', '', 'clusters.movement'])).toBe(7)
+  })
+  it('stays targeted for any other measure', () => {
+    expect(clusterAwareFetchToken(2, 5, ['speed', '', ''])).toBe(2)
+    expect(clusterAwareFetchToken(2, 5, [undefined, null, ''])).toBe(2)
+    // a column merely containing the word is not a cluster run
+    expect(clusterAwareFetchToken(2, 5, ['n_clusters.x'])).toBe(2)
   })
 })

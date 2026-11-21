@@ -836,7 +836,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
                           :group-attr="panelGroupAttr" :group-order="attrGroups" :replicate-attrs="designReplicate" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
-                          :reload-token="panelReloadToken(panelSeries(i, entry.contents[i]!))" :persist-key="`${canvasKey}:slot:${i}`"
+                          :reload-token="panelReloadToken(panelSeries(i, entry.contents[i]!))" :persist-key="`${canvasKey}:slot:${i}`" :any-pop-change="anyPopChange"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
                           @readout="readouts[i] = $event" />
             <!-- cluster PANEL (heatmap / HMM …) — rendered GENERICALLY from the CLUSTER_PANELS registry
