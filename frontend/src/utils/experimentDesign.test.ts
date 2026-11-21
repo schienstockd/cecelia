@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyRules, assignRole, attrRole, designSketch, setAttrRole, baseName, dateLabel, designChange, designCompareApply, designExpectPhrase, designMark, questionChanged, withQuestion, designPlotTip, designReplicateAttrs, followsDesign, replicateNoun, roleOf, designDraft, designReservations, designSummary, emptyDesign, gridPivot, runOf, sameNameGroups, suggestDesign,
+  applyRules, assignRole, attrRole, designAttrRows, designSketch, setAttrRole, baseName, dateLabel, designChange, designCompareApply, designExpectPhrase, designMark, questionChanged, withQuestion, designPlotTip, designReplicateAttrs, followsDesign, replicateNoun, roleOf, designDraft, designReservations, designSummary, emptyDesign, gridPivot, runOf, sameNameGroups, suggestDesign,
   type DesignGrid, type DesignImage,
 } from './experimentDesign'
 
@@ -321,5 +321,29 @@ describe('step 2: one role per attribute, and the sketch', () => {
     const s2 = designSketch(grid, { ...d0, parents: [] })!
     expect(s2.groups[0]!.reps).toHaveLength(3); expect(s2.repNoun.many).toBe('images')
     expect(designSketch(grid, d0, 1)!.groups[0]!.more).toBe(1)
+  })
+})
+
+describe('step 2 lists the design, the rest behind a picker', () => {
+  const attrs = ['Date', 'Mouse', 'Objective', 'Panel', 'Scope']
+  const values = { Date: 4, Mouse: 3, Scope: 1, Objective: 1, Panel: 2 }
+  it('a row per attribute with a role', () => {
+    const d = setAttrRole(setAttrRole(emptyDesign(), 'Panel', 'group'), 'Mouse', 'replicate')
+    expect(designAttrRows(attrs, d, values, []).rows).toEqual(['Mouse', 'Panel'])
+  })
+  it('the picker offers the rest, varying ones first, under titles', () => {
+    const d = setAttrRole(emptyDesign(), 'Panel', 'group')
+    expect(designAttrRows(attrs, d, values, []).picker).toEqual([
+      { title: 'Varies across the set', options: [{ value: 'Date' }, { value: 'Mouse' }] },
+      { title: 'Same on every image', options: [{ value: 'Objective' }, { value: 'Scope' }] },
+    ])
+  })
+  it('an added attribute keeps its row with no role, and leaves the picker', () => {
+    const r = designAttrRows(attrs, emptyDesign(), values, ['Date'])
+    expect(r.rows).toEqual(['Date'])
+    expect(r.picker.flatMap(g => g.options.map(o => o.value))).not.toContain('Date')
+  })
+  it('an attribute with no values counts as the same on every image', () => {
+    expect(designAttrRows(['Blank'], emptyDesign(), values, []).picker).toEqual([{ title: 'Same on every image', options: [{ value: 'Blank' }] }])
   })
 })

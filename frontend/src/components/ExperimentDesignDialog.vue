@@ -9,12 +9,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import InlineNote from './InlineNote.vue'
+import SearchSelect from './SearchSelect.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import SuggestInput from './SuggestInput.vue'
 import DesignQuestionFields from './DesignQuestionFields.vue'
 import DesignSketch from './DesignSketch.vue'
 import {
-  applyRules, attrRole, designChange, designSketch, setAttrRole, type AttrRole, designDraft, designReservations, gridPivot, runOf, sameNameGroups, suggestDesign,
+  applyRules, attrRole, designAttrRows, designChange, designSketch, setAttrRole, type AttrRole, designDraft, designReservations, gridPivot, runOf, sameNameGroups, suggestDesign,
   type DesignGrid, type DesignImage, type DesignMode, type DesignRule, type ExperimentDesign,
 } from '../utils/experimentDesign'
 import { previewDesign, saveDesign } from '../utils/experimentDesignApi'
@@ -62,6 +63,15 @@ const attrNames = computed(() => [...new Set([
   ...props.images.flatMap(i => Object.keys(i.attr ?? {})).filter(a => !renamed.value.has(a)),
   ...rules.value.map(r => r.attr.trim()).filter(Boolean),
 ])].sort())
+// step 2: a row per attribute in the design (or added/touched here); the rest wait in the "+ Attribute" picker
+const attrValues = computed(() => Object.fromEntries(attrNames.value.map(a =>
+  [a, new Set(props.images.map(i => valueOf(i, a)).filter(Boolean)).size])))
+const added = ref<string[]>([])
+const attrRows = computed(() => designAttrRows(attrNames.value, draft.value, attrValues.value, added.value))
+function setRole(a: string, role: AttrRole) {
+  if (!added.value.includes(a)) added.value.push(a)
+  draft.value = setAttrRole(draft.value, a, role)
+}
 const groupValues = computed(() =>
   [...new Set(props.images.map(i => draft.value.group.map(g => valueOf(i, g)).join(' ')).filter(Boolean))].sort())
 
@@ -97,6 +107,7 @@ function replaceInRoles(from: string, to: string) {
   if (!from || from === to) return
   const re = (xs: string[]) => xs.map(a => (a === from ? to : a))
   draft.value.group = re(draft.value.group); draft.value.unit = re(draft.value.unit); draft.value.parents = re(draft.value.parents)
+  added.value = re(added.value)
 }
 watch(rules, rs => {
   for (const r of rs) {
@@ -239,11 +250,14 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
       <!-- one row per attribute with its role, and a sketch of what the roles mean (live, from these images) -->
       <div class="xd-layout">
         <div class="xd-attrs">
-          <div v-for="a in attrNames" :key="a" class="xd-arow">
+          <div v-for="a in attrRows.rows" :key="a" class="xd-arow">
             <span class="xd-aname" :title="a">{{ a }}</span>
             <ChipSelect :model-value="attrRole(draft, a)" :options="roleOptions(a)" variant="segmented"
-                        :aria-label="`Role of ${a}`" @update:model-value="v => draft = setAttrRole(draft, a, (v ?? '') as AttrRole)" />
+                        :aria-label="`Role of ${a}`" @update:model-value="v => setRole(a, (v ?? '') as AttrRole)" />
           </div>
+          <SearchSelect v-if="attrRows.picker.length" class="xd-add" model-value="" :groups="attrRows.picker"
+                        placeholder="+ Attribute" aria-label="Add an attribute to the design"
+                        v-tooltip.bottom="'Give another attribute a role'" @update:model-value="a => added.push(a)" />
         </div>
         <DesignSketch class="xd-sketch" :sketch="sketch" />
       </div>
@@ -341,6 +355,7 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
 .xd-layout { display: grid; grid-template-columns: minmax(0, auto) minmax(180px, 1fr); gap: 12px; align-items: start; }
 .xd-attrs { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .xd-arow { display: flex; align-items: center; gap: 8px; }
+.xd-add { align-self: flex-start; }
 .xd-aname { width: 5.5rem; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--cc-fs-sm); }
 .xd-table { max-height: 170px; overflow: auto; }
 @media (max-width: 640px) { .xd-layout { grid-template-columns: 1fr; } }

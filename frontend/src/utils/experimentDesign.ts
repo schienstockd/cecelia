@@ -9,6 +9,7 @@
 // above a file, a leading subject token (M1-…, D3_…) and existing attributes are where any lab keeps
 // this.
 
+import type { SearchGroup } from './searchSelect'
 import { buildRegex, extractWith, regexSampleFor, type BuilderSpec, type RegexSource } from './regexBuilder'
 
 export type DesignMode = 'designed' | 'exploratory'
@@ -493,6 +494,21 @@ export function setAttrRole(d: ExperimentDesign, a: string, role: AttrRole): Exp
     return now ? assignRole(d, now, roleOf(d, now).filter(x => x !== a)) : d
   }
   return assignRole(d, role, role === 'replicate' ? [a] : [...roleOf(d, role).filter(x => x !== a), a])
+}
+
+/** Step 2's rows and its "+ Attribute" picker. A row per attribute in the design, plus any the user added
+ *  or touched (so clearing a role doesn't pull the row out from under the click); every other attribute
+ *  waits in the picker, the ones that vary over the set first: one value on every image can be neither
+ *  compared nor tell replicates apart. `values` = each attribute's distinct values over the set. */
+export function designAttrRows(attrs: string[], d: ExperimentDesign, values: Record<string, number>, added: readonly string[]) {
+  const rows = attrs.filter(a => attrRole(d, a) || added.includes(a))
+  const rest = attrs.filter(a => !rows.includes(a))
+  const vary = rest.filter(a => (values[a] ?? 0) > 1), same = rest.filter(a => (values[a] ?? 0) <= 1)
+  const picker: SearchGroup[] = [
+    ...(vary.length ? [{ title: 'Varies across the set', options: vary.map(value => ({ value })) }] : []),
+    ...(same.length ? [{ title: 'Same on every image', options: same.map(value => ({ value })) }] : []),
+  ]
+  return { rows, picker }
 }
 
 /** What the sketch draws: per compared group, one mark per replicate (the n) with how many things sit
