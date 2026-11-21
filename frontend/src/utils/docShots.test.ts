@@ -81,6 +81,17 @@ describe('doc shots', () => {
     expect(fillFacts('{{p.i.planes}} z-planes, {{p.i.G.pct}}%', { 'p.i.planes': 26 }))
       .toEqual({ text: '26 z-planes, ?%', missing: ['{{p.i.G.pct}}'] })
   })
+
+  // a gate's facts are keyed by its name (and segmentation), not its parent: the same name under two
+  // parents would save one population's count over the other's
+  it('refuses two gates on one image sharing a fact name', () => {
+    const g = (name: string, parent: string, segmentation = 'T') => ({ image: 'i', segmentation, name, parent, fromSource: true as const })
+    const fx = (gates: ReturnType<typeof g>[]) => set({ fixture: { projects: { p: { source: 'S', images: { i: 'I' }, name: 'n', gates } } } })
+    expect(checkShotSets([fx([g('X', '/qc'), g('X', '/qc/non-OTI')])]).map(i => i.problem))
+      .toEqual(['project "p": two gates on image "i" share the fact name "T_X" (rename one)'])
+    // a different segmentation is a different fact name
+    expect(checkShotSets([fx([g('X', '/qc'), g('X', '/qc', 'B')])])).toEqual([])
+  })
 })
 
 // `--only` picks the same shots in doc-shots and doc-images: a pair is one image, so picking either half

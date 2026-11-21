@@ -129,6 +129,42 @@ release-cutting checklist (`docs/RELEASING.md`) bumps all three together, and a 
 """
 cecelia_version()::String = string(pkgversion(@__MODULE__))
 
+const _CECELIA_COMMIT = Ref{Union{Nothing,String}}(nothing)
+
+"""
+    cecelia_commit(root) -> String
+
+The git commit the running code came from, or `""` for a tagged release (its version already names
+the code). A release tag in `VERSION` means a release. Otherwise a dev-channel install's `.cecelia-version`
+(`dev @ <branch> <sha>`, written by `install.sh` / `install.ps1` and the dev-channel apply), then
+`git rev-parse HEAD` in a source checkout.
+Read once per process: a run record must not pay a `git` spawn per entry. A dev checkout with
+uncommitted edits still reports its HEAD; the commit names the base, not the working tree.
+Stamped as `ceceliaCommit` beside `ceceliaVersion` (run log, board export provenance). See
+`docs/todo/GALAXY_LESSONS_PLAN.md` (L0).
+"""
+function cecelia_commit(root::AbstractString = dirname(pkgdir(@__MODULE__)))::String
+    c = _CECELIA_COMMIT[]
+    c === nothing || return c
+    _CECELIA_COMMIT[] = _read_commit(root)
+end
+
+function _read_commit(root::AbstractString)::String
+    _rd(f) = (p = joinpath(root, f); isfile(p) ? String(strip(try read(p, String) catch; "" end)) : "")
+    ver, marker = _rd("VERSION"), _rd(".cecelia-version")
+    # A release tag in VERSION is the answer whatever marker is left over: a dev → stable update ships
+    # VERSION but not `.cecelia-version`. A dev-channel apply writes VERSION = "dev" beside its marker
+    # (`api/src/update_api.jl`, the dev branch of the apply), so "dev" or no VERSION reads the marker.
+    !isempty(ver) && ver != "dev" && return ""
+    if startswith(marker, "dev ")
+        sha = String(last(split(marker)))
+        return occursin(r"^[0-9a-f]{7,40}$", sha) ? sha : ""
+    end
+    isempty(marker) || return ""                            # an installed release's provenance line
+    sha = git_probe("rev-parse", "HEAD"; dir = root)
+    occursin(r"^[0-9a-f]{40}$", sha) ? sha : ""
+end
+
 function _cfg_dir(key::String, default::String)::String
     d = get(cecelia_conf(), "dirs", Dict{String,Any}())
     expand_user(string(get(d, key, default)))

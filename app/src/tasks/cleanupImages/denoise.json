@@ -2,6 +2,7 @@
   "task": "denoise",
   "fun_name": "cleanupImages.denoise",
   "label": "Denoising (SUPPORT)",
+  "citations": ["10.1038/s41592-023-02005-8"],
   "purpose": "Remove shot noise from photon-limited movies with a trained model",
   "useWhen": [
     "Photon-limited channels: sparse, low photon counts",
