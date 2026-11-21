@@ -70,11 +70,11 @@ const groupValues = computed(() =>
 // mouse numbers restart each day, so a mouse is named within its date); what sits inside a replicate
 // and is never the n (unit; none = each image). Stored as group / parents = [...within, replicate] / unit.
 const replicate = computed(() => draft.value.parents.at(-1) ?? '')
-// each attribute's role, as segmented chips; "restarts the n" needs an n that isn't this attribute
+// each attribute's role, as segmented chips; "names the n" needs an n that isn't this attribute
 const roleOptions = (a: string): ChipOption[] => [
   { value: 'group', label: 'Compared', tip: 'The groups you compare' },
   { value: 'replicate', label: 'The n', tip: 'One replicate: what n counts' },
-  { value: 'namedWithin', label: 'Restarts n', tip: 'The n is numbered again per this — Mouse 1 on two days is two mice',
+  { value: 'namedWithin', label: 'Names the n', tip: 'Part of what tells two replicates apart — Mouse 1 on two days is two mice',
     disabled: !replicate.value || replicate.value === a },
   { value: 'inside', label: 'Inside n', tip: 'Several per replicate, never the n' },
   { value: '', label: '—', tip: 'Not part of the design' },
