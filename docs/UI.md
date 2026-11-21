@@ -1771,6 +1771,39 @@ extension can be on; anywhere else it would mangle a legitimately dotted token s
 `2026.07.16` date folder, so the *no ext* toggle is hidden for the other positions. Images with no
 recorded `ori_path` fall back to the name, and the preview shows the string actually matched.
 
+**Attributes from a table** (`MetadataPanel.vue` → *Attributes* → *From a table*, and the design dialog's
+Rules → *From a table*; `components/AttrTableDialog.vue` over the pure `utils/attrTable.ts`). For when the
+mouse / donor / tissue list lives in a spreadsheet rather than in the file names (the regex above). Paste a
+range, or drop / choose a CSV or TSV — **an Excel sheet is saved as CSV first** (File → Save as → CSV UTF-8);
+`.xlsx` is not read. The parser takes RFC 4180 quoting (delimiters and line breaks inside `"…"`, `""` for a
+quote), a UTF-8 BOM, `\r\n` / `\n` / `\r` line ends, and sniffs the delimiter (`,` tab `;` — `;` is what a
+comma-decimal locale writes as CSV; a tab wins a tie, since a pasted range is tab-separated). The first row
+is the header.
+- **Matching.** One column is the key: the image **name** (exact, else without its extension — `Core A1`
+  finds `Core A1.oir`), the **original path** (`oriPath`, whole or its tail at a folder boundary, `\` and `/`
+  alike) or the image **ID**. The column and kind matching the most rows to exactly one image are picked
+  (a header like `uID` / `path` / `Name` breaks a tie); the user can change both. A row naming two images
+  (a repeated name) or an image an earlier row already took is listed and skipped, never guessed.
+- **Columns.** Every other column is an attribute. Not used: a blank or repeated header, and — when the
+  table is the image table's own CSV export — its own columns (Name, Channels, Pixel size X, …, read off
+  `imageTableCsvRows` so they cannot drift). `attr_X` becomes `X` when `X` clashes, case-insensitively, with
+  another header: the inverse of `attrCsvHeaders`, so **export → edit in a spreadsheet → import** writes only
+  what was edited.
+- **Values.** Compared trimmed, because the attr routes store them trimmed (`_norm_attr`). A **blank cell
+  leaves the image's value as it is** (a table cannot clear a value). Values that differ only by case or
+  inner spacing (`Liver` / `liver`, `day 3` / `day  3`) are **reported, not merged** — the server merges
+  only leading/trailing whitespace — across the table and the set's current values; so is a new column
+  whose name differs only by case from an existing one.
+- **Preview, then Apply.** A compact table of the matched rows (overwrites amber, the old value on hover)
+  and one line each for: rows matching no image, images with no row, overwrites, case variants, new
+  columns, unused columns. Apply creates the new columns on every image of the set (`attr/create`) and then
+  writes each attribute's changed cells in one `attr/set` call (`imageAttrApi.writeImportPlan`, shared by both dialogs) — `attr/set` is already the bulk form (many
+  images, one attribute), so there is no extra route. The store is updated from the reply.
+- **In the design dialog** the dialog runs in `use` mode: the values go into the design's table and grid
+  preview (`/api/sets/experiment-design/preview`'s `attrs` override) and are written only on Confirm, before
+  the rules — a rule for the same attribute has the last word, as in the preview. No store of its own: a
+  table is a way in to `img.attr` (`docs/todo/GALAXY_LESSONS_PLAN.md`, L5).
+
 **Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
 not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
 the 280px `MetadataPanel` sidebar and was unreadable. Built on the shared `BaseModal` shell (see

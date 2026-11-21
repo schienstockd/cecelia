@@ -19,9 +19,11 @@ import {
   type DesignGrid, type DesignImage, type DesignMode, type DesignRule, type ExperimentDesign,
 } from '../utils/experimentDesign'
 import { previewDesign, saveDesign } from '../utils/experimentDesignApi'
-import { createImageAttr, renameImageAttr, setImageAttr } from '../utils/imageAttrApi'
+import { createImageAttr, renameImageAttr, setImageAttr, writeImportPlan } from '../utils/imageAttrApi'
 import { buildRegex, defaultSpec } from '../utils/regexBuilder'
 import ExtractRuleEditor from './ExtractRuleEditor.vue'
+import AttrTableDialog from './AttrTableDialog.vue'
+import { writesByImage, type ImportPlan } from '../utils/attrTable'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
@@ -59,11 +61,17 @@ const mode = computed({
 
 // ── Values the rules give, and the attributes there are to choose from ────────────────────────────
 const ruleValues = computed(() => applyRules(props.images, rules.value))
-const valueOf = (img: DesignImage, attr: string) => ruleValues.value[img.uid]?.[attr] ?? img.attr?.[attr] ?? ''
+// values from a table (AttrTableDialog, `use` mode): previewed here, written on confirm; a rule wins
+const table = ref<ImportPlan | null>(null)
+const showTable = ref(false)
+const tableValues = computed(() => table.value ? writesByImage(table.value) : {})
+const valueOf = (img: DesignImage, attr: string) =>
+  ruleValues.value[img.uid]?.[attr] ?? tableValues.value[img.uid]?.[attr] ?? img.attr?.[attr] ?? ''
 const renamed = computed(() => new Set(rules.value.flatMap(r => (r.source === 'attr' ? [r.from] : []))))
 const attrNames = computed(() => [...new Set([
   ...props.images.flatMap(i => Object.keys(i.attr ?? {})).filter(a => !renamed.value.has(a)),
   ...rules.value.map(r => r.attr.trim()).filter(Boolean),
+  ...(table.value?.attrs ?? []),
 ])].sort())
 // step 2: a row per attribute in the design (or added/touched here); the rest wait in the "+ Attribute" picker
 const attrValues = computed(() => Object.fromEntries(attrNames.value.map(a =>
@@ -144,7 +152,7 @@ const rows = computed(() => props.images.map(img => ({
 const previewAttrs = computed(() => {
   const out: Record<string, Record<string, string>> = {}
   for (const [uid, a] of Object.entries(ruleValues.value)) {
-    out[uid] = { ...a }
+    out[uid] = { ...tableValues.value[uid], ...a }
     for (const r of rules.value) if (r.source === 'attr' && r.attr.trim() && r.from !== r.attr.trim()) out[uid][r.from] = ''
   }
   return out
@@ -157,7 +165,7 @@ const preview = debouncedLatest<void>(async (_, isCurrent) => {
   grid.value = reply.grid
   previewError.value = ''
 }, { wait: 250, onError: e => { previewError.value = (e as Error).message } })
-watch([draft, rules], () => preview.schedule(), { deep: true, immediate: true })
+watch([draft, rules, table], () => preview.schedule(), { deep: true, immediate: true })
 onBeforeUnmount(() => preview.cancel())
 
 const sameNames = computed(() => sameNameGroups(props.images))
@@ -180,6 +188,12 @@ const saving = ref(false)
 // through the rename route, which moves the values and takes the old name off every image.
 async function writeAttributes() {
   const uids = props.images.map(i => i.uid)
+  // the table first, so a rule for the same attribute has the last word (as in the preview)
+  if (table.value)
+    await writeImportPlan(props.projectUid, uids, table.value, {
+      addAttrKey: a => project.addAttrKey(props.setUid, a),
+      setAttrValues: (a, v) => project.setAttrValues(a, v),
+    })
   for (const r of rules.value) {
     const name = r.attr.trim()
     if (!name) continue
@@ -279,6 +293,10 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
                     v-tooltip.bottom="'Give an attribute a new name'" @click="addRename">
               <i class="pi pi-pencil" /> Rename
             </button>
+            <button class="cc-btn cc-btn-ghost" v-tooltip.bottom="'Attributes from a CSV or TSV, one row per image'"
+                    @click="showTable = true">
+              <i class="pi pi-table" /> From a table
+            </button>
           </span>
         </div>
         <div v-for="(r, i) in rules" :key="i" class="xd-rule">
@@ -300,6 +318,16 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
             <i class="pi pi-times" />
           </button>
         </div>
+        <div v-if="table" class="xd-rule">
+          <span class="xd-attr">{{ table.attrs.join(', ') }}</span>
+          <span class="cc-muted">← table · {{ table.matched.length }} image(s)</span>
+          <span class="xd-spacer" />
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Remove the table'" @click="table = null">
+            <i class="pi pi-times" />
+          </button>
+        </div>
+        <AttrTableDialog v-if="showTable" mode="use" :project-uid="projectUid" :set-uid="setUid" :images="images"
+                         @use="p => { table = p }" @close="showTable = false" />
       </div>
     </div>
 

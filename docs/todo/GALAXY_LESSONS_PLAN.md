@@ -1,6 +1,6 @@
 # Galaxy lessons — what Cecelia takes from the Galaxy platform, and what it doesn't
 
-**Status:** **parked** (2026-11-21). Nothing built. Six lessons kept (L1–L6), plus a batch of small
+**Status:** **parked** (2026-11-21). L5 built (2026-11-22); the rest not built. Six lessons kept (L1–L6), plus a batch of small
 record fields (L0). Two of them lean on plans already in flight: [`METHODS_REPORT_PLAN.md`](METHODS_REPORT_PLAN.md)
 and [`EXPERIMENT_DESIGN_PLAN.md`](EXPERIMENT_DESIGN_PLAN.md) (#2414–#2416). Revisit when one of those
 reaches the step named under each lesson, or when the maintainer picks a lesson.
@@ -124,6 +124,17 @@ Each phase can ship on its own.
   - It sits beside the dialog's suggestion from names (`regexBuilder.ts`), for the case where the
     mouse and donor list lives in a spreadsheet.
   - Checkpoint: xxHqjQ's tissue and donor per core entered from one table (that plan's Open decision 4).
+  - **Status: built** (2026-11-22, `feat/attributes-from-table`, stacked on #2431). Metadata →
+    *Attributes* → *From a table*, and the design dialog's Rules → *From a table* (values previewed in the
+    grid, written on Confirm). Paste or a CSV/TSV file; key = image name (with or without extension),
+    original path (whole or its tail) or ID, detected and changeable; a compact preview of matched rows,
+    rows matching no image, images with no row, overwrites, case-only variants and new columns; Apply =
+    `attr/create` for new columns, then one `attr/set` per attribute (already the bulk form — no new
+    route). The image table's own CSV export reads back as a no-op. Excel: save as CSV (docs only).
+    Spec: `docs/UI.md` → *Attributes from a table*; logic `frontend/src/utils/attrTable.ts`.
+    The xxHqjQ checkpoint is not run: the core → tissue/donor sheet is not in hand. With it: one row per
+    core, the key column holding the core image names, `Tissue` and `Donor` columns; paste it on the
+    Metadata page, check the key is *Name* and that no row is unmatched, Apply.
 - **L6 — RO-Crate export of a chain run.** It reuses L1's content and writes `ro-crate-metadata.json`
   (Workflow Run Crate profile) beside the report and parameter table, so Zenodo and WorkflowHub can read
   it. Checkpoint: the crate passes an RO-Crate validator.
