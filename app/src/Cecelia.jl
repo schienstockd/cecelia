@@ -288,7 +288,8 @@ export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
 export chain_from_history, chain_preflight, history_params_table, board_export_provenance, gate_file_edits
-export methods_report, methods_ai_phrase
+export methods_report, methods_ai_phrase, history_params_csv
+export chain_run_ro_crate, chain_run_ro_crate_files, chain_run_ro_crate_zip, write_stored_zip, crc32_ieee
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
@@ -512,6 +513,8 @@ include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("analysis_export_provenance.jl")   # after ai/lineage.jl (`_parse_tkey`) and tasks/chain.jl
 include("ai/methods_report.jl")   # after analysis_export_provenance.jl: the draft Methods section
+include("stored_zip.jl")          # a stored-method ZIP writer (the RO-Crate download)
+include("ai/ro_crate.jl")         # after ai/methods_report.jl: a chain run as a Workflow Run Crate
 include("ai/populations.jl")
 include("ai/measures.jl")
 include("ai/behaviour_clusters.jl")
