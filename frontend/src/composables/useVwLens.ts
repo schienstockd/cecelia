@@ -92,12 +92,19 @@ export function useVwLens(d: VwLensDeps) {
   /** Hand the lens to whichever renderer is alive, then redraw. Device px: the canvas's own backing
    *  scale, not `devicePixelRatio` — the drawing buffer is what the shader's positions count. */
   function applyLens() {
-    const c = d.canvas()
-    const k = c && c.clientWidth > 0 ? c.width / c.clientWidth : 1
+    const k = backingScale()
+    lensScale = k
     const l = lensOn.value ? lensUniform(lensAt.value, lensRadiusPx.value, k) : null
     for (const r of d.renderers()) r?.setLens(l)
     d.redraw()
   }
+  const backingScale = () => { const c = d.canvas(); return c && c.clientWidth > 0 ? c.width / c.clientWidth : 1 }
+  /** The scale the lens was last handed over at. A pinned lens does not move, so nothing re-applies it
+   *  when the renderer resizes the backing store — on a fresh window (a lens figure's Go to, a saved pin)
+   *  the first apply saw the default 300 px canvas and drew the lens at a quarter of its place and size. */
+  let lensScale = 1
+  /** Every paint, after the renderer's resize: re-apply when the backing store changed under the lens. */
+  function syncLensScale() { if (lensOn.value && backingScale() !== lensScale) applyLens() }
   watch([lensOn, lensAt, lensRadiusPx], applyLens)
   // Switching the lens on/off changes the tile fetch set (`tileChannels`) — refetch for the lens ones.
   watch(lensOn, () => d.pushChannels())
@@ -177,7 +184,7 @@ export function useVwLens(d: VwLensDeps) {
 
   return {
     lensOn, lensPin, lensAllFrames, lensAt, lensRange, lensRadiusUmNow, lensRadiusPx, lensCircle, lensChip,
-    trackLens, toggleLensPin, applyLens, lensChannelNames, recordedLens, savedPin, restorePin,
+    trackLens, toggleLensPin, applyLens, syncLensScale, lensChannelNames, recordedLens, savedPin, restorePin,
     lensReport, placeLens,
   }
 }
