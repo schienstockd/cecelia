@@ -7,8 +7,13 @@ export const ID_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012
 export const ID_LENGTH = 6
 
 export function shortId(n: number = ID_LENGTH): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(n))
+  // Rejection sampling: a byte ≥ 248 (= 4 × 62) would skew `% 62` toward the first 8 characters.
+  const limit = 256 - (256 % ID_CHARS.length)
   let s = ''
-  for (let i = 0; i < n; i++) s += ID_CHARS[bytes[i] % ID_CHARS.length]
+  while (s.length < n) {
+    for (const b of crypto.getRandomValues(new Uint8Array(n - s.length))) {
+      if (b < limit) s += ID_CHARS[b % ID_CHARS.length]
+    }
+  }
   return s
 }
