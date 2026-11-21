@@ -12,7 +12,7 @@
 # acquisition. An allow-list, so a read tool added to Kiwi later reaches the review only once someone
 # puts it here; every Kiwi read tool is in exactly one of these two lists (test-enforced).
 const ACQ_REVIEW_TOOLS = (
-    "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes",
+    "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes", "get_experiment_design",
     "get_qc_metrics", "get_cohort_qc", "get_task_log", "get_task_history", "get_acquisition_knowledge",
     "get_guide", "get_task_catalogue", "get_thumbnails")
 # What the review must not see, and why.

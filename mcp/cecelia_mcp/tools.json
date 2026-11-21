@@ -18,6 +18,7 @@
     "get_image_info": "read",
     "get_image_notes": "read",
     "get_image_attributes": "read",
+    "get_experiment_design": "read",
     "get_qc_metrics": "read",
     "get_cohort_qc": "read",
     "check_claim": "read",
