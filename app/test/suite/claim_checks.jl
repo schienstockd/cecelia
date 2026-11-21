@@ -63,7 +63,9 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     # ── the clean twin: nothing to warn about, and it says what ran ──
     clean = _cc_run(_cc_clean())
     @test isempty(_cc_codes(clean))
-    @test "S1.betweenGroups" in clean["ran"] && "S0.dims" in clean["ran"] && isempty(clean["skipped"])
+    @test "S1.betweenGroups" in clean["ran"] && "S0.dims" in clean["ran"]
+    # the synthetic set has no experiment design: the only check that didn't run
+    @test collect(keys(clean["skipped"])) == ["S2.design"]
     @test clean["nUsed"] == 14
     @test "S2.unit" in clean["ran"] && "S2.calibration" in clean["ran"]
     @test _cc_find(clean, "claim.unit_count")[1]["detail"]["evidence"]["n"] == 7

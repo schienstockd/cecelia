@@ -3,7 +3,8 @@
 
 # The scope from query params, or a (400, body) tuple. `pops` is comma-separated pop paths
 # ("B/qc,T/qc"); `measure` a measure column ("live.track.speed"); `unitAttrs` the image attributes
-# whose values together name one replicate ("Mouse" or "Mouse,Location"), optional.
+# whose values together name one replicate ("Mouse" or "Mouse,Location"), optional; `groupAttrs` the
+# attributes whose values are the compared groups ("Panel"), optional (none = the populations).
 function _claim_scope_from_query(q::AbstractDict)
     project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")
     pops = _query_list(q, "pops")
@@ -12,10 +13,10 @@ function _claim_scope_from_query(q::AbstractDict)
         return (400, JSON3.write((; error = "projectUid, setUid, pops and measure required")))
     set = _cohort_set(project_uid, set_uid)
     set isa Tuple && return set
-    ClaimScope(set, pops, measure; unit_attrs = _query_list(q, "unitAttrs"))
+    ClaimScope(set, pops, measure; unit_attrs = _query_list(q, "unitAttrs"), group_attrs = _query_list(q, "groupAttrs"))
 end
 
-# GET /api/claim/checks?projectUid&setUid&pops&measure[&unitAttrs][&rows=1]
+# GET /api/claim/checks?projectUid&setUid&pops&measure[&unitAttrs][&groupAttrs][&rows=1]
 # → {findings, checks, ran, skipped, notCompared, nRows, nUsed[, rows]}. `rows` (the per-(image, population)
 # record table the rules read) only on request: it carries every flattened param and is large.
 function api_claim_checks(req::HTTP.Request)
@@ -40,8 +41,8 @@ end
 # no longer shows drops out of the text, which is how it closes — nobody closes one by hand. Rewording the claim or changing its scope starts a new round; every round stays on
 # the entry.
 #
-#   claim = {setUid, populations, measure, unitAttrs, text, round, rounds: [{round, at, by, text,
-#            setUid, populations, measure, unitAttrs}], findingIds: {key: "s01"},
+#   claim = {setUid, populations, measure, unitAttrs, groupAttrs, text, round, rounds: [{round, at, by,
+#            text, setUid, populations, measure, unitAttrs, groupAttrs}], findingIds: {key: "s01"},
 #            lastCheck: {at, ran, skipped, open: ["s01", …]}, source?}
 
 # What identifies a finding across re-checks: its code and what it is about, not its counts.
@@ -67,9 +68,13 @@ function _claim_unit_attrs(c)::Vector{String}
     claim_unit_attrs(something(field("unitAttrs"), field("unitAttr"), Some(nothing)))
 end
 
+# A claim's compared-group attributes (`groupAttrs`; none = the populations are the groups).
+_claim_group_attrs(c)::Vector{String} =
+    claim_unit_attrs(something(get(c, "groupAttrs", nothing), get(c, :groupAttrs, nothing), Some(nothing)))
+
 function _claim_scope_text(c)
-    ua = _claim_unit_attrs(c)
-    string(join(c["populations"], " vs "), " · `", c["measure"], "` · ",
+    ua = _claim_unit_attrs(c); ga = _claim_group_attrs(c)
+    string(join(c["populations"], " vs "), isempty(ga) ? "" : " by " * join(ga, " × "), " · `", c["measure"], "` · ",
            isempty(ua) ? "no replicate named" : "per " * join(ua, " × "), " · set `", c["setUid"], "`")
 end
 
@@ -120,7 +125,8 @@ end
 function _claim_run(uid::AbstractString, c::AbstractDict)
     set = _cohort_set(uid, c["setUid"])
     set isa Tuple && return set
-    claim_checks(ClaimScope(set, String.(c["populations"]), c["measure"]; unit_attrs = _claim_unit_attrs(c)))
+    claim_checks(ClaimScope(set, String.(c["populations"]), c["measure"]; unit_attrs = _claim_unit_attrs(c),
+                            group_attrs = _claim_group_attrs(c)))
 end
 
 function _claim_last_check(result)
@@ -153,15 +159,16 @@ function _claim_from_body(body)
     Dict{String,Any}("setUid" => String(strip(_wstr(body, :setUid))),
                      "populations" => String[String(strip(string(p))) for p in pops if !isempty(strip(string(p)))],
                      "measure" => String(strip(_wstr(body, :measure))), "unitAttrs" => _claim_unit_attrs(body),
+                     "groupAttrs" => _claim_group_attrs(body),
                      "text" => String(strip(String(get(body, :text, "")))))
 end
-const _CLAIM_SCOPE_KEYS = ("text", "setUid", "populations", "measure", "unitAttrs")
+const _CLAIM_SCOPE_KEYS = ("text", "setUid", "populations", "measure", "unitAttrs", "groupAttrs")
 _claim_same_round(a, b) = all(get(a, k, nothing) == get(b, k, nothing) for k in _CLAIM_SCOPE_KEYS)
 
 """
     POST /api/claim/state
 
-Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttrs?: [attr, …], text, entryId?, source? }`
+Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttrs?: [attr, …], groupAttrs?: [attr, …], text, entryId?, source? }`
 Reply: `{ ok, entryId, round, text, findings, checks, categories, categoryLabels, ran, skipped, review, closed }`
 
 States a claim: runs the checks and writes them as a Blackboard entry (one line per check, grouped
@@ -204,6 +211,8 @@ function api_claim_state(body_bytes::Vector{UInt8})
         c = _to_str_dict(old)
         # the single-attribute form, from before a replicate could combine several
         c["unitAttrs"] = _claim_unit_attrs(c); delete!(c, "unitAttr")
+        # an entry from before claims could compare groups of images compares its populations
+        c["groupAttrs"] = _claim_group_attrs(c)
         if !_claim_same_round(c, new)
             for k in _CLAIM_SCOPE_KEYS; c[k] = new[k]; end
             c["round"] = Int(get(c, "round", 1)) + 1

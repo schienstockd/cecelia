@@ -1526,7 +1526,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
-                  :measure="hasMeasure ? measure : ''" :ui="ui" />
+                  :measure="hasMeasure ? measure : ''" :group-attrs="crossImage ? (groupAttr ?? []) : []"
+                  :replicate-attrs="replicateAttrs" :ui="ui" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <CcToggle v-if="!docked" v-model="settings.csvIncludeAttrs" label="Attributes" class="sp-attrs cc-fs-xs"
                 v-tooltip.top="'Add image name + attributes to the CSV'" />

@@ -14,21 +14,27 @@
 # provenance (`inferred`: read from the record, nothing recomputed) and the evidence.
 
 """
-    ClaimScope(set, populations, measure; unit_attrs = String[])
+    ClaimScope(set, populations, measure; unit_attrs = String[], group_attrs = String[], design = experiment_design(set))
 
 What a claim is about: the set, the populations it compares (`"B/qc"`: segmentation `B`, gated
 population `qc`), the measure (`"live.track.speed"`) and the image attributes whose values together
 name one replicate — the statistical unit (`["Mouse"]`, or `["Mouse", "Location"]` when each site in
-each mouse counts once). No claim text — parsing a sentence into this is the Translator's job.
+each mouse counts once). `group_attrs` are the image attributes whose values are the compared groups
+(`["Panel"]`: panel A vs B, the plot's compare row); empty = the populations are the groups. `design`
+is the set's experiment design (`nothing` = none), read so the checks can say where the claim departs
+from it. No claim text — parsing a sentence into this is the Translator's job.
 """
 struct ClaimScope
     set::CciaSet
     populations::Vector{String}
     measure::String
     unit_attrs::Vector{String}
+    group_attrs::Vector{String}
+    design::Union{ExperimentDesign,Nothing}
 end
-ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString; unit_attrs = String[]) =
-    ClaimScope(set, String.(populations), String(measure), claim_unit_attrs(unit_attrs))
+ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString;
+           unit_attrs = String[], group_attrs = String[], design = experiment_design(set)) =
+    ClaimScope(set, String.(populations), String(measure), claim_unit_attrs(unit_attrs), claim_unit_attrs(group_attrs), design)
 
 """
     claim_unit_attrs(v) -> Vector{String}
@@ -42,10 +48,24 @@ claim_unit_attrs(v) = unique!(String[strip(string(a)) for a in (v isa AbstractVe
 # The replicate's name for text ("Mouse × Location") and an image's replicate ("M1 × left"; "" when
 # any of its attributes is blank — a half-named replicate can't be counted).
 _claim_unit_label(scope::ClaimScope) = join(scope.unit_attrs, " × ")
+_claim_group_label(scope::ClaimScope) = join(scope.group_attrs, " × ")
 function _claim_unit_of(img, attrs)
     vals = String[string(get(img.attr, a, "")) for a in attrs]
     any(isempty ∘ strip, vals) ? "" : join(vals, " × ")
 end
+
+# What a row is compared as: its population; its attribute group (panel "A") when the claim compares
+# groups of images; both ("B/qc · A") when it compares several populations across those groups. ""
+# when the group is blank: such a row is in no group. A table built before groups (or by hand in a
+# test) has no "cmp": its population is the group.
+function _claim_cmp(scope::ClaimScope, pop::AbstractString, group::AbstractString)
+    isempty(scope.group_attrs) && return String(pop)
+    isempty(group) && return ""
+    length(scope.populations) == 1 ? String(group) : string(pop, " · ", group)
+end
+_claim_cmp_of(r) = get(r, "cmp", r["pop"])
+# The groups the rows compare, in order; blank ones left out.
+_claim_compared(rows) = sort!(unique(String[_claim_cmp_of(r) for r in rows if !isempty(_claim_cmp_of(r))]))
 
 # The segmentation a population path lives on, and its gate path inside that segmentation's gating
 # file — the shared pop-ref grammar (`_split_pop_ref`), minus derived markers like `_tracked`, which
@@ -325,8 +345,10 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
         for f in metadata_qc_findings(img.meta)
             push!(get!(calib, f["detail"]["field"], String[]), f["code"])
         end
+        group = isempty(scope.group_attrs) ? "" : _claim_unit_of(img, scope.group_attrs)
         push!(rows, Dict{String,Any}(
             "image" => img.uid, "pop" => pop, "valueName" => vn, "included" => image_included(img),
+            "group" => group, "cmp" => _claim_cmp(scope, pop, group),
             "calibration" => calib,
             "hasData" => isfile(table), "hasGate" => !isnothing(gate),
             "unit" => isempty(scope.unit_attrs) ? "" : _claim_unit_of(img, scope.unit_attrs),
@@ -408,6 +430,13 @@ function _claim_s0(rows, scope)
         blank = _claim_imgs(filter(r -> isempty(r["unit"]), rows))
         isempty(blank) || push!(findings, qc_finding("warn", "claim.unit_blank"; attr = _claim_unit_label(scope),
             n = length(blank), imgs = _claim_imgs_text(blank), detail = _claim_detail("S0", Dict{String,Any}("attrs" => scope.unit_attrs,
+                "images" => blank, "excluded" => filter(i -> i in excl, blank)))))
+    end
+
+    if !isempty(scope.group_attrs)
+        blank = _claim_imgs(filter(r -> isempty(get(r, "group", "")), rows))
+        isempty(blank) || push!(findings, qc_finding("warn", "claim.group_blank"; attr = _claim_group_label(scope),
+            n = length(blank), imgs = _claim_imgs_text(blank), detail = _claim_detail("S0", Dict{String,Any}("attrs" => scope.group_attrs,
                 "images" => blank, "excluded" => filter(i -> i in excl, blank)))))
     end
 
@@ -530,40 +559,40 @@ function _claim_s1_across(rows, scope)
     findings
 end
 
-# S1b — between the compared groups (here the populations): where does a processing variable differ,
-# image by image, and does it split the groups perfectly?
+# S1b — between the compared groups (the populations, or groups of images by an attribute): where does a
+# processing variable differ, image by image, and does it split the groups perfectly? Image by image
+# only where an image is in every group (populations); an attribute puts each image in one group, so
+# there only the split is checked.
 function _claim_s1_between(rows, scope)
     findings = Any[]
     not_compared = String[]
-    pops = scope.populations
-    length(pops) < 2 && return findings, not_compared
+    gs = _claim_compared(rows)
+    length(gs) < 2 && return findings, not_compared
     imgs = _claim_imgs(rows)
-    byip = Dict((r["image"], r["pop"]) => r for r in rows)
     keys_all = sort!(unique(reduce(vcat, [collect(keys(r["vars"])) for r in rows]; init = String[])))
     for k in keys_all
         (_claim_is_gate_key(k) || k in _CLAIM_DIMS_KEYS || occursin(_CLAIM_PER_POP_KEY, k)) && continue
-        # the key as one population's params name it: params.<fun>.* is shared across pops by fun
-        per_pop = Dict(p => Dict{String,String}() for p in pops)
-        for img in imgs, p in pops
-            r = get(byip, (img, p), nothing)
-            (isnothing(r) || !haskey(r["vars"], k)) && continue
-            per_pop[p][img] = string(r["vars"][k])
+        # the key as one group's params name it: params.<fun>.* is shared across groups by fun
+        per_g = Dict(g => Dict{String,String}() for g in gs)
+        for r in rows
+            g = _claim_cmp_of(r)
+            (isempty(g) || !haskey(r["vars"], k)) && continue
+            per_g[g][r["image"]] = string(r["vars"][k])
         end
-        present = filter(p -> !isempty(per_pop[p]), pops)
-        if length(present) < length(pops)
+        present = filter(g -> !isempty(per_g[g]), gs)
+        if length(present) < length(gs)
             length(present) >= 1 && push!(not_compared, k)
             continue
         end
         within = String[]
         for img in imgs
-            vs = [get(per_pop[p], img, nothing) for p in pops]
-            any(isnothing, vs) && continue
-            length(unique(vs)) > 1 && push!(within, img)
+            vs = [per_g[g][img] for g in gs if haskey(per_g[g], img)]
+            length(vs) == length(gs) && length(unique(vs)) > 1 && push!(within, img)
         end
-        sets = [Set(values(per_pop[p])) for p in pops]
+        sets = [Set(values(per_g[g])) for g in gs]
         disjoint = all(isempty(intersect(sets[i], sets[j])) for i in eachindex(sets) for j in eachindex(sets) if i < j)
         (isempty(within) && !disjoint) && continue
-        ev = Dict{String,Any}("variable" => k, "byPop" => per_pop, "imagesDiffering" => within,
+        ev = Dict{String,Any}("variable" => k, "byPop" => per_g, "imagesDiffering" => within,
                               "separable" => !disjoint)
         if disjoint
             push!(findings, qc_finding("warn", "claim.confounded"; variable = _claim_variable_label(k), detail = _claim_detail("S1", ev)))
@@ -572,7 +601,22 @@ function _claim_s1_between(rows, scope)
                 n = length(within), imgs = _claim_imgs_text(within), detail = _claim_detail("S1", ev)))
         end
     end
+    append!(findings, _claim_group_confounded(rows, scope))
     findings, not_compared
+end
+
+# S1b — an attribute every value of which falls in one compared group (panel A imaged in November, B in
+# December: Date), so a difference between the groups can't be told apart from it. The rule the design
+# grid uses (`_design_confounded`), over the claim's own groups and images; the claim's replicate is the
+# innermost level, nested in its group by design.
+function _claim_group_confounded(rows, scope)
+    isempty(scope.group_attrs) && return Any[]
+    uids = Set(String[r["image"] for r in rows if !isempty(_claim_cmp_of(r))])
+    imgs = [i for i in images(scope.set) if i.uid in uids]
+    d = ExperimentDesign(group = scope.group_attrs, parents = scope.unit_attrs)
+    Any[qc_finding("warn", "claim.group_confounded"; group = _claim_group_label(scope), attr = a,
+            detail = _claim_detail("S1", Dict{String,Any}("group" => scope.group_attrs, "attr" => a)))
+        for a in experiment_design_grid(imgs, d)["confounded"]]
 end
 
 # S1 — were the compared populations measured in the same number of dimensions, image by image? A
@@ -624,8 +668,9 @@ function _claim_s2(rows, scope)
             detail = _claim_detail("S2", Dict{String,Any}("images" => _claim_imgs(used)))))
     else
         attr = _claim_unit_label(scope)
-        units = Dict(p => Set(String[r["unit"] for r in used if r["pop"] == p && !isempty(r["unit"])])
-                     for p in scope.populations)
+        gs = _claim_compared(used)
+        units = Dict(g => Set(String[r["unit"] for r in used if _claim_cmp_of(r) == g && !isempty(r["unit"])])
+                     for g in gs)
         imgs_per_unit = Dict{String,Vector{String}}()
         for r in used
             isempty(r["unit"]) && continue
@@ -635,20 +680,22 @@ function _claim_s2(rows, scope)
         foreach(sort!, values(imgs_per_unit))
         ev = Dict{String,Any}("attrs" => scope.unit_attrs, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
                               "imagesPerUnit" => imgs_per_unit)
-        if length(scope.populations) >= 2
+        if length(gs) >= 2
             shared = reduce(intersect, values(units))
-            disjoint = all(isempty(intersect(units[a], units[b]))
-                           for a in scope.populations for b in scope.populations if a < b)
-            if disjoint && length(scope.populations) == 2
-                n1, n2 = (length(units[p]) for p in scope.populations)
-                ev["design"] = "unpaired"; ev["minP"] = claim_min_p_unpaired(n1, n2); n = min(n1, n2)
+            disjoint = all(isempty(intersect(units[a], units[b])) for a in gs for b in gs if a < b)
+            if disjoint
+                # more than two groups: the floor of the weakest pairwise comparison, the two smallest
+                ns = sort!([length(units[g]) for g in gs])
+                ev["design"] = "unpaired"; ev["minP"] = claim_min_p_unpaired(ns[1], ns[2]); n = ns[1]
             else
                 ev["design"] = "paired"; n = length(shared)
                 ev["minP"] = claim_min_p_paired(n)
             end
-        else
-            n = length(first(values(units)))
+        elseif length(gs) == 1
+            n = length(only(values(units)))
             ev["design"] = "one group"; ev["minP"] = claim_min_p_paired(n)
+        else
+            n = 0; ev["design"] = "no group"; ev["minP"] = 1.0
         end
         ev["n"] = n
         pmin = round(ev["minP"]; sigdigits = 3)
@@ -685,12 +732,35 @@ function _claim_s2(rows, scope)
     findings
 end
 
+# S2 — the set's experiment design: an exploratory set or an unconfirmed design can't carry a
+# confirmatory claim; grouping or counting otherwise than the design is allowed and noted.
+# docs/todo/EXPERIMENT_DESIGN_PLAN.md (T3, Decision 8).
+function _claim_design(scope)
+    d = scope.design
+    findings = Any[]
+    d === nothing && return findings
+    if d.mode == DESIGN_EXPLORATORY
+        push!(findings, qc_finding("warn", "claim.design_exploratory"; detail = _claim_detail("S2", Dict{String,Any}("mode" => "exploratory"))))
+        return findings
+    end
+    d.status == DESIGN_CONFIRMED || push!(findings, qc_finding("warn", "claim.design_unconfirmed";
+        detail = _claim_detail("S2", Dict{String,Any}("status" => string(d.status)))))
+    claim_groups = isempty(scope.group_attrs) ? "the populations" : _claim_group_label(scope)
+    (!isempty(d.group) && scope.group_attrs != d.group) && push!(findings, qc_finding("info", "claim.design_group_differs";
+        group = claim_groups, design = join(d.group, " × "),
+        detail = _claim_detail("S2", Dict{String,Any}("claim" => scope.group_attrs, "design" => d.group))))
+    (!isempty(d.parents) && Set(scope.unit_attrs) != Set(d.parents)) && push!(findings, qc_finding("info", "claim.design_unit_differs";
+        attr = isempty(scope.unit_attrs) ? "none" : _claim_unit_label(scope), design = join(d.parents, " × "),
+        detail = _claim_detail("S2", Dict{String,Any}("claim" => scope.unit_attrs, "design" => d.parents))))
+    findings
+end
+
 # ── the checks as a list of facts ──────────────────────────────────────────────────────────────
 
 # Every check in reading order. What each one looks at, and the fact it states when it finds nothing,
 # are copy: `claim.ok.<id>` in qc/text.jl. `S2.unit` always states a fact (the n), so it has no pass line.
 const CLAIM_CHECK_IDS = ("S0.membership", "S0.data", "S0.unit", "S0.params", "S0.dims",
-                         "S1.acrossImages", "S1.betweenGroups", "S1.dims", "S2.unit", "S2.calibration")
+                         "S1.acrossImages", "S1.betweenGroups", "S1.dims", "S2.unit", "S2.design", "S2.calibration")
 # What each check is about, for the reader: the categories the checks are listed under, in order
 # (labels in qc/text.jl, `claim.cat.<id>`). The model review uses the same ones, plus `data` (the
 # measured values themselves, which no rule reads) and `other`.
@@ -699,10 +769,13 @@ const CLAIM_CATEGORY_OF = Dict(
     "S0.membership" => "images", "S0.data" => "images", "S0.unit" => "images",
     "S0.params" => "record", "S0.dims" => "record",
     "S1.acrossImages" => "sameness", "S1.betweenGroups" => "sameness", "S1.dims" => "sameness",
-    "S2.unit" => "replicates", "S2.calibration" => "units")
+    "S2.unit" => "replicates", "S2.design" => "replicates", "S2.calibration" => "units")
 # The check each finding comes from.
 const CLAIM_CHECK_OF = Dict(
     "claim.image_excluded" => "S0.membership", "claim.no_data" => "S0.data", "claim.unit_blank" => "S0.unit",
+    "claim.group_blank" => "S0.unit", "claim.group_confounded" => "S1.betweenGroups",
+    "claim.design_exploratory" => "S2.design", "claim.design_unconfirmed" => "S2.design",
+    "claim.design_group_differs" => "S2.design", "claim.design_unit_differs" => "S2.design",
     "claim.params_not_recorded" => "S0.params", "claim.params_last_run_only" => "S0.params",
     "claim.params_outcome_unrecorded" => "S0.params",
     "claim.dims_not_recorded" => "S0.dims",
@@ -808,7 +881,7 @@ groups because one group has no record of them (an S0 gap, not a clean bill).
 function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any}
     ran = String["S0.membership", "S0.data"]
     skipped = Dict{String,String}()
-    isempty(scope.unit_attrs) ? (skipped["S0.unit"] = "no replicate attribute given") : push!(ran, "S0.unit")
+    (isempty(scope.unit_attrs) && isempty(scope.group_attrs)) ? (skipped["S0.unit"] = "no replicate attribute given") : push!(ran, "S0.unit")
     push!(ran, "S0.params")
     _claim_needs_tracking(scope.measure) ? push!(ran, "S0.dims") : (skipped["S0.dims"] = "not a tracking measure")
     findings = _claim_s0(table, scope)
@@ -820,10 +893,12 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
         append!(findings, _claim_s1_across(_claim_same_source(used; per_pop = true), scope))
     end
     not_compared = String[]
-    if length(scope.populations) < 2
+    if length(scope.populations) < 2 && isempty(scope.group_attrs)
         skipped["S1.betweenGroups"] = "one population — nothing to compare"
     elseif isempty(used)
         skipped["S1.betweenGroups"] = "no images with data"
+    elseif !isempty(scope.group_attrs) && length(_claim_compared(used)) < 2
+        skipped["S1.betweenGroups"] = "one $(_claim_group_label(scope)) only — nothing to compare"
     else
         push!(ran, "S1.betweenGroups")
         f, not_compared = _claim_s1_between(_claim_same_source(used; per_pop = false), scope)
@@ -860,6 +935,9 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
             push!(ran, "S2.calibration")
         append!(findings, _claim_s2(table, scope))
     end
+    # S2 — the set's experiment design
+    scope.design === nothing ? (skipped["S2.design"] = "no experiment design on this set") : push!(ran, "S2.design")
+    append!(findings, _claim_design(scope))
     out = Dict{String,Any}("findings" => _claim_merge_pops(findings), "ran" => ran, "skipped" => skipped,
                            "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))
     out["checks"] = claim_check_lines(out)
