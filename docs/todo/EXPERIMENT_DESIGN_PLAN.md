@@ -230,7 +230,13 @@ readiness panel (frame 4), the design pill and question line in the set bar are 
 Design check and the Acquisition check cover them. In order:
 
 1. Merge the record (#2415), MCP tools (#2416) and dialog + plots (#2417).
-2. **T3 — the claim check reads the design** (build step 3).
+2. **T3 — the claim check reads the design** (build step 3). Built (branch `feat/claim-reads-design`):
+   a claim takes the plot's compare attribute as its groups (`groupAttrs`), so a plot of Panel A vs B
+   is a claim between panels with mice counted per panel; the replicate picker starts from the
+   design; S1 names an attribute the groups can't be told apart from (the grid's `_design_confounded`);
+   `S2.design` warns on an exploratory set or an unconfirmed design and notes a group or replicate
+   other than the design's. Not done: S2's paired rule and the grid's `paired` stay two rules
+   (any shared unit vs every parent holding every group).
 3. **Plot header n + replicate dots**: "per mouse · 8 mice (5 / 3)" in the header, dots coloured by
    replicate with the replicate means (the rest of build step 2).
 4. **Freeze and stale (T6)** (build step 5).

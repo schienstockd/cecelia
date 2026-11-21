@@ -2,7 +2,8 @@
 // The claim recital on a summary plot (docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md → GUI, B6). One
 // button in the plot's footer: the claim's open problems as a count. It opens a popover with the
 // claim, the rule checks as a list of facts (no model, instant) and the model review (one Kiwi turn,
-// about a minute, on request). Scope = the plot's set, plotted populations and measure.
+// about a minute, on request). Scope = the plot's set, plotted populations and measure, and the
+// attributes it compares by (Panel); the replicate picker starts from the set's design.
 // The findings live on a Blackboard entry, marked there Good / Bad / Unsure; the entry id is kept in
 // the panel's persisted `ui`, so restating is a new round on the SAME entry, not a second entry.
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
@@ -19,7 +20,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { fetchImageAttrs } from '../../composables/useImageAttrs'
 import type { SeriesTarget } from '../../plots/types'
 import {
-  claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount,
+  claimScopeOf, claimUnitsDefault, claimUnitsOf, findingsOf, openCount,
   stateClaim, checkClaim, reviewClaim, type ClaimResult,
 } from '../../utils/claimApi'
 
@@ -28,6 +29,8 @@ const props = defineProps<{
   setUid?: string | null
   series: SeriesTarget[]   // the populations the plot draws
   measure?: string
+  groupAttrs?: string[]      // the attributes the plot compares by (its compare row); [] = the populations
+  replicateAttrs?: string[]  // the set's design replicate, the picker's default; [] = no design
   // the panel's persisted bag — the claim's entry, text and replicate attributes (`claimUnit`: the
   // single attribute a panel kept before a replicate could combine several)
   ui: { claimEntryId?: string; claimText?: string; claimUnits?: string[]; claimUnit?: string }
@@ -39,7 +42,8 @@ const kiwi = useKiwiStore()
 const observer = useObserverStore()   // the AI switch: the model review is a Kiwi turn, hidden while AI is off
 const settings = useSettingsStore()   // the review runs on the model picked for Kiwi
 
-const scope = computed(() => claimScopeOf({ setUid: props.setUid, series: props.series, measure: props.measure }))
+const scope = computed(() => claimScopeOf({ setUid: props.setUid, series: props.series, measure: props.measure,
+                                            groupAttrs: props.groupAttrs }))
 const result = ref<ClaimResult | null>(null)
 const checking = ref(false)
 const reviewTurn = ref('')     // the review turn running for this claim ('' = none)
@@ -57,7 +61,7 @@ async function openPopover() {
   editing.value = !props.ui.claimEntryId
   draftText.value = props.ui.claimText ?? ''
   attrs.value = (await fetchImageAttrs(props.projectUid, props.setUid ?? null, [])).map(a => a.name)
-  draftUnits.value = claimUnitsOf(props.ui) ?? [defaultUnitAttr(attrs.value)].filter(Boolean)
+  draftUnits.value = claimUnitsDefault(claimUnitsOf(props.ui), props.replicateAttrs ?? [], attrs.value)
 }
 
 async function submit() {
@@ -138,7 +142,7 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
           <span v-tooltip.top="'What counts as one independent sample (n) — select several to combine'">Replicate</span>
           <ChipSelect v-model="draftUnits" multiple :options="attrs.map(a => ({ value: a }))" />
         </div>
-        <div v-if="scope" class="cc-muted cc-fs-2xs">{{ scope.populations.join(' vs ') }} · {{ scope.measure }}</div>
+        <div v-if="scope" class="cc-muted cc-fs-2xs">{{ scope.groupAttrs.length ? `${scope.populations.join(', ')} by ${scope.groupAttrs.join(' × ')}` : scope.populations.join(' vs ') }} · {{ scope.measure }}</div>
         <div class="cc-row cc-row-tight claim-actions">
           <button v-if="ui.claimEntryId" class="cc-btn" type="button" @click="editing = false">Cancel</button>
           <button class="cc-btn cc-btn-primary" type="button" :disabled="!draftText.trim() || !scope || checking"
