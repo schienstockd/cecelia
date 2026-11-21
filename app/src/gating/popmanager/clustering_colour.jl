@@ -321,6 +321,8 @@ end
 Which population of run `suffix` holds each cluster id on map `m`. A cluster id belongs to at most one
 population of a run (the manager's tick moves it); the routes that write cluster ids refuse one another
 population holds. `except` leaves out the population(s) being edited: one path, or a collection of them.
+Only a population that CLAIMS its values (`_claims_values`: `in`/`eq`/legacy) holds them — a `neq 3`
+population holds every cluster but 3, so it never holds 3.
 """
 function cluster_id_owners(m::PopulationTree, suffix::AbstractString; except = nothing)::Dict{Int,String}
     out = Dict{Int,String}()
@@ -328,7 +330,7 @@ function cluster_id_owners(m::PopulationTree, suffix::AbstractString; except = n
     for path in m.order
         skip(path) && continue
         p = m.pops[path]
-        cluster_pop_suffix(p) == suffix || continue
+        (cluster_pop_suffix(p) == suffix && _claims_values(p)) || continue
         for v in _as_value_vec(p.filter_values)
             id = as_cluster_id(v)
             id === nothing || get!(out, id, path)
