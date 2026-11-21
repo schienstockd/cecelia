@@ -66,9 +66,9 @@ a file. *Checkpoint:* render reviewed by the maintainer.
 **v1 (2026-11-07):** one compact overview (1100 px wide), in the style of the README's earlier
 framework diagram: a band per layer with a short headline, a one- or two-word chip per stage, and the
 tagline "Analysis you can hand off and check". `structure_figures/structure_overview.svg` is the plan
-copy, with gaps in magenta italics (2026-11-09: none left; both copies now show the P3 fixes). `make_structure_overview.py` writes the README copy
-(`frontend/public/readme-structure.svg`), which shows only what exists, because it is the first
-diagram a new reader sees. Maturity tiers are not shown yet. A ten-box paper version is still to do.
+copy, with gaps in magenta italics (2026-11-09: none left; both copies now show the P3 fixes). The README copy
+(`frontend/public/readme-structure.svg`, written by `make_readme_overview.py` since v3) shows only
+what exists, because it is the first diagram a new reader sees. Maturity tiers are not shown yet. A ten-box paper version is still to do.
 
 **v2 (2026-11-09):** redrawn in the style of the other README figures, one generator for both copies
 (no gaps left). One record chip per step, funnelling into one Checks band that lists the per-step
@@ -88,6 +88,16 @@ counts / tracks (`drift_correct.jl`, `segmentation.jl`, `bayesian_tracking.jl`, 
 gates (`qc_gating.jl`), statistics (`plotting/stats.jl` `stats_qc_findings`); claims
 (`claim_checks.jl`, from `ClaimStrip.vue` on a summary plot). v1's "CSV trace" named no feature and
 "calibration kept" was image (OME-TIFF) export QC, not figure export; both are gone.
+
+**v3 (2026-11-21):** the README figure is redrawn design first, by
+`structure_figures/make_readme_overview.py` (v2's generator now writes the plan copy only). Three
+panels, pictograms over words: (1) the set's design as the app's design sketch draws it, with the
+question, the expectation and the exploratory option; (2) the steps around one record (settings,
+version, who, when, design; chains replay it), a check per step, and the claim check pointing back at
+the design; Kiwi and Claude Code beside it as optional sidekicks; (3) what you can ask. The design
+layout (5 vs 3 replicates) is an example, not a dataset. It depends on
+[`EXPERIMENT_DESIGN_PLAN.md`](EXPERIMENT_DESIGN_PLAN.md): the dialog and the per-replicate plot (#2417)
+and the claim check reading the design (step T3) must exist before the README shows it.
 
 **P3. Gaps, flaws, worth expanding, worth cutting.** These mostly come from P1 and P2: anything that
 can't be drawn cleanly is a finding. Each item records what it is, the evidence (code ref or an
