@@ -90,7 +90,7 @@ Two things to note:
    promoted to designed later, and the history keeps the step.
 4. **The question is part of the design.** One sentence, plus the expectation: not sure, no
    difference, or higher / lower in one group (a null is a valid design, and differs from not sure). The acquisition check's plan sentence reads it instead of keeping its own.
-5. **The design is set up on the Metadata page, after the metadata** (the maintainer, 2026-11-21;
+5. **The design is set up once the metadata is in, from the Design check** (the maintainer, 2026-11-21;
    replaces "the dialog opens after register"). A design is built from attributes, and right after
    register most sets have none yet: names and original paths, nothing else. So no dialog pops up when
    files land. The entry is the **Design check** in the Checks cluster (beside Acquisition and QC, on
@@ -222,10 +222,27 @@ Pairing: for intravital, each mouse is imaged in one group only (transferred wit
 cells), so a replicate never spans groups and an unpaired test is right. `paired` matters only for
 designs where one subject appears in several groups.
 
+## Road forward (the maintainer, 2026-11-21)
+
+The Checks row is the workflow's status surface. The design adds one check to it and otherwise works
+quietly through the plots and the claim check. No second place says the same thing: the mock's
+readiness panel (frame 4), the design pill and question line in the set bar are **not built** — the
+Design check and the Acquisition check cover them. In order:
+
+1. Merge the record (#2415), MCP tools (#2416) and dialog + plots (#2417).
+2. **T3 — the claim check reads the design** (build step 3).
+3. **Plot header n + replicate dots**: "per mouse · 8 mice (5 / 3)" in the header, dots coloured by
+   replicate with the replicate means (the rest of build step 2).
+4. **Freeze and stale (T6)** (build step 5).
+
+Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate
+"place these images" step (frame 3b; the Design check counts them and opens the dialog), per-row marks
+in the image table (T7), a notebook helper (T8).
+
 ## Build order
 
 1. **Record + dialog.** The design record and versions; the dialog behind the Design check (suggest,
-   confirm), "Set up a design" on an empty set, and the "place these images" step; the grid; the
+   confirm); the grid; the
    no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
    metadata comes with it, because neither example set has attributes yet. The suggestion reuses the
    Metadata panel's extraction (`frontend/src/utils/regexBuilder.ts`: file name or original path,
@@ -242,7 +259,7 @@ designs where one subject appears in several groups.
    One rule each, shared with the grid: paired vs unpaired (S2's `ev["design"]` and the grid's
    `paired` disagree on a partial overlap today), and confounded (S1's `claim.confounded` over record
    variables and the grid's `confounded` over design attributes — one finding code, two subjects).
-4. **Reservations as work progresses + the readiness view (T5).** The acquisition check compares against
+4. **Reservations as work progresses (T5).** No readiness view: the Checks row is it. The acquisition check compares against
    the declared group. Processing consistency (S1) runs after each task, not only at claim time.
 5. **Freeze and stale (T6).** Stats runs and exported figures carry the design version and are marked
    stale when the design changes. An exported figure's caption carries the n of units and parents and
