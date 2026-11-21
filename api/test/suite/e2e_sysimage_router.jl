@@ -262,7 +262,7 @@ end
     GET_ROUTES = [
         "/api/analysis/behaviour", "/api/analysis/board-provenance", "/api/analysis/boards",
         "/api/analysis/chains",
-        "/api/analysis/clusters", "/api/analysis/lineage",
+        "/api/analysis/clusters", "/api/analysis/lineage", "/api/analysis/methods",
         "/api/analysis/measures", "/api/analysis/populations",
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
@@ -511,7 +511,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 131 && length(POST_ROUTES) == 205
+    @test length(GET_ROUTES) == 132 && length(POST_ROUTES) == 205
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

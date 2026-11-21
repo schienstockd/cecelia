@@ -797,6 +797,23 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
 
 
 @_tool
+def get_methods_report(project_uid: str, set_uid: str = "", run_id: str = "",
+                       image_uids: list[str] | None = None) -> dict:
+    """A DRAFT Methods section, assembled by code from the project record — the same text the user gets
+    from the board's Export menu (Methods) and the chain Live view. Give ONE scope: `run_id` (a chain
+    run, from get_chains / the Live view: its nodes with status and timing, cohort QC), `set_uid`, or
+    `image_uids`.
+
+    Returns `{markdown, table, scope}`: `markdown` opens with a draft banner and lists every step with its
+    non-default parameters, which steps Claude or Kiwi started (with the recorded model, or "model not
+    recorded"), and the Cecelia version on the runs; `table` is the parameter table it is written from.
+
+    Quote or polish this text; never add a step, parameter or model it does not state — anything
+    missing from it is missing from the record, so say so. Read-only."""
+    return _client.get_methods_report(project_uid, set_uid or None, run_id or None, image_uids or None)
+
+
+@_tool
 def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """Population DEFINITIONS per image — the detail behind lineage's `gatedPops`. Use this to know what
     a population actually MEANS: its gate geometry, filter rule or combination, and where it sits in the tree. Scope

@@ -29,6 +29,7 @@
     "get_plot_catalogue": "read",
     "get_analysis_boards": "read",
     "get_analysis_lineage": "read",
+    "get_methods_report": "read",
     "get_populations": "read",
     "get_measure_summary": "read",
     "get_behaviour_summary": "read",

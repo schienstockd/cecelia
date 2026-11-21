@@ -81,6 +81,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/claim/checks"),    # claim recital: record / consistency / convention rules for a claim scope
         ("GET", "/api/claim/open"),      # claim recital: open claim entries re-checked, nothing written (briefing)
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
+        ("GET", "/api/analysis/methods"),  # draft Methods section (Markdown + parameter table), read-only
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
         ("GET", "/api/analysis/measures"),  # per-pop phenotype + motility summaries (median/quantiles)
         ("GET", "/api/analysis/behaviour"),  # HMM state distribution + transition counts
@@ -500,6 +501,12 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
     def get_analysis_lineage(self, project_uid: str, image_uid: str | None = None,
                              set_uid: str | None = None):
         return self._analysis_summary("/api/analysis/lineage", project_uid, image_uid, set_uid)
+
+    def get_methods_report(self, project_uid: str, set_uid: str | None = None,
+                           run_id: str | None = None, image_uids: list[str] | None = None):
+        q = {"projectUid": project_uid, "setUid": set_uid, "runId": run_id,
+             "imageUids": ",".join(image_uids) if image_uids else None}
+        return self._request("GET", "/api/analysis/methods", q)
 
     def get_populations(self, project_uid: str, image_uid: str | None = None,
                         set_uid: str | None = None):

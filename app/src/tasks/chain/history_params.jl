@@ -100,13 +100,22 @@ params are unknown).
 `pops` cuts the table to what a board shows (`nothing` = the whole history): board population keys
 (`popType::labelSet/pop`) plus `cluster_runs` (`"popType:suffix"`, the run a board's cluster panels
 draw) — see `_history_scope`.
+
+`task_ids` cuts it to the run-log entries of those task ids (`nothing` = every run): a chain run's
+table is the runs its nodes made (`methods_report`), not whatever ran on its images since.
 """
 function history_params_table(proj::CciaProject, image_uids::Vector{String};
                               pops::Union{Nothing,AbstractVector} = nothing,
-                              cluster_runs::AbstractVector = String[])::Vector{Dict{String,Any}}
+                              cluster_runs::AbstractVector = String[],
+                              task_ids::Union{Nothing,AbstractVector} = nothing)::Vector{Dict{String,Any}}
     leaves = Dict{String,Any}()
     leaves_of(fn) = get!(() -> _history_leaves(fn), leaves, fn)
-    rows = _history_rows(proj, image_uids)
+    # a named run may have rotated into the run-log archive; the whole history is read only then
+    rows = _history_rows(proj, image_uids; archive = task_ids !== nothing)
+    if task_ids !== nothing
+        want_ids = Set{String}(String.(task_ids))
+        filter!(r -> r.taskId in want_ids, rows)
+    end
     latest, held, skipped = _history_latest(rows, leaves_of)
     N = length(image_uids)
     why_of = Dict((r.fn, r.uid) => w for (r, w) in skipped)

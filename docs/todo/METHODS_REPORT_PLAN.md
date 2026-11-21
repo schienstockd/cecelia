@@ -1,6 +1,12 @@
 # Methods report — a draft Methods paragraph from what the project already records
 
-**Status:** planning (2026-10-29). Nothing built. Prompted by the Janelia *AI in Microscopy* guide
+**Status:** P1–P3 built (2026-11-21) — generator, route, board Export entry + chain Live entry, MCP
+`get_methods_report`. How it works now: `docs/ANALYSIS.md` → *Methods report*. Open questions answered
+with defaults the maintainer can change: button = the board's `⤓ Export` (plus the chain Live view); scope
+= set, board and chain run (GALAXY_LESSONS_PLAN L1); format = Markdown + the parameter CSV; paired-terminal
+suggestions = ceiling accepted and stated in the text. Not done: a `methodsText` template on every task
+spec (the field exists and is honoured; no built-in task has one, so a missing one is not a test failure),
+DOCX, board figures in the report. Prompted by the Janelia *AI in Microscopy* guide
 (ch. 3 §3.6–3.8: "Document models, prompts, and validation in methods"; ch. 11: data "with clear
 provenance"), and by the model stamps that landed in #1826.
 

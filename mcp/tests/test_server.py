@@ -23,7 +23,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
     def test_expected_read_and_write_tools_registered(self):
         for tool in (
             "get_project_info", "list_images", "find_object", "get_task_history",
-            "get_module_params", "get_plot_catalogue", "get_analysis_lineage", "get_populations",
+            "get_module_params", "get_plot_catalogue", "get_analysis_lineage", "get_methods_report", "get_populations",
             "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
             "get_region_clusters", "get_contact_stats", "get_spatial_patterns",   # split of former get_spatial_stats
             "get_proximity_profiles",
@@ -520,7 +520,7 @@ class GuidanceTest(unittest.TestCase):
         self.assertTrue(self.UNMENTIONED <= self.names)
 
     # Words in the prose that look like a tool name but are not one (fields, ids, internal helpers).
-    NOT_TOOLS = {"set_uid"}
+    NOT_TOOLS = {"set_uid", "run_id"}
 
     def test_model_facing_text_cites_no_internal_plan(self):
         # "Decision 9", "BIDIR_CONTEXT_PLAN", "PR #2" mean nothing to a session using these tools — it

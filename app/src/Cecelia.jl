@@ -288,6 +288,7 @@ export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
 export chain_from_history, chain_preflight, history_params_table, board_export_provenance, gate_file_edits
+export methods_report, methods_ai_phrase
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
@@ -510,6 +511,7 @@ include("hpc/job.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("analysis_export_provenance.jl")   # after ai/lineage.jl (`_parse_tkey`) and tasks/chain.jl
+include("ai/methods_report.jl")   # after analysis_export_provenance.jl: the draft Methods section
 include("ai/populations.jl")
 include("ai/measures.jl")
 include("ai/behaviour_clusters.jl")

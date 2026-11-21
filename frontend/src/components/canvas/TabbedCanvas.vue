@@ -26,6 +26,8 @@ import { useLogStore } from '../../stores/log'
 import { useSettingsStore } from '../../stores/settings'
 import LayoutCanvas from './LayoutCanvas.vue'
 import BoardRecordModal from './BoardRecordModal.vue'
+import MethodsReportModal from '../MethodsReportModal.vue'
+import type { MethodsScope } from '../../utils/methodsReport'
 import ConfirmButton from '../ConfirmButton.vue'
 import CcToggle from '../CcToggle.vue'
 
@@ -210,8 +212,17 @@ function exportBoard(kind: string) {
     'pdf+csv': ['pdf', true], 'svg+csv': ['svg', true], csv: [null, true],
   }
   if (kind === 'params') return exportParams()
+  if (kind === 'methods') return openMethods()
   const sel = map[kind]
   if (sel) runExport(sel[0], sel[1])
+}
+
+// The ACTIVE board's draft Methods (`GET /api/analysis/methods`): the same scope as its Parameters CSV.
+const methodsScope = ref<MethodsScope | null>(null)
+function openMethods() {
+  const scope = layoutRef.value?.paramsScope()
+  if (!scope || !props.imageUids.length) { log.info('Nothing on this board yet.', { source: 'analysis' }); return }
+  methodsScope.value = { kind: 'board', imageUids: [...props.imageUids], scope, board: activeTitle.value }
 }
 
 // The ACTIVE board's parameter table: the steps behind its plots, cut from the run history of the
@@ -293,13 +304,16 @@ async function exportParams() {
         <option value="svg+csv">SVG + CSV</option>
         <option value="csv">CSV only</option>
         <option value="params">Parameters (CSV)</option>
+        <option value="methods">Methods (draft)</option>
       </select>
       <!-- opens LEFT (into the page): this is the rightmost control, a bottom tooltip would clip the edge -->
-      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF raster, SVG vector, CSV data; Parameters = the steps behind this board'" />
+      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF raster, SVG vector, CSV data; Parameters, Methods = the steps behind this board'" />
     </div>
 
     <!-- only the active board is mounted; keyed by its canvas key so a tab switch re-binds the layout -->
     <LayoutCanvas ref="layoutRef" :key="activeKey" :canvas-key="activeKey" :module="module" :image-uids="imageUids" />
+    <MethodsReportModal v-if="methodsScope" :project-uid="projectUid" :scope="methodsScope" :name="activeTitle || 'board'"
+                        @close="methodsScope = null" />
     <BoardRecordModal v-if="recordOpen" :project-uid="projectUid" :load-current="loadCurrentRecord" @close="recordOpen = false" />
   </div>
 </template>

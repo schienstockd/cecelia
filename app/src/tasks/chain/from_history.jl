@@ -277,14 +277,14 @@ end
 
 # ── collection ──
 
-function _history_rows(proj::CciaProject, exemplars::Vector{String})
+function _history_rows(proj::CciaProject, exemplars::Vector{String}; archive::Bool = false)
     rows = NamedTuple{(:fn, :params, :at, :uid, :legacy, :taskId),
                       Tuple{String,Dict{String,Any},String,String,Bool,String}}[]
     want = Set(exemplars)
     for uid in exemplars
         img = init_object(proj.uid, uid)
         img isa CciaImage || continue
-        for e in read_run_log(img)
+        for e in (archive ? read_run_log_history(img) : read_run_log(img))
             r = run_log_row(e)
             r.status == "done" || continue
             push!(rows, (; r.fn, r.params, r.at, uid, r.legacy, r.taskId))
