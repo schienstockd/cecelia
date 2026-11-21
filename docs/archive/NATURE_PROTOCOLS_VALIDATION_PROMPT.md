@@ -1,7 +1,7 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
 > time. It is not a description of how the code works now, and not instructions to re-run.
 >
-> **Outcome:** task 1 (experimental design) became [`../todo/EXPERIMENT_DESIGN_PLAN.md`](../todo/EXPERIMENT_DESIGN_PLAN.md) (2026-11-21), written for every technology, not intravital only. Tasks 2–8 are not run; most were already audited in [`../todo/CECELIA_STRUCTURE_PLAN.md`](../todo/CECELIA_STRUCTURE_PLAN.md) and [`../todo/IMAGE_ANALYSIS_RECITAL_PLAN.md`](../todo/IMAGE_ANALYSIS_RECITAL_PLAN.md), which this brief does not cite: start from those. Premises found wrong: the worked set (lfGUDg) is one set of 16 movies with panel as a group attribute and no Mouse attribute yet; drift was removed from the acquisition check on 2026-11-11.
+> **Outcome:** task 1 (experimental design) became [`../todo/EXPERIMENT_DESIGN_PLAN.md`](../todo/EXPERIMENT_DESIGN_PLAN.md) (2026-11-21), written for every technology, not intravital only. Tasks 2–8 are not run; most were already audited in [`../todo/CECELIA_STRUCTURE_PLAN.md`](../todo/CECELIA_STRUCTURE_PLAN.md) and [`../todo/IMAGE_ANALYSIS_RECITAL_PLAN.md`](../todo/IMAGE_ANALYSIS_RECITAL_PLAN.md), which this brief does not cite: start from those. Premises found wrong: the worked set (lfGUDg) is one set of 16 movies from 8 mice, not 6–7 movies from 2 mice; panel is a group attribute (`Test`), panels are in different mice, and each panel was imaged on its own days; drift was removed from the acquisition check on 2026-11-11.
 
 # NATURE_PROTOCOLS_VALIDATION_PROMPT
 

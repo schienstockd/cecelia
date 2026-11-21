@@ -28,14 +28,32 @@ show the range:
 
 | | Intravital 2P — RFtn9f / lfGUDg | PhenoCycler — mjphFQ / xxHqjQ | Fixed confocal (typical) |
 |---|---|---|---|
-| Images | 16 movies | 8 tissue cores cut from one scan | fields of view from tissue sections |
-| Attributes today | `Test` = A/B only | none | — |
+| Images | 16 movies from 8 mice over 4 days (file name `M1-2` = mouse 1, position 2; date = the original folder) | 8 tissue cores cut from one scan | fields of view from tissue sections |
+| Attributes today | `Test` = A/B (the panel) only | none | — |
 | Question | do naive P14 / OT-I / gBT move differently between the two label panels? (null expected) | does cell-type composition differ between tissues? | does treatment change infiltration? |
 | Group | Panel | Tissue | Treatment |
 | Unit (replicate) | Movie | Core (or Donor, if cores share a donor) | Mouse |
-| Parent | Mouse | Donor / Slide | — |
+| Parent | Date × Mouse (mouse numbers restart each day) | Donor / Slide | — |
 | Below the unit (never the n) | track, cell, timepoint | cell, region | field of view, cell |
-| Acquisition | differs between panels by design | one scan: one acquisition batch for all cores | per-section sessions |
+| Acquisition | differs between panels by design; each panel imaged on its own days | one scan: one acquisition batch for all cores | per-section sessions |
+
+What the grid shows for lfGUDg, read from the original paths (2026-11-21):
+
+| Panel | Date | Mice | Movies |
+|---|---|---|---|
+| A (P14-ubTomato) | 2021-11-25 | 3 | 5 |
+| A | 2021-11-28 | 2 | 4 |
+| B (P14-CTDR) | 2021-12-01 | 2 | 5 — three of them are mouse 2, position 1 |
+| B | 2021-12-02 | 1 | 2 |
+
+Panels were imaged in different mice, so mouse nests in panel: 5 mice against 3. Panel is also fully
+confounded with acquisition day (A in November, B in December). A difference between panels cannot be
+told apart from a day effect. That is exactly the reservation the grid has to raise, whatever the
+technology. Three panel-B movies are all named mouse 2, position 1, but their run suffixes differ
+(`_0001`, `_0003`, `_0005`). The maintainer sometimes forgot to rename between positions, so these may be
+three positions under one stale name. A name is evidence, not truth: a design suggested from names stays
+*inferred* until the user confirms it, and the run suffix is shown beside the name so a stale name can be
+caught at confirmation.
 
 Two things to note:
 - **The unit can sit above the image.** With several fields per mouse, the image is below the unit
@@ -144,7 +162,9 @@ descriptive, not confirmatory."
 
 1. **Record + dialog.** The design record and versions; the setup dialog, both ways in; the grid;
    the no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
-   metadata comes with it, because neither example set has attributes yet.
+   metadata comes with it, because neither example set has attributes yet. The suggestion reuses the
+   Metadata panel's extraction (`frontend/src/utils/regexBuilder.ts`: file name or original path,
+   split-and-take and look-around builders). It does not add a second parser.
 2. **Plots and stats read the design.** Grouping and unit default to the design. The plot header
    shows group, unit, n and parents. A summary level at the unit attribute gives one dot per unit,
    coloured by parent, with parent means beside them. Overrides recorded.
@@ -183,5 +203,6 @@ Step 2 makes the claim true. Proposed opening, ahead of the scheduler sentence:
 2. **Summary levels.** Should stats offer any attribute as the unit, or only the design's unit and
    parents?
 3. **New sets.** Should the dialog open on every new set, or only when the first image arrives?
-4. **The example sets' attributes.** Is `Test` A/B on lfGUDg the panel, and which mouse is each movie
-   from? Which tissue and donor is each core of xxHqjQ?
+4. **The example sets' attributes.** lfGUDg: answered. `Test` is the panel, and date and mouse come
+   from the original path and file name. Position is not reliable from the name (see above), so the unit
+   is the movie. xxHqjQ: which tissue and donor is each core?
