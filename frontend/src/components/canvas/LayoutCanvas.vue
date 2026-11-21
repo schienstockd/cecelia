@@ -16,6 +16,7 @@
   under this tab's `canvasKey`; the parent (TabbedCanvas) :keys us by it so a tab switch rebinds.
 -->
 <script setup lang="ts">
+import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, watch, ref, provide, nextTick, useTemplateRef, onBeforeUnmount } from 'vue'
 import { awaitIdle, anyBusy } from '../../utils/awaitIdle'
@@ -167,7 +168,7 @@ watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 
 // shared summary-plot data + view-state (same composable the free-floating canvas uses)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, panelReloadToken, anyPopChange, localSelRemap, reload,
+  specs, specById, segPops, popType: listedPopType, seriesColor, reloadToken, panelReloadToken, anyPopChange, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs, designReplicate, designMarkState, useDesignCompare,
@@ -921,7 +922,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :readout="activeReadout" :reloadable="true"
                              @update:scope="scope = $event" @update:vis="setVis"
                              @toggle-highlight="toggleClustHl" @reload="reload" />
-          <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
+          <SeriesPicker v-else :tracks="isTrackFamily(listedPopType)" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
                         :single="activeSinglePop"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed || activeRail === 'none'"
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"

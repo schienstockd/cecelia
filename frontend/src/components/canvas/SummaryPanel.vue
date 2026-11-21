@@ -10,6 +10,7 @@
   Rendered with Observable Plot (plots/plot.ts builds the options; PlotChart.vue renders + resizes).
 -->
 <script setup lang="ts">
+import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import CanvasPanel from './CanvasPanel.vue'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -834,6 +835,7 @@ const pointBrushActive = computed<Set<number> | Map<string, Set<number>> | undef
 
 const buildOpts = computed<BuildOpts>(() => ({
   chartType: chartType.value, byImage: byImage.value, normalize: normalize.value,
+  trackFamily: isTrackFamily(popType.value),
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
   nonNegative: true,               // the measures plotted here are non-negative
   trend: timeSeries.value, smooth: smooth.value, interval: interval.value,

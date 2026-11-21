@@ -168,7 +168,10 @@ export interface SegmentationPops {
   // Empty for synthetic pops that don't live in the map (`/labels`, the "all cells" root, derived
   // `_tracked` sets); callers fall back to `(popType, path)` matching in that case. Used by
   // `plots/reresolvePops` to keep a plot capture's populations selectable across a pop rename.
-  populations: { path: string; name: string; colour: string; popType: string; uid: string }[]
+  // `granularity` is what ONE row of this pop is on a plot (server `is_track_pop`): `track` for a
+  // track-gated pop and a derived `_tracked` set, `cell` for a plain gate.
+  populations: { path: string; name: string; colour: string; popType: string; uid: string
+                 granularity?: 'cell' | 'track' }[]
 }
 
 // one heatmap cell — value is the mean (profile) / count|rate (crosstab); n/count carry the sample size

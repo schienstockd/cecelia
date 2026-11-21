@@ -3,7 +3,8 @@
 // `popType::valueName + pop`. pop_types/value_names contain no "::" and pop paths always start with
 // "/", so we split on the first "::" (popType) then the first "/" (valueName | pop).
 import type { SeriesTarget, SegmentationPops } from './types'
-import { popDisplayLabels, withOwnName } from '../utils/popName'
+import { popDisplayLabels, withOwnName, trackedOwner, trackLabelPath, TRACKED_LEAF, ROOT_TRACKED,
+         ALL_TRACKS_LABEL } from '../utils/popName'
 
 export const tkey = (popType: string, valueName: string, pop: string) => `${popType}::${valueName}${pop}`
 
@@ -47,7 +48,7 @@ export function seriesMemo<K>(): (id: K, keys: readonly string[]) => SeriesTarge
  * Reorder through `mergePickOrder`, which keeps the unlisted picks where they were.
  */
 export function pickedOrderChips(
-  selected: readonly string[], groups: readonly SegmentationPops[],
+  selected: readonly string[], groups: readonly SegmentationPops[], opts: { tracks?: boolean } = {},
 ): { value: string; label: string; swatch?: string; tip: string }[] {
   const listed = selected.flatMap(k => {
     const t = parseTkey(k)
@@ -58,12 +59,66 @@ export function pickedOrderChips(
   const multiSeg = new Set(listed.map(x => x.t.valueName)).size > 1
   // two picked pops can share a name (every tracked pop is `_tracked`): name them by as much of their
   // path as tells them apart — the parents from the path, the own name from ITS segmentation's listing
-  const labels = popDisplayLabels(listed.map(x => x.t.pop))
+  // On a track plot a `_tracked` pick is named by the population it tracks (`popDisplayLabels` tracks).
+  const tracks = !!opts.tracks
+  const labels = popDisplayLabels(listed.map(x => x.t.pop), undefined, { tracks })
+  const as = trackLabelPath(listed.map(x => x.t.pop))
+  const ownName = (t: SeriesTarget, p: { name: string }) => {
+    if (!tracks || as(t.pop) === t.pop) return p.name
+    return groups.find(g => g.valueName === t.valueName)?.populations
+      .find(q => q.path === as(t.pop) && q.popType === t.popType)?.name
+  }
   return listed.map(({ k, t, p }) => {
-    const name = withOwnName(labels.get(t.pop) ?? t.pop, p.name)
+    const name = withOwnName(labels.get(t.pop) ?? t.pop, ownName(t, p))
     return { value: k, label: multiSeg ? `${t.valueName} ${name}` : name,
              ...(p.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }
   })
+}
+
+/** One row of the series picker: the target it picks (`path` + `popType`), what it shows, and whether it
+ *  can be picked at all. */
+export interface PickerRow {
+  path: string; popType: string; name: string; colour: string; uid: string
+  depth: number      // tree depth, for the indent
+  inert: boolean     // on a track plot: a plain population with no tracks of its own
+  also?: string      // a folded row: the plain population's path, so a pick of it saved before the fold
+                     // shows on this row and comes off from it
+}
+
+const treeDepth = (path: string) => Math.max(0, path.split('/').length - 2)
+
+/**
+ * The picker's rows for one segmentation's populations. A cell plot lists them as they are. A TRACK plot
+ * folds each `P/_tracked` into P's row — named P, at P's depth, picking `P/_tracked`
+ * (`popName.ts` → *tracked populations on a track plot*) — names the root's `/_tracked` "All tracks",
+ * and greys a plain population with no `_tracked` of its own: it has no tracks, or the same tracks as
+ * a sub-population that does (the server only offers a `_tracked` where it is informative). A
+ * track-gated population is its own row either way.
+ */
+export function pickerRows(pops: SegmentationPops['populations'], tracks: boolean): PickerRow[] {
+  const row = (p: SegmentationPops['populations'][number], over: Partial<PickerRow> = {}): PickerRow =>
+    ({ path: p.path, popType: p.popType, name: p.name, colour: p.colour, uid: p.uid,
+       depth: treeDepth(p.path), inert: false, ...over })
+  if (!tracks) return pops.map(p => row(p))
+  const has = new Set(pops.map(p => `${p.popType}|${p.path}`))
+  const out: PickerRow[] = []
+  for (const p of pops) {
+    const owner = trackedOwner(p.path)
+    if (owner && has.has(`${p.popType}|${owner}`)) continue              // folded into its owner's row
+    if (owner) { out.push(row(p, { name: owner.split('/').pop()!, depth: treeDepth(owner) })); continue }
+    if (p.path === ROOT_TRACKED) { out.push(row(p, { name: ALL_TRACKS_LABEL })); continue }
+    const tracked = `${p.path}/${TRACKED_LEAF}`
+    if (has.has(`${p.popType}|${tracked}`)) { out.push(row(p, { path: tracked, uid: '', also: p.path })); continue }
+    out.push(row(p, { inert: p.granularity === 'cell' }))
+  }
+  return out
+}
+
+/** The path a picker row picks or un-picks: a folded row whose plain population is picked (a selection
+ *  saved before the fold) and whose tracked one isn't stands for the plain pick, so it shows lit and
+ *  the click takes it off. */
+export function rowTarget(r: PickerRow, lit: (path: string) => boolean): string {
+  return r.also && !lit(r.path) && lit(r.also) ? r.also : r.path
 }
 
 /**
