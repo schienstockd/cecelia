@@ -52,6 +52,12 @@ end
     @test_throws ErrorException experiment_design_from(Dict("plannedUnits" => 0))
     @test experiment_design_from(Dict("plannedUnits" => "")).planned_units === nothing
     @test experiment_design_from(Dict("mode" => " Exploratory ")).mode == Cecelia.DESIGN_EXPLORATORY
+    # four answers to "what do you expect": not sure is the default and differs from "no difference"
+    @test experiment_design_from(Dict()).expect == Cecelia.EXPECT_UNSURE
+    @test experiment_design_from(Dict("expect" => "same")).expect == Cecelia.EXPECT_SAME
+    up = experiment_design_from(Dict("expect" => "higher", "expectIn" => " B "))
+    @test up.expect == Cecelia.EXPECT_HIGHER && up.expect_in == "B"
+    @test experiment_design_from(Dict("expect" => "same", "expectIn" => "B")).expect_in == ""   # only with a direction
 end
 
 @testset "Experiment design — grid" begin
@@ -72,6 +78,8 @@ end
     @test [(x["group"], x["nParents"], x["nUnits"], x["nImages"]) for x in g["groups"]] == [(["A"], 2, 3, 3), (["B"], 1, 1, 1)]
     @test [(u["name"], u["missing"]) for u in g["unassigned"]] == [("M2-1c", ["Mouse", "Movie"])]
     @test isempty(g["missingAttrs"]) && g["planned"]["parents"] == 3
+    # each panel imaged on its own day: Date is confounded with Panel; Mouse (M1 in both) is not
+    @test g["confounded"] == ["Date"]
 
     # values the dialog has not written yet place the image without touching it
     uid = s._images[end].uid
@@ -89,5 +97,10 @@ end
     early = experiment_design_from(Dict("group" => "Tissue", "parents" => "Donor"))
     ge = experiment_design_grid(s, early)
     @test ge["missingAttrs"] == ["Tissue", "Donor"] && length(ge["unassigned"]) == 6 && isempty(ge["cells"])
+
+    # an attribute shared across groups is not confounded; one group alone has nothing to confound
+    add_image!(s; name = "M3-1", attr = attr("B", "25 Nov", "M3", "M3-1"))
+    @test isempty(experiment_design_grid(s, d)["confounded"])
+    @test isempty(experiment_design_grid(s._images[1:3], d)["confounded"])
     rm(proj.root; recursive = true)
 end

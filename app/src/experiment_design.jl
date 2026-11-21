@@ -18,14 +18,17 @@
 
 @enum DesignMode DESIGN_DESIGNED DESIGN_EXPLORATORY
 @enum DesignStatus DESIGN_INFERRED DESIGN_CONFIRMED
-@enum ExpectDirection EXPECT_NONE EXPECT_HIGHER EXPECT_LOWER
+# What the user expects: not sure, no difference (a null is a valid design), or higher / lower in one
+# group (`expect_in`, a value of the group attribute).
+@enum ExpectDirection EXPECT_UNSURE EXPECT_SAME EXPECT_HIGHER EXPECT_LOWER
 
 # The lowercase name is the on-disk / on-wire form via `Base.string`; `parse_*` reads it back (the
 # `ImageStatus` pattern). Parsing forgives case and spaces and names the allowed values on a miss,
 # because the value comes from a request body, not only from disk.
 const _DESIGN_MODE_STR   = Dict(DESIGN_DESIGNED => "designed", DESIGN_EXPLORATORY => "exploratory")
 const _DESIGN_STATUS_STR = Dict(DESIGN_INFERRED => "inferred", DESIGN_CONFIRMED => "confirmed")
-const _EXPECT_STR        = Dict(EXPECT_NONE => "none", EXPECT_HIGHER => "higher", EXPECT_LOWER => "lower")
+const _EXPECT_STR        = Dict(EXPECT_UNSURE => "unsure", EXPECT_SAME => "same",
+                                EXPECT_HIGHER => "higher", EXPECT_LOWER => "lower")
 const _DESIGN_MODE_PARSE   = Dict(v => k for (k, v) in _DESIGN_MODE_STR)
 const _DESIGN_STATUS_PARSE = Dict(v => k for (k, v) in _DESIGN_STATUS_STR)
 const _EXPECT_PARSE        = Dict(v => k for (k, v) in _EXPECT_STR)
@@ -56,7 +59,8 @@ planned.
 """
 Base.@kwdef struct ExperimentDesign
     question::String = ""
-    expect::ExpectDirection = EXPECT_NONE
+    expect::ExpectDirection = EXPECT_UNSURE
+    expect_in::String = ""
     mode::DesignMode = DESIGN_DESIGNED
     status::DesignStatus = DESIGN_INFERRED
     group::Vector{String} = String[]
@@ -68,7 +72,7 @@ end
 
 """The design as its stored / API dict (camelCase keys, enums by name)."""
 experiment_design_dict(d::ExperimentDesign)::Dict{String,Any} = Dict{String,Any}(
-    "question" => d.question, "expect" => string(d.expect),
+    "question" => d.question, "expect" => string(d.expect), "expectIn" => d.expect_in,
     "mode" => string(d.mode), "status" => string(d.status),
     "group" => d.group, "unit" => d.unit, "parents" => d.parents,
     "plannedParents" => d.planned_parents, "plannedUnits" => d.planned_units)
@@ -104,9 +108,11 @@ function experiment_design_from(raw::AbstractDict)::ExperimentDesign
     any(isempty, all_attrs) && error("An attribute name in the design is blank")
     dup = [a for a in unique(all_attrs) if count(==(a), all_attrs) > 1]
     isempty(dup) || error("\"$(first(dup))\" is in the design twice: an attribute plays one role")
+    expect = parse_expect_direction(something(g("expect", "unsure"), "unsure"))
     ExperimentDesign(
         question = strip(string(something(g("question", ""), ""))),
-        expect   = parse_expect_direction(something(g("expect", "none"), "none")),
+        expect   = expect,
+        expect_in = expect in (EXPECT_HIGHER, EXPECT_LOWER) ? strip(string(something(g("expectIn", ""), ""))) : "",
         mode     = parse_design_mode(something(g("mode", "designed"), "designed")),
         status   = parse_design_status(something(g("status", "inferred"), "inferred")),
         group = group, unit = unit, parents = parents,
@@ -190,7 +196,8 @@ unit's images. `attrs` (image uid → attribute → value) overrides what the im
 show the grid for values it has not written yet.
 
 Reply: `{cells: [{group, parent, units: [{unit, images: [uid]}]}], groups: [{group, nParents, nUnits,
-nImages}], unassigned: [{uid, name, missing: [attr]}], missingAttrs: [attr], planned}`. An image is
+nImages}], unassigned: [{uid, name, missing: [attr]}], missingAttrs: [attr], confounded: [attr],
+planned}`. `confounded` names the attributes the group cannot be told apart from (`_design_confounded`). An image is
 unassigned when one of its role attributes is blank; `missingAttrs` names role attributes no image
 carries. With no unit attribute the image is the unit (its name), and with no parents every cell's
 `parent` is [].
@@ -201,6 +208,7 @@ function experiment_design_grid(images::AbstractVector, d::ExperimentDesign;
     cells = Dict{Tuple{Vector{String},Vector{String}},Dict{Vector{String},Vector{String}}}()
     unassigned = Any[]
     seen = Set{String}()
+    placed = Tuple{Vector{String},Dict{String,String}}[]   # (group values, attributes) per placed image
     for img in images
         a = Dict{String,String}(img.attr)
         for (k, v) in get(attrs, img.uid, Dict{String,Any}())
@@ -213,6 +221,7 @@ function experiment_design_grid(images::AbstractVector, d::ExperimentDesign;
             continue
         end
         key = (_design_values(a, d.group), _design_values(a, d.parents))
+        push!(placed, (key[1], a))
         unit = isempty(d.unit) ? [img.name] : _design_values(a, d.unit)
         push!(get!(get!(cells, key, Dict{Vector{String},Vector{String}}()), unit, String[]), img.uid)
     end
@@ -231,7 +240,31 @@ function experiment_design_grid(images::AbstractVector, d::ExperimentDesign;
         "groups" => groups,
         "unassigned" => unassigned,
         "missingAttrs" => [r for r in roles if !(r in seen)],
+        "confounded" => _design_confounded(placed, d),
         "planned" => Dict{String,Any}("parents" => d.planned_parents, "units" => d.planned_units))
+end
+
+# Attributes that cannot be told apart from the group: set on every placed image, and every value of it
+# falls in one group only (groups imaged on different days make Date one). Needs two
+# groups or more. Leaves out the group's own attributes, the unit's, and identifiers (no value on two
+# images), which are trivially in one group each.
+function _design_confounded(placed, d::ExperimentDesign)::Vector{String}
+    length(unique(first.(placed))) >= 2 || return String[]
+    skip = Set(vcat(d.group, d.unit))
+    names = sort!(collect(setdiff(intersect((Set(k for (k, v) in a if !isempty(strip(v))) for (_, a) in placed)...), skip)))
+    out = String[]
+    for n in names
+        groups_of = Dict{String,Set{Vector{String}}}()
+        count_of  = Dict{String,Int}()
+        for (g, a) in placed
+            v = strip(a[n])
+            push!(get!(groups_of, v, Set{Vector{String}}()), g)
+            count_of[v] = get(count_of, v, 0) + 1
+        end
+        all(c -> c == 1, values(count_of)) && continue              # an identifier
+        all(gs -> length(gs) == 1, values(groups_of)) && push!(out, n)
+    end
+    out
 end
 
 experiment_design_grid(s::CciaSet, d::ExperimentDesign; kw...) = experiment_design_grid(s._images, d; kw...)
