@@ -56,3 +56,18 @@ export function applyStatUnitState(ui: StatUnitState, settable: boolean): boolea
   }
   return changed
 }
+
+/**
+ * The n per group, as the plot footer and the design dialog's sketch both state it: one count per
+ * group ("n = 5 vs 3 mice"), "n = 5 mice" for one, a range past four groups ("n = 3–5 mice per
+ * group"), where a list stops being readable. '' when there is nothing to count. `noun` names the point.
+ */
+export function unitCountLabel(ns: number[], noun: { one: string; many: string }): string {
+  const xs = ns.filter(n => Number.isFinite(n) && n > 0)
+  if (!xs.length) return ''
+  const name = xs.every(n => n === 1) ? noun.one : noun.many
+  if (xs.length === 1) return `n = ${xs[0]} ${name}`
+  if (xs.length <= 4) return `n = ${xs.join(' vs ')} ${name}`
+  const lo = Math.min(...xs), hi = Math.max(...xs)
+  return `n = ${lo === hi ? lo : `${lo}–${hi}`} ${name} per group`
+}

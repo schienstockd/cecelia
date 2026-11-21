@@ -63,6 +63,10 @@ end
     @test count(l -> occursin(r"^\d+\. \*\*", l), lines) == length(r["table"])
     # the version on the runs is cited; the fixture's entries all say 0.2.12
     @test occursin("Cecelia 0.2.12", md)
+    # every row the table gives a citation (the task spec's `citations`) prints it in the text
+    cited = [row["cite"] for row in r["table"] if !isempty(get(row, "cite", ""))]
+    @test !isempty(cited)
+    @test all(c -> occursin("   - Cite: $c", md), cited)
     rm(proj.root; recursive = true)
 end
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyStatUnitState, resolveStatUnitState, type StatUnitState } from './statUnitState'
+import { applyStatUnitState, resolveStatUnitState, unitCountLabel, type StatUnitState } from './statUnitState'
 
 describe('statUnitState', () => {
   it('fills BOTH fields when the level is settable, so nothing has to infer the default', () => {
@@ -42,5 +42,22 @@ describe('statUnitState', () => {
   it('reports no change when the user already set both', () => {
     const ui: StatUnitState = { statUnit: 'image', imageAgg: 'median' }
     expect(applyStatUnitState(ui, true)).toBe(false)
+  })
+})
+
+describe('unitCountLabel — the n a plot draws', () => {
+  const mice = { one: 'mouse', many: 'mice' }
+  it('one count per group, in series order', () => {
+    expect(unitCountLabel([5, 3], mice)).toBe('n = 5 vs 3 mice')
+    expect(unitCountLabel([4], mice)).toBe('n = 4 mice')
+    expect(unitCountLabel([1, 1], mice)).toBe('n = 1 vs 1 mouse')
+  })
+  it('a range past four groups', () => {
+    expect(unitCountLabel([3, 5, 4, 4, 5], mice)).toBe('n = 3–5 mice per group')
+    expect(unitCountLabel([4, 4, 4, 4, 4], mice)).toBe('n = 4 mice per group')
+  })
+  it('nothing to count: empty', () => {
+    expect(unitCountLabel([], mice)).toBe('')
+    expect(unitCountLabel([0, NaN], mice)).toBe('')
   })
 })

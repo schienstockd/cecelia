@@ -505,12 +505,15 @@ end
             i += 1
         end
         filter!(t -> !(t in ("tar", "-czf", "out/cecelia.tar.gz")), toks)
-        # tar options (`--exclude=…`, which keeps docs/todo images out) are not paths
+        # tar options are not paths; `--exclude=<dir>` keeps dev-only docs, tests and tooling out.
+        excludes = [t[length("--exclude=")+1:end] for t in toks if startswith(t, "--exclude=")]
         filter!(t -> !startswith(t, "-"), toks)
         @test !isempty(toks)
 
-        # tar carries a directory whole, so a token covers itself and everything under it.
-        covered(p) = any(t -> t == p || startswith(p, t * "/"), toks)
+        # tar carries a directory whole, so a token covers itself and everything under it — unless
+        # an exclude takes it back out. Excludes are plain directories (globs are never required).
+        under(p, t) = p == t || startswith(p, t * "/")
+        covered(p) = any(t -> under(p, t), toks) && !any(e -> under(p, e), excludes)
         # repo-relative, forward-slash — these are tar paths, not filesystem paths
         rel(abs_path) = replace(relpath(normpath(abs_path), repo), '\\' => '/')
 
@@ -543,6 +546,11 @@ end
         for t in toks
             t in job_produced && continue
             @test ispath(joinpath(repo, split(t, '/')...))
+        end
+        # An exclude naming a renamed or moved directory matches nothing and tar says nothing, so the
+        # dev material would quietly ship again. Each must still exist.
+        for e in excludes
+            @test ispath(joinpath(repo, split(e, '/')...))
         end
     end
 end

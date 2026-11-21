@@ -11,7 +11,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { tkey, pickedOrderChips, mergePickOrder } from '../../plots/series'
+import { tkey, pickedOrderChips, mergePickOrder, pickerRows, rowTarget, type PickerRow } from '../../plots/series'
 import { allSelected, toggleAllSelection } from '../../utils/tableSelection'
 import ChipSelect from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
@@ -58,6 +58,9 @@ const props = defineProps<{
   // the family listed, and the active plot's other families with the pages that offer them — a page
   // curates its families, so a one-family list must say it is one family
   familyNote?: { listed: string; elsewhere: string[] }
+  // the active plot is a TRACK plot: each `_tracked` row folds into the population it tracks
+  // (`pickerRows`), and the order chips name it so (`pickedOrderChips`)
+  tracks?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
@@ -73,16 +76,28 @@ const emit = defineEmits<{
   reload: []
 }>()
 
-const total = computed(() => props.groups.reduce((n, g) => n + g.populations.length, 0))
+// the rows each segmentation SHOWS — on a track plot, `_tracked` folded into its population
+const rowGroups = computed(() => props.groups.map(g => ({ valueName: g.valueName,
+                                                         rows: pickerRows(g.populations, !!props.tracks) })))
+const total = computed(() => rowGroups.value.reduce((n, g) => n + g.rows.filter(r => !r.inert).length, 0))
+const inertKeys = computed(() => new Set(rowGroups.value.flatMap(g => g.rows.filter(r => r.inert)
+  .map(r => tkey(r.popType, g.valueName, r.path)))))
 const isLit = (vn: string, pop: string, pt: string) => props.selected.includes(tkey(pt, vn, pop))
 // the active plot has no data for this population (a per-image metric's run did not score it): it can't
 // be added, but a stale pick can still be taken off
-const isOff = (vn: string, pop: string, pt: string) => !popAvailable(props.readout, vn, pop) && !isLit(vn, pop, pt)
+// …or, on a track plot, it is a plain population with no tracks of its own (`pickerRows` inert)
+const isInert = (vn: string, pop: string, pt: string) => inertKeys.value.has(tkey(pt, vn, pop))
+const isOff = (vn: string, pop: string, pt: string) =>
+  (!popAvailable(props.readout, vn, pop) || isInert(vn, pop, pt)) && !isLit(vn, pop, pt)
 function pick(vn: string, pop: string, pt: string) { if (!isOff(vn, pop, pt)) emit('toggle', vn, pop, pt) }
-// hierarchy: indent a pop by its tree depth (a path's "/" count − 1), mirroring the gating manager.
-const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
+// a folded row (`PickerRow.also`) also stands for its plain population's pick: shown lit by it, and
+// clicking takes that pick off rather than adding the tracked one beside it
+const rowPath = (vn: string, r: PickerRow) => rowTarget(r, q => isLit(vn, q, r.popType))
+const rowLit = (vn: string, r: PickerRow) => isLit(vn, rowPath(vn, r), r.popType)
+const rowOff = (vn: string, r: PickerRow) => isOff(vn, rowPath(vn, r), r.popType)
+const pickRow = (vn: string, r: PickerRow) => pick(vn, rowPath(vn, r), r.popType)
 // the picked populations in plot order, draggable — only when there is an order to choose
-const orderChips = computed(() => pickedOrderChips(props.selected, props.groups))
+const orderChips = computed(() => pickedOrderChips(props.selected, props.groups, { tracks: !!props.tracks }))
 const showOrder = computed(() => !props.selectionUnused && !props.single && orderChips.value.length > 1)
 // a chip dropped or dragged reorders only the picks the strip shows; the other slots' picks stay put
 function reorderShown(shown: string[]) {
@@ -91,7 +106,7 @@ function reorderShown(shown: string[]) {
 // "All" row: every population this picker lists and can be picked, in one click — the same row the
 // gating PopulationManager has. One selection write (via `reorder`, which every host applies as the
 // whole selection) rather than a toggle per row.
-const listedKeys = computed(() => props.groups.flatMap(g => g.populations
+const listedKeys = computed(() => rowGroups.value.flatMap(g => g.rows
   .filter(p => !isOff(g.valueName, p.path, p.popType)).map(p => tkey(p.popType, g.valueName, p.path))))
 const showAll = computed(() => !props.selectionUnused && !props.single && listedKeys.value.length > 1)
 const allLit = computed(() => allSelected(listedKeys.value, props.selected))
@@ -139,20 +154,21 @@ function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) em
         <i :class="allLit ? 'pi pi-eye' : 'pi pi-eye-slash'" />
       </button>
     </div>
-    <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
-      <div v-if="grp.populations.length" class="pick-group-head">{{ grp.valueName }}</div>
-      <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
-           class="pick-row" :class="{ active: isLit(grp.valueName, p.path, p.popType), off: isOff(grp.valueName, p.path, p.popType) }"
-           :style="{ paddingLeft: 12 + depthOf(p.path) * 14 + 'px' }"
-           @click="pick(grp.valueName, p.path, p.popType)">
+    <template v-for="grp in (selectionUnused ? [] : rowGroups)" :key="grp.valueName">
+      <div v-if="grp.rows.length" class="pick-group-head">{{ grp.valueName }}</div>
+      <div v-for="p in grp.rows" :key="p.popType + grp.valueName + p.path"
+           class="pick-row" :class="{ active: rowLit(grp.valueName, p), off: rowOff(grp.valueName, p) }"
+           :style="{ paddingLeft: 12 + p.depth * 14 + 'px' }"
+           @click="pickRow(grp.valueName, p)">
         <span class="pick-swatch" :style="{ background: p.colour }" />
         <span class="pick-name">{{ p.name }}</span>
         <span v-if="p.popType !== 'live'" class="pick-tag" v-tooltip.left="'Gated on per-track properties'">{{ p.popType }}</span>
-        <button class="pick-eye cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: isLit(grp.valueName, p.path, p.popType) }"
-                v-tooltip.left="isOff(grp.valueName, p.path, p.popType) ? 'Not in this run'
-                  : isLit(grp.valueName, p.path, p.popType) ? 'Remove from plots' : 'Plot this population'"
-                @click.stop="pick(grp.valueName, p.path, p.popType)">
-          <i :class="isLit(grp.valueName, p.path, p.popType) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
+        <button class="pick-eye cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: rowLit(grp.valueName, p) }"
+                v-tooltip.left="rowOff(grp.valueName, p)
+                  ? (isInert(grp.valueName, p.path, p.popType) ? 'No tracks of its own' : 'Not in this run')
+                  : rowLit(grp.valueName, p) ? 'Remove from plots' : 'Plot this population'"
+                @click.stop="pickRow(grp.valueName, p)">
+          <i :class="rowLit(grp.valueName, p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
         </button>
       </div>
     </template>

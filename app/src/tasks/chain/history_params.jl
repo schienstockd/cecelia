@@ -81,6 +81,13 @@ function _hp_flat(params::AbstractDict, defaults::Dict{String,Any}, leaves = not
     out
 end
 
+# a row's `cite`: the citation DOIs of the task (and a composite's steps) under every image's params,
+# one cell. `nothing` = a task that no longer exists.
+function _hp_cite(fn::AbstractString, params_list = [nothing])
+    task = try _task_from_fun_name(fn) catch; nothing end
+    task === nothing && return ""
+    join(unique!(reduce(vcat, (task_citations(task, p) for p in params_list); init = String[])), "; ")
+end
 _hp_empty(v) = v === nothing || v === missing || v == "" || (v isa Union{AbstractVector,AbstractDict} && isempty(v))
 _hp_key(v) = _hp_empty(v) ? "" : v isa Real && !(v isa Bool) ? string(Float64(v)) : JSON3.write(v)
 _hp_show(v) = _hp_empty(v) ? "(none)" : v isa AbstractString ? v :
@@ -95,7 +102,7 @@ table: `step`, `task`, `output`, `images` (`"n/N"`), `lastRun`, `relation` (scop
 `ran on`), `taskIds` (the run-log task ids behind the row), `changedFromDefault` (`key=value; …`,
 only params every image ran with the same non-default value), `conflicts` (`key: a (n) | b (m); …`,
 params the images disagree on), `note` (why a step is not something a chain replays, or why its
-params are unknown).
+params are unknown), `cite` (the task spec's `citations` DOIs, `; `-joined, `""` when it has none).
 
 `pops` cuts the table to what a board shows (`nothing` = the whole history): board population keys
 (`popType::labelSet/pop`) plus `cluster_runs` (`"popType:suffix"`, the run a board's cluster panels
@@ -173,7 +180,7 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
             "output" => out_name, "images" => "$(length(by_img))/$N",
             "lastRun" => maximum(r.at for r in values(by_img)),
             "changedFromDefault" => join(changed, "; "), "conflicts" => join(conflicts, "; "),
-            "note" => note, "relation" => relation,
+            "note" => note, "relation" => relation, "cite" => _hp_cite(fn, [r.params for r in values(by_img)]),
             # the run-log task ids of the runs this row reports (one per image's latest run; a chain
             # record or an entry from before task ids were logged has none) — the export provenance
             "taskIds" => sort!(unique(String[r.taskId for r in values(by_img) if !isempty(r.taskId)]))))
@@ -195,14 +202,15 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
     for ((fn, w), uids) in sort!(collect(lost); by = first)
         push!(out, Dict{String,Any}("step" => fn, "task" => fn, "output" => "", "images" => "$(length(uids))/$N",
                                     "lastRun" => "", "changedFromDefault" => "", "conflicts" => "",
-                                    "note" => "parameters unknown — $w", "relation" => "", "taskIds" => String[]))
+                                    "note" => "parameters unknown — $w", "relation" => "", "taskIds" => String[],
+                                    "cite" => _hp_cite(fn)))
     end
     # what the board shows that no recorded run made: said, so a gap never reads as a complete answer
     for (what, _) in unmade
         push!(out, Dict{String,Any}("step" => what, "task" => "", "output" => "", "images" => "",
                                     "lastRun" => "", "changedFromDefault" => "", "conflicts" => "",
                                     "note" => "no recorded run made this — ran before the run log, or outside Cecelia",
-                                    "relation" => "made", "taskIds" => String[]))
+                                    "relation" => "made", "taskIds" => String[], "cite" => ""))
     end
     out
 end

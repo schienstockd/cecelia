@@ -15,6 +15,7 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
+import { replicateOf, superplotColours } from './superplot'
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
@@ -25,6 +26,7 @@ import { needsXRotation } from './autoOverride'
 import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
+import { trackLabelPath } from '../utils/popName'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured on
@@ -339,6 +341,7 @@ export interface BuildOpts extends VisProps {
   darkTheme?: boolean                    // render-time: the app scheme on screen, false for every export
   chartType: ChartType
   byImage: boolean                       // cross-image per_image scope
+  trackFamily?: boolean                  // the series are a track family's pops (`isTrackFamily`)
   normalize: boolean                     // frequency: proportion vs count
   errorMetric: 'sd' | 'sem' | 'ci95'     // bar error bars
   colorOf: (s: PlotSeries) => string     // series colour from the host
@@ -467,21 +470,26 @@ const THEME = {
 const pathOf = (s: PlotSeries) =>
   s.value_name && s.pop.startsWith(s.value_name + '/') ? s.pop.slice(s.value_name.length + 1) : s.pop
 
-function dimsOf(series: PlotSeries[], byImage: boolean) {
+// `tracks` (a track plot, or a track family's pops): a `_tracked` series is labelled by the population it tracks, "qc/OTI" not
+// "qc/OTI/_tracked" — the same rule as the picker (`trackLabelPath`, utils/popName.ts)
+function dimsOf(series: PlotSeries[], byImage: boolean, tracks = false) {
+  const lp = tracks ? trackLabelPath(series.map(pathOf)) : (p: string) => p
   return {
+    label: (s: PlotSeries) => lp(pathOf(s)),
     img:  byImage && new Set(series.map(s => s.uID)).size > 1,
     seg:  new Set(series.map(s => s.value_name)).size > 1,
     path: new Set(series.map(s => pathOf(s))).size > 1,
     grp:  new Set(series.map(s => s.group ?? '')).size > 1,   // groupBy sub-axis (e.g. HMM state)
   }
 }
-function keyFor(s: PlotSeries, d: { img: boolean; seg: boolean; path: boolean; grp: boolean }): string {
+function keyFor(s: PlotSeries, d: { img: boolean; seg: boolean; path: boolean; grp: boolean;
+                                    label: (s: PlotSeries) => string }): string {
   const parts: string[] = []
   if (d.img) parts.push(s.uID ?? '')
   if (d.seg) parts.push(s.value_name)
-  if (d.path) parts.push(pathOf(s))
+  if (d.path) parts.push(d.label(s))
   if (d.grp) parts.push(s.group ?? '')
-  return parts.length ? parts.join(' · ') : (pathOf(s) || s.pop)
+  return parts.length ? parts.join(' · ') : (d.label(s) || s.pop)
 }
 
 // colour scale {domain, range} from the series keys in first-appearance order. NB: no `legend` key —
@@ -591,7 +599,8 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // Faceting BY IMAGE moves the image out of the series key and onto the panel header, so what is
   // left — segmentation / population / group — becomes the colour and position INSIDE each panel.
   // Leaving `img` in would repeat it in every legend entry and give each panel a single series.
-  const d = { ...dimsOf(r.series, o.byImage), ...(facetMode(o) === 'image' ? { img: false } : {}) }
+  const d = { ...dimsOf(r.series, o.byImage, r.granularity === 'track' || !!o.trackFamily),
+              ...(facetMode(o) === 'image' ? { img: false } : {}) }
   const keyOf = (s: PlotSeries) => keyFor(s, d)
   let color = colourScale(r.series, keyOf, o.colorOf)
   // When sub-split by a groupBy column (e.g. HMM state) the levels have no population-manager colour,
@@ -949,7 +958,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   // group level → X axis, not a series. Faceting BY IMAGE additionally lifts the image onto the panel
   // header, so each panel holds that movie's curves (one per segmentation/population) — which is the
   // point: five movies × two segmentations is ten overlaid LOESS curves on one axis otherwise.
-  const d = { ...dimsOf(r.series, o.byImage), grp: false,
+  const d = { ...dimsOf(r.series, o.byImage, r.granularity === 'track' || !!o.trackFamily), grp: false,
               ...(facetMode(o) === 'image' ? { img: false } : {}) }
   const keyOf = (s: PlotSeries) => keyFor(s, d)
   let color = colourScale(r.series, keyOf, o.colorOf)
@@ -1364,6 +1373,29 @@ const fxScale = (o: BuildOpts) => faceted(o) ? { fx: { label: null as null } } :
 // image when faceting BY IMAGE — so one channel name serves both modes.
 const fxCh = (o: BuildOpts) => faceted(o) ? { fx: 'fkey' } : {}
 
+// ── SuperPlot layer (plots/superplot.ts): the cells under each replicate mean ─────────────────────
+const SP_MEAN_SCALE = 1.6        // a replicate mean reads as the bigger dot over its cells
+type SpCellRow = { series: string; fkey: string; xj: number; value: number; fill: string }
+function superplotCellRows(series: readonly PlotSeries[], keyOf: (s: PlotSeries) => string, idx: Map<string, number>,
+                           o: BuildOpts, colours: Map<string, string>, halfWidth: number): SpCellRow[] {
+  const rows: SpCellRow[] = []
+  for (const s of series) {
+    const i = idx.get(keyOf(s))
+    const vals = s.cellPoints ?? []
+    if (i === undefined || !vals.length) continue
+    const units = s.cellUnits ?? []
+    const off = offsetsFor(o, vals, halfWidth)
+    vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
+                                       fill: colours.get(replicateOf(units[k] ?? '')) ?? 'currentColor' }))
+  }
+  return rows
+}
+// small, faint, no outline: the spread between cells, under the means that carry the test
+function superplotCellMarks(Plot: PlotModule, cells: SpCellRow[], o: BuildOpts, a: ReturnType<typeof axM>, f: object) {
+  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(1, o.pointSize * 0.6),
+                                           fill: 'fill', fillOpacity: 0.35, ...f })] : []
+}
+
 // coord_flip (R): when rotated, the series (position) axis is Y and the MEASURE axis is X; otherwise
 // position=X, measure=Y. `posLo/posHi`/`measLo/measHi` are the range-channel names (x1/x2 vs y1/y2).
 // Builders read these so each has ONE code path that works both ways.
@@ -1541,16 +1573,21 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   })
   // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
   const activeIds = o.brushActiveIds ?? null
-  const pts: Array<{ series: string; fkey: string; xj: number; value: number;
+  const pts: Array<{ series: string; fkey: string; xj: number; value: number; unitFill?: string;
                      pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
+  // SuperPlot: the dots are replicate means, coloured by replicate, with their cells underneath
+  const sp = superplotColours(r.series, POPULATION_PALETTE)
+  const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.26) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const pids = (s.pointIds ?? []) as number[]
     const puids = (s.pointUids ?? []) as string[]
+    const units = (s.pointUnits ?? []) as string[]
     const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
     vals.forEach((v, k) => pts.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
+      unitFill: sp ? sp.get(replicateOf(units[k] ?? '')) : undefined,
       // pointId + uID ride along in the SOURCE row so the render hook can stamp them onto each
       // <circle> as data-* attrs (see `stampBrushIds` below). Observable Plot binds ROW INDEX
       // to `circle.__data__`, not the row object, so reading `d.pointId` off `__data__` returns
@@ -1579,7 +1616,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     }))
   }
   const f = fxCh(o), a = axM(o)
-  const ptFill = o.colorData ? 'series' : 'currentColor'
+  const ptFill = sp ? ((d: { unitFill?: string }) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
   // Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
   // active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
   // outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
@@ -1638,7 +1675,8 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       Plot.rect(stat, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.measLo]: 'q1', [a.measHi]: 'q3', fill: 'series',
                         fillOpacity: 0.55, stroke: 'currentColor', strokeWidth: 0.8, title: 'tip', tip: true, ...f }), // box
       RulePos(stat, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'median', stroke: 'currentColor', strokeWidth: 1.6, ...f }), // median
-      ...(pts.length ? [Plot.dot(pts, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
+      ...superplotCellMarks(Plot, cells, o, a, f),
+      ...(pts.length ? [Plot.dot(pts, { [a.pos]: 'xj', [a.meas]: 'value', r: sp ? o.pointSize * SP_MEAN_SCALE : o.pointSize, fill: ptFill,
                                         // themed outline so a whitish series colour still reads on the
                                         // white PDF / light ground (currentColor = dark there). Stroke
                                         // width/opacity are per-point functions when a selection is active
@@ -1711,17 +1749,21 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                keyOf: (s: PlotSeries) => string, color: object, logY: object) {
   const { labels, idx } = seriesIndex(r, keyOf, facetSingle(o))
   const activeIds = o.brushActiveIds ?? null
-  type PtRow = { series: string; fkey: string; xj: number; value: number;
+  type PtRow = { series: string; fkey: string; xj: number; value: number; unitFill?: string;
                  pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
   const rows: PtRow[] = []
+  const sp = superplotColours(r.series, POPULATION_PALETTE)                       // SuperPlot: means over their cells
+  const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.42) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
     const vals = (s.points ?? []) as number[]
     const pids = (s.pointIds ?? []) as number[]
     const puids = (s.pointUids ?? []) as string[]
+    const units = (s.pointUnits ?? []) as string[]
     const off = offsetsFor(o, vals, 0.42)                     // wider swarm (no box to overlay)
     vals.forEach((v, k) => rows.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
+      unitFill: sp ? sp.get(replicateOf(units[k] ?? '')) : undefined,
       pointId: pids[k] ?? null,
       pointUid: puids[k] ?? (s.uID || o.defaultImageUid || ''),
       pointVn: s.value_name,
@@ -1743,7 +1785,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     }
     return (activeIds as Set<number>).has(d.pointId)
   }
-  const ptFill = o.colorData ? 'series' : 'currentColor'
+  const ptFill = sp ? ((d: PtRow) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
     : o.pointOpacity
@@ -1760,7 +1802,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     [a.pos]: xScale(labels, o), ...fxScale(o),
     [a.meas]: { label: r.measure, grid: false, ...logY },
     marks: [
-      Plot.dot(rows, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
+      ...superplotCellMarks(Plot, cells, o, a, fxCh(o)),
+      Plot.dot(rows, { [a.pos]: 'xj', [a.meas]: 'value', r: sp ? o.pointSize * SP_MEAN_SCALE : o.pointSize, fill: ptFill,
                        // themed outline so whitish series colours read on the white PDF / light ground
                        stroke: 'currentColor',
                        strokeWidth: ptStrokeWidth, strokeOpacity: ptStrokeOpacity,

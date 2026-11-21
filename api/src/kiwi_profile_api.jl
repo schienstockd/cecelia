@@ -363,8 +363,9 @@ end
 # name means the active profile. `must_exist`: a named profile's dir must already be on disk — the
 # CLI creates a missing one, so logging out or probing a typo would mint a stray profile.
 # `reject_retired`: 409 a retired named profile — for routes that START `claude` under it (new turns
-# must not run under a retired identity, as select enforces). Off by default: auth status, logout and
-# ending a session must still reach a retired profile, whose credentials stay on disk (D11).
+# must not run under a retired identity, as select enforces; login start must not mint it fresh
+# credentials). Off by default: auth status, logout, ending a session and the login status/code/cancel
+# follow-ups must still reach a retired profile, whose credentials stay on disk (D11).
 function _kiwi_claude_dir(name::AbstractString; must_exist::Bool = true, reject_retired::Bool = false)
     isempty(name) && return active_profile_dir()
     name == "default" && return active_profile_dir(name)
@@ -414,7 +415,9 @@ const _MISSING_NAME = (400, JSON3.write((; ok = false, error = "Missing `name`."
 function api_kiwi_profiles_login_start(body_bytes::Vector{UInt8})
     name = _kiwi_body_name(body_bytes)
     isempty(name) && return _MISSING_NAME
-    dir = _kiwi_claude_dir(name)
+    # Logging in starts `claude` under the profile and mints fresh credentials — never for a
+    # retired one (D11 freezes it). Status/code/cancel only reach a login already started.
+    dir = _kiwi_claude_dir(name; reject_retired = true)
     dir isa Tuple && return dir
     ok, msg = claude_login_start!(dir)
     ok || return 500, JSON3.write((; ok = false, error = isempty(msg) ? "Could not start the login." : msg))

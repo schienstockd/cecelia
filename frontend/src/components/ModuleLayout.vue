@@ -63,7 +63,7 @@ import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
-import PanelLaunchers from './PanelLaunchers.vue'
+import HeaderLaunchers from './HeaderLaunchers.vue'
 import NextStep from './NextStep.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
@@ -365,10 +365,10 @@ const visibleUids = computed<string[]>(() =>
               @click="taskOpen = true" v-tooltip.left="'Filtered by processing history — click to change'">
               <i class="pi pi-list-check" /><span class="filter-label">Task •</span>
             </button>
-            <!-- Maximised, the sidebar and header are covered — so their Viewer / Correction / Lab log /
-                 Kiwi launchers ride along here; the panels lift above the maximised canvas
+            <!-- Maximised, the header is covered — so its launchers (Viewer / Lab log / Help / Ask Kiwi)
+                 ride along here, the same component; the panels lift above the maximised canvas
                  (PANEL_Z_LIFTED, utils/panelStack.ts). Restore stays a button while maximised (Esc too). -->
-            <PanelLaunchers v-if="isMaximised" compact />
+            <HeaderLaunchers v-if="isMaximised" />
             <button v-if="plotsMaximised && $slots.plots" class="filter-toggle active"
               @click="togglePlotsMaximised" v-tooltip.left="'Restore layout (Esc)'" aria-label="Restore layout">
               <i class="pi pi-window-minimize" /><span class="filter-label">Restore</span>
@@ -412,8 +412,12 @@ const visibleUids = computed<string[]>(() =>
               v-tooltip.bottom="'Logs and history on the Tasks page'">Log</RouterLink>
           </span>
           <span class="spacer" />
-          <slot name="actions" :has-set="!!activeSet" :set-uid="activeSet?.uid"
-            :selected-uids="selectedUids" :select-uids="selectUids" />
+          <!-- the page's actions are ONE wrap unit (like the Checks box): in a narrow panel they drop
+               below the result line together, never split Add images from Import / Copy / Move / Delete -->
+          <div v-if="$slots.actions" class="result-actions cc-row-group">
+            <slot name="actions" :has-set="!!activeSet" :set-uid="activeSet?.uid"
+              :selected-uids="selectedUids" :select-uids="selectUids" />
+          </div>
         </div>
         <!-- Task dropdown: filter to images a given function has been run on (ever / on last run) -->
         <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="cc-filter-panel">
@@ -583,6 +587,8 @@ const visibleUids = computed<string[]>(() =>
 .result-log { margin-left: var(--cc-space-xs); color: var(--cc-text-dim); }
 .result-log:hover { color: var(--cc-text); }
 .spacer { flex: 1; }
+/* keep the row's own spacing between the buttons inside the unit */
+.result-actions { gap: inherit; }
 
 .filter-badge {
   font-size: var(--cc-fs-2xs);

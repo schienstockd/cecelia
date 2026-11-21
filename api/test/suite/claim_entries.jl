@@ -65,9 +65,10 @@
         st, r5 = post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test any(f -> get(f, :sectionId, "") == sid, r5.findings)
 
-        # an entry from before a replicate could combine attributes (`unitAttr`, one string): it still
-        # checks, and restating it with the same single attribute is not a new round
-        c = _read_bb_meta(proj.uid, id)["claim"]; delete!(c, "unitAttrs"); c["unitAttr"] = "Mouse"
+        # an entry from before a replicate could combine attributes (`unitAttr`, one string) and before
+        # claims could compare groups of images (no `groupAttrs`): it still checks, and restating it
+        # with the same scope is not a new round
+        c = _read_bb_meta(proj.uid, id)["claim"]; delete!(c, "unitAttrs"); c["unitAttr"] = "Mouse"; delete!(c, "groupAttrs")
         _set_bb_meta_field!(proj.uid, id, "claim", c)
         @test post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))[1] == 200
         @test post(api_claim_state, merge(scope, Dict("entryId" => id, "text" => "T cells move faster per image")))[2].round == 2
@@ -76,6 +77,15 @@
                                                           "unitAttrs" => ["Mouse", "Location"])))
         @test st == 200 && r6.round == 3
         @test occursin("per Mouse × Location", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
+        # compared between groups of images (Panel) instead of between the populations: a new round,
+        # the scope line says so, and the group is kept on the entry
+        st, r7 = post(api_claim_state, merge(scope, Dict("entryId" => id, "text" => "T cells move faster per image",
+                                                          "unitAttrs" => ["Mouse", "Location"], "groupAttrs" => ["Panel"])))
+        @test st == 200 && r7.round == 4
+        @test occursin("B/qc vs T/qc by Panel", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
+        @test _read_bb_meta(proj.uid, id)["claim"]["groupAttrs"] == ["Panel"]
+        # no design on this set: the design check says it didn't run
+        @test haskey(r7.skipped, Symbol("S2.design"))
 
         # the entry was deleted while the plot still holds its id: restating states the claim afresh
         st, rn = post(api_claim_state, merge(scope, Dict("entryId" => "bb-20990101T000000-abcdef", "text" => "T > B")))

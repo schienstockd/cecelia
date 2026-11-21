@@ -191,8 +191,8 @@ export function labArchivesGapText(g: LabArchivesGap): string {
   return `${g.attr} = ${g.value}: ${n}in the notebook, none here`
 }
 
-// The lab-log launcher's unseen badge and tip — ONE rule for both launchers (the header bell and the
-// maximised action bar's row, PanelLaunchers.vue). Cecelia digests colour by severity (⚠️/❌); Claude
+// The lab-log launcher's unseen badge and tip — ONE rule for the header bell (HeaderLaunchers.vue,
+// also mounted in the maximised set row). Cecelia digests colour by severity (⚠️/❌); Claude
 // notes keep the host's accent, so `null` means "no override".
 export function unseenBadgeColour(level: '' | 'warn' | 'fail'): string | null {
   return level ? SEVERITY[level].color : null

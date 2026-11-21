@@ -14,6 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
+import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { defaultSpecIds, shouldSeedDefaults } from '../../utils/defaultPlots'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, ref, watch } from 'vue'
@@ -117,7 +118,7 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, localSelRemap, reload,
+  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, anyPopChange, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs, designReplicate, designMarkState, useDesignCompare,
@@ -553,7 +554,7 @@ watch(segPops, () => {
                         :group-attr="panelGroupAttr" :group-order="attrGroups" :replicate-attrs="designReplicate"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
-                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
+                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`" :any-pop-change="anyPopChange"
                         @activate="activeId = p.id" @remove="removePanel(p.id)"
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />
@@ -613,7 +614,7 @@ watch(segPops, () => {
           <!-- Floating population picker: `position: absolute` on the undocked CanvasSidePanel
                anchors it to the nearest positioned ancestor, so it stays in the overlay slot
                (inside `.floating-canvas`) alongside the share chip — not below the host. -->
-          <SeriesPicker v-if="showManager" :family-note="familyNote" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
+          <SeriesPicker v-if="showManager" :family-note="familyNote" :tracks="isTrackFamily(listedPopType)" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"

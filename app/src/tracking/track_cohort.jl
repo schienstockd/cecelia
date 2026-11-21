@@ -164,7 +164,7 @@ function _label_suffix(g::TrackPlotGroup, peers)
     vn = track_group_value_name(g)
     any(p -> track_group_value_name(p) != vn, peers) && return vn
     pop = track_group_pop(g)
-    pop_display_labels([pop; [track_group_pop(p) for p in peers]])[pop]
+    pop_display_labels([pop; [track_group_pop(p) for p in peers]]; tracks = true)[pop]
 end
 
 # Images → labelled bundles. `key` is stable (uIDs), and so is the `label` a legend shows: the uID,
@@ -208,11 +208,12 @@ function _track_pop_groups(pops::Vector{String}, vn0::AbstractString, pool_pops:
 end
 
 # The leaf name is what a user calls a population ("/T cells/CD4" → "CD4"); the whole path is a file
-# path, not a label. Pops compared side by side that share a leaf (every tracked pop is `_tracked`)
-# climb their paths until they differ (`pop_display_labels`). "" (whole segmentation) stays "".
+# path, not a label. A `_tracked` pop is named by the population it tracks ("OTI", `tracks = true`);
+# pops that still share a name climb their paths until they differ (`pop_display_labels`). ""
+# (whole segmentation) stays "".
 _track_pop_labels(pops)::Dict{String,String} =
     merge(Dict(p => "" for p in pops if isempty(strip(p, '/'))),
-          pop_display_labels(filter(p -> !isempty(strip(p, '/')), pops)))
+          pop_display_labels(filter(p -> !isempty(strip(p, '/')), pops); tracks = true))
 
 # "WT · CD4" — the two dimensions of the comparison, in the order the board's own controls read. Empty
 # when there is only one group to name (one image, one population): a legend of one entry is noise.

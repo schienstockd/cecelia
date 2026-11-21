@@ -1,24 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useSettingsStore } from '../stores/settings'
 import { useLayoutFoldStore } from '../stores/layoutFold'
 import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import ProjectCrumb from './ProjectCrumb.vue'
 import JumpSearch from './JumpSearch.vue'
-import HelpMenu from './HelpMenu.vue'
+import HeaderLaunchers from './HeaderLaunchers.vue'
 import ProfileMenu from './ProfileMenu.vue'
-import { useObserverStore } from '../stores/observer'
-import { showKiwiLauncher } from '../utils/aiSwitch'
-import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
-import { useViewerLauncher } from '../composables/useViewerLauncher'
 
-const settings = useSettingsStore()
 const fold = useLayoutFoldStore()   // the SHOWN fold: narrow windows fold by default
-const viewer = useViewerLauncher()
 const appCtl = useAppControlStore()
-const observer = useObserverStore()
 
 // Update-available badge → opens the What's New modal (release notes + inline Install button).
 // The modal itself is mounted ONCE in App.vue; we just flip the shared open flag. Settings still
@@ -27,14 +18,6 @@ const observer = useObserverStore()
 function openUpdate() { openWhatsNew() }
 
 const restartUpd = useRestartToUpdate()
-
-// Lab-log launcher: the unseen dot and tip follow the shared rule in utils/labLog.ts.
-const bellDotStyle = computed(() => {
-  const c = unseenBadgeColour(settings.labLogUnseenLevel)
-  return c ? { background: c } : {}
-})
-const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen,
-  kind: settings.labLogUnseenKind, open: settings.labLogPanelOpen, aiOn: observer.ai.enabled }))
 </script>
 
 <template>
@@ -82,30 +65,7 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
     </span>
 
     <JumpSearch />
-    <!-- The viewer chip: brings the viewer window forward, or opens it on the last image
-         (`useViewerLauncher`); the viewer's ← back is the way home. The dot says the viewer is open. It
-         sits in the right-hand launcher group, not after the project crumb, so a long project name
-         never moves it. -->
-    <button type="button" class="viewer-chip" data-guide="launcher.viewer"
-            :class="{ on: viewer.open.value }" :disabled="viewer.disabled.value"
-            v-tooltip.bottom="viewer.tip.value" @click="viewer.raise()">
-      <span class="cc-dot vc-on" /> Viewer
-    </button>
-    <button type="button" class="bell cc-btn cc-btn-bare cc-btn-icon" data-guide="launcher.labLog"
-            :class="{ 'cc-btn-on': settings.labLogPanelOpen }" aria-label="Lab log"
-            v-tooltip.bottom="bellTip" @click="settings.labLogPanelOpen = !settings.labLogPanelOpen">
-      <i class="pi pi-book" />
-      <span v-if="settings.labLogUnseen" class="cc-dot bell-unseen" :style="bellDotStyle" />
-    </button>
-    <HelpMenu />
-    <!-- Visible with AI off: it is how AI gets turned on (GUI_CLARITY_PLAN Decision 9) -->
-    <button v-if="showKiwiLauncher(observer.ai, settings.kiwiHidden)" type="button"
-            class="cc-btn cc-btn-dense cc-btn-kiwi" data-guide="launcher.kiwi"
-            :class="{ on: settings.kiwiOpen }"
-            v-tooltip.bottom="settings.kiwiOpen ? 'Close Kiwi' : 'Ask about your project, get answers you can check'"
-            @click="settings.kiwiOpen = !settings.kiwiOpen">
-      Ask Kiwi
-    </button>
+    <HeaderLaunchers />
     <ProfileMenu />
   </header>
 </template>
@@ -141,23 +101,6 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 
 
 .spacer { flex: 1; }
-
-/* Viewer chip — neutral like the Lab log launcher (the word carries it); the dot lights while the Viewer
-   panel is open. No identity hue: docs/UI.md → *Colour schemes*. */
-.viewer-chip {
-  display: inline-flex; align-items: center; gap: 0.4rem; height: 24px; padding: 0 0.6rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
-  background: none; color: var(--cc-text); font-size: var(--cc-fs-sm); cursor: pointer; white-space: nowrap;
-}
-.viewer-chip:hover { background: var(--cc-wash); border-color: var(--cc-guide); }
-.viewer-chip.on { background: var(--cc-wash-strong); border-color: var(--cc-guide); }
-.viewer-chip.on .vc-on { background: var(--cc-text); }
-.viewer-chip:disabled { opacity: 0.5; cursor: default; }
-
-/* Lab-log bell — the unseen dot sits on the bell's shoulder. */
-.bell { position: relative; }
-.bell-unseen { position: absolute; top: 3px; right: 3px; background: var(--cc-accent); }
-
 
 .update-badge {
   display: flex;

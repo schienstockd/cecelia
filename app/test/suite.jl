@@ -235,6 +235,7 @@ include(joinpath(@__DIR__, "suite", "ro_crate.jl"))
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 # …and its follow-ups: re-measure `replaces`, format number, custom weights, raw source check.
 include(joinpath(@__DIR__, "suite", "run_log_followups.jl"))
+include(joinpath(@__DIR__, "suite", "run_record_fields.jl"))
 include(joinpath(@__DIR__, "suite", "gate_history.jl"))
 
 
@@ -394,6 +395,7 @@ include(joinpath(@__DIR__, "suite", "acq_check_sampling.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
 include(joinpath(@__DIR__, "suite", "claim_checks.jl"))
 include(joinpath(@__DIR__, "suite", "claim_checks_coverage.jl"))
+include(joinpath(@__DIR__, "suite", "claim_checks_design.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_claim_same_source.jl"))
 include(joinpath(@__DIR__, "suite", "cohort_categorical.jl"))
 include(joinpath(@__DIR__, "suite", "qc_profile.jl"))

@@ -172,6 +172,7 @@ async function measure(api, fixture, rec) {
       const q = `projectUid=${copy.uid}&imageUid=${copy.images[gate.image]}&valueName=${vn}&popType=${gate.popType ?? 'flow'}&pop=${encodeURIComponent(gatePath(gate))}`
       const st = await api(`/api/gating/stats?${q}`)
       if (!st.ok) throw new Error(`stats of gate ${vn}/${gate.name}: ${st.body.error ?? 'failed'}`)
+      if (`${key}.${gate.image}.${gateKey(gate)}.count` in facts) throw new Error(`gate ${vn}${gatePath(gate)}: another gate already has the fact name "${gateKey(gate)}"`)
       Object.assign(facts, { [`${key}.${gate.image}.${gateKey(gate)}.count`]: st.body.count,
                              [`${key}.${gate.image}.${gateKey(gate)}.pct`]: Number(st.body.pctParent).toFixed(1) })
       if (vn !== 'cells') tracked.add(`${gate.image}|${vn}`)

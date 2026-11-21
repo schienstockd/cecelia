@@ -253,6 +253,8 @@ end
     proj, uids = _history_project("a" => "4kS67f_LUkCpP", "b" => "4kS67f_k3Tx90")
     ct = only(_hprow(history_params_table(proj, [uids["a"], uids["b"]]), "clustTracks.cluster"))
     @test ct["note"] == "parameters unknown — ran before params were recorded"
+    # a row names the methods the task cites, even when its params are unknown (L0, GALAXY_LESSONS_PLAN)
+    @test occursin("10.1038/s41598-019-41695-z", ct["cite"])
     rm(proj.root; recursive = true)
 end
 
