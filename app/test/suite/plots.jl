@@ -1083,7 +1083,12 @@ end
     @test length(pairs) == 2
     @test pairs[Set(["WT · a", "KO · a"])] ≈ 0.1
     @test pairs[Set(["WT · b", "KO · b"])] ≈ 0.7
-    @test isnan(c["pValue"]) && all(isempty, c["letters"])
+    # no omnibus across populations; each population's two boxes get letters from their one pair —
+    # neither pair is significant (0.1, 0.7), so both boxes of a population share a letter
+    @test isnan(c["pValue"])
+    @test c["lettersScope"] == "population"
+    lt = Dict(zip(c["groups"], c["letters"]))
+    @test !isempty(intersect(lt["WT · a"], lt["KO · a"])) && !isempty(intersect(lt["WT · b"], lt["KO · b"]))
     @test occursin("within each population", c["methodNote"])
 
     # a group_by level (an HMM state) splits the same way: one population, two states, WT vs KO per state
@@ -1118,4 +1123,45 @@ end
     rp = Cecelia._summary_agg(df, "boxplot"; measure = nothing, granularity = :cell, nbins = 10,
                               normalize = :none, by_image = false, stats_enabled = true)
     @test !isnan(rp["comparisons"]["pValue"])
+end
+
+@testset "grouped by image attribute — compact letters within each population" begin
+    # Two populations × three attribute groups, five images each, one value per image. By design:
+    #   /a: G1 = 1..5, G2 = 1.5..5.5 (interleaved, not different), G3 = 100..104 (above both)
+    #   /b: G1 = 100..104 (above both), G2 = 1..5, G3 = 1.5..5.5
+    # Fully separated 5 vs 5 is an exact Mann-Whitney p = 2/C(10,5) ≈ 0.0079, ×3 pairs ≈ 0.024 < 0.05;
+    # the interleaved pair is far from significant. A compact letter display gives two groups a common
+    # letter iff they are NOT significantly different — so within /a, G1 and G2 share a letter and G3
+    # shares none; within /b, G2 and G3 share and G1 shares none.
+    vals = Dict(("/a", "G1") => 1.0:5.0, ("/a", "G2") => 1.5:5.5, ("/a", "G3") => 100.0:104.0,
+                ("/b", "G1") => 100.0:104.0, ("/b", "G2") => 1.0:5.0, ("/b", "G3") => 1.5:5.5)
+    uids = ["$(g)_$(k)" for g in ("G1", "G2", "G3") for k in 1:5]
+    am = Dict(u => first(split(u, "_")) for u in uids)
+    rows = [(p, u, vals[(p, am[u])][parse(Int, last(split(u, "_")))]) for p in ("/a", "/b") for u in uids]
+    df = DataFrame("value_name" => fill("A", length(rows)), "pop" => getindex.(rows, 1),
+                   "uID" => getindex.(rows, 2), "m" => getindex.(rows, 3), "label" => 1:length(rows))
+    r = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                             normalize = :none, by_image = true, stat_unit = :image,
+                             attr_map = am, stats_enabled = true)
+    c = r["comparisons"]
+    @test length(c["letters"]) == length(c["groups"]) == 6
+    @test all(!isempty, c["letters"])
+    @test c["lettersScope"] == "population"
+    lt = Dict(zip(c["groups"], c["letters"]))
+    share(x, y) = !isempty(intersect(lt[x], lt[y]))
+    @test share("G1 · a", "G2 · a") && !share("G1 · a", "G3 · a") && !share("G2 · a", "G3 · a")
+    @test share("G2 · b", "G3 · b") && !share("G1 · b", "G2 · b") && !share("G1 · b", "G3 · b")
+    # the letters follow the pairs the result itself reports: within a population, a pair shares a
+    # letter exactly when it is not significant
+    for p in c["comparisonPairs"]
+        @test share(p["a"], p["b"]) == (p["pAdj"] > 0.05)
+    end
+    # every pair stays within one population — the letters never claim a cross-population comparison
+    @test all(p -> last(split(p["a"], " · ")) == last(split(p["b"], " · ")), c["comparisonPairs"])
+
+    # one population: the plain test, no scope — letters compare every box with every other
+    r1 = Cecelia._summary_agg(df[df.pop .== "/a", :], "boxplot"; measure = "m", granularity = :cell,
+                              nbins = 10, normalize = :none, by_image = true, stat_unit = :image,
+                              attr_map = am, stats_enabled = true)
+    @test !haskey(r1["comparisons"], "lettersScope") && all(!isempty, r1["comparisons"]["letters"])
 end

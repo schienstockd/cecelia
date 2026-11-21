@@ -1,0 +1,417 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Experiment design — UX mock</title>
+<style>
+:root{
+  --bg:#121212; --s1:#1a1918; --s2:#23211f; --text:#ece8e3; --dim:#938d86; --faint:#5f5a55; --border:#312e2b; --hover:#4a4642;
+  --work:#13161b; --work-border:#262b33;
+  --primary:#FCC172; --on-primary:#1a1410; --check:#BF577B; --check-text:#D27A98;
+  --kiwi-text:#5eead4; --ok:#0ca30c; --warn:#fab219; --fail:#d03b3b; --info:#7aa2d6;
+  --st-data:#CEA966; --st-analysis:#F5EFD0;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:12px 16px 40px;background:#07080b;font:13px/1.45 "Noto Sans",system-ui,sans-serif;color:var(--text)}
+h1{font:600 18px system-ui;color:#e6edf3;margin:8px 2px 2px}
+.lead{color:#8b949e;max-width:1200px;margin:0 2px 8px;font-size:12.5px}
+.cap{font:600 15px system-ui;color:#c9d1d9;margin:26px 0 4px 2px}
+.sub{font:12.5px system-ui;color:#8b949e;margin:0 0 10px 2px;max-width:1200px}
+.frame{width:1200px;background:var(--bg);border:1px solid #1f1d1b;border-radius:6px;position:relative;overflow:hidden}
+.app{padding:0 0 16px}
+.hdr{display:flex;align-items:center;gap:10px;height:42px;padding:0 16px;border-bottom:1px solid var(--border)}
+.logo{font:600 16px Georgia,serif;color:var(--st-analysis)}
+.crumb{color:var(--dim)} .crumb b{color:var(--text);font-weight:600}
+.bar{display:flex;align-items:center;gap:12px;padding:8px 16px;min-height:46px;border-bottom:1px solid #1d1b1a}
+.sel{padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--s1);white-space:nowrap} .sel .k{color:var(--dim)}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);color:var(--dim);font-size:12px;white-space:nowrap}
+.pill b{color:var(--text);font-weight:500}
+.pill.design{border-color:#6b5a3a;color:#e9d7b5} .pill.design b{color:var(--primary)}
+.pill.none{border-color:#5b3a46;color:var(--check-text)}
+.pill.exp{border-style:dashed}
+.btn{display:inline-block;padding:5px 12px;border-radius:7px;border:1px solid var(--border);color:var(--text);font-size:12.5px;white-space:nowrap;background:var(--s1)}
+.btn.primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary);font-weight:600}
+.btn.ghost{background:transparent;color:var(--dim)}
+.muted{color:var(--dim)} .faint{color:var(--faint)}
+.warn{color:var(--warn)} .fail{color:var(--fail)} .ok{color:var(--ok)} .info{color:var(--info)}
+.inf{font-size:10.5px;padding:1px 6px;border-radius:4px;background:#2b2417;color:#e3c27d;border:1px dashed #6b5a3a}
+.conf{font-size:10.5px;padding:1px 6px;border-radius:4px;background:#1c2b23;color:#8fd6a8}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{text-align:left;color:var(--dim);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:5px 8px;color:#d4cec7;border-bottom:1px solid #1d1b1a}
+td.mono,.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+tr.flag td{background:#241e14}
+.eyebrow{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+/* dialog */
+.scrim{background:#000a;padding:28px 0;display:flex;justify-content:center}
+.dlg{width:980px;background:var(--s2);border:1px solid var(--hover);border-radius:12px;box-shadow:0 20px 50px #000c}
+.dlg .dh{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border)}
+.dlg .dh .t{font:600 15px system-ui}
+.steps{display:flex;gap:6px;margin-left:auto;font-size:12px}
+.steps span{padding:2px 9px;border-radius:999px;border:1px solid var(--border);color:var(--faint)}
+.steps span.on{border-color:var(--primary);color:var(--primary)} .steps span.done{color:var(--dim)}
+.dlg .db{padding:18px 20px;display:grid;gap:16px}
+.dlg .df{display:flex;gap:10px;justify-content:flex-end;align-items:center;padding:12px 20px;border-top:1px solid var(--border)}
+.field label{display:block;color:var(--dim);font-size:12px;margin-bottom:4px}
+.input{background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 10px;color:var(--text)}
+.input.big{font-size:14px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.seg span{padding:5px 12px;color:var(--dim);border-right:1px solid var(--border)} .seg span:last-child{border-right:0}
+.seg span.on{background:#2f2a22;color:var(--primary)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--s1)}
+.card.on{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
+.card .ct{font-weight:600;margin-bottom:4px}
+.roles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.role{border:1px solid var(--border);border-radius:9px;padding:9px 11px;background:var(--s1)}
+.role .rl{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim)}
+.role .rv{font-size:14px;margin-top:3px}
+.role .rn{font-size:11.5px;color:var(--faint);margin-top:2px}
+.cols{display:grid;grid-template-columns:1.35fr 1fr;gap:16px}
+.rule{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:12.5px}
+.rule .src{font-size:11px;padding:1px 6px;border-radius:4px;background:#1f2430;color:#9db3d6}
+/* grid */
+.grid{display:grid;gap:4px;font-size:12.5px}
+.gc{background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;min-height:44px}
+.gc.h{background:transparent;border:0;color:var(--dim);padding:7px 4px;min-height:0}
+.gc .n{font-size:16px;font-weight:600}
+.gc.empty{border-style:dashed;color:var(--faint)}
+.gc.a{border-color:#3d4f6b} .gc.b{border-color:#6b3d55}
+/* reservations */
+.res{display:flex;gap:10px;padding:8px 10px;border-radius:8px;background:var(--s1);border:1px solid var(--border);align-items:flex-start}
+.res .ic{width:16px;flex:none;text-align:center}
+.res .rt{font-weight:500}
+.res .threat{color:var(--dim);font-size:12px}
+.res .where{margin-left:auto;font-size:11px;color:var(--faint);white-space:nowrap}
+.stack{display:grid;gap:6px}
+.body2{display:grid;grid-template-columns:1fr 360px;min-height:0}
+.panel{border-left:1px solid var(--border);background:var(--s1);padding:14px 16px;display:grid;gap:10px;align-content:start}
+.panel .res{background:var(--bg)}
+.plot{background:var(--work);border:1px solid var(--work-border);border-radius:10px;padding:12px}
+.ptitle{display:flex;gap:8px;align-items:center;font-size:12.5px;color:#c9d1d9;flex-wrap:wrap}
+.banner{margin:8px 0;padding:6px 10px;border-radius:7px;border:1px solid #5b4a2a;background:#221d14;color:#e9d7b5;font-size:12px}
+.note{font-size:11.5px;color:var(--faint);margin-top:6px}
+.claim{border:1px solid var(--check);border-radius:10px;padding:12px 14px;background:var(--s1)}
+.claim .verdict{font-size:14px;font-weight:600;color:var(--check-text);margin:4px 0 8px}
+.hist td{font-size:12px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-top:6px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}
+</style></head><body>
+
+<h1>Experiment design — the user's path</h1>
+<p class="lead">Target UX for <code>docs/todo/EXPERIMENT_DESIGN_PLAN.md</code>. A static mock: no behaviour, and plot values are
+illustrative, not measured. The worked example is the T cell set (intravital, images first). Frame 2b shows the same dialog for a
+PhenoCycler set started design-first, because the design is not specific to one technology. Nothing here blocks: every
+reservation is a warning. Read from the real set: the names, runs, folders, panels, the mice per day and the confound with day.
+Illustrative: the plot values, tracking parameters, calibration, statuses and the design-history entries.</p>
+
+<!-- ───────────────────────── 1 ───────────────────────── -->
+<div class="cap">1 · Files registered, before import → the question and the mode</div>
+<div class="sub">A new set is empty, so nothing opens then. The dialog opens once files are registered into a set with no design:
+names and original paths exist, and nothing has been converted yet. The question comes first, because everything after it is judged
+against it. Exploratory is one click and explicit. It is a choice the record keeps, not a skipped step.</div>
+<div class="frame"><div class="scrim"><div class="dlg">
+  <div class="dh"><span class="t">16 files added · T cell types</span>
+    <div class="steps"><span class="on">1 Question</span><span>2 Layout</span><span>3 Confirm</span></div></div>
+  <div class="db">
+    <div class="field"><label>What do you want to find out?</label>
+      <div class="input big">Do naive P14, OT-I and gBT T cells move differently between the two label panels?</div></div>
+    <div class="field"><label>What do you expect?</label>
+      <span class="seg"><span class="on">No difference</span><span>Higher in…</span><span>Lower in…</span><span>Not sure</span></span>
+      <span class="muted" style="margin-left:10px">A null expectation is a valid design: it is a baseline comparison.</span></div>
+    <div class="field"><label>How will this set be used?</label>
+      <div class="cards">
+        <div class="card on"><div class="ct">Designed comparison</div><div class="muted">Declare groups and replicates. Plots, statistics and
+          claim checks follow the design, and warn when the data drift from it.</div></div>
+        <div class="card"><div class="ct">Exploratory</div><div class="muted">Test images, settings, a first look. No groups needed. Figures and claims
+          from this set are labelled exploratory. You can promote it to a design later.</div></div>
+      </div></div>
+  </div>
+  <div class="df"><span class="muted" style="margin-right:auto">You can change all of this later. Earlier versions are kept.</span>
+    <span class="btn ghost">Cancel</span><span class="btn primary">Next: layout</span></div>
+</div></div></div>
+
+<!-- ───────────────────────── 2 ───────────────────────── -->
+<div class="cap">2 · Layout: suggested from names and original folders</div>
+<div class="sub">The files are registered but not imported. Cecelia suggests a design from the attributes, the file names and the original paths, using the
+Metadata panel's extraction rules, so the user can see and edit each rule. Every suggested value is <span class="inf">inferred</span> until
+confirmed. The run suffix sits beside the name, so a name the user forgot to change can be caught here.</div>
+<div class="frame"><div class="scrim"><div class="dlg">
+  <div class="dh"><span class="t">16 files added · T cell types</span>
+    <div class="steps"><span class="done">1 Question ✓</span><span class="on">2 Layout</span><span>3 Confirm</span></div></div>
+  <div class="db">
+    <div class="roles">
+      <div class="role"><div class="rl">Group · compared</div><div class="rv">Panel <span class="inf">inferred</span></div><div class="rn">A · B (was attribute “Test”)</div></div>
+      <div class="role"><div class="rl">Unit · one replicate</div><div class="rv">Movie <span class="inf">inferred</span></div><div class="rn">each image counts once</div></div>
+      <div class="role"><div class="rl">Nested in</div><div class="rv">Date × Mouse <span class="inf">inferred</span></div><div class="rn">mouse numbers restart each day</div></div>
+      <div class="role"><div class="rl">Below the unit · never the n</div><div class="rv">track · cell · timepoint</div><div class="rn">from the set's tasks</div></div>
+    </div>
+    <div class="cols">
+      <div>
+        <div class="eyebrow">Images → values</div>
+        <table>
+          <tr><th>File name</th><th>Run</th><th>Folder</th><th>Panel</th><th>Date</th><th>Mouse</th></tr>
+          <tr><td class="mono">M1-2-B6-…ubTomato-z300</td><td class="mono">_0001</td><td class="mono">20211125</td><td>A</td><td>25 Nov</td><td>1</td></tr>
+          <tr><td class="mono">M2-1-B6-…ubTomato-z280</td><td class="mono">_0004</td><td class="mono">20211125</td><td>A</td><td>25 Nov</td><td>2</td></tr>
+          <tr><td class="mono">M3-1-B6-…ubTomato-z230</td><td class="mono">_0002</td><td class="mono">20211125</td><td>A</td><td>25 Nov</td><td>3</td></tr>
+          <tr><td class="faint" colspan="6">… 6 more in panel A (25 and 28 Nov)</td></tr>
+          <tr><td class="mono">M1-1-B6-…CTDR-z220</td><td class="mono">_0004</td><td class="mono">20211201</td><td>B</td><td>1 Dec</td><td>1</td></tr>
+          <tr class="flag"><td class="mono">M2-1-B6-…CTDR-z180</td><td class="mono">_0001</td><td class="mono">20211201</td><td>B</td><td>1 Dec</td><td>2</td></tr>
+          <tr class="flag"><td class="mono">M2-1-B6-…CTDR-z180</td><td class="mono">_0003</td><td class="mono">20211201</td><td>B</td><td>1 Dec</td><td>2</td></tr>
+          <tr class="flag"><td class="mono">M2-1-B6-…CTDR-z180</td><td class="mono">_0005</td><td class="mono">20211201</td><td>B</td><td>1 Dec</td><td>2</td></tr>
+          <tr><td class="faint" colspan="6">… 3 more in panel B (1 and 2 Dec)</td></tr>
+        </table>
+      </div>
+      <div>
+        <div class="eyebrow">Rules used (edit any)</div>
+        <div class="rule"><span class="src">attribute</span> Panel ← existing “Test” (A/B) <span class="faint">· rename</span></div>
+        <div class="rule"><span class="src">original path</span> Date ← folder above the file</div>
+        <div class="rule"><span class="src">file name</span> Mouse ← digits after “M”</div>
+        <div class="rule"><span class="src">file name</span> Position ← digit after “M1-” <span class="faint">· not used: see below</span></div>
+        <div class="rule"><span class="src">after import</span> <span class="muted">channel lists are checked against Panel; a mismatch becomes a reservation</span></div>
+        <div class="res" style="margin-top:10px"><span class="ic warn">▲</span><div>
+          <div class="rt">3 movies share the name M2-1 (runs _0001, _0003, _0005)</div>
+          <div class="threat">Same position imaged three times, or a name not changed between positions? Position cannot be the unit
+            until this is checked. Movie stays the unit.</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="df"><span class="btn ghost" style="margin-right:auto">Back</span><span class="btn">Edit rules</span><span class="btn primary">Next: confirm</span></div>
+</div></div></div>
+
+<!-- ───────────────────────── 2b ───────────────────────── -->
+<div class="cap">2b · Design first: “Set up a design” on an empty PhenoCycler set</div>
+<div class="sub">Optional, from the set bar of an empty set. Same dialog, same record. The user declares the grid and the planned n, then
+registered files land in a cell, or wait in “Unassigned”. Nothing in the dialog is specific to a technology. The roles are filled with whatever the experiment uses.</div>
+<div class="frame"><div class="scrim"><div class="dlg">
+  <div class="dh"><span class="t">Set up a design · HuMAP tissues</span>
+    <div class="steps"><span class="done">1 Question ✓</span><span class="on">2 Layout</span><span>3 Confirm</span></div></div>
+  <div class="db">
+    <div class="roles">
+      <div class="role"><div class="rl">Group · compared</div><div class="rv">Tissue</div><div class="rn">values: add as you go</div></div>
+      <div class="role"><div class="rl">Unit · one replicate</div><div class="rv">Core</div><div class="rn">each core counts once</div></div>
+      <div class="role"><div class="rl">Nested in</div><div class="rv">Donor</div><div class="rn">optional, can be added later</div></div>
+      <div class="role"><div class="rl">Below the unit · never the n</div><div class="rv">cell · region</div><div class="rn"></div></div>
+    </div>
+    <div class="cols">
+      <div>
+        <div class="eyebrow">Planned grid · cores per tissue × donor</div>
+        <div class="grid" style="grid-template-columns:110px repeat(3,1fr)">
+          <div class="gc h"></div><div class="gc h">Donor 1</div><div class="gc h">Donor 2</div><div class="gc h">Donor 3</div>
+          <div class="gc h">Tissue X</div><div class="gc">plan <span class="n">2</span></div><div class="gc">plan <span class="n">2</span></div><div class="gc">plan <span class="n">2</span></div>
+          <div class="gc h">Tissue Y</div><div class="gc">plan <span class="n">2</span></div><div class="gc">plan <span class="n">2</span></div><div class="gc">plan <span class="n">2</span></div>
+        </div>
+        <div class="note">Tissue and donor names are placeholders.</div>
+      </div>
+      <div>
+        <div class="eyebrow">When images arrive</div>
+        <div class="stack">
+          <div class="res"><span class="ic info">●</span><div><div class="rt">Import puts each image in a cell</div>
+            <div class="threat">From its attributes, or from rules on its name or path. Images that match no cell are listed as Unassigned.</div></div></div>
+          <div class="res"><span class="ic info">●</span><div><div class="rt">Planned vs actual</div>
+            <div class="threat">The grid shows 2/2, 1/2, 0/2 per cell as the set fills.</div></div></div>
+          <div class="res"><span class="ic info">●</span><div><div class="rt">Shared acquisition, read from the record</div>
+            <div class="threat">If the cores come from one scan file, Cecelia reads that from their source and says acquisition is shared. Otherwise it stays unverified. Neither covers tissue handling or staining batch.</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="df"><span class="btn ghost" style="margin-right:auto">Back</span><span class="btn primary">Next: confirm</span></div>
+</div></div></div>
+
+<!-- ───────────────────────── 3 ───────────────────────── -->
+<div class="cap">3 · Confirm: the grid and what it can support</div>
+<div class="sub">The user signs off on the actual grid, not a description of it. Reservations appear here, before any processing, and each one says
+what it threatens for the question. Confirming records the design as “inferred, then confirmed”. Nothing is blocked.</div>
+<div class="frame"><div class="scrim"><div class="dlg">
+  <div class="dh"><span class="t">16 files added · T cell types</span>
+    <div class="steps"><span class="done">1 Question ✓</span><span class="done">2 Layout ✓</span><span class="on">3 Confirm</span></div></div>
+  <div class="db">
+    <div class="cols">
+      <div>
+        <div class="eyebrow">Movies per mouse · Panel × Date × Mouse</div>
+        <div class="grid" style="grid-template-columns:70px repeat(4,1fr)">
+          <div class="gc h"></div><div class="gc h">25 Nov</div><div class="gc h">28 Nov</div><div class="gc h">1 Dec</div><div class="gc h">2 Dec</div>
+          <div class="gc h">Panel A</div>
+          <div class="gc a">M1 <b>1</b> · M2 <b>2</b> · M3 <b>2</b><div class="muted">3 mice · 5 movies</div></div>
+          <div class="gc a">M1 <b>2</b> · M2 <b>2</b><div class="muted">2 mice · 4 movies</div></div>
+          <div class="gc empty">—</div><div class="gc empty">—</div>
+          <div class="gc h">Panel B</div>
+          <div class="gc empty">—</div><div class="gc empty">—</div>
+          <div class="gc b">M1 <b>2</b> · M2 <b>3</b><div class="muted">2 mice · 5 movies</div></div>
+          <div class="gc b">M1 <b>2</b><div class="muted">1 mouse · 2 movies</div></div>
+        </div>
+        <div style="margin-top:10px" class="muted">Panel A: <b style="color:var(--text)">5 mice, 9 movies</b> · Panel B: <b style="color:var(--text)">3 mice, 7 movies</b> · Unassigned: 0</div>
+      </div>
+      <div class="stack">
+        <div class="eyebrow">What this layout can support</div>
+        <div class="res"><span class="ic fail">◆</span><div><div class="rt">Panel is confounded with acquisition day</div>
+          <div class="threat">A was imaged in November, B in December. A panel difference cannot be told apart from a day effect.</div></div></div>
+        <div class="res"><span class="ic warn">▲</span><div><div class="rt">Few mice: 5 vs 3</div>
+          <div class="threat">At mouse level a test has little power. Movie-level results stay descriptive.</div></div></div>
+        <div class="res"><span class="ic warn">▲</span><div><div class="rt">Panels differ in acquisition, by design</div>
+          <div class="threat">Different labels and lasers. The acquisition check shows what differs. It does not show equivalence.</div></div></div>
+        <div class="res"><span class="ic warn">▲</span><div><div class="rt">3 movies named M2-1 on 1 Dec</div>
+          <div class="threat">Check whether these are three positions.</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="df"><span class="btn ghost" style="margin-right:auto">Back</span><span class="btn">Keep as exploratory</span><span class="btn primary">Confirm design</span></div>
+</div></div></div>
+
+<!-- ───────────────────────── 3b ───────────────────────── -->
+<div class="cap">3b · Later files into a designed set → place these images</div>
+<div class="sub">No questions again. The same rules suggest a cell for each new file. A file that matches no cell waits in Unassigned, and the
+grid's reservations update before anything is converted. (Illustrative files.)</div>
+<div class="frame"><div class="scrim"><div class="dlg">
+  <div class="dh"><span class="t">3 files added · T cell types</span><span class="pill design" style="margin-left:auto">Design <b>Panel</b> · unit <b>Movie</b> · in <b>Date × Mouse</b></span></div>
+  <div class="db">
+    <div class="cols">
+      <div>
+        <table>
+          <tr><th>File name</th><th>Run</th><th>Folder</th><th>Goes to</th></tr>
+          <tr><td class="mono">M1-1-B6-…CTDR-z210</td><td class="mono">_0001</td><td class="mono">20211206</td><td>Panel B · 6 Dec · M1</td></tr>
+          <tr><td class="mono">M1-2-B6-…CTDR-z210</td><td class="mono">_0002</td><td class="mono">20211206</td><td>Panel B · 6 Dec · M1</td></tr>
+          <tr class="flag"><td class="mono">test-stack-beads</td><td class="mono"></td><td class="mono">20211206</td><td class="warn">Unassigned: no Panel or Mouse in the name</td></tr>
+        </table>
+      </div>
+      <div class="stack">
+        <div class="res"><span class="ic info">●</span><div><div class="rt">Panel B: 3 → 4 mice</div><div class="threat">5 vs 4 mice after these files.</div></div></div>
+        <div class="res"><span class="ic warn">▲</span><div><div class="rt">1 file unassigned</div><div class="threat">Not counted in any group until placed. Place it, or mark it excluded.</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="df"><span class="btn ghost" style="margin-right:auto">Edit rules</span><span class="btn primary">Place 2 · keep 1 unassigned</span></div>
+</div></div></div>
+
+<!-- ───────────────────────── 4 ───────────────────────── -->
+<div class="cap">4 · The set page: the design is always in view, and reservations gather as the work goes</div>
+<div class="sub">The set bar carries the design. The readiness panel collects open reservations by stage: what the data can and cannot support yet.
+New ones appear when a task runs, not only at the stats step. Below: a set with no design says so where the user works.</div>
+<div class="frame app">
+  <div class="hdr"><span class="logo">Cecelia</span><span class="crumb">RFtn9f · <b>T cell types</b></span></div>
+  <div class="bar"><span class="sel"><span class="k">Set</span> T cell types</span>
+    <span class="pill design">Design <b>Panel</b> · unit <b>Movie</b> · in <b>Date × Mouse</b> · <b>16/16</b> assigned <span class="conf">confirmed</span></span>
+    <span class="muted" style="margin-left:auto">Q: Do P14, OT-I and gBT move differently between panels? · expected: no difference</span></div>
+  <div class="body2">
+    <div style="padding:14px 16px">
+      <table>
+        <tr><th>Image</th><th>Panel</th><th>Date</th><th>Mouse</th><th>Run</th><th>Status</th></tr>
+        <tr><td class="mono">M1-2-…ubTomato-z300</td><td>A</td><td>25 Nov</td><td>1</td><td class="mono">_0001</td><td class="ok">tracked</td></tr>
+        <tr><td class="mono">M2-1-…ubTomato-z280</td><td>A</td><td>25 Nov</td><td>2</td><td class="mono">_0004</td><td class="ok">tracked</td></tr>
+        <tr><td class="mono">M1-1-…CTDR-z220</td><td>B</td><td>1 Dec</td><td>1</td><td class="mono">_0004</td><td class="ok">tracked</td></tr>
+        <tr><td class="mono">M2-1-…CTDR-z180</td><td>B</td><td>1 Dec</td><td>2</td><td class="mono">_0003</td><td class="warn">segmented</td></tr>
+        <tr><td class="faint" colspan="6">… 12 more</td></tr>
+      </table>
+      <div class="eyebrow" style="margin-top:22px">Another set in the project</div>
+      <div class="bar" style="border:1px solid var(--border);border-radius:8px">
+        <span class="sel"><span class="k">Set</span> MARDI</span>
+        <span class="pill none">No design for this set</span>
+        <span class="muted">7 images · plots and checks can't tell what is compared</span>
+        <span style="margin-left:auto;display:flex;gap:8px"><span class="btn">Suggest a design</span><span class="btn ghost">Mark exploratory</span></span></div>
+      <div class="bar" style="border:1px solid var(--border);border-radius:8px;margin-top:8px">
+        <span class="sel"><span class="k">Set</span> Settings test</span>
+        <span class="pill exp">Exploratory · since 3 Nov</span>
+        <span class="muted">figures from this set are labelled exploratory</span>
+        <span style="margin-left:auto" class="btn ghost">Promote to a design</span></div>
+    </div>
+    <div class="panel">
+      <div class="eyebrow">Readiness · what this set can support</div>
+      <div class="res"><span class="ic fail">◆</span><div><div class="rt">Panel confounded with day</div><div class="threat">any panel difference</div></div><span class="where">design</span></div>
+      <div class="res"><span class="ic warn">▲</span><div><div class="rt">5 vs 3 mice</div><div class="threat">mouse-level test</div></div><span class="where">design</span></div>
+      <div class="res"><span class="ic warn">▲</span><div><div class="rt">Lasers differ within panel A</div><div class="threat">movie-to-movie comparisons in A</div></div><span class="where">acquisition</span></div>
+      <div class="res"><span class="ic warn">▲</span><div><div class="rt">Tracking params differ between panels</div><div class="threat">“treated the same”</div></div><span class="where">tracking</span></div>
+      <div class="res"><span class="ic warn">▲</span><div><div class="rt">1 movie not tracked yet</div><div class="threat">B drops to 6 movies</div></div><span class="where">tracking</span></div>
+      <div class="res"><span class="ic ok">✓</span><div><div class="rt">Calibration present on all 16</div></div><span class="where">import</span></div>
+      <div class="res"><span class="ic info">●</span><div><div class="rt">2 comparisons checked on this set</div><div class="threat">shown, not corrected for</div></div><span class="where">claims</span></div>
+      <div class="note">Warnings only. Each links to where it arises.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── 5 ───────────────────────── -->
+<div class="cap">5 · Plots read the design and record an override</div>
+<div class="sub">A new summary plot defaults to the design's group and unit. The header shows group, unit, n and parents. One dot per movie, coloured
+by mouse, with mouse means beside them. Grouping differently is allowed and labelled. Right: the same plot grouped by Date, looking for a batch effect.</div>
+<div class="frame"><div class="two">
+  <div class="plot">
+    <div class="ptitle">Track speed · P14 <span class="pill design">Panel · per <b>movie</b> · 8 mice (5 / 3)</span></div>
+    <svg viewBox="0 0 520 260" width="100%" style="margin-top:8px">
+      <line x1="50" y1="220" x2="500" y2="220" stroke="#3a3632"/><line x1="50" y1="20" x2="50" y2="220" stroke="#3a3632"/>
+      <text x="14" y="120" fill="#938d86" font-size="11" transform="rotate(-90 14 120)">µm/min</text>
+      <text x="165" y="240" fill="#c9d1d9" font-size="12">Panel A</text><text x="375" y="240" fill="#c9d1d9" font-size="12">Panel B</text>
+      <g>
+        <circle cx="150" cy="110" r="5" fill="#4477AA"/><circle cx="170" cy="96" r="5" fill="#EE6677"/><circle cx="182" cy="120" r="5" fill="#EE6677"/>
+        <circle cx="160" cy="132" r="5" fill="#228833"/><circle cx="196" cy="104" r="5" fill="#228833"/>
+        <circle cx="140" cy="88" r="5" fill="#CCBB44"/><circle cx="205" cy="92" r="5" fill="#CCBB44"/>
+        <circle cx="176" cy="140" r="5" fill="#66CCEE"/><circle cx="190" cy="126" r="5" fill="#66CCEE"/>
+        <rect x="225" y="104" width="9" height="9" transform="rotate(45 229 108)" fill="none" stroke="#4477AA" stroke-width="2"/>
+        <rect x="240" y="98" width="9" height="9" transform="rotate(45 244 102)" fill="none" stroke="#EE6677" stroke-width="2"/>
+        <rect x="255" y="114" width="9" height="9" transform="rotate(45 259 118)" fill="none" stroke="#228833" stroke-width="2"/>
+        <rect x="225" y="86" width="9" height="9" transform="rotate(45 229 90)" fill="none" stroke="#CCBB44" stroke-width="2"/>
+        <rect x="240" y="129" width="9" height="9" transform="rotate(45 244 133)" fill="none" stroke="#66CCEE" stroke-width="2"/>
+      </g>
+      <g>
+        <circle cx="370" cy="100" r="5" fill="#AA3377"/><circle cx="388" cy="116" r="5" fill="#AA3377"/>
+        <circle cx="360" cy="124" r="5" fill="#E69F00"/><circle cx="380" cy="136" r="5" fill="#E69F00"/><circle cx="398" cy="128" r="5" fill="#E69F00"/>
+        <circle cx="405" cy="98" r="5" fill="#BBBBBB"/><circle cx="415" cy="112" r="5" fill="#BBBBBB"/>
+        <rect x="440" y="104" width="9" height="9" transform="rotate(45 444 108)" fill="none" stroke="#AA3377" stroke-width="2"/>
+        <rect x="455" y="125" width="9" height="9" transform="rotate(45 459 129)" fill="none" stroke="#E69F00" stroke-width="2"/>
+        <rect x="440" y="101" width="9" height="9" transform="rotate(45 444 105) translate(14,0)" fill="none" stroke="#BBBBBB" stroke-width="2"/>
+      </g>
+    </svg>
+    <div class="legend"><span>● movie</span><span>◇ mouse mean</span>
+      <span><i style="background:#4477AA"></i>25 Nov M1</span><span><i style="background:#EE6677"></i>M2</span><span><i style="background:#228833"></i>M3</span>
+      <span><i style="background:#CCBB44"></i>28 Nov M1</span><span><i style="background:#66CCEE"></i>M2</span>
+      <span><i style="background:#AA3377"></i>1 Dec M1</span><span><i style="background:#E69F00"></i>M2</span><span><i style="background:#BBBBBB"></i>2 Dec M1</span></div>
+    <div class="note">Illustrative values. Stats: mouse means compared (n = 5 vs 3), movie dots shown, tracks never the n.</div>
+  </div>
+  <div class="plot">
+    <div class="ptitle">Track speed · P14 <span class="pill">Date · per <b>movie</b></span></div>
+    <div class="banner">Grouped by <b>Date</b>, design group is <b>Panel</b>. Exploration: recorded on the figure, and the claim check reads it.</div>
+    <svg viewBox="0 0 520 210" width="100%">
+      <line x1="50" y1="180" x2="500" y2="180" stroke="#3a3632"/><line x1="50" y1="10" x2="50" y2="180" stroke="#3a3632"/>
+      <text x="90" y="198" fill="#c9d1d9" font-size="12">25 Nov</text><text x="200" y="198" fill="#c9d1d9" font-size="12">28 Nov</text>
+      <text x="310" y="198" fill="#c9d1d9" font-size="12">1 Dec</text><text x="420" y="198" fill="#c9d1d9" font-size="12">2 Dec</text>
+      <g fill="#7aa2d6"><circle cx="100" cy="80" r="5"/><circle cx="112" cy="68" r="5"/><circle cx="96" cy="92" r="5"/><circle cx="118" cy="100" r="5"/><circle cx="106" cy="76" r="5"/>
+        <circle cx="210" cy="60" r="5"/><circle cx="222" cy="64" r="5"/><circle cx="214" cy="108" r="5"/><circle cx="228" cy="96" r="5"/></g>
+      <g fill="#d27a98"><circle cx="320" cy="70" r="5"/><circle cx="332" cy="86" r="5"/><circle cx="318" cy="94" r="5"/><circle cx="336" cy="106" r="5"/><circle cx="326" cy="98" r="5"/>
+        <circle cx="430" cy="68" r="5"/><circle cx="442" cy="82" r="5"/></g>
+    </svg>
+    <div class="legend"><span><i style="background:#7aa2d6"></i>Panel A</span><span><i style="background:#d27a98"></i>Panel B</span>
+      <span class="warn">each date holds one panel only</span></div>
+  </div>
+</div></div>
+
+<!-- ───────────────────────── 6 ───────────────────────── -->
+<div class="cap">6 · The claim check reads the design, and the design keeps its history</div>
+<div class="sub">The verdict wording comes from the design: which level, how many parents, and what kind of result. A design changed after a figure was
+made marks that figure stale. The figure keeps the version it was made with.</div>
+<div class="frame"><div class="two">
+  <div class="claim">
+    <div class="eyebrow" style="color:var(--check-text)">Claim check</div>
+    <div class="muted" style="font-size:12px;margin-bottom:4px">Started from the plot. The scope is structured; the sentence is only its label.</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><span class="pill">P14</span><span class="pill">track speed</span><span class="pill design">by <b>Panel</b> · per <b>Movie</b> · in <b>Date × Mouse</b></span><span class="pill">expected: no difference</span></div>
+    <div class="input">Label: “P14 speed does not differ between panel A and B.”</div>
+    <div class="verdict">Descriptive: movie-level, 8 mice (5 / 3). Not confirmatory.</div>
+    <div class="stack">
+      <div class="res"><span class="ic fail">◆</span><div><div class="rt">Group confounded with Date</div><div class="threat">“No difference” could hide a day effect working against a panel effect.</div></div></div>
+      <div class="res"><span class="ic warn">▲</span><div><div class="rt">Tracking parameters differ between panels</div><div class="threat">Not treated the same: max search radius 12 vs 15 µm.</div></div></div>
+      <div class="res"><span class="ic ok">✓</span><div><div class="rt">Unit matches the design (movie). Tracks not used as n.</div></div></div>
+      <div class="res"><span class="ic warn">▲</span><div><div class="rt">Checked under design v2 · current is v3</div><div class="threat">The unit changed to Position. Re-check to read the current design.</div></div></div>
+    </div>
+  </div>
+  <div class="plot" style="background:var(--s1);border-color:var(--border)">
+    <div class="eyebrow">Design history · T cell types</div>
+    <table class="hist">
+      <tr><th>v</th><th>When</th><th>By</th><th>Change</th><th>Status</th></tr>
+      <tr><td>1</td><td>21 Nov 10:02</td><td>Dominik</td><td>Suggested from names and folders</td><td><span class="inf">inferred</span></td></tr>
+      <tr><td>2</td><td>21 Nov 10:05</td><td>Dominik</td><td>Confirmed · Test renamed to Panel</td><td><span class="conf">confirmed</span></td></tr>
+      <tr><td>3</td><td>24 Nov 15:40</td><td>Dominik</td><td>Unit: Movie → Position (M2-1 checked: 3 positions)</td><td><span class="conf">confirmed</span></td></tr>
+    </table>
+    <div class="eyebrow" style="margin-top:16px">Figures</div>
+    <div class="res"><span class="ic warn">▲</span><div><div class="rt">“P14 speed by panel” made with design v2</div>
+      <div class="threat">The design changed since (v3: unit now Position). Re-draw to use v3, or keep it as made under v2.</div></div></div>
+  </div>
+</div></div>
+
+</body></html>
