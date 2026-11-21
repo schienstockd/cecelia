@@ -12,7 +12,7 @@
 """
     board_export_provenance(proj, image_uids; pops, cluster_runs) -> Dict
 
-What one board shows, for an exported figure: `ceceliaVersion`, `project` `{uid, name}`, `images`
+What one board shows, for an exported figure: `ceceliaVersion`, `ceceliaCommit` (`""` for a release), `project` `{uid, name}`, `images`
 `[{uid, name}]`, `populations` `[{key, popType, valueName, pop, gateFiles}]` (`gateFiles` = the
 project-relative gating sidecars that define the population, one per image that has one; empty for a
 `labels` key, which draws the objects themselves) and `runs` — the board-scoped parameter-table rows
@@ -43,6 +43,7 @@ function board_export_provenance(proj::CciaProject, image_uids::Vector{String};
     runs = history_params_table(proj, image_uids; pops = String.(pops), cluster_runs = String.(cluster_runs))
     Dict{String,Any}(
         "ceceliaVersion" => (try cecelia_version() catch; "" end),
+        "ceceliaCommit" => (try cecelia_commit() catch; "" end),
         "project" => Dict{String,Any}("uid" => proj.uid, "name" => proj.name),
         "images" => Any[Dict{String,Any}("uid" => img.uid, "name" => img.name) for img in imgs],
         "populations" => populations,

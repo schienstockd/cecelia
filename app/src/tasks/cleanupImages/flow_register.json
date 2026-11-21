@@ -2,6 +2,7 @@
   "task": "flowRegister",
   "fun_name": "cleanupImages.flowRegister",
   "label": "Flow-based registration",
+  "citations": ["10.1007/3-540-45103-X_50", "10.7554/eLife.35800"],
   "purpose": "Correct non-rigid tissue deformation with a per-pixel flow field",
   "useWhen": [
     "Sample deforms between frames beyond a simple shift",

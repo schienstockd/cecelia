@@ -2,6 +2,7 @@
   "task": "omezarr",
   "fun_name": "importImages.omezarr",
   "label": "Convert to OME-ZARR",
+  "citations": ["10.1083/jcb.201004104", "10.1038/s41592-021-01326-w"],
   "purpose": "Convert added microscope files into the app's image store",
   "useWhen": [
     "Images added but not converted yet: they can't be opened until then",
