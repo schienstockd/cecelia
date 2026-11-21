@@ -499,6 +499,8 @@ include(joinpath(@__DIR__, "suite", "label_import.jl"))
 # After label_import.jl: its fixture project is what the dispatch end-to-end runs on.
 include(joinpath(@__DIR__, "suite", "hpc_dispatch.jl"))
 include(joinpath(@__DIR__, "suite", "hpc_job.jl"))
+# After label_import.jl too: re-measure prunes run records; the correction composite keeps them.
+include(joinpath(@__DIR__, "suite", "correct_carryover_sidecars.jl"))
 # ── Pipeline golden ──────────────────────────────────────────────────────────
 # A synthetic movie with planted truth (intensities, straight-line motion, calibration) through
 # import labels + measure → btrack + track measures → a rectangle gate → clustPops, asserted against

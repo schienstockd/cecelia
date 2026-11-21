@@ -81,8 +81,7 @@ function _run_task(task::SegmentCorrectCarryOverSnapshot, img::CciaImage, params
     labelprops = _labelprops_path(task_dir, p.valueName)
     snap_path  = _carryover_snapshot_path(task_dir)
     result_file = _carryover_result_path(task_dir, "snapshot")
-    isfile(snap_path)   && rm(snap_path;   force = true)
-    isfile(result_file) && rm(result_file; force = true)
+    rm.((snap_path, result_file); force = true); _carryover_clear_sidecars!(task_dir)   # an aborted run's leftovers
 
     # A first-time image has no labelProps yet — the composite must still work (someone might chain
     # `segment.correct_measures` against a freshly-segmented image before running measureLabels
@@ -105,6 +104,7 @@ function _run_task(task::SegmentCorrectCarryOverSnapshot, img::CciaImage, params
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
+    _carryover_save_sidecars!(task_dir, labelprops)
     on_progress(2, 2)
 
     n_rows, n_cols, n_cat = 0, 0, 0
@@ -164,6 +164,7 @@ function _run_task(task::SegmentCorrectCarryOverRestore, img::CciaImage, params:
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
+    _carryover_restore_sidecars!(task_dir, labelprops; on_log = on_log)
     on_progress(2, 2)
 
     n_rows, n_cols_carried, n_cols_skipped = 0, 0, 0
@@ -186,10 +187,9 @@ function _run_task(task::SegmentCorrectCarryOverRestore, img::CciaImage, params:
                "skipped $(n_cols_skipped) column(s) present in the fresh h5ad.")
     end
 
-    # Snapshot file has done its job — clean up so a subsequent standalone run of restore isn't
-    # tempted to re-apply stale obs onto a re-measured store.
+    # Done — clean up so a later standalone restore can't re-apply stale obs onto a re-measured store.
     try
-        rm(snap_path; force = true)
+        rm(snap_path; force = true); _carryover_clear_sidecars!(task_dir)
     catch e
         on_log("[WARN] could not remove snapshot file $snap_path: $e")
     end

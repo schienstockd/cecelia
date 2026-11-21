@@ -113,7 +113,10 @@ when pops, measures and preprocessing match. Read it with `hmm_fit_entry(props, 
 before the record existed have none. Deleting the run drops its key; so does a re-run under the
 same `colName` that fits nothing. A re-measure, re-track, track correction or track-set delete
 drops the state columns, so each one prunes every key whose state column the table no longer
-carries (`prune_stale_hmmfit!`). A record never outlives its column. Why and how it's used:
+carries (`prune_stale_hmmfit!`). A record never outlives its column. A re-measure prunes even inside
+`segment.correct_measures`: that composite's snapshot phase keeps a copy of the `hmmfit` and
+`clustfeatures` sidecars, and its restore puts back the records whose columns it brought back
+(`app/src/tasks/segment/carry_over_sidecars.jl`). Why and how it's used:
 `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 All three per-run manifests — `clustfeatures`, `motiffeatures`, `hmmfit` — go through
