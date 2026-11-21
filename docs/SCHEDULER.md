@@ -1204,6 +1204,33 @@ nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever 
 image's missing or invalid z step, an unrecognised unit), as `{axis: {reason: "missing"|"invalid"|"unknownUnit", used}}`, `used` = the value the run computed with (`img_physical_sizes`; µm/px or min/frame — not always 1.0) (`run_scale_defaults`). Also on a
 failed run's entry. Absent when nothing was assumed. `docs/MODULES.md` → *Requires*.
 
+**What it used** — `usage`, stamped at close by the same rule (absent when unknown, never guessed), so
+the history can set memory used beside memory requested and a spec's `hpc.mem` model can be checked
+against real runs. No task carries code for it: `_execute_job!` binds a `RunUsage` accumulator
+(`with_run_usage`, `app/src/run_usage.jl` — a `ScopedValue`) around `_run_task`, and two things report
+into it:
+
+- **`run_py`, locally.** Each runner writes its own peak at exit to the file `run_py` names in
+  `CECELIA_USAGE_OUT` (`script_utils.register_usage_report`, registered by `script_params`, which every
+  runner calls): `getrusage` on Linux/macOS, the peak working set on Windows — the larger of the runner
+  and the largest child it waited for. Julia cannot measure it: libuv reaps the child, so its rusage
+  never reaches us. A runner killed outright writes nothing.
+- **The HPC dispatch**, from the scheduler accounting it already logs (`_hpc_log_usage` →
+  `run_usage_from_hpc`; `docs/HPC.md` → *Resources used*).
+
+| key | local | cluster |
+|---|---|---|
+| `source` | `"local"` | `"slurm"` / `"pbs"` |
+| `host` | `gethostname()` | — |
+| `peakRssBytes` | largest runner peak | `MaxRSS` / `resources_used.mem` |
+| `runs` | Python runs that reported | jobs that reported |
+| `reqMemBytes`, `cpus`, `reqWallSeconds` | — | booked (`reqWallSeconds` absent = no limit) |
+| `wallSeconds`, `cpuSeconds` | — (wall time is `at` → `finishedAt`) | summed over the jobs |
+| `gpuUtilPct`, `final` | — | where reported; `final: false` = accounting not closed yet |
+
+Several reports in one run merge (`merge_run_usage!`): maxima for peaks and bookings, sums for times and
+`runs`. A set-scope run stamps the same total on every image it covered.
+
 **Format.** Every entry written now carries `format` (`RUN_LOG_FORMAT`, 1), stamped where the entry is created; a close keeps the number its open wrote. Absent = format 0, written before the field existed. Entries are never migrated in place: readers stay tolerant of every older format (a missing field reads as not recorded) and check `run_entry_format(e)` only when they need a field a newer format guarantees. The number is bumped when a field changes meaning, not for a new optional field (`run_log.jl` → *Format*).
 
 **What it read and what it replaced** — stamped at open by `run_provenance` (`app/src/run_log.jl`),

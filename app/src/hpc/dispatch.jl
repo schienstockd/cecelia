@@ -408,10 +408,17 @@ function _hpc_job_env(d::HpcDispatch, code_dir::AbstractString)::String
 end
 
 # What the job used against what it booked, logged with the task once it is over — succeeded or
-# failed (an out-of-memory run is when it matters most). Never fails the run: it is advice.
+# failed (an out-of-memory run is when it matters most) — and reported to the run's usage accumulator,
+# which the run-log entry's `usage` is stamped from (app/src/run_usage.jl). Never fails the run: it is advice.
 function _hpc_log_usage(d::HpcDispatch, id::AbstractString, on_log::Function)
     u = try; hpc_job_usage(d.backend, d.conn, id); catch; nothing; end
-    isnothing(u) || foreach(on_log, hpc_usage_lines(u))
+    isnothing(u) && return
+    foreach(on_log, hpc_usage_lines(u))
+    try
+        record_run_usage!(run_usage_from_hpc(u, hpc_backend_site(d.backend).scheduler))
+    catch e
+        @warn "HPC usage record failed" job = id exception = e
+    end
 end
 
 """

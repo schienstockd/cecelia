@@ -207,6 +207,9 @@ reads), what the runner reads and writes. They make the call able to run on a cl
 dispatched there (`HPC_DISPATCH`, `hpc/dispatch.jl`) the inputs are synced, the job runs remotely and
 exactly the declared outputs come back. A call without them refuses to run in a dispatched task.
 Locally they are not used. Porting a task: docs/MODULES.md → *Porting a task to HPC*.
+
+Each local run's peak memory is reported to the scheduled run it belongs to (`CECELIA_USAGE_OUT`,
+`record_run_usage!` — app/src/run_usage.jl), so the run-log entry's `usage` needs no task code.
 """
 function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
                 on_log::Function      = line -> println(line),
@@ -270,7 +273,11 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
         on_log("[ERROR] $(e isa ErrorException ? e.msg : sprint(showerror, e))")
         return false
     end
-    cmd  = addenv(`$py_bin $py_script --params $params_file`, _py_task_env(pythonpath)...)
+    # The runner writes its peak memory here at exit (`script_utils.register_usage_report`); read back
+    # into the run's usage accumulator below (app/src/run_usage.jl). Per call, so not in `_py_task_env`.
+    usage_file = joinpath(task_dir, "$stem.$(string(rand(UInt32); base = 16)).usage.json")
+    cmd  = addenv(`$py_bin $py_script --params $params_file`, _py_task_env(pythonpath)...,
+                  "CECELIA_USAGE_OUT" => usage_file)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)
@@ -279,5 +286,17 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
         isnothing(m) ? on_log(line) : on_progress(parse(Int, m[1]), parse(Int, m[2]))
     end
     wait(proc)
+    _record_py_usage!(usage_file)
     proc.exitcode == 0 && proc.termsignal == 0
+end
+
+# Fold one runner's exit report into the run's usage and delete the file. Never fails the run.
+function _record_py_usage!(usage_file::AbstractString)
+    try
+        record_run_usage!(read_local_py_usage(usage_file))
+    catch e
+        @warn "run usage read failed" usage_file exception = e
+    end
+    rm(usage_file; force = true)
+    nothing
 end
