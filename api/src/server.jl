@@ -296,6 +296,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/acqcheck" => (req, body_bytes) -> (api_acqcheck(req)),
     "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
     "/api/analysis/board-provenance" => (req, body_bytes) -> (api_analysis_board_provenance(req)),
+    "/api/analysis/methods" => (req, body_bytes) -> (api_analysis_methods(req)),
     "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
     "/api/analysis/boards" => (req, body_bytes) -> (api_analysis_boards(req)),
     # NB same path as the POST autosave, different method — the cheap reload behind a 409'd write and

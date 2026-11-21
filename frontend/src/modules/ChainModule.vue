@@ -29,6 +29,7 @@ import SplitPage from '../components/SplitPage.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import ChainFromHistoryModal from '../components/ChainFromHistoryModal.vue'
+import MethodsReportModal from '../components/MethodsReportModal.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -116,6 +117,8 @@ const nodeTypes: NodeTypesObject = {
 // ── Live view ─────────────────────────────────────────────────────────────────
 
 const selectedRunId = ref<string>('')
+// the run whose draft Methods is open (`MethodsReportModal`); '' = closed
+const methodsRunId = ref<string>('')
 
 // A run's tasks come from ONE of two sources: the in-memory task store (a run happening/just
 // happened this session) OR a persisted run.json loaded from disk (a past run — survives reload).
@@ -1546,6 +1549,9 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
       </template>
     </BaseModal>
 
+    <MethodsReportModal v-if="methodsRunId && projectMeta.current?.uid" :project-uid="projectMeta.current.uid"
+                        :scope="{ kind: 'chainRun', runId: methodsRunId }" :name="`run_${methodsRunId}`"
+                        @close="methodsRunId = ''" />
     <ChainFromHistoryModal v-if="historyOpen && projectMeta.current?.uid" :project-uid="projectMeta.current.uid"
                            :set-uid="runSetUid" :chain-names="chainNames"
                            @close="historyOpen = false" @open="openFromHistory" />
@@ -1609,6 +1615,12 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
         >
           <i :class="['pi', runIdCopied() ? 'pi-check' : 'pi-copy']" />
         </button>
+        <button
+          v-if="selectedRunId"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-dense"
+          @click="methodsRunId = selectedRunId"
+          v-tooltip.bottom="'Draft Methods for this run'"
+        >Methods</button>
         <button
           class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"
           @click="loadRunList"

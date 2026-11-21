@@ -539,6 +539,47 @@ be determined (no history from then, or the check failed) is flagged **gate ?**,
 A file from another project is shown but not compared. A board that was never frozen has nothing to
 compare against, so nothing is flagged.
 
+## Methods report — a draft Methods section
+
+`⤓ Export` → **Methods (draft)** opens `MethodsReportModal` on the active board's draft Methods: the text,
+**Copy**, a `.md` download and the parameter table as CSV. The chain page's Live view has the same modal
+for the run it shows (**Methods** beside the run id). Claude reads the same text through the MCP tool
+`get_methods_report` (Kiwi too). One generator behind all three — `methods_report`
+(`app/src/ai/methods_report.jl`), served by `GET /api/analysis/methods`. Read-only: nothing is written,
+the lab log included.
+
+**Scopes.** One text, three scopes, picked by the query:
+
+- **board** — `imageUids` + `pops` + `clusterRuns` (the board's Parameters CSV query) + `board` (the tab
+  name): the steps behind the plots, then each population, marked when Claude drew it;
+- **set** — `setUid` (or a bare `imageUids` list): every step that ran on its images;
+- **chain run** — `runId`: the run's images, the runs its nodes made (`history_params_table(…; task_ids)`,
+  so later runs on the same images stay out), a table with one row per node — its parameters as the
+  run recorded them (`node_params`, only those that differ from the spec default), status across images
+  (with skip reasons), start, finish and duration — and the set's latest stored cohort check for each of its steps, marked as
+  not necessarily this run's (a check is per set, and the record keeps no check time per sidecar). Persisted
+  runs keep no timing; it is joined from the run log (`at` / `finishedAt`) by each node's `task_id`, so a
+  node whose entries were never logged shows blank times.
+
+**What the text says, and from where.** Deterministic (no clock, sorted lists), so the same record gives
+the same text. It opens with a draft banner. Each step is one numbered sentence built from its
+`history_params_table` row: task label, output, `n/N` images, the parameters changed from default, the
+images' disagreements and the row's note. A task spec may carry an optional `methodsText` with `{param}`
+slots (`docs/MODULES.md`); when every slot has a value, and the images agree on it, it replaces the
+generic sentence. No built-in task
+has one yet. Under a step:
+
+- **Started by Claude (model)** — from the run-log `author` stamp (`via: claude` or `kiwi`). The model is
+  the recorded one; a stamp without it reads **model not recorded**, never a guess. Chain templates
+  (`createdBy` / `updatedBy`), board tabs (`createdBy`) and populations (`created_by`, plus "then edited
+  by hand" when a person's `updated_by` follows) are listed under *AI assistance* the same way. Runs from
+  before author stamps are counted as such.
+- **Cite** — a row's `cite` (task citation DOIs), when the table carries one. The Cecelia version comes
+  from the runs' `ceceliaVersion`, plus `ceceliaCommit` when entries carry it.
+
+A step Claude suggested and a person then ran is stamped as that person's, so the text says the AI list
+can miss suggestions. That limit is accepted for now; attaching a session summary would be opt-in later.
+
 ## Rendering a board headless
 
 The agent-run record (`scripts/agent_eval/run_record.py` → `stage_boards.py`) puts each pipeline

@@ -135,7 +135,8 @@ lands here, NOT in the task log; `detail` is the stacktrace, `source` the proces
 backend, napari, preview, runner or notebooks), get_analysis_lineage (the pipeline behind an \
 image; `rollup.divergences` for the odd image out; per-image `stale` lists results made from an \
 input a later run replaced — say so before reading numbers off one), get_chains, \
-get_module_params (a step's real keys and ranges).{catalogue}
+get_module_params (a step's real keys and ranges), get_methods_report (a draft Methods section for \
+a set or a chain run, written from the record — polish it, never add to it).{catalogue}
 - QC: get_qc_metrics (one image), get_cohort_qc (a set's outliers for one step), check_claim (a \
 comparison about to be stated as a finding), get_thumbnails (a set's images side by side at one \
 shared contrast — look before running a step over the whole set; a tile that differs is a question \
