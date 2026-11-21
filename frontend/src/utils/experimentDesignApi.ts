@@ -4,8 +4,8 @@
 import { ref } from 'vue'
 import type { DesignReply, ExperimentDesign } from './experimentDesign'
 
-/** Bumped on every save and attribute rename, so a view showing a design (the Metadata page's design
- *  section) reloads after a change made elsewhere. */
+/** Bumped on every save and attribute rename, so a view showing a design (the Design check, a plot
+ *  canvas) reloads after a change made elsewhere. */
 export const designSaves = ref(0)
 
 async function call(url: string, init?: RequestInit): Promise<DesignReply> {

@@ -1,5 +1,5 @@
 // The Checks cluster in the module action bar (docs/todo/GUI_CLARITY_PLAN.md, Decision 15; audit
-// slice 7): Acquisition, QC and Cohort, each drawn by one `CheckButton`. This file is the pure half —
+// slice 7): Acquisition, Design, QC and Cohort, each drawn by one `CheckButton`. This file is the pure half —
 // each check's state from what the page already holds, and how a state is drawn.
 //
 // A check's STATE is a severity (lib/severity.ts: its icon and `--cc-sev-*` colour, never colour
@@ -8,6 +8,7 @@ import { SEVERITY, type Severity } from './severity'
 import type { AcqCheckResult } from '../utils/acqCheckApi'
 import { badgeOf } from '../utils/acqCheck'
 import { qcFindings, type QcDoc } from './qc'
+import { designSummary, type DesignGrid, type ExperimentDesign } from '../utils/experimentDesign'
 
 export type CheckState = Severity | 'none' | 'busy'
 
@@ -53,6 +54,24 @@ export function qcCheckView(imgs: QcImage[], filterOn: boolean): CheckView {
   return counted(imgs).some(hasQc)
     ? { state: 'ok', count: 0, tip: 'No QC flags' }
     : { state: 'none', count: 0, tip: 'No QC yet' }
+}
+
+// ── Design: the set's experiment design against the images it has now ─────────────────────────────
+
+/** Design: warn while the set has no design or an unconfirmed one, and when images sit outside a
+ *  confirmed design (added since, or missing a design attribute) — the dialog is set up once, the set
+ *  keeps growing. What the dialog showed at confirm (confounding, few replicates) is not re-raised.
+ *  Exploratory sets and sets with no images: nothing to say. */
+export function designCheckView(design: ExperimentDesign | null, grid: DesignGrid | null, loaded: boolean, nImages: number): CheckView {
+  if (!loaded || !nImages) return { state: 'none', count: 0, tip: 'No design yet' }
+  if (!design) return { state: 'warn', count: 0, tip: 'Add the metadata, then set up the design' }
+  if (design.mode === 'exploratory') return { state: 'none', count: 0, tip: 'Exploratory — no design' }
+  if (design.status !== 'confirmed') return { state: 'warn', count: 0, tip: 'Design not confirmed' }
+  const out = grid?.unassigned.length ?? 0
+  if (out) return { state: 'warn', count: out, tip: `${out} image${s(out)} outside the design` }
+  const missing = grid?.missingAttrs ?? []
+  if (missing.length) return { state: 'warn', count: missing.length, tip: `No image has ${missing.join(', ')}` }
+  return { state: 'ok', count: 0, tip: designSummary(design).tip }
 }
 
 // ── Cohort: the last check, read back from the server ──────────────────────────────────────────────

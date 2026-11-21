@@ -11,7 +11,6 @@ import { parseChannelNameList, channelNamesAsText, referenceCandidates,
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SuggestInput from '../../components/SuggestInput.vue'
-import SetDesignSection from '../../components/SetDesignSection.vue'
 import { createImageAttr, deleteImageAttr, renameImageAttr, setImageAttr } from '../../utils/imageAttrApi'
 import { designSaves } from '../../utils/experimentDesignApi'
 
@@ -393,9 +392,6 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         Assign
       </button>
     </section>
-
-    <!-- ── Experiment design: after the attributes it is built from ── -->
-    <SetDesignSection />
 
     <!-- ── Channel names ──────────────────────────────────────── -->
     <section class="cc-panel-section md-section" data-guide="metadata.channels">

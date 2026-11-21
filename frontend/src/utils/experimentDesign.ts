@@ -464,7 +464,7 @@ export function designExpectPhrase(d: Pick<ExperimentDesign, 'expect' | 'expectI
 export type DesignQuestion = Pick<ExperimentDesign, 'question' | 'expect' | 'expectIn'>
 
 /** The design with `q` written in: an existing one keeps everything else; with none, a new inferred
- *  design holding only the question (the roles come later, on the Metadata page). */
+ *  design holding only the question (the roles come later, from the Design check). */
 export function withQuestion(existing: ExperimentDesign | null, q: DesignQuestion): ExperimentDesign {
   const expectIn = q.expect === 'higher' || q.expect === 'lower' ? q.expectIn : ''
   return { ...(existing ?? emptyDesign()), question: q.question.trim(), expect: q.expect, expectIn }

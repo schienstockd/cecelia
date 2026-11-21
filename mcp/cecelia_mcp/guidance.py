@@ -251,7 +251,7 @@ the figure compares across images: an attribute name ("Mouse") for the experimen
 "per_image" or "summarised". Omitting it gives a single-image board, which is not a cross-image \
 figure however good the plots are — so if the question was "does X differ between mice", the answer \
 is compare_by="Mouse", not a per-image board with an apology. On a set with an experiment design \
-(set up on the Metadata page), leave compare_by and statUnit unset: the board compares its group with its \
+(set up from the Design check), leave compare_by and statUnit unset: the board compares its group with its \
 replicate (e.g. each mouse) as the unit. Prefer statUnit "image" when the \
 per-image n is small — pooling every track treats one image's 400 tracks as 400 replicates. Then say \
 which values you read from the data and which you defaulted.

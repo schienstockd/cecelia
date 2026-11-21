@@ -339,7 +339,7 @@ const visibleUids = computed<string[]>(() =>
           </span>
           <span class="no-set-hint cc-muted" v-else>{{ noSetHint }}</span>
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
-            <!-- Checks: Acquisition, QC (its click is the qcFlagged row filter), Cohort -->
+            <!-- Checks: Acquisition, Design, QC (its click is the qcFlagged row filter), Cohort -->
             <ChecksCluster :set-uid="activeSet.uid" :module="module" :cohort-funs="cohortFuns"
               :qc-filter-on="!!rowFilterActive.qcFlagged"
               @toggle-qc-filter="rowFilterActive.qcFlagged = !rowFilterActive.qcFlagged" />

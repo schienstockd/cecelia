@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// The experiment design dialog, opened from the Metadata page (SetDesignSection) once a set has its
-// images and metadata: set a design up, edit it, or promote an exploratory set. The names and
+// The experiment design dialog, opened from the Design check in the Checks cluster (DesignCheckButton) once a
+// set has its images and metadata: set a design up, edit it, or promote an exploratory set. The names and
 // original folders suggest one. Three steps — the question,
 // the layout (roles + the rules that give each attribute its values), and the grid with what it can
 // support. Nothing is blocked: the user confirms, keeps the set exploratory, or cancels. Logic in
@@ -34,6 +34,8 @@ const props = defineProps<{
   images: DesignImage[]
   /** the set's current design, when it has one */
   existing?: ExperimentDesign | null
+  /** open on this step (the Design check opens a confirmed design at its grid) */
+  startStep?: 1 | 2 | 3
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>()
 
@@ -42,7 +44,7 @@ const log = useLogStore()
 
 // ── Draft ──────────────────────────────────────────────────────────────────────────────────────────
 const suggestion = suggestDesign(props.images)
-const step = ref<1 | 2 | 3>(1)
+const step = ref<1 | 2 | 3>(props.startStep ?? 1)
 const draft = ref<ExperimentDesign>(designDraft(props.existing ?? null, suggestion))
 const rules = ref<DesignRule[]>(suggestion.rules.map(r => ({ ...r })))
 
