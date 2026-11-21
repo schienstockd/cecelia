@@ -158,14 +158,9 @@ function _shown_channel_names(img, config, vn)::Vector{String}
 end
 
 # ── Label layers in a movie ───────────────────────────────────────────────────
-# TWO registries, one contract. Cell segmentation masks live in `img.labels` and render as
-# `({vn}) Labels`; skeletons from `segment.branching` live in `img.branch_labels` and render as
-# `({vn}) Branches` — deliberately separate stores and a separate picker (BRANCHING_PLAN Decision 6).
-# They are NOT unified here either; what is shared is the machinery, because they had the identical
-# bug for the identical reason: `open_image` clears the canvas and the movie path never asked for
-# them back.
-#
-# What a movie config asks for is THREE-valued, for both:
+# Cell segmentation masks live in `img.labels` and render as `({vn}) Labels`. `open_image` clears the
+# canvas, so a movie asks for them back by name — `:labelValueNames` on the config. What it asks for is
+# THREE-valued:
 #
 #   * `nothing` — the config says nothing (it predates the setting, or the caller records the live
 #     view). Leave the canvas alone.
@@ -173,18 +168,10 @@ end
 #     get a movie without them, even though the viewer still shows them.
 #   * a list — show exactly these, hide every other registered set.
 #
-# Unregistered names are dropped rather than passed on to the bridge, which would log a skip per
-# frameless store; the frontend's `normaliseItems` drops them too, so both ends agree on a deleted set.
-
-# One reader for both keys — `:labelValueNames` against the mask registry, `:branchValueNames`
-# against the skeleton one.
-function _config_set_names(config, key::Symbol, known::AbstractDict)::Union{Nothing,Vector{String}}
-    raw = get(config, key, nothing)
-    raw === nothing && return nothing
-    seen = Set{String}()
-    String[v for v in (String(x) for x in raw)
-           if haskey(known, v) && !(v in seen) && (push!(seen, v); true)]
-end
+# Skeletons (`segment.branching`, `img.branch_labels`) are NOT named this way any more: they ride in
+# the look as `skeletons` and are drawn as lines. `:branchValueNames` is legacy-only — a recording made
+# before that named its skeletons there, and `frontend/src/utils/movieRestore.ts` (`lookRestore`) turns
+# it back into the look's `skeletons`. Nothing on the frontend sends it now.
 
 # Label OUTLINE width in pixels: 0 = filled, N = an N-px contour, which is what lets
 # the channel signal under a mask stay readable. Read from a request body or a movie config through the

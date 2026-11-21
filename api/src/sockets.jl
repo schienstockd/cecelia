@@ -424,8 +424,9 @@ function handle_movie_record(ws, data)
     # A keyframe render (3D Record, the animation page) has no canvas to "leave alone": absent means
     # the mask the look shows (`_look_keyframe_mask`), else the render drew none.
     kf_look_mask = lvns_raw === nothing ? _look_keyframe_mask(get(data, :look, nothing)) : nothing
-    # skeletons (`segment.branching`) — a separate registry and a separate picker, same three-valued
-    # contract; the batch sends neither, so its skeletons stay untouched
+    # skeletons (`segment.branching`) by name — LEGACY-ONLY: the frontend sends skeletons in the look
+    # (`skeletons`) now, so this is set only by a replayed pre-skeleton request; it still counts
+    # toward the compare-grid decision for that one
     bvns_raw    = get(data, :branchValueNames, nothing)
     branch_vns  = bvns_raw === nothing ? nothing : collect(String, bvns_raw)
     contour     = _label_contour(data)          # mask outline width, 0 = filled
