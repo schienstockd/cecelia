@@ -346,8 +346,25 @@ function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
         "comparisonPairs" => pairs,
         "letters"         => letters,
         "lettersScope"    => "population",
-        "findings"        => unique(reduce(vcat, [r["findings"] for r in parts])),
+        "findings"        => _merge_part_findings(reduce(vcat, [r["findings"] for r in parts])),
     )
+end
+
+# One finding per code across the per-population parts: each part's copy carries its own counts in
+# `detail`, so plain `unique` kept one "counts each cell as a replicate" per population. For the
+# replicate floor the binding one is kept (highest `minP` — the population whose brackets can't
+# reach alpha by the widest margin); otherwise the first.
+function _merge_part_findings(fs::AbstractVector)
+    out = Dict{String,Any}[]
+    for f in fs
+        i = findfirst(g -> g["code"] == f["code"], out)
+        if i === nothing
+            push!(out, f)
+        elseif get(get(f, "detail", Dict()), "minP", -Inf) > get(get(out[i], "detail", Dict()), "minP", -Inf)
+            out[i] = f
+        end
+    end
+    out
 end
 
 # Evenly-strided downsample to ≤ cap values (keeps the distribution shape; deterministic, so it is
