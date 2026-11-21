@@ -51,6 +51,9 @@ describe('guide text for the MCP', () => {
     }
     // the composition plot of track clusters per gated population is findable by its question
     expect(text).toMatch(/## Behaviour[^#]*\*\*Track cluster frequency\*\* — [^\n]*behaviour make-up/)
+    // an interactive view lists the summary pages its `modules` names, not only the board
+    expect(text).toMatch(/## Behaviour[^#]*\*\*Motif cards\*\*/)
+    expect(text).toMatch(/\*\*Population positions\*\*[^\n]*Also on:[^\n]*Spatial/)
   })
 
   // The committed copy the MCP serves. Stale ⇒ re-run with `-u` and commit mcp/cecelia_mcp/guides.json.

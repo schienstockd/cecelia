@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { popNameError, popPath, isInSubtree, nextClusterPopName, popDisplayLabels, popRowLabels, withOwnName } from './popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName, popDisplayLabels, popRowLabels, withOwnName,
+         trackedOwner } from './popName'
 
 describe('popNameError', () => {
   const existing = ['CD4', 'CD8', 'myeloid']
@@ -137,5 +138,32 @@ describe('nextClusterPopName — a new run never takes another run\'s name', () 
   it('never returns a name in the list', () => {
     const names = Array.from({ length: 50 }, (_, i) => `m cell cluster ${i + 1}`)
     expect(names).not.toContain(nextClusterPopName('m', 'clust', names))
+  })
+})
+
+describe('popDisplayLabels — on a track plot', () => {
+  it('names a tracked pop by the population it tracks', () => {
+    const m = popDisplayLabels(['/qc/OTI/_tracked', '/qc/non-OTI/_tracked', '/qc/non-OTI/gBT/_tracked',
+                                '/qc/non-OTI/P14/_tracked'], undefined, { tracks: true })
+    expect([...m.values()]).toEqual(['OTI', 'non-OTI', 'gBT', 'P14'])
+  })
+  it('climbs when two tracked pops track populations of one name', () => {
+    const m = popDisplayLabels(['/a/CD8/_tracked', '/b/CD8/_tracked'], undefined, { tracks: true })
+    expect([...m.values()]).toEqual(['a/CD8', 'b/CD8'])
+  })
+  it('calls the root tracked set All tracks, beside a per-pop one', () => {
+    const m = popDisplayLabels(['/_tracked', '/qc/_tracked'], undefined, { tracks: true })
+    expect([...m.values()]).toEqual(['All tracks', 'qc'])
+  })
+  it('keeps the leaf when the tracked pop and its population are both listed', () => {
+    const m = popDisplayLabels(['/qc', '/qc/_tracked'], undefined, { tracks: true })
+    expect(m.get('/qc')).not.toBe(m.get('/qc/_tracked'))
+  })
+  it('leaves a cell-plot list alone', () => {
+    expect(popDisplayLabels(['/qc/OTI/_tracked']).get('/qc/OTI/_tracked')).toBe('_tracked')
+  })
+  it('trackedOwner: the parent of a _tracked leaf, nothing for the root or a plain pop', () => {
+    expect([trackedOwner('/qc/OTI/_tracked'), trackedOwner('/_tracked'), trackedOwner('/qc/OTI')])
+      .toEqual(['/qc/OTI', null, null])
   })
 })

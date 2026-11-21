@@ -268,7 +268,9 @@ popType's metadata has loaded, the panel requests only the columns the run has, 
 nothing with the new run is reseeded to that run's features (`utils/clusterHeatmapFeatures.ts`).
 
 ### Behaviour cards — one family per registry entry
-Three snapshot-card families on the analysis board, sharing a spine:
+Three snapshot-card families on the analysis board, sharing a spine. `motifCards` and
+`hmmStateCards` are also in the Behaviour page's **+ Plot…** (`modules: { behaviourAnalysis: [] }`);
+`cellCards` lives on the Cluster tracks page:
 
 - **`cellCards`** — `CLUSTER_PANELS`, `rail: 'clusterPops'`. One card per track-cluster pop the
   user ticks; medoid = the track closest to the cluster centroid.
@@ -436,7 +438,10 @@ one step identically in one chain run are still told apart. A board without a sn
   XMP writer). **SVG:** `<metadata id="cecelia-provenance">` as CDATA, first child of each board's
   `<svg>` — each file carries only its own board. If any board's record can't be read the figure exports
   without one and the log says so. Gates are named by file path, not content: a gate edited after the
-  export is not detectable from the record.
+  export is not detectable from the record. **Designs:** the record also names the experiment design of
+  each set the images belong to (`designs`: `board_designs` — set, history version, content hash, mode,
+  status, group, parents). The record dialog lists them and, reading a figure file, flags one whose hash
+  differs today ("design changed · now v3") or that is gone (`designFlag`, `utils/boardProvenance.ts`).
 
 An **info icon** by the dropdown says which slot types stay raster and that a huge point cloud warns —
 no silent surprise.

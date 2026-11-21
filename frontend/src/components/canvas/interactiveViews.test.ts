@@ -4,7 +4,7 @@ import { tkey, parseTkey } from '../../plots/series'
 import { resolvePopType } from '../../plots/popTypes'
 import { PLOT_CATEGORY_IDS, PLOT_SKETCH_KINDS } from '../../plots/plotPicker'
 import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, isPluginView, popTypesFor,
-         VIEW_ALIASES, migrateViewKey, familiesElsewhere } from './interactiveViews'
+         VIEW_ALIASES, migrateViewKey, familiesElsewhere, moduleViewKeys } from './interactiveViews'
 import { popTypeLabel } from '../../plots/popTypes'
 import { CLUSTER_PANELS, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 
@@ -261,5 +261,13 @@ describe('familiesElsewhere — what a page leaves out, and where it is', () => 
       .toEqual(expect.arrayContaining(['Phenotype']))
     expect(familiesElsewhere('popPositions', null)).toEqual([])
     expect(familiesElsewhere('motifCards', 'spatialAnalysis')).toEqual([])
+  })
+})
+
+describe('Behaviour page offers the behaviour cards', () => {
+  it('motif and HMM state cards are listed on behaviourAnalysis, not on Phenotype', () => {
+    expect(moduleViewKeys('behaviourAnalysis')).toEqual(expect.arrayContaining(['motifCards', 'hmmStateCards']))
+    expect(moduleViewKeys('phenotype')).not.toContain('motifCards')
+    expect(popTypesFor('motifCards', 'behaviourAnalysis')).toEqual([])
   })
 })

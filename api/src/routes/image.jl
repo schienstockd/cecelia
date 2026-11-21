@@ -553,7 +553,7 @@ function api_tasks_history(req::HTTP.Request)
         isempty(rsn) || (row["reason"] = rsn)
         row["ran"] = run_entry_ran(e)         # internal: dropped below, before the reply
         # what made it, and what it used (run_log.jl header) — passed through only when the entry has it
-        for k in ("author", "ceceliaVersion", "env", "usage")
+        for k in ("author", "ceceliaVersion", "ceceliaCommit", "source", "usage", "env")
             v = get(e, k, get(e, Symbol(k), nothing))
             v === nothing || (row[k] = v)
         end

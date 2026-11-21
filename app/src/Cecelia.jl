@@ -1,7 +1,7 @@
 module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
-export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user,
+export init_cecelia!, cecelia_conf, cecelia_version, cecelia_commit, config_dir, ensure_config_dir, custom_toml_path, expand_user,
        pluto_secret_path, read_pluto_secret
 export service_port, port_slot
 export read_api_token, ensure_api_token!, api_auth_header, api_launch_url
@@ -288,7 +288,7 @@ export validate_chain_template, ChainTemplateError, chain_template_from_raw, cha
 export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
-export chain_from_history, chain_preflight, history_params_table, board_export_provenance, gate_file_edits
+export chain_from_history, chain_preflight, history_params_table, board_export_provenance, board_designs, gate_file_edits
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
