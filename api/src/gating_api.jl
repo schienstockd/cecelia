@@ -465,8 +465,8 @@ _cluster_suffixes(obscols, pop_type = "clust") =
 # optional column → display-label map (region composition columns are machine names). Reads go through
 # the package's shared sidecar reader, which owns the family-qualified + legacy key layouts — the API
 # never indexes that JSON itself.
-# Features by channel NAME — a run recorded before docs/todo/CHANNEL_NAMES_PLAN.md is named against its
-# first image (`chans_of` = `run_channel_names`), so the frontend shows them as they come.
+# Features by channel NAME — a run recorded before docs/todo/CHANNEL_NAMES_PLAN.md is named against the
+# segment it was picked on (`chans_of` = `run_channel_names`), so the frontend shows them as they come.
 _clust_features(props_path::AbstractString, suffixes, family; chans_of = nothing, own_uid = nothing) =
     Dict{String,Any}(s => Cecelia._clustfeatures_features(props_path, s; family = family,
                                                           chans_of = chans_of, own_uid = own_uid)
