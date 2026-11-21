@@ -242,7 +242,12 @@ function api_plot_data(body_bytes::Vector{UInt8})
     vn_req    = string(get(body, "valueName", ""))
     raw_pts   = _wbool(body, "rawPoints", false)
     raw       = _wbool(body, "raw", false)          # export mode: per-datapoint rows, not summaries
-    stat_unit = Symbol(string(get(body, "statUnit", "individual")))   # individual cell/track, or per-image agg
+    stat_unit = Symbol(string(get(body, "statUnit", "individual")))   # individual cell/track, per-image agg, or per replicate
+    # `replicate`: the experiment design's replicate is the unit — `replicateAttrs` (its parents,
+    # outermost first) name it; the images of one replicate collapse together (`design_replicates`,
+    # `_replicate_frame`). Runs as the image collapse over the relabelled frame.
+    rep_v     = get(body, "replicateAttrs", nothing)
+    replicate_attrs = rep_v isa AbstractVector ? String[string(a) for a in rep_v if !isempty(string(a))] : String[]
     image_agg = Symbol(string(get(body, "imageAgg", "mean")))         # per-image collapse: mean | median
     composition = _wbool(body, "composition", false)  # categorical measure → per-image category fractions
     gb_v      = get(body, "groupBy", nothing)
@@ -292,7 +297,8 @@ function api_plot_data(body_bytes::Vector{UInt8})
 
     gran in (:cell, :track) || return _gerr(400, "granularity must be cell or track")
     scope in (:per_image, :summarised) || return _gerr(400, "scope must be per_image or summarised")
-    stat_unit in (:individual, :image) || return _gerr(400, "statUnit must be individual or image")
+    stat_unit in (:individual, :image, :replicate) || return _gerr(400, "statUnit must be individual, image or replicate")
+    stat_unit == :replicate && isempty(replicate_attrs) && return _gerr(400, "statUnit replicate needs replicateAttrs")
     image_agg in (:mean, :median) || return _gerr(400, "imageAgg must be mean or median")
 
     # A PRECOMPUTED per-population-PAIR statistic (the interaction matrix) has no population
@@ -376,12 +382,14 @@ function api_plot_data(body_bytes::Vector{UInt8})
             # the same attributes for the same reason, so it is not spelled twice.
             attr_map = isempty(group_attrs) ? nothing :
                        image_attr_groups(first.(pairs), last.(pairs), group_attrs)
+            unit_map = stat_unit == :replicate ? design_replicates(first.(pairs), last.(pairs), replicate_attrs) : nothing
+            agg_unit = stat_unit == :replicate ? :image : stat_unit
             result = targets === nothing ?
                 plot_summary_data(first.(pairs), last.(pairs), pop_type,
                                   [string(p) for p in get(body, "pops", String[])], chart;
                                   scope = scope, value_name = isempty(vn_req) ? nothing : vn_req,
                                   granularity = gran, measure = measure, nbins = nbins,
-                                  normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
+                                  normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = agg_unit, image_agg = image_agg, composition = composition, unit_map = unit_map,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map, attr_order = group_order, cluster_suffix = cluster_suffix,
@@ -389,7 +397,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                 plot_summary_data(first.(pairs), last.(pairs), pop_type, targets, chart;
                                   scope = scope, granularity = gran, measure = measure,
                                   nbins = nbins, normalize = normalize, group_by = group_by,
-                                  collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
+                                  collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = agg_unit, image_agg = image_agg, composition = composition, unit_map = unit_map,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map, attr_order = group_order,
@@ -410,14 +418,14 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               # plot_data.jl (_cluster_pop_vn) pick the run's value_name from `suffix`.
                               value_name = isempty(vn_req) ? nothing : _resolve_vn(img, vn_req), granularity = gran,
                               measure = measure, nbins = nbins, normalize = normalize,
-                              group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
+                              group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = (stat_unit == :replicate ? :image : stat_unit), image_agg = image_agg, composition = composition,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                               cluster_suffix = cluster_suffix,
                               stats_enabled = stats_enabled, stats_test = stats_test) :
             plot_summary_data(img, pop_type, targets, chart;
                               granularity = gran, measure = measure, nbins = nbins,
-                              normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
+                              normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = (stat_unit == :replicate ? :image : stat_unit), image_agg = image_agg, composition = composition,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                               stats_suffix = something(cluster_suffix, ""),

@@ -267,6 +267,11 @@ function _kiwi_plot_detail(puid, c::AbstractDict)::String
         name = set isa CciaSet ? set.name : su
         push!(parts, n > 0 ? "$name · $n image$(n == 1 ? "" : "s")" : name)
         get(c, "statUnit", "") == "image" && push!(parts, "one point per image")
+        if get(c, "statUnit", "") == "replicate"   # the set's experiment design names the replicate
+            ra = get(c, "replicateAttrs", Any[])
+            push!(parts, ra isa AbstractVector && !isempty(ra) ? "one point per $(join(string.(ra), " × "))" :
+                                                                 "one point per replicate")
+        end
     else
         iu = string(something(get(c, "imageUid", nothing), ""))
         img = isempty(iu) ? nothing : _kiwi_image(puid, Dict("imageUid" => iu))

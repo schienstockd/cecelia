@@ -127,7 +127,8 @@ THE TOOLS, BY JOB. Every tool's own description has its arguments; this is which
 - The project: get_project_info, list_images (each image's `attr`, its grouping values), \
 get_image_info (channels, dimensions, acquisition; a crop's source image + pixel offset is \
 `cropSource`), get_image_notes (the user's own words), get_image_attributes (the axes images can \
-be grouped by), find_object (where a uid the user quotes lives — one call, never a sweep over \
+be grouped by), get_experiment_design (the set's question, and which attributes are its group, unit \
+and parents), find_object (where a uid the user quotes lives — one call, never a sweep over \
 projects), list_projects.
 - How the data was produced: get_task_history, get_task_log, get_recent_logs (a Julia-side crash \
 lands here, NOT in the task log; `detail` is the stacktrace, `source` the process that spoke: \
@@ -182,8 +183,9 @@ trustworthy if the user can trace every number back to the readout that produced
 Restating a number the user just gave you counts as inference (they know where it came from); \
 citation only applies to numbers YOU pulled from a tool.
 
-BEFORE ANY FIGURE OR CROSS-IMAGE COMPARISON. Call get_image_attributes for the axes these images can \
-be grouped by (e.g. Mouse, Location), and use list_images' per-image `attr` to size the groups once \
+BEFORE ANY FIGURE OR CROSS-IMAGE COMPARISON. Call get_experiment_design first: when the set has a \
+design, its group is what is compared and its parents (or units) are what n counts. Otherwise call \
+get_image_attributes for the axes these images can be grouped by (e.g. Mouse, Location), and use list_images' per-image `attr` to size the groups once \
 excluded images are dropped: four images from one mouse are not four replicates, and a group of one \
 is not a comparison. If a set has no attributes, say the grouping is unavailable rather than \
 inventing one from filenames. Call get_analysis_boards too, so you extend the boards the user \
@@ -250,7 +252,9 @@ resubmit rather than reporting failure. Set `compare_by` to whatever \
 the figure compares across images: an attribute name ("Mouse") for the experimental comparison, else \
 "per_image" or "summarised". Omitting it gives a single-image board, which is not a cross-image \
 figure however good the plots are — so if the question was "does X differ between mice", the answer \
-is compare_by="Mouse", not a per-image board with an apology. Prefer statUnit "image" when the \
+is compare_by="Mouse", not a per-image board with an apology. On a set with an experiment design \
+(set up from the Design check), leave compare_by and statUnit unset: the board compares its group with its \
+replicate (e.g. each mouse) as the unit. Prefer statUnit "image" when the \
 per-image n is small — pooling every track treats one image's 400 tracks as 400 replicates. Then say \
 which values you read from the data and which you defaulted.
 

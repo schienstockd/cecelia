@@ -9,8 +9,6 @@ import { useTaskStore } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { usePushStore } from '../stores/push'
 import { useViewerStore } from '../stores/viewer'
-import { popoutUrl } from '../lib/popout'
-import { viewerWindowQuery } from '../utils/viewerWindow'
 import { fetchColourByColumns } from '../utils/viewer/colourByColumns'
 import { niceFigureBarUm, type FigureSpec } from '../utils/figureSpec'
 import type { MovieEntry } from '../utils/movies'
@@ -91,11 +89,9 @@ export function useVwLensQuery(d: VwLensQueryDeps) {
   function setShowScores(row: LensFigureRow, on: boolean) {
     if (d.setUid()) settings.setColourBy(d.setUid(), on ? row.lens.column : '')
   }
-  /** Re-pin a lens with its look — on its own image, opening that image if need be. */
+  /** Re-pin a lens with its look — on its own image (the section offers Go to only there). */
   function goToLens(row: LensFigureRow) {
-    viewer.setPendingViewState(lensOpenPending(row.lens))
-    if (row.lens.sourceUid !== d.imageUid)
-      window.location.href = popoutUrl('/viewer-window?' + viewerWindowQuery({ projectUid: d.projectUid, imageUid: row.lens.sourceUid }))
+    if (row.lens.sourceUid === d.imageUid) viewer.setPendingViewState(lensOpenPending(row.lens))
   }
   /** Rename a lens — its Movies & figures display name (the file and the score column keep theirs);
    *  '' goes back to the lens's own name. */

@@ -290,9 +290,12 @@ end
 # composition category) splits the same way: WT vs KO for state 1, never state 1 in WT vs state 2 in KO. Each population is its own family: its pairs are
 # adjusted among themselves, as if plotted alone. The parts merge into ONE result in the renderer's
 # shape — pairs only within a population (a 2-group test's omnibus becomes its pair) — with the labels
-# computed over the WHOLE series set, so they match the chart's (`serverStatsLabels`). No omnibus p and
-# no letters: neither has a meaning across populations, and per-population letters would repeat "a"
-# across populations as if they matched. One population = the plain test, unchanged.
+# computed over the WHOLE series set, so they match the chart's (`serverStatsLabels`). No omnibus p: it
+# has no meaning across populations. Letters are each population's own compact letter display, so they
+# compare within a population only — "a" in one and "a" in another say nothing about each other; the
+# result carries `lettersScope = "population"` and the renderer draws each family in its series colour.
+# A 2-group population gets letters from its one pair, so no population drops out of the letter view.
+# One population = the plain test, unchanged.
 function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
     pkey(g) = (g.vn, g.sid, g.grp)
     pk = pkey.(groups)
@@ -312,13 +315,17 @@ function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
     isempty(parts) && return nothing
     length(parts) == 1 && return only(parts)
     pairs = Dict{String,Any}[]
+    letters = String[]
     for r in parts
         ps = r["comparisonPairs"]
         if isempty(ps) && length(r["groups"]) == 2
-            push!(pairs, Dict{String,Any}("a" => r["groups"][1], "b" => r["groups"][2],
+            g1, g2 = r["groups"]
+            push!(pairs, Dict{String,Any}("a" => g1, "b" => g2,
                                           "pAdj" => r["pValue"], "significance" => r["significance"]))
+            append!(letters, _cld_letters(String[g1, g2], [(g1, g2, Float64(r["pValue"]), r["significance"])]))
         else
             append!(pairs, ps)
+            append!(letters, r["letters"])
         end
     end
     tests = unique(String[r["test"] for r in parts])
@@ -337,7 +344,8 @@ function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
                                                                 ", within each population"),
         "autoReason"      => join(unique(filter(!isempty, String[r["autoReason"] for r in parts])), "; "),
         "comparisonPairs" => pairs,
-        "letters"         => fill("", length(groups_out)),
+        "letters"         => letters,
+        "lettersScope"    => "population",
         "findings"        => unique(reduce(vcat, [r["findings"] for r in parts])),
     )
 end
@@ -576,6 +584,35 @@ function _image_agg_frame(df::DataFrame, measure::AbstractString;
     out
 end
 
+# REPLICATE as the statistical unit (docs/todo/EXPERIMENT_DESIGN_PLAN.md, step 2): relabel each row's
+# `uID` with its replicate from `unit_map` (the design's parents joined, `image_attr_groups`), so the
+# per-image collapse (`_image_agg_frame`) becomes one value per replicate — the mean over the
+# replicate's cells, as Lord et al. 2020 (SuperPlots, J Cell Biol 219(6):e202001064,
+# doi:10.1083/jcb.202001064) take the replicate's mean. When grouping by an attribute, the unit key
+# carries the image's group too, so a mouse imaged in two panels is a unit in each and never pools
+# across groups; the returned attr_map names the new keys. An image with no replicate value stays its
+# own unit. Returns `(frame, attr_map)`.
+function _replicate_frame(df::DataFrame, unit_map::AbstractDict, attr_map)
+    (:uID in propertynames(df) && nrow(df) > 0) || return (df, attr_map)
+    out = copy(df)
+    am = attr_map === nothing ? nothing : Dict{String,String}(string(k) => string(v) for (k, v) in attr_map)
+    keys_ = Vector{String}(undef, nrow(out))
+    for i in 1:nrow(out)
+        uid = String(out.uID[i])
+        rep = get(unit_map, uid, nothing)
+        if rep === nothing
+            keys_[i] = uid
+        else
+            grp = attr_map === nothing ? nothing : get(attr_map, uid, nothing)
+            k = grp === nothing ? string(rep) : string(rep, " | ", grp)
+            keys_[i] = k
+            grp === nothing || (am[k] = string(grp))
+        end
+    end
+    out[!, :uID] = keys_
+    (out, am)
+end
+
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
@@ -667,6 +704,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
                       raw_points::Bool=false, max_points::Int=1500, raw::Bool=false,
                       stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
+                      unit_map::Union{Nothing,AbstractDict}=nothing,
                       matrix_mode::Union{AbstractString,Nothing}=nothing,
                       measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                       category::Union{AbstractString,Nothing}=nothing,
@@ -729,6 +767,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         by_image = attr_map !== nothing
         normalize = :none
     elseif stat_unit == :image && measure !== nothing && chart_type in ("boxplot", "points", "bar")
+        # REPLICATE as the unit (`unit_map`: uID → the experiment design's replicate, e.g. date × mouse;
+        # `_replicate_frame`): the images of one replicate pool into one unit before the collapse below,
+        # so each dot is a mouse and n counts mice.
+        unit_map === nothing || ((df, attr_map) = _replicate_frame(df, unit_map, attr_map))
         # IMAGE is the statistical unit: collapse each image to its per-series MEAN/MEDIAN, then plot
         # those per-image summaries (each dot = one image). Pool images into ONE series (by_image=false)
         # unless grouping by an image attribute — then keep one series per attribute value, points = its
@@ -1517,6 +1559,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
                            raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
+                           unit_map::Union{Nothing,AbstractDict}=nothing,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -1553,7 +1596,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn), pop_order=pops,
                           collapse_series=collapse_series,
-                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
+                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition, unit_map=unit_map,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                           attr_map=attr_map, attr_order=attr_order,
@@ -1733,6 +1776,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
                            raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
+                           unit_map::Union{Nothing,AbstractDict}=nothing,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -1773,7 +1817,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           group_by=group_by,
                           var_cols=_var_measure_set(imgs, isempty(targets) ? nothing : first(targets)[1]),
                           pop_order=targets, collapse_series=collapse_series,
-                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
+                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition, unit_map=unit_map,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                           attr_map=attr_map, attr_order=attr_order,

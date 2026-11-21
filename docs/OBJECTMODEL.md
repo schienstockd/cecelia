@@ -126,6 +126,14 @@ frontend's `lib/guides/recipes.ts`). `set_recipe!(proj, set, id | nothing)` is a
 `commit_state!` behind `POST /api/sets/recipe`; the model checks only the id's shape. It lights pages and
 names the next step in the GUI (`GUI_CLARITY_PLAN.md` Decision 13) and changes no result.
 
+**A set's experiment design** is `meta["experiment_design"]`: the question, `mode` (designed |
+exploratory), `status` (inferred | confirmed), and the image attribute names playing `group`, `unit`
+(`[]` = the image) and `parents` (outermost first). One per set. `set_experiment_design!(proj, set,
+design | nothing)` commits it and appends the new state to `experiment_design.history.jsonl` in the set's
+metadata dir, with a content hash (`experiment_design_hash`); the version is the history's length. The
+grid (`experiment_design_grid`) is computed from `img.attr` on each read and never stored, so editing
+an attribute moves an image without touching the design. `docs/todo/EXPERIMENT_DESIGN_PLAN.md`.
+
 **The duplicate-name guard is in the model, not the UI.** `set_name_taken(proj, name; except)` is the
 one answer to "does another set already have this name", and **both** `add_set!` and `rename_set!`
 refuse unless `force = true`. It sits at this layer so it holds for a **REPL** caller — where a rename

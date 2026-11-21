@@ -57,6 +57,16 @@ end
     @test occursin("before the rest of the experiment is acquired", acq_review_system_prompt("pX")) &&
           occursin("`pX`", acq_review_system_prompt("pX"))
     @test !occursin("expected, NOT a problem", p)
+    # the question and expectation come from the set's experiment design, asked once there; a plan's own
+    # `expectation` (saved before) is read only when the design says nothing
+    d = experiment_design_from(Dict("question" => "Do OT-I move faster than gBT?", "expect" => "higher",
+                                    "expectIn" => "A", "group" => ["Panel"], "parents" => ["Date", "Mouse"]))
+    pd = acq_review_prompt(merge(plan, Dict{String,Any}("expectation" => "old note")), ["m1 — uidA"]; design = d)
+    @test occursin("Question: Do OT-I move faster than gBT?", pd) && occursin("Expectation: higher in A", pd)
+    @test occursin("Image groups compared: Panel; replicate (n): Mouse", pd) && !occursin("old note", pd)
+    pu = acq_review_prompt(merge(plan, Dict{String,Any}("expectation" => "old note")), ["m1 — uidA"];
+                           design = experiment_design_from(Dict("group" => ["Panel"])))
+    @test occursin("Expectation: old note", pu) && !occursin("Question:", pu)
     # an info finding is listed as expected, so the verdict doesn't act on it
     pn = acq_review_prompt(plan, String[], String[], ["Different laser setting between the label designs"])
     @test occursin("expected, NOT a problem — don't act on them:\n- Different laser setting between the label designs", pn)

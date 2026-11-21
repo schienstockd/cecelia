@@ -637,9 +637,12 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         reports one because that is what got stored — do not copy it back: a `popType` that disagrees
         with a population's own type produced a board where every panel said "Select one or more
         populations", and the request is now rejected rather than written.
-      - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
-                   `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
-                   every track across images treats one image's 400 tracks as 400 replicates.
+      - `statUnit` "individual" (every cell/track a point), "image" (each image collapsed to one
+                   `imageAgg`, "mean"/"median") or "replicate" (each replicate of the set's experiment
+                   design, e.g. each mouse). PREFER "image" when per-image n is
+                   small — pooling every track across images treats one image's 400 tracks as 400
+                   replicates. On a set with a design, leave `statUnit` and `compare_by` unset: the
+                   board then compares the design's group with its replicate as the unit.
       - `title`    optional slot caption, on any plot.
     `plot` may instead be a board VIEW key — the plots that are not specs — with its own fields:
       - "gatingStrategy" {image?, valueName?, popType?, pop?, hierarchy?} — the gates leading to `pop`
@@ -706,7 +709,8 @@ def get_analysis_boards(project_uid: str) -> dict:
 
     `statUnit` is the SUMMARY LEVEL, and two boards that differ only there are NOT duplicates:
     "individual" plots every cell/track as its own point, "image" collapses each image to one
-    `imageAgg` (e.g. mean) value first — the same measures asked at two different levels, which is a
+    `imageAgg` (e.g. mean) value first, "replicate" each replicate of the set's experiment design
+    (e.g. each mouse) — the same measures asked at two different levels, which is a
     normal and deliberate pair to keep side by side. Read it before saying a board repeats another.
     It is stored explicitly and removed where a plot has no summary level, so an ABSENT `statUnit`
     means exactly that — not "left at the default". `imageAgg` ("mean"/"median") comes with it and
@@ -734,6 +738,29 @@ def get_image_attributes(project_uid: str, set_uid: str, image_uids: str = "") -
     `image_uids` (comma-separated) narrows to a subset. Values are the DISTINCT values present, not
     the per-image assignment — for which image has which value, use list_images. Read-only."""
     return _client.get_image_attributes(project_uid, set_uid, image_uids or None)
+
+
+@_tool
+def get_experiment_design(project_uid: str, set_uid: str) -> dict:
+    """The set's EXPERIMENT DESIGN — the question it answers and which image attributes are its group,
+    unit and parents — with the grid placing each image: `{design, version, hash, grid, history}`.
+
+    `design`: `{question, expect (unsure|same|higher|lower), expectIn (the group value for higher /
+    lower), mode (designed|exploratory), status (inferred|confirmed), group, unit, parents,
+    plannedParents, plannedUnits}`. `unit = []` means the
+    image is the unit; `parents` are the replicates above it, outermost first (e.g. Date, Mouse).
+    `grid.cells` is one row per group × parent with its units; `grid.groups` gives n parents / units /
+    images per group; `grid.unassigned` lists images with a blank role attribute; `grid.missingAttrs`
+    names role attributes no image has yet; `grid.confounded` names attributes every value of which falls
+    in one group (e.g. each group imaged on its own days) — a group difference cannot be told apart
+    from them, so say so with any comparison.
+
+    When a set has a design, compare by its group, count n by its parents (or its units when there are
+    no parents), and say so; a choice that departs from it is the user's to make, not yours. `status:
+    inferred` means nobody confirmed it — say that. `mode: exploratory` means the set was declared not
+    to test a question: describe, don't test. `design: null` = the set has none: fall back to
+    get_image_attributes and say the design is not set. Read-only."""
+    return _client.get_experiment_design(project_uid, set_uid)
 
 
 @_tool

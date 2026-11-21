@@ -213,6 +213,9 @@ export interface ComparisonsResult {
   autoReason?: string
   comparisonPairs: StatsComparisonPair[]   // Bonferroni-adjusted; empty for 2-group tests (the omnibus IS the pair)
   letters?: string[]      // Compact Letter Display, per group (parallel to `groups`); groups sharing a letter don't differ
+  // 'population': letters are per population (attribute groups tested within each population), so they
+  // compare within one population only; the renderer draws each in its box's series colour. Absent = one family.
+  lettersScope?: 'population'
   // QC on the comparison itself (stats.jl `stats_qc_findings`): cells counted as replicates, too few
   // images for any test to reach p < 0.05. Catalog text, same shape as a per-image QC finding.
   findings?: QcFinding[]

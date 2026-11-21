@@ -18,6 +18,8 @@ const props = defineProps<{
   groups: readonly SearchGroup[]
   ariaLabel?: string
   disabled?: boolean
+  /** shown closed when `modelValue` is none of the options — an "add one" picker */
+  placeholder?: string
 }>()
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
@@ -72,7 +74,7 @@ function onKeydown(e: KeyboardEvent) {
     <button ref="trigger" type="button" class="cc-select ss-trigger" :disabled="disabled"
             :aria-label="ariaLabel" aria-haspopup="listbox" :aria-expanded="open"
             @click="open = !open"
-            @keydown.down.prevent="open = true">{{ label }}</button>
+            @keydown.down.prevent="open = true">{{ label || placeholder }}</button>
     <TeleportPopover v-model="open" :anchor="trigger" placement="bottom-start" flush>
       <div class="ss-menu" :style="{ width }">
         <input ref="filterEl" v-model="query" type="search" class="cc-input-xs ss-filter"

@@ -69,7 +69,7 @@ on real data, spot-check results; *Tested* — a test fails when the result is w
 |---|---|---|---|---|---|
 | Manage images | Add, organise, copy, move and export images |  | Import images | Beta |  |
 | Preprocessing | Crop, project or resample into a new image |  | Preprocess an image | Experimental |  |
-| Metadata | Pixel size, channel names, colours — fix before segmenting |  | Fix pixel size and channel names | Beta |  |
+| Metadata | Pixel size, channel names, groups and the experiment design |  | Fix pixel size and channel names | Beta |  |
 | Cleanup | Drift correction, bleedthrough and autofluorescence, denoise |  | Drift correct a time series | Beta |  |
 | Model training | Train your own denoise or flow models |  | Train a flow model | Experimental |  |
 | Segment | Find cells, with segmentation QC |  | Segment an image | Beta |  |

@@ -201,7 +201,7 @@ end
 board_slot_areas(cols::Int, rows::Int) =
     String["$(r) / $(c) / $(r + 1) / $(c + 1)" for r in 1:rows for c in 1:cols]
 
-const _STAT_UNITS = ("individual", "image")
+const _STAT_UNITS = ("individual", "image", "replicate")   # replicate: the set's design names it
 const _IMAGE_AGGS = ("mean", "median")
 
 # One entry of `plots` → a `SlotContent`. Every rejection names the offending value AND what was

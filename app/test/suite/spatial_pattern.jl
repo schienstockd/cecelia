@@ -134,8 +134,9 @@ end
         # 3 vs 3 completely separated, exact two-sided Mann-Whitney: 2 of C(6,3)=20 orderings → p = 0.1,
         # the same as plotting B/qc alone — the other population's family adds no adjustment
         @test pb["pAdj"] ≈ 2 / 20
-        # no omnibus across populations, no letters that would read as cross-population matches
-        @test isnan(cmp["pValue"]) && all(isempty, cmp["letters"])
+        # no omnibus across populations; letters are per population, scoped so they never read as
+        # cross-population matches
+        @test isnan(cmp["pValue"]) && all(!isempty, cmp["letters"]) && cmp["lettersScope"] == "population"
         @test occursin("within each population", cmp["methodNote"])
         # nothing picked: nothing drawn, the run's populations still listed
         e = image_metric_summary(imgs, uids, "spatialPattern", "boxplot"; measure = "nnRatio",

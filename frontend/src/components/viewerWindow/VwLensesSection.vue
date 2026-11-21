@@ -1,8 +1,8 @@
 <!--
   The viewer window's Lenses section: the lens figures whose scores are on this image (Find similar saves
   one per run to Movies & figures — `composables/useVwLensQuery.ts`), newest first. Per lens: Show scores
-  (colour the cells by its column), Go to (pin it again with the look it was found in, opening its image),
-  delete (the figure and its score column). Rename and tags are on Movies & figures. Hidden when the
+  (colour the cells by its column), Go to (pin it again with the look it was found in — only on the image
+  the lens was drawn on; elsewhere the row is its scores here, there is no lens to go to), delete (the figure and its score column). Rename and tags are on Movies & figures. Hidden when the
   image has none (docs/todo/LENS_QUERY_PLAN.md → P2).
 -->
 <script setup lang="ts">
@@ -12,7 +12,7 @@ import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import type { LensFigureRow } from '../../utils/viewer/lensQuery'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 
-const props = defineProps<{ lenses: LensFigureRow[]; shownColumn: string; error?: string }>()
+const props = defineProps<{ lenses: LensFigureRow[]; shownColumn: string; imageUid: string; error?: string }>()
 const emit = defineEmits<{ showScores: [LensFigureRow, boolean]; goTo: [LensFigureRow]; remove: [LensFigureRow]
                          rename: [LensFigureRow, string] }>()
 // a click on the name renames it — its Movies & figures display name, as there
@@ -32,7 +32,7 @@ const save = (l: LensFigureRow) => commit(l.name, l.displayName, v => emit('rena
       <CcToggle :model-value="props.shownColumn === l.lens.column" :aria-label="`Show scores of ${l.label}`"
                 v-tooltip.bottom="'Show scores — colour the cells by how like this lens they are'"
                 @update:model-value="(on: boolean) => emit('showScores', l, on)" />
-      <button class="cc-btn cc-btn-ghost cc-btn-icon" :aria-label="`Go to ${l.label}`" @click="emit('goTo', l)"
+      <button v-if="l.lens.sourceUid === props.imageUid" class="cc-btn cc-btn-ghost cc-btn-icon" :aria-label="`Go to ${l.label}`" @click="emit('goTo', l)"
               v-tooltip.bottom="'Go to the lens'">
         <i class="pi pi-map-marker" />
       </button>

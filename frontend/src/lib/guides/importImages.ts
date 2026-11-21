@@ -142,6 +142,7 @@ export const importImagesGuide: GuideDef = {
       title: 'Ready',
       bullets: [
         'Odd pixel sizes or channel names? Metadata page.',
+        'Comparing groups? Add the attributes on the Metadata page, then set up the experiment design.',
         'Drifting time series? Cleanup page.',
         'Otherwise go straight to Segment.',
       ],

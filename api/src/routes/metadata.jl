@@ -82,6 +82,41 @@ function api_images_attr_set(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true, attrName=attr_name, values=values))
 end
 
+# POST /api/images/attr/rename  { projectUid, imageUids, from, to, setUid? } → { ok, from, to, values }
+#
+# Renames an attribute on each listed image: the value moves to the new name, the old key goes. Refuses
+# (409) a name any listed image already has, rather than merge two columns. With `setUid`, the set's
+# experiment design follows the rename (`rename_design_attr`), so a role keeps naming its attribute.
+function api_images_attr_rename(body_bytes::Vector{UInt8})
+    proj_dir, data, err = _parse_meta_request(body_bytes)
+    isnothing(proj_dir) && return 400, JSON3.write((; error=err))
+    project_uid = _wstr(data, :projectUid)
+    from, to    = _norm_attr(_wstr(data, :from)), _norm_attr(_wstr(data, :to))
+    image_uids  = _wvec_str(data, :imageUids)
+    (isempty(from) || isempty(to)) && return 400, JSON3.write((; error="from and to required"))
+    from == to && return 400, JSON3.write((; error="The new name is the same as the old one"))
+    imgs = [img for img in (init_object(project_uid, u) for u in image_uids) if img isa CciaImage]
+    any(img -> haskey(img.attr, to), imgs) &&
+        return 409, JSON3.write((; error="An attribute named \"$to\" already exists"))
+    values = Dict{String,String}()
+    for img in imgs
+        haskey(img.attr, from) || continue
+        values[img.uid] = img.attr[to] = img.attr[from]
+        delete!(img.attr, from)
+        save!(img)
+    end
+    set_uid = _wstr(data, :setUid)
+    if !isempty(set_uid)
+        set = _cohort_set(project_uid, set_uid)
+        d = set isa CciaSet ? experiment_design(set) : nothing
+        if d !== nothing
+            nd = rename_design_attr(d, from, to)
+            nd == d || set_experiment_design!(load_project(project_uid), set_uid, nd; change = "renamed $from → $to")
+        end
+    end
+    200, JSON3.write((; ok=true, from=from, to=to, values=values))
+end
+
 function api_images_delete_labels(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body

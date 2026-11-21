@@ -30,6 +30,7 @@ import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
 import { profileStorage } from '../utils/profileStorage'
 import { allShown, loadThumb, parseShown, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
+import { setImageAttr } from '../utils/imageAttrApi'
 
 const props = defineProps<{
   setUid: string
@@ -149,15 +150,9 @@ async function saveAttr(img: CciaImage, key: string, val: string) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
   try {
-    const res = await fetch('/api/images/attr/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, attrName: key, values: { [img.uid]: val } }),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
     // reflect what was STORED (the route trims), not the raw input — otherwise the cell would show
     // " a " while the file holds "a"
-    const stored = await res.json().catch(() => ({})) as { values?: Record<string, string> }
-    project.setAttrValues(key, stored.values ?? { [img.uid]: val })
+    project.setAttrValues(key, await setImageAttr(projectUid, key, { [img.uid]: val }))
   } catch (e) {
     log.error(`Failed to set ${key}: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }

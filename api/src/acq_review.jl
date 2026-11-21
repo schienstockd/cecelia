@@ -12,7 +12,7 @@
 # acquisition. An allow-list, so a read tool added to Kiwi later reaches the review only once someone
 # puts it here; every Kiwi read tool is in exactly one of these two lists (test-enforced).
 const ACQ_REVIEW_TOOLS = (
-    "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes",
+    "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes", "get_experiment_design",
     "get_qc_metrics", "get_cohort_qc", "get_task_log", "get_task_history", "get_acquisition_knowledge",
     "get_guide", "get_task_catalogue", "get_thumbnails")
 # What the review must not see, and why.
@@ -96,8 +96,10 @@ that the record can't. Then one `interpretation`, last: the one step you add to 
 If nothing would change, abstain and say in `note` what you checked.
 """, item, items)
 
-# The plan as the prompt states it: each object and reference with its channel per design.
-function _acq_plan_lines(plan::AbstractDict)::String
+# The plan as the prompt states it: each object and reference with its channel per design. The question
+# and expectation come from the set's experiment design when it has one (asked once, there); a plan
+# saved before carries its own `expectation`, read when the design says nothing.
+function _acq_plan_lines(plan::AbstractDict, design = nothing)::String
     label(did) = (ds = get(plan, "designs", Any[]); i = findfirst(d -> string(get(d, "id", "")) == did, ds);
                   i === nothing ? did : string(get(ds[i], "label", get(ds[i], "key", did))))
     chans(o) = join((string(label(string(d)), ": ", c) for (d, c) in get(o, "channels", Dict())), "; ")
@@ -113,7 +115,13 @@ function _acq_plan_lines(plan::AbstractDict)::String
     ms = get(plan, "measure", Any[]); cs = get(plan, "compare", Any[])
     println(io, "Measures: ", isempty(ms) ? "not said" : join(ms, ", "))
     println(io, "Compared: ", isempty(cs) ? "all objects" : join(cs, ", "))
-    ex = string(get(plan, "expectation", ""))
+    if design !== nothing
+        isempty(design.question) || println(io, "Question: ", design.question)
+        isempty(design.group) || println(io, "Image groups compared: ", join(design.group, " × "),
+                                         isempty(design.parents) ? "" : string("; replicate (n): ", last(design.parents)))
+    end
+    ex = design === nothing ? "" : Cecelia.design_expect_phrase(design)
+    isempty(ex) && (ex = string(get(plan, "expectation", "")))
     isempty(ex) || println(io, "Expectation: ", ex)
     String(take!(io))
 end
@@ -121,7 +129,7 @@ end
 # `found` are the rule findings as lines; `noted` the ones that are expected, not a problem (an info
 # finding — "different laser between designs, compare within each").
 function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::AbstractVector = String[],
-                           noted::AbstractVector = String[]; verdict::AbstractString = "",
+                           noted::AbstractVector = String[]; design = nothing, verdict::AbstractString = "",
                            item::AbstractString = "movie", items::AbstractString = "movies")::String
     stage = Cecelia.acq_stage(plan)
     N(s) = _acq_noun(s, item, items)
@@ -133,7 +141,7 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
     text = strip(string(get(plan, "text", "")))
     """
     Plan: “$(isempty(text) ? "(no sentence)" : text)”
-    $(_acq_plan_lines(plan))
+    $(_acq_plan_lines(plan, design))
     $(N("Movies")) (name — image uid):
     $(join(("- " * m for m in movies), "\n"))
 
@@ -190,7 +198,8 @@ function acq_review_start(uid::AbstractString, set_uid::AbstractString; model::A
     movies = [string(f["name"], " — ", f["uid"]) for f in facts]
     found, noted = _acq_found_lines(result, names)
     noun = (item = result["item"], items = result["items"])
-    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted; verdict = result["verdict"], noun...); model,
+    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted; design = Cecelia.experiment_design(set),
+                                           verdict = result["verdict"], noun...); model,
                     system_prompt = acq_review_system_prompt(uid, Cecelia.acq_stage(plan); noun...), allowed_tools = acq_review_tools(),
                     extra = Dict{String,Any}("acqReview" => Dict{String,Any}("entryId" => id, "setUid" => String(set_uid),
                                                                             "round" => get(a, "round", 1))),
