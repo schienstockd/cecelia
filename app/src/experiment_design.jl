@@ -183,10 +183,50 @@ end
 set_experiment_design!(proj::CciaProject, s::CciaSet, d::Union{ExperimentDesign,Nothing}; kw...)::CciaSet =
     set_experiment_design!(proj, s.uid, d; kw...)
 
+"""The design with attribute `from` renamed to `to` in every role (unchanged when it names neither)."""
+function rename_design_attr(d::ExperimentDesign, from::AbstractString, to::AbstractString)::ExperimentDesign
+    re(v) = String[a == from ? String(to) : a for a in v]
+    ExperimentDesign(d.question, d.expect, d.expect_in, d.mode, d.status, re(d.group), re(d.unit), re(d.parents),
+                     d.planned_parents, d.planned_units)
+end
+
 # ── The grid ───────────────────────────────────────────────────────────────────────────────────────
 
 _design_values(attrs::Dict{String,String}, names::Vector{String}) =
     String[strip(get(attrs, a, "")) for a in names]
+
+"""
+    design_expect_phrase(d) -> String
+
+The design's expectation as words, for a sentence or a prompt: "the same", "higher in A", "lower in
+B"; "" when unsure (or higher/lower with no group named). The acquisition check states it from here,
+not from a field of its own (docs/todo/EXPERIMENT_DESIGN_PLAN.md → T5).
+"""
+function design_expect_phrase(d::ExperimentDesign)::String
+    d.expect == EXPECT_SAME && return "the same"
+    d.expect in (EXPECT_HIGHER, EXPECT_LOWER) || return ""
+    isempty(d.expect_in) && return ""
+    string(d.expect == EXPECT_HIGHER ? "higher" : "lower", " in ", d.expect_in)
+end
+
+"""
+    design_replicates(imgs, uids, parents) -> Dict{String,String}
+
+uID → its replicate under the design's `parents` (outermost first): the claim check's own replicate
+key (`_claim_unit_of`, values joined " × "), so a plot and a claim count the same units. An image
+missing any of them has no replicate and is left out (it stays its own unit), never merged by the
+values it does have: Mouse 1 with no date would otherwise pool with Mouse 1 of every date.
+"""
+function design_replicates(imgs, uids, parents::AbstractVector{<:AbstractString})::Dict{String,String}
+    attrs = claim_unit_attrs(parents)
+    out = Dict{String,String}()
+    isempty(attrs) && return out
+    for (im, uid) in zip(imgs, uids)
+        k = _claim_unit_of(im, attrs)
+        isempty(k) || (out[string(uid)] = k)
+    end
+    out
+end
 
 """
     experiment_design_grid(images, d; attrs = Dict()) -> Dict

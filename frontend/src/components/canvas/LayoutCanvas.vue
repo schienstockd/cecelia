@@ -170,7 +170,7 @@ const {
   specs, specById, segPops, seriesColor, reloadToken, panelReloadToken, anyPopChange, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
-  canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs, designReplicate, designMarkState, useDesignCompare,
   attrGroups, setAttrOrder,
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
@@ -756,25 +756,30 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           </div>
           <!-- compare + pool sit at the right of the layout row -->
           <div class="lc-right">
-            <div v-if="canCompare" class="lc-compare"
-                 v-tooltip.bottom="'Compare across the selected images'">
+            <!-- the tip sits on the mode select, not the row: the design mark below has its own -->
+            <div v-if="canCompare" class="lc-compare">
               <span class="lc-lbl cc-eyebrow">compare</span>
-              <select v-model="compareMode">
+              <select v-model="compareMode" v-tooltip.bottom="'Compare across the selected images'">
                 <option value="image">this image</option>
                 <option value="per_image">per image</option>
                 <option value="summarised">pooled</option>
                 <option value="by_attr" :disabled="!setAttrs.length">by attribute</option>
               </select>
               <template v-if="compareMode === 'by_attr'">
-                <select v-model="compareAttr"><option v-for="a in setAttrs" :key="a.name" :value="a.name">{{ a.name }}</option></select>
+                <select v-model="compareAttr" v-tooltip.bottom="'Attribute to group by'"><option v-for="a in setAttrs" :key="a.name" :value="a.name">{{ a.name }}</option></select>
                 <template v-if="attrOptions2.length">
                   <span class="lc-x">×</span>
-                  <select v-model="compareAttr2">
+                  <select v-model="compareAttr2" v-tooltip.bottom="'Optional second attribute to combine (e.g. Treatment × Mouse)'">
                     <option value="">none</option>
                     <option v-for="a in attrOptions2" :key="a.name" :value="a.name">{{ a.name }}</option>
                   </select>
                 </template>
               </template>
+              <button v-if="designMarkState" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense design-mark"
+                      :class="`design-mark-${designMarkState.state}`" aria-label="Experiment design"
+ v-tooltip.bottom="designMarkState.tip" @click="useDesignCompare">
+                <i class="pi pi-bullseye" />
+              </button>
             </div>
             <CcToggle class="lc-pool" v-model="poolGroups" label="pool to groups"
               v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only'" />
@@ -829,7 +834,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :spec="specById[entry.contents[i]!.ref]"
                           :project-uid="projectUid" :image-uid="imageUid"
                           :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                          :group-attr="panelGroupAttr" :group-order="attrGroups" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
+                          :group-attr="panelGroupAttr" :group-order="attrGroups" :replicate-attrs="designReplicate" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="panelReloadToken(panelSeries(i, entry.contents[i]!))" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
@@ -991,4 +996,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
    box hugs the top of the flex row; its own overflow-y scrolls a manager taller than the viewport. */
 .lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; padding-right: 10px; box-sizing: content-box;
   position: sticky; top: 8px; align-self: flex-start; max-height: calc(100vh - 16px); }
+
+.design-mark-follows { cursor: default; }
+.design-mark-differs { color: var(--cc-sev-warn); }
 </style>

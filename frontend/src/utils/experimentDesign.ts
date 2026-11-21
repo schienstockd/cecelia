@@ -9,7 +9,7 @@
 // above a file, a leading subject token (M1-…, D3_…) and existing attributes are where any lab keeps
 // this.
 
-import { buildFieldRegex, extractWith, regexSampleFor, type RegexSource } from './regexBuilder'
+import { buildRegex, extractWith, regexSampleFor, type BuilderSpec, type RegexSource } from './regexBuilder'
 
 export type DesignMode = 'designed' | 'exploratory'
 export type DesignStatus = 'inferred' | 'confirmed'
@@ -54,10 +54,11 @@ export const emptyDesign = (): ExperimentDesign => ({
 
 export interface DesignImage { uid: string; name: string; oriPath?: string | null; attr?: Record<string, string> }
 
-/** One attribute's values: copied from another attribute (a rename), or extracted by a regex. */
+/** One attribute's values: another attribute renamed, or read off the name / path by a regex (with
+ *  the builder settings that made it, so the rule reopens as the builder). */
 export type DesignRule =
   | { attr: string; source: 'attr'; from: string }
-  | { attr: string; source: RegexSource; regex: string }
+  | { attr: string; source: RegexSource; regex: string; spec?: BuilderSpec }
 
 /** The value `rule` gives `img` ("" = none). */
 export function ruleValue(img: DesignImage, rule: DesignRule): string {
@@ -116,6 +117,10 @@ export function sameNameGroups(images: DesignImage[]): { name: string; uids: str
 const DATE_RE = /^(\d{6}|\d{8}|\d{4}[-_.]\d{2}[-_.]\d{2})$/
 // A leading subject token's letter → the attribute it usually names. Anything else is "Subject".
 const SUBJECT_NAMES: Record<string, string> = { M: 'Mouse', D: 'Donor', P: 'Patient', R: 'Rat' }
+// Attribute names that already say their role, for a set annotated before its design.
+const SUBJECT_ATTR_NAMES = /^(mouse|mice|animal|donor|patient|subject|individual|rat)$/i
+const DATE_NAMES = /^(date|day|session|batch|folder)$/i
+const INSIDE_NAMES = /^(position|pos|field|fov|region|core|movie|stack)$/i
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const distinct = (vals: string[]) => new Set(vals)
@@ -131,59 +136,80 @@ const allUnique = (vals: string[]) => distinct(vals).size === vals.length
  *   reads as a date, else `Folder`.
  * - A leading letter + number shared by every name (`M1-2…`) → `Mouse` (`D` Donor, `P` Patient,
  *   else `Subject`), the number only.
+ * - The number after it (`M1-2…` = position 2) → `Position`, inside a replicate.
  * - An attribute every image already has, with 2+ values that repeat → the group (fewest values).
- * Parents: the subject, nested in the date when subject numbers restart each day. Unit: the image.
+ * Attributes already named Mouse / Date / Position (and their synonyms) take those roles without a rule.
+ * The replicate: the subject, numbered per date when subject numbers restart each day.
  */
 export function suggestDesign(images: DesignImage[]): { rules: DesignRule[]; group: string[]; unit: string[]; parents: string[] } {
   const rules: DesignRule[] = []
   const existing = new Set(images.flatMap(i => Object.keys(i.attr ?? {})))
   const free = (name: string) => !existing.has(name)
+  // an attribute the images already carry, picked by its name (a set designed or annotated before)
+  const named = (re: RegExp) => [...existing].sort().find(a => re.test(a.trim())) ?? ''
 
   // the folder above the file
-  let dateAttr = ''
+  let dateAttr = named(DATE_NAMES)
   if (images.length && images.every(i => i.oriPath)) {
-    const rule: DesignRule = { attr: 'Folder', source: 'path', regex: buildFieldRegex('/\\', 'secondLast', false) }
+    const spec: BuilderSpec = { mode: 'field', sep: 'folder', customSep: '', pos: 'secondLast', stripExt: false }
+    const rule: DesignRule = { attr: 'Folder', source: 'path', regex: buildRegex(spec), spec }
     const vals = images.map(i => ruleValue(i, rule))
     if (varies(vals) && !allUnique(vals)) {
       rule.attr = vals.every(v => DATE_RE.test(v)) ? 'Date' : 'Folder'
-      if (free(rule.attr)) { rules.push(rule); dateAttr = rule.attr }
+      if (free(rule.attr) && !dateAttr) { rules.push(rule); dateAttr = rule.attr }
     }
   }
 
-  // a leading subject token
-  let subjAttr = ''
-  const lead = images.map(i => i.name.match(/^([A-Za-z]+)\d+[-_]/)?.[1] ?? '')
-  if (images.length && lead.every(l => l && l === lead[0])) {
-    const rule: DesignRule = { attr: SUBJECT_NAMES[lead[0].toUpperCase()] ?? 'Subject', source: 'name', regex: `^${escRe(lead[0])}(\\d+)` }
-    const vals = images.map(i => ruleValue(i, rule))
-    if (vals.every(Boolean) && free(rule.attr)) { rules.push(rule); subjAttr = rule.attr }
+  // a leading subject token, and the position number after it (M1-2… = mouse 1, position 2)
+  let subjAttr = named(SUBJECT_ATTR_NAMES)
+  let insideAttr = named(INSIDE_NAMES)
+  const lead = images.map(i => i.name.match(/^([A-Za-z]+)\d+([-_])/) ?? null)
+  if (images.length && lead.every(m => m && m[1] === lead[0]![1])) {
+    const letters = lead[0]![1]
+    if (!subjAttr) {
+      // the digits after the leading letters, anchored at the start (a later "M3" must not match)
+      const spec: BuilderSpec = { mode: 'around', before: { text: letters, cls: 'none' }, extract: { kind: 'digits', text: '' }, after: { text: '', cls: 'none' } }
+      const rule: DesignRule = { attr: SUBJECT_NAMES[letters.toUpperCase()] ?? 'Subject', source: 'name', regex: `^${escRe(letters)}(\\d+)`, spec }
+      if (images.every(i => ruleValue(i, rule)) && free(rule.attr)) { rules.push(rule); subjAttr = rule.attr }
+    }
+    const sep = lead[0]![2] as '-' | '_'
+    if (!insideAttr && lead.every(m => m![2] === sep)) {
+      const spec: BuilderSpec = { mode: 'field', sep, customSep: '', pos: 'second', stripExt: true }
+      const rule: DesignRule = { attr: 'Position', source: 'name', regex: buildRegex(spec), spec }
+      const vals = images.map(i => ruleValue(i, rule))
+      if (vals.every(v => /^\d+$/.test(v)) && varies(vals) && free(rule.attr)) { rules.push(rule); insideAttr = rule.attr }
+    }
   }
 
-  // the group: an attribute already on every image, fewest repeating values
+  // the group: an attribute already on every image, fewest repeating values, not one of the above
+  const taken = new Set([dateAttr, subjAttr, insideAttr, ...rules.map(r => r.attr)])
   const candidates = [...existing]
+    .filter(name => !taken.has(name) && !SUBJECT_ATTR_NAMES.test(name) && !DATE_NAMES.test(name) && !INSIDE_NAMES.test(name))
     .map(name => ({ name, vals: images.map(i => (i.attr?.[name] ?? '').trim()) }))
     .filter(c => varies(c.vals) && !allUnique(c.vals))
     .sort((a, b) => distinct(a.vals).size - distinct(b.vals).size || a.name.localeCompare(b.name))
   const group = candidates.length ? [candidates[0].name] : []
 
-  // parents: the subject, inside the date when the same subject number turns up on two dates
+  // the replicate: the subject, numbered per date when the same number turns up on two dates
   const parents: string[] = []
   if (subjAttr) {
     const vals = applyRules(images, rules)
+    const v = (img: DesignImage, a: string) => vals[img.uid][a] ?? img.attr?.[a] ?? ''
     const datesOf = new Map<string, Set<string>>()
     for (const img of images) {
-      const s = vals[img.uid][subjAttr]
-      datesOf.set(s, (datesOf.get(s) ?? new Set()).add(dateAttr ? vals[img.uid][dateAttr] : ''))
+      const s = v(img, subjAttr)
+      datesOf.set(s, (datesOf.get(s) ?? new Set()).add(dateAttr ? v(img, dateAttr) : ''))
     }
     if (dateAttr && [...datesOf.values()].some(d => d.size > 1)) parents.push(dateAttr)
     parents.push(subjAttr)
   }
-  return { rules, group, unit: [], parents }
+  return { rules, group, unit: insideAttr ? [insideAttr] : [], parents }
 }
 
 // ── What the layout can support ───────────────────────────────────────────────────────────────────
 
-export interface DesignReservation { level: 'warn' | 'info'; short: string; long: string }
+/** `about`: the attribute it is about, so the grid can point at what shows it. */
+export interface DesignReservation { level: 'warn' | 'info'; short: string; long: string; about?: string }
 
 // Fewer parents than this in a group: a test at that level has little power.
 const FEW_PARENTS = 5
@@ -206,7 +232,7 @@ export function designReservations(
     out.push({ level: 'warn', short: `One ${lower(groupName)} only`, long: 'Nothing to compare until a second group is added.' })
   for (const a of grid.confounded)
     out.push({ level: 'warn', short: `${groupName} is confounded with ${a}`,
-               long: `A difference between groups cannot be told apart from ${a}.` })
+               long: `A difference between groups cannot be told apart from ${a}.`, about: a })
   const parent = design.parents[design.parents.length - 1]
   if (parent && grid.groups.length >= 2) {
     const ns = grid.groups.map(g => g.nParents)
@@ -232,32 +258,219 @@ export function designReservations(
 // ── The confirm step's table ──────────────────────────────────────────────────────────────────────
 
 export interface GridPivot {
-  /** the outermost parent's values, one column each ([""] when there are fewer than two parents) */
+  /** what the table shows, in the design's own words ("Which mice each panel has on each date") */
+  caption: string
+  /** the attribute the columns are, or "" (fewer than two parents: one column) */
+  colAttr: string
+  /** the outermost parent's values, one column each ([""] with one column), and their headers */
   cols: string[]
-  rows: { group: string; cells: { label: string; n: number }[][]; summary: string }[]
+  colLabels: string[]
+  rows: { group: string; cells: { label: string; count: string }[][]; summary: string }[]
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** A date-looking value as "25 Nov 2021" (YYYYMMDD or YYYY-MM-DD); anything else as it is. Six-digit
+ *  dates are left alone: YYMMDD and DDMMYY cannot be told apart. */
+export function dateLabel(v: string): string {
+  const m = v.match(/^(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})$/)
+  if (!m) return v
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return v
+  return `${d} ${MONTHS[mo - 1]} ${y}`
+}
+
+const singular = (s: string) => lower(s)
 
 /**
  * The grid as the confirm step shows it: a row per group, a column per value of the outermost parent
- * (a date), and in each cell the inner parents with their unit counts ("1: 2 · 2: 3" = mouse 1 has two
- * units, mouse 2 three). With fewer than two parents there is one column.
+ * (a date), and in each cell the replicates there with how many units each has ("Mouse 1 · 2
+ * positions"). With fewer than two parents there is one column.
  */
 export function gridPivot(grid: DesignGrid, design: ExperimentDesign): GridPivot {
   const split = design.parents.length >= 2
+  const colAttr = split ? design.parents[0] : ''
+  const innerAttrs = split ? design.parents.slice(1) : design.parents
   const colOf = (parent: string[]) => (split ? parent[0] : '')
-  const inner = (parent: string[]) => (split ? parent.slice(1) : parent).join(' ')
+  const inner = (parent: string[]) => {
+    const vals = split ? parent.slice(1) : parent
+    return innerAttrs.map((a, i) => `${a} ${vals[i]}`).join(' · ')
+  }
   const cols = [...new Set(grid.cells.map(c => colOf(c.parent)))].sort()
-  const parentNoun = design.parents.length ? plural(design.parents[design.parents.length - 1]) : ''
-  const unitNoun = design.unit.length ? plural(design.unit[design.unit.length - 1]) : 'images'
+  const rep = design.parents.at(-1) ?? ''
+  const unitAttr = design.unit.at(-1) ?? ''
+  const units = (n: number) => `${n} ${n === 1 ? (unitAttr ? singular(unitAttr) : 'image') : (unitAttr ? plural(unitAttr) : 'images')}`
+  const reps = (n: number) => `${n} ${n === 1 ? singular(rep) : plural(rep)}`
+  const groupNoun = design.group.length ? lower(design.group.join(' × ')) : 'group'
+  const caption = rep
+    ? `Which ${plural(rep)} each ${groupNoun} has${colAttr ? ` on each ${singular(colAttr)}` : ''}`
+    : `How many ${unitAttr ? plural(unitAttr) : 'images'} each ${groupNoun} has`
   const rows = grid.groups.map(g => {
     const key = g.group.join(' ')
     const mine = grid.cells.filter(c => c.group.join(' ') === key)
     return {
       group: key || '—',
-      cells: cols.map(col => mine.filter(c => colOf(c.parent) === col).map(c => ({ label: inner(c.parent), n: c.units.length }))),
-      summary: [parentNoun && `${g.nParents} ${g.nParents === 1 ? lower(design.parents[design.parents.length - 1]) : parentNoun}`,
-                `${g.nUnits} ${unitNoun}`].filter(Boolean).join(' · '),
+      cells: cols.map(col => mine.filter(c => colOf(c.parent) === col)
+        .map(c => ({ label: inner(c.parent), count: units(c.units.length) }))),
+      summary: [rep && reps(g.nParents), units(g.nUnits)].filter(Boolean).join(' · '),
     }
   })
-  return { cols, rows }
+  return { caption, colAttr, cols, colLabels: cols.map(dateLabel), rows }
+}
+
+// ── The set bar's design button ───────────────────────────────────────────────────────────────────
+
+export type DesignState = 'none' | 'exploratory' | 'inferred' | 'confirmed'
+
+/** The design button's state and tooltip for a set's design (`null` = none). */
+export function designSummary(d: ExperimentDesign | null): { state: DesignState; tip: string } {
+  if (!d) return { state: 'none', tip: 'Add the metadata, then set up the design' }
+  if (d.mode === 'exploratory') return { state: 'exploratory', tip: 'Exploratory — no design' }
+  const roles = [d.group.join(' × '), d.parents.length ? `in ${d.parents.join(' × ')}` : ''].filter(Boolean).join(' ')
+  return { state: d.status, tip: `Design: ${roles || 'no roles'}${d.status === 'inferred' ? ' (not confirmed)' : ''}` }
+}
+
+/**
+ * The draft the dialog opens with. A new design starts from the suggestion; an existing one from
+ * itself; an exploratory set is being promoted, so it opens as designed, keeping any roles it has
+ * and filling the rest from the suggestion.
+ */
+export function designDraft(existing: ExperimentDesign | null,
+                            suggestion: { group: string[]; unit: string[]; parents: string[] }): ExperimentDesign {
+  if (!existing) return { ...emptyDesign(), group: suggestion.group, unit: suggestion.unit, parents: suggestion.parents }
+  if (existing.mode === 'designed') return { ...existing, group: [...existing.group], unit: [...existing.unit], parents: [...existing.parents] }
+  const any = existing.group.length + existing.unit.length + existing.parents.length > 0
+  const roles = any ? existing : suggestion
+  return { ...existing, mode: 'designed', group: [...roles.group], unit: [...roles.unit], parents: [...roles.parents] }
+}
+
+/** The history note for saving `next` over `existing`. */
+export function designChange(existing: ExperimentDesign | null, next: ExperimentDesign): string {
+  if (!existing) return next.mode === 'exploratory' ? 'exploratory' : 'confirmed'
+  if (existing.mode === 'exploratory' && next.mode === 'designed') return 'promoted to designed'
+  if (existing.mode === 'designed' && next.mode === 'exploratory') return 'made exploratory'
+  return 'edited'
+}
+
+// ── The dialog's three questions over the stored roles ────────────────────────────────────────────
+
+/** What is compared; what n counts and what names it; what sits inside a replicate. */
+export type RoleSlot = 'group' | 'replicate' | 'namedWithin' | 'inside'
+
+/**
+ * The design with `picked` as the answer to one question. Stored as group, parents = [...named
+ * within, replicate] and unit (inside). An attribute plays one role, so picking it takes it from the
+ * others; with no replicate there is nothing to name it within.
+ */
+export function assignRole(d: ExperimentDesign, slot: RoleSlot, picked: string[]): ExperimentDesign {
+  const drop = (xs: string[]) => xs.filter(a => !picked.includes(a))
+  const rep0 = d.parents.at(-1) ?? ''
+  let group = drop(d.group), unit = drop(d.unit), within = drop(d.parents.slice(0, -1))
+  let rep = picked.includes(rep0) ? '' : rep0
+  if (slot === 'group') group = [...picked]
+  else if (slot === 'inside') unit = [...picked]
+  else if (slot === 'replicate') rep = picked[0] ?? ''
+  else within = [...picked]
+  return { ...d, group, unit, parents: rep ? [...within, rep] : [] }
+}
+
+/** The attributes answering one question. */
+export function roleOf(d: ExperimentDesign, slot: RoleSlot): string[] {
+  const rep = d.parents.at(-1)
+  return slot === 'group' ? d.group : slot === 'inside' ? d.unit
+    : slot === 'replicate' ? (rep ? [rep] : []) : d.parents.slice(0, -1)
+}
+
+// ── Where the design takes effect: plots (docs/todo/EXPERIMENT_DESIGN_PLAN.md → T1, T2) ──────────
+
+/** A design that plots follow: designed, with something compared. Exploratory sets and no design → null. */
+const plotted = (d: ExperimentDesign | null | undefined) => d && d.mode === 'designed' && d.group.length ? d : null
+
+/** The compare row the design asks for: by attribute, on its group (two attributes at most). */
+export function designCompare(d: ExperimentDesign | null | undefined): { compareAttr: string; compareAttr2: string } | null {
+  const p = plotted(d)
+  return p ? { compareAttr: p.group[0]!, compareAttr2: p.group[1] ?? '' } : null
+}
+
+/** The compare state a canvas keeps, plus whether the design was applied to it once. */
+export interface CompareState { compareMode: string; compareAttr: string; compareAttr2: string; designApplied?: boolean }
+
+/**
+ * What to write to a canvas's compare state when its set's design arrives, or null for nothing. Once
+ * per canvas: a canvas still on the untouched default (per image, no attribute) takes the design's
+ * group; one the user set otherwise keeps it. Either way it is marked, so a later switch back to "per
+ * image" sticks. Not marked while the design or its attribute is missing (the images have no Panel
+ * yet), so it applies when they arrive.
+ */
+export function designCompareApply(s: CompareState, d: ExperimentDesign | null | undefined,
+                                   attrNames: string[]): Partial<CompareState> | null {
+  if (s.designApplied) return null
+  const c = designCompare(d)
+  if (!c || !attrNames.includes(c.compareAttr)) return null
+  if (s.compareMode !== 'per_image' || s.compareAttr) return { designApplied: true }
+  return { compareMode: 'by_attr', compareAttr: c.compareAttr,
+           compareAttr2: c.compareAttr2 && attrNames.includes(c.compareAttr2) ? c.compareAttr2 : '', designApplied: true }
+}
+
+/** Whether the compare row shows the design's group (the row marks it). */
+export const followsDesign = (d: ExperimentDesign | null | undefined, compareMode: string, attrs: string[]) => {
+  const c = designCompare(d)
+  return !!c && compareMode === 'by_attr' && attrs.join('\u0000') === [c.compareAttr, c.compareAttr2].filter(Boolean).join('\u0000')
+}
+
+/** The attributes that name a replicate (the design's parents, outermost first); [] = no replicate. */
+export const designReplicateAttrs = (d: ExperimentDesign | null | undefined): string[] =>
+  plotted(d)?.parents.length ? [...d!.parents] : []
+
+/** The replicate's noun, singular and plural ("mouse" / "mice"), for "per mouse" and "n = 5 mice". */
+export function replicateNoun(attrs: string[]): { one: string; many: string } | null {
+  const a = attrs[attrs.length - 1]
+  return a ? { one: singular(a), many: plural(a) } : null
+}
+
+/**
+ * The compare row's bullseye: shown whenever the set's design can be plotted. `follows` = the row
+ * shows the design's group; `differs` = the user compares something else (one click switches back);
+ * null = no design here, or its attribute is on none of these images.
+ */
+export function designMark(d: ExperimentDesign | null | undefined, compareMode: string, attrs: string[],
+                           attrNames: string[]): { state: 'follows' | 'differs'; tip: string } | null {
+  const c = designCompare(d)
+  if (!c || !attrNames.includes(c.compareAttr)) return null
+  if (followsDesign(d, compareMode, attrs)) return { state: 'follows', tip: designPlotTip(d) }
+  return { state: 'differs', tip: `The design compares ${[c.compareAttr, c.compareAttr2].filter(Boolean).join(' × ')} — click to use it` }
+}
+
+/** One line for the compare row's mark: what the design set here. */
+export function designPlotTip(d: ExperimentDesign | null | undefined): string {
+  const c = designCompare(d)
+  if (!c) return ''
+  const n = replicateNoun(designReplicateAttrs(d))
+  return `From the design: ${[c.compareAttr, c.compareAttr2].filter(Boolean).join(' × ')}${n ? `, n = ${n.many}` : ''}`
+}
+
+// ── The acquisition check reads the question from here (T5) ──────────────────────────────────────
+
+/** The expectation as words: "the same", "higher in A"; "" when unsure. Mirrors `design_expect_phrase`. */
+export function designExpectPhrase(d: Pick<ExperimentDesign, 'expect' | 'expectIn'> | null | undefined): string {
+  if (!d) return ''
+  if (d.expect === 'same') return 'the same'
+  if ((d.expect === 'higher' || d.expect === 'lower') && d.expectIn) return `${d.expect} in ${d.expectIn}`
+  return ''
+}
+
+/** The question and expectation, the part of a design the acquisition plan also asks. */
+export type DesignQuestion = Pick<ExperimentDesign, 'question' | 'expect' | 'expectIn'>
+
+/** The design with `q` written in: an existing one keeps everything else; with none, a new inferred
+ *  design holding only the question (the roles come later, on the Metadata page). */
+export function withQuestion(existing: ExperimentDesign | null, q: DesignQuestion): ExperimentDesign {
+  const expectIn = q.expect === 'higher' || q.expect === 'lower' ? q.expectIn : ''
+  return { ...(existing ?? emptyDesign()), question: q.question.trim(), expect: q.expect, expectIn }
+}
+
+/** Whether `q` says something other than the design already does. */
+export const questionChanged = (existing: ExperimentDesign | null, q: DesignQuestion) => {
+  const n = withQuestion(existing, q), o = existing ?? emptyDesign()
+  return n.question !== o.question || n.expect !== o.expect || n.expectIn !== o.expectIn
 }

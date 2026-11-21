@@ -28,6 +28,13 @@ describe('planSentence', () => {
     expect(planSentence({ ...plan(), objects: [plan().objects[0]], compare: [], expectation: '' })).toBe('Measure movement of P14')
     expect(planSentence(null)).toBe('')
   })
+  it('takes the expectation from the experiment design, the plan\'s own only when it says nothing', () => {
+    expect(planSentence(plan(), 'higher in A')).toBe('Compare movement of P14, OT-I and gBT (expected higher in A)')
+    expect(planSentence(plan(), '')).toBe('Compare movement of P14, OT-I and gBT (naive — expected the same)')
+    const c = cleanPlan(plan(), 'the same')
+    expect(c.expectation).toBe('')                                   // the design holds it now
+    expect(c.text).toBe('Compare movement of P14, OT-I and gBT (expected the same)')
+  })
   it('lists words', () => { expect(listWords(['a'])).toBe('a'); expect(listWords(['a', 'b'])).toBe('a and b') })
 })
 

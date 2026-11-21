@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// The experiment design dialog: opened after files are registered into a set with no design, before
-// they are imported, so the names and original folders can suggest one. Three steps — the question,
+// The experiment design dialog, opened from the Metadata page (SetDesignSection) once a set has its
+// images and metadata: set a design up, edit it, or promote an exploratory set. The names and
+// original folders suggest one. Three steps — the question,
 // the layout (roles + the rules that give each attribute its values), and the grid with what it can
 // support. Nothing is blocked: the user confirms, keeps the set exploratory, or cancels. Logic in
 // utils/experimentDesign.ts; plan docs/todo/EXPERIMENT_DESIGN_PLAN.md (Decision 5, Target UX).
@@ -10,13 +11,15 @@ import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import InlineNote from './InlineNote.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import SuggestInput from './SuggestInput.vue'
+import DesignQuestionFields from './DesignQuestionFields.vue'
 import {
-  applyRules, designReservations, emptyDesign, gridPivot, runOf, sameNameGroups, suggestDesign,
-  type DesignExpect, type DesignGrid, type DesignImage, type DesignMode, type DesignRule, type ExperimentDesign,
+  applyRules, assignRole, designChange, roleOf, type RoleSlot, designDraft, designReservations, gridPivot, runOf, sameNameGroups, suggestDesign,
+  type DesignGrid, type DesignImage, type DesignMode, type DesignRule, type ExperimentDesign,
 } from '../utils/experimentDesign'
 import { previewDesign, saveDesign } from '../utils/experimentDesignApi'
-import { createImageAttr, deleteImageAttr, setImageAttr } from '../utils/imageAttrApi'
-import { buildFieldRegex } from '../utils/regexBuilder'
+import { createImageAttr, renameImageAttr, setImageAttr } from '../utils/imageAttrApi'
+import { buildRegex, defaultSpec } from '../utils/regexBuilder'
+import ExtractRuleEditor from './ExtractRuleEditor.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
@@ -27,8 +30,8 @@ const props = defineProps<{
   setName: string
   /** the images to design over: the set's, newly registered ones included */
   images: DesignImage[]
-  /** how many of them were just added (the title) */
-  nAdded: number
+  /** the set's current design, when it has one */
+  existing?: ExperimentDesign | null
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>()
 
@@ -38,25 +41,13 @@ const log = useLogStore()
 // ── Draft ──────────────────────────────────────────────────────────────────────────────────────────
 const suggestion = suggestDesign(props.images)
 const step = ref<1 | 2 | 3>(1)
-const draft = ref<ExperimentDesign>({
-  ...emptyDesign(), group: suggestion.group, unit: suggestion.unit, parents: suggestion.parents,
-})
+const draft = ref<ExperimentDesign>(designDraft(props.existing ?? null, suggestion))
 const rules = ref<DesignRule[]>(suggestion.rules.map(r => ({ ...r })))
 
-const EXPECT_OPTIONS: ChipOption[] = [
-  { value: 'unsure', label: 'Not sure' },
-  { value: 'same', label: 'No difference' },
-  { value: 'higher', label: 'Higher in…' },
-  { value: 'lower', label: 'Lower in…' },
-]
 const MODE_OPTIONS: ChipOption[] = [
   { value: 'designed', label: 'Designed comparison', tip: 'Groups and replicates; plots and checks follow them' },
   { value: 'exploratory', label: 'Exploratory', tip: 'A first look; figures and claims are labelled exploratory' },
 ]
-const expect = computed({
-  get: () => draft.value.expect,
-  set: (v: string | string[] | null) => { draft.value.expect = (v as DesignExpect) ?? 'unsure' },
-})
 const mode = computed({
   get: () => draft.value.mode,
   set: (v: string | string[] | null) => { draft.value.mode = (v as DesignMode) ?? 'designed' },
@@ -74,27 +65,48 @@ const attrOptions = computed<ChipOption[]>(() => attrNames.value.map(a => ({ val
 const groupValues = computed(() =>
   [...new Set(props.images.map(i => draft.value.group.map(g => valueOf(i, g)).join(' ')).filter(Boolean))].sort())
 
-function setRole(role: 'group' | 'unit' | 'parents', v: string | string[] | null) {
-  const picked = Array.isArray(v) ? v : v ? [v] : []
-  draft.value[role] = picked
-  // an attribute plays one role: picking it here takes it from the others
-  for (const other of (['group', 'unit', 'parents'] as const).filter(r => r !== role))
-    draft.value[other] = draft.value[other].filter(a => !picked.includes(a))
+// ── The three questions ───────────────────────────────────────────────────────────────────────────
+// What is compared (group); what n counts (the replicate) and what names it uniquely (`named within`:
+// mouse numbers restart each day, so a mouse is named within its date); what sits inside a replicate
+// and is never the n (unit; none = each image). Stored as group / parents = [...within, replicate] / unit.
+const replicate = computed(() => draft.value.parents.at(-1) ?? '')
+function setSlot(slot: RoleSlot, v: string | string[] | null) {
+  draft.value = assignRole(draft.value, slot, Array.isArray(v) ? v : v ? [v] : [])
 }
+const slotModel = (slot: RoleSlot) => slot === 'replicate' ? (replicate.value || null) : roleOf(draft.value, slot)
 
 // ── Rules ─────────────────────────────────────────────────────────────────────────────────────────
-type RuleSource = DesignRule['source']
-const SOURCE_LABEL: Record<RuleSource, string> = { name: 'File name', path: 'Original path', attr: 'Rename attribute' }
-function setRuleSource(i: number, source: RuleSource) {
-  const r = rules.value[i]
-  rules.value[i] = source === 'attr'
-    ? { attr: r.attr, source, from: attrNames.value[0] ?? '' }
-    : { attr: r.attr, source, regex: r.source === 'attr' ? '' : r.regex }
-}
-function addRule() {
-  rules.value.push({ attr: '', source: 'path', regex: buildFieldRegex('/\\', 'secondLast', false) })
-}
 const existingAttrs = computed(() => [...new Set(props.images.flatMap(i => Object.keys(i.attr ?? {})))].sort())
+function addRule() {
+  const spec = defaultSpec('field')
+  rules.value.push({ attr: '', source: 'name', regex: buildRegex(spec), spec })
+}
+function addRename() {
+  const from = existingAttrs.value.find(a => !renamed.value.has(a)) ?? ''
+  rules.value.push({ attr: '', source: 'attr', from })
+}
+// A rename carries the attribute's role to the new name: the name standing in the roles for each
+// rename rule, replaced as the rule changes (the old name while the new one is blank).
+const standIn = new WeakMap<object, string>()
+function replaceInRoles(from: string, to: string) {
+  if (!from || from === to) return
+  const re = (xs: string[]) => xs.map(a => (a === from ? to : a))
+  draft.value.group = re(draft.value.group); draft.value.unit = re(draft.value.unit); draft.value.parents = re(draft.value.parents)
+}
+watch(rules, rs => {
+  for (const r of rs) {
+    if (r.source !== 'attr') continue
+    const now = r.attr.trim() || r.from
+    const was = standIn.get(r) ?? r.from
+    if (now !== was) replaceInRoles(was, now)
+    standIn.set(r, now)
+  }
+}, { deep: true, immediate: true })
+function removeRule(i: number) {
+  const r = rules.value[i]
+  if (r.source === 'attr') replaceInRoles(standIn.get(r) ?? r.attr.trim(), r.from)   // the role goes back
+  rules.value.splice(i, 1)
+}
 
 // ── The images → values table ─────────────────────────────────────────────────────────────────────
 const tableAttrs = computed(() => [...new Set([...draft.value.group, ...draft.value.parents, ...draft.value.unit])])
@@ -109,10 +121,20 @@ const rows = computed(() => props.images.map(img => ({
 })))
 
 // ── The grid, from the preview route ──────────────────────────────────────────────────────────────
+// the rule values, with a renamed attribute blanked: after the rename it is gone, so it must not
+// read as a second attribute beside its new name
+const previewAttrs = computed(() => {
+  const out: Record<string, Record<string, string>> = {}
+  for (const [uid, a] of Object.entries(ruleValues.value)) {
+    out[uid] = { ...a }
+    for (const r of rules.value) if (r.source === 'attr' && r.attr.trim() && r.from !== r.attr.trim()) out[uid][r.from] = ''
+  }
+  return out
+})
 const grid = ref<DesignGrid | null>(null)
 const previewError = ref('')
 const preview = debouncedLatest<void>(async (_, isCurrent) => {
-  const reply = await previewDesign(props.projectUid, props.setUid, draft.value, ruleValues.value)
+  const reply = await previewDesign(props.projectUid, props.setUid, draft.value, previewAttrs.value)
   if (!isCurrent()) return
   grid.value = reply.grid
   previewError.value = ''
@@ -126,32 +148,36 @@ const pivot = computed(() => grid.value ? gridPivot(grid.value, draft.value) : n
 const groupLabel = computed(() => draft.value.group.join(' × ') || 'Group')
 const gridColumns = computed<SelectionColumn[]>(() => [
   { key: 'group', label: groupLabel.value },
-  ...(pivot.value?.cols ?? []).map((c, i) => ({ key: `c${i}`, label: c })),
+  ...(pivot.value?.colLabels ?? []).map((c, i) => ({ key: `c${i}`, label: c })),
 ])
 const gridRows = computed(() => pivot.value?.rows ?? [])
-const parentLabel = computed(() => draft.value.parents.join(' × '))
-const unitNoun = computed(() => (draft.value.unit.join(' × ') || 'images').toLowerCase())
+// the attribute a hovered reservation is about, so the grid can light what shows it
+const pointAt = ref('')
 
 // ── Save ──────────────────────────────────────────────────────────────────────────────────────────
 const saving = ref(false)
 
-// Write each rule's attribute on these images (create the column first when it is new); a rename then
-// drops the attribute it copied.
+// Write each rule's attribute on these images (create the column first when it is new); a rename goes
+// through the rename route, which moves the values and takes the old name off every image.
 async function writeAttributes() {
   const uids = props.images.map(i => i.uid)
   for (const r of rules.value) {
     const name = r.attr.trim()
     if (!name) continue
+    if (r.source === 'attr') {
+      if (!r.from || r.from === name) continue
+      const stored = await renameImageAttr(props.projectUid, uids, r.from, name, props.setUid)
+      project.addAttrKey(props.setUid, name)
+      project.setAttrValues(name, stored)
+      project.removeAttrKey(props.setUid, r.from)
+      continue
+    }
     if (!existingAttrs.value.includes(name)) {
       await createImageAttr(props.projectUid, uids, name)
       project.addAttrKey(props.setUid, name)
     }
     const values = Object.fromEntries(uids.map(u => [u, ruleValues.value[u]?.[name] ?? '']))
     project.setAttrValues(name, await setImageAttr(props.projectUid, name, values))
-    if (r.source === 'attr' && r.from && r.from !== name) {
-      await deleteImageAttr(props.projectUid, uids, r.from)
-      project.removeAttrKey(props.setUid, r.from)
-    }
   }
 }
 
@@ -166,7 +192,7 @@ async function save(how: 'confirmed' | 'exploratory') {
       await writeAttributes()
     }
     if (!['higher', 'lower'].includes(design.expect)) design.expectIn = ''
-    await saveDesign(props.projectUid, props.setUid, design, how === 'exploratory' ? 'exploratory' : 'confirmed')
+    await saveDesign(props.projectUid, props.setUid, design, designChange(props.existing ?? null, design))
     log.info(`Design ${how === 'exploratory' ? 'kept as exploratory' : 'confirmed'} for "${props.setName}".`, { source: 'experimentDesign' })
     emit('saved')
     emit('close')
@@ -177,7 +203,7 @@ async function save(how: 'confirmed' | 'exploratory') {
   }
 }
 
-const title = computed(() => `${props.nAdded} file${props.nAdded === 1 ? '' : 's'} added · ${props.setName}`)
+const title = computed(() => `${props.existing?.mode === 'designed' ? 'Design' : 'Set up a design'} · ${props.setName}`)
 const STEPS = ['Question', 'Layout', 'Confirm']
 const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
 </script>
@@ -194,22 +220,8 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
 
     <!-- 1 · the question -->
     <div v-if="step === 1" class="xd-body">
-      <label class="xd-field">
-        <span class="cc-eyebrow cc-fs-2xs">What do you want to find out?</span>
-        <textarea v-model="draft.question" rows="2" placeholder="One sentence" v-tooltip.bottom="'The question this set answers'" />
-      </label>
-      <div class="xd-field">
-        <span class="cc-eyebrow cc-fs-2xs">What do you expect?</span>
-        <div class="cc-row">
-          <ChipSelect v-model="expect" :options="EXPECT_OPTIONS" variant="segmented" aria-label="Expectation"
-                      v-tooltip.bottom="'What you expect to see'" />
-          <select v-if="draft.expect === 'higher' || draft.expect === 'lower'" v-model="draft.expectIn"
-                  v-tooltip.bottom="'The group you expect it in'">
-            <option value="" disabled>{{ groupLabel }}…</option>
-            <option v-for="v in groupValues" :key="v" :value="v">{{ v }}</option>
-          </select>
-        </div>
-      </div>
+      <DesignQuestionFields v-model:question="draft.question" v-model:expect="draft.expect"
+                            v-model:expect-in="draft.expectIn" :group-values="groupValues" :group-label="groupLabel" />
       <div class="xd-field">
         <span class="cc-eyebrow cc-fs-2xs">How will this set be used?</span>
         <ChipSelect v-model="mode" :options="MODE_OPTIONS" variant="segmented" aria-label="Design mode" />
@@ -220,19 +232,23 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
     <div v-else-if="step === 2" class="xd-body">
       <div class="xd-roles">
         <div class="xd-role">
-          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'What is compared'">Group</span>
-          <ChipSelect :model-value="draft.group" :options="attrOptions" multiple
-                      @update:model-value="v => setRole('group', v)" />
+          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'The groups you compare'">Compared</span>
+          <ChipSelect :model-value="slotModel('group')" :options="attrOptions" multiple
+                      @update:model-value="v => setSlot('group', v)" />
         </div>
         <div class="xd-role">
-          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'One replicate; none = each image'">Unit</span>
-          <ChipSelect :model-value="draft.unit" :options="attrOptions" multiple
-                      @update:model-value="v => setRole('unit', v)" />
+          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'One replicate: what n counts, e.g. Mouse'">Replicate · the n</span>
+          <ChipSelect :model-value="slotModel('replicate')" :options="attrOptions" allow-empty
+                      @update:model-value="v => setSlot('replicate', v)" />
+          <!-- always shown (disabled until a replicate is picked), so the layout never jumps -->
+          <span class="cc-muted cc-fs-2xs" v-tooltip.top="'Mouse 1 on two days is two mice'">numbers restart per</span>
+          <ChipSelect :model-value="slotModel('namedWithin')" :options="attrOptions.filter(o => o.value !== replicate)" multiple
+                      :disabled="!replicate" @update:model-value="v => setSlot('namedWithin', v)" />
         </div>
         <div class="xd-role">
-          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'The units sit inside these, outermost first'">Nested in</span>
-          <ChipSelect :model-value="draft.parents" :options="attrOptions" multiple reorderable
-                      @update:model-value="v => setRole('parents', v)" />
+          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'Inside one replicate, never the n; none = each image'">Within a replicate</span>
+          <ChipSelect :model-value="slotModel('inside')" :options="attrOptions" multiple
+                      @update:model-value="v => setSlot('inside', v)" />
         </div>
       </div>
 
@@ -244,22 +260,31 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
         <div class="cc-panel-heading">
           <span class="cc-eyebrow cc-fs-2xs">Rules</span>
           <span class="cc-panel-heading-actions">
-            <button class="cc-btn cc-btn-ghost" v-tooltip.bottom="'Add an attribute from the name or path'" @click="addRule">
-              <i class="pi pi-plus" /> Add rule
+            <button class="cc-btn cc-btn-ghost" v-tooltip.bottom="'Read an attribute off the name or path'" @click="addRule">
+              <i class="pi pi-plus" /> From the file
+            </button>
+            <button class="cc-btn cc-btn-ghost" :disabled="!existingAttrs.length"
+                    v-tooltip.bottom="'Give an attribute a new name'" @click="addRename">
+              <i class="pi pi-pencil" /> Rename
             </button>
           </span>
         </div>
         <div v-for="(r, i) in rules" :key="i" class="xd-rule">
           <span class="xd-attr"><SuggestInput v-model="r.attr" :options="existingAttrs" placeholder="Attribute" tip="Attribute name" /></span>
-          <span>←</span>
-          <select :value="r.source" v-tooltip.bottom="'Where the value comes from'" @change="setRuleSource(i, ($event.target as HTMLSelectElement).value as RuleSource)">
-            <option v-for="(label, s) in SOURCE_LABEL" :key="s" :value="s">{{ label }}</option>
-          </select>
-          <select v-if="r.source === 'attr'" v-model="r.from" v-tooltip.bottom="'Attribute to rename'">
-            <option v-for="a in existingAttrs" :key="a" :value="a">{{ a }}</option>
-          </select>
-          <input v-else v-model="r.regex" class="xd-regex" placeholder="Regex" v-tooltip.bottom="'First group, else the whole match'" />
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Remove rule'" @click="rules.splice(i, 1)">
+          <span class="cc-muted">←</span>
+          <template v-if="r.source === 'attr'">
+            <span class="cc-muted">renamed from</span>
+            <select v-model="r.from" v-tooltip.bottom="'Attribute to rename'">
+              <option v-for="a in existingAttrs" :key="a" :value="a">{{ a }}</option>
+            </select>
+            <span class="xd-spacer" />
+          </template>
+          <ExtractRuleEditor v-else class="xd-extract" compact :regex="r.regex" :source="r.source" :spec="r.spec"
+                             :sample="images[0]"
+                             @update:regex="v => { r.regex = v }"
+                             @update:source="v => { r.source = v }"
+                             @update:spec="v => { r.spec = v }" />
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Remove rule'" @click="removeRule(i)">
             <i class="pi pi-times" />
           </button>
         </div>
@@ -270,19 +295,23 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
     <div v-else class="xd-body">
       <div v-if="previewError" class="cc-empty">{{ previewError }}</div>
       <template v-else-if="pivot && grid">
-        <span class="cc-eyebrow cc-fs-2xs">{{ groupLabel }}{{ parentLabel ? ` × ${parentLabel}` : '' }} ({{ unitNoun }})</span>
+        <span class="cc-muted">{{ pivot.caption }}</span>
         <SelectionTable :columns="gridColumns" :rows="gridRows" id-key="group" selection-mode="none" density="compact">
           <template #cell-group="{ row }">
             {{ row.group }}<div class="cc-muted cc-fs-2xs">{{ row.summary }}</div>
           </template>
           <template v-for="(_, ci) in pivot.cols" :key="ci" #[`cell-c${ci}`]="{ row }">
-            <span v-if="!row.cells[ci].length" class="cc-muted">—</span>
-            <span v-for="c in row.cells[ci]" :key="c.label" class="xd-par">{{ c.label || '·' }} <span class="cc-muted">({{ c.n }})</span></span>
+            <!-- an empty cell is the evidence for a confound with the columns: lit while its note is hovered -->
+            <span v-if="!row.cells[ci].length" :class="['cc-muted', 'xd-empty', { lit: pointAt && pointAt === pivot.colAttr }]">—</span>
+            <div v-for="c in row.cells[ci]" :key="c.label" class="xd-par">
+              {{ c.label }}<span v-if="c.label" class="cc-muted"> · </span><span class="cc-muted">{{ c.count }}</span>
+            </div>
           </template>
         </SelectionTable>
         <div class="xd-notes">
-          <InlineNote v-for="n in reservations" :key="n.short" :short="n.short" :detail="n.long"
-                      :severity="n.level === 'warn' ? 'warn' : undefined" />
+          <div v-for="n in reservations" :key="n.short" @mouseenter="pointAt = n.about ?? ''" @mouseleave="pointAt = ''">
+            <InlineNote :short="n.short" :detail="n.long" :severity="n.level === 'warn' ? 'warn' : undefined" />
+          </div>
         </div>
       </template>
     </div>
@@ -316,10 +345,12 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
 .xd-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .xd-role { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .xd-table { max-height: 260px; overflow: auto; }
-.xd-rule { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.xd-rule { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; }
 .xd-attr { width: 120px; }
-.xd-regex { flex: 1; min-width: 0; font-family: var(--cc-mono); }
-.xd-par { margin-right: 10px; white-space: nowrap; }
+.xd-extract { flex: 1; min-width: 0; }
+.xd-par { white-space: nowrap; }
+.xd-empty { display: inline-block; padding: 0 6px; border-radius: var(--cc-radius-sm); }
+.xd-empty.lit { background: var(--cc-tint-amber); color: var(--cc-ink-amber); }
 .xd-notes { display: flex; flex-direction: column; gap: 6px; }
 .xd-spacer { flex: 1; }
 </style>

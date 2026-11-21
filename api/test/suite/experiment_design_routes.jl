@@ -48,3 +48,34 @@
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end
 end
+
+@testset "API: rename an attribute, and the design follows" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    post(f, b) = (r = f(Vector{UInt8}(JSON3.write(b))); (r[1], JSON3.read(r[2])))
+    try
+        proj = create_project!(name = "api-attr-rename")
+        s    = add_set!(proj; name = "T cell types")
+        a    = add_image!(s; name = "a", attr = Dict("Test" => "A", "Mouse" => "1"))
+        b    = add_image!(s; name = "b", attr = Dict("Test" => "B", "Mouse" => "1"))
+        set_experiment_design!(proj, s.uid, experiment_design_from(Dict("group" => "Test", "parents" => "Mouse")))
+        uids = [a.uid, b.uid]
+
+        st, r = post(api_images_attr_rename, Dict("projectUid" => proj.uid, "imageUids" => uids,
+                     "from" => "Test", "to" => " Panel ", "setUid" => s.uid))
+        @test st == 200 && r.to == "Panel" && r.values[Symbol(a.uid)] == "A"
+        img = init_object(proj.uid, a.uid)
+        @test img.attr == Dict("Panel" => "A", "Mouse" => "1")           # moved, old key gone
+        d = experiment_design(init_object(proj.uid, s.uid))
+        @test d.group == ["Panel"] && d.parents == ["Mouse"]               # the role followed
+        @test experiment_design_history(s)[end]["change"] == "renamed Test → Panel"
+
+        # onto a name an image already has: refused, nothing moved
+        st, e = post(api_images_attr_rename, Dict("projectUid" => proj.uid, "imageUids" => uids, "from" => "Panel", "to" => "Mouse"))
+        @test st == 409 && init_object(proj.uid, a.uid).attr["Panel"] == "A"
+        @test post(api_images_attr_rename, Dict("projectUid" => proj.uid, "imageUids" => uids, "from" => "Panel", "to" => ""))[1] == 400
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end

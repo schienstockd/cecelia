@@ -4,15 +4,16 @@ import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useLogStore } from '../../stores/log'
 import { metadataWarning } from '../../lib/imageMetadataWarnings'
-import { buildFieldRegex, buildLookaroundRegex, extractWith, regexSampleFor,
-         type FieldPos, type CtxClass, type ExtractKind, type RegexSource } from '../../utils/regexBuilder'
+import { extractWith, regexSampleFor, type BuilderSpec, type RegexSource } from '../../utils/regexBuilder'
+import ExtractRuleEditor from '../../components/ExtractRuleEditor.vue'
 import { parseChannelNameList, channelNamesAsText, referenceCandidates,
          splitByChannelCount, skippedChannelCountMsg } from '../../utils/channelNames'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
-import CcToggle from '../../components/CcToggle.vue'
 import SuggestInput from '../../components/SuggestInput.vue'
-import { createImageAttr, deleteImageAttr, setImageAttr } from '../../utils/imageAttrApi'
+import SetDesignSection from '../../components/SetDesignSection.vue'
+import { createImageAttr, deleteImageAttr, renameImageAttr, setImageAttr } from '../../utils/imageAttrApi'
+import { designSaves } from '../../utils/experimentDesignApi'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
 // This panel does NOT own its width — `CollapsiblePanel` (its host, via ModuleLayout's `#right`) does.
@@ -105,6 +106,31 @@ async function deleteAttr() {
   log.info(`Deleted attribute "${name}".`, { source: 'metadata' })
 }
 
+// ── Rename ───────────────────────────────────────────────────────────────────────
+// The value moves to the new name on every image; the set's experiment design follows (the route).
+const renaming = ref(false)
+const renameTo = ref('')
+function toggleRename() {
+  renaming.value = !renaming.value
+  renameTo.value = renaming.value ? selectedAttr.value : ''
+}
+async function renameAttr() {
+  const from = selectedAttr.value
+  const to = renameTo.value.trim()
+  const projectUid = projectMeta.current?.uid
+  if (!from || !to || to === from || !projectUid || !props.setUid) return
+  let stored: Record<string, string>
+  try { stored = await renameImageAttr(projectUid, setImages.value.map(i => i.uid), from, to, props.setUid) }
+  catch (e) { log.error((e as Error).message, { source: 'metadata' }); return }
+  project.addAttrKey(props.setUid, to)
+  project.setAttrValues(to, stored)
+  project.removeAttrKey(props.setUid, from)
+  selectedAttr.value = to
+  renaming.value = false
+  designSaves.value++   // the set's design may have followed the rename
+  log.info(`Renamed attribute "${from}" to "${to}".`, { source: 'metadata' })
+}
+
 // ── Assign single value ────────────────────────────────────────────────────────
 
 const singleValue = ref('')
@@ -130,48 +156,14 @@ async function assignSingleValue() {
 const regexpValue  = ref('')
 const regexpSource = ref<RegexSource>('name')
 
-// ── Regex builder (split by a separator, take the Nth/last field) ────────────────
-// Covers the trivial "just pull the treatment/mouse/etc. out of the filename" cases people usually
-// have. It fills the visible regex field, so the user sees the real pattern and can tweak it.
-const builderOpen      = ref(false)
-const builderMode      = ref<'field' | 'around'>('field')
-// field mode: split by a separator, take a field
-const builderSep       = ref<'-' | '_' | '.' | 'space' | 'folder' | 'custom'>('-')
-const builderCustomSep = ref('')
-const builderPos       = ref<FieldPos>('last')
-const builderStripExt  = ref(true)
-// look-around mode: extract a token bounded by context. Each side is literal text + a class that
-// varies, so "M" + a number → (?<=M\d+) anchors M1b/M2a/M4f without hardcoding the mouse number.
-const beforeText       = ref('')
-const beforeCls        = ref<CtxClass>('none')
-const extractKind      = ref<ExtractKind>('digits')
-const extractText      = ref('')
-const afterText        = ref('')
-const afterCls         = ref<CtxClass>('none')
-const effectiveSep = computed(() =>
-  builderSep.value === 'space'  ? ' '   :
-  builderSep.value === 'folder' ? '/\\' :   // both platforms' separators, either splits
-  builderSep.value === 'custom' ? builderCustomSep.value : builderSep.value)
-// Live preview of the SINGLE regex field against the first image Apply would target. The builder
-// writes straight into `regexpValue` (below), so there's one input and one preview — never two.
-const regexSample = computed(() => {
+// The regex is built (or typed) in the shared editor (components/ExtractRuleEditor.vue), which keeps
+// the builder's settings in `regexSpec` and writes the pattern into `regexpValue`.
+const regexSpec = ref<BuilderSpec | null>(null)
+// the image the editor previews on: the first one Apply would target
+const regexSampleImg = computed(() => {
   const uid = targetUids.value[0] ?? setImages.value[0]?.uid
-  const img = setImages.value.find(i => i.uid === uid)
-  if (!img) return ''
-  return regexSampleFor(img, regexpSource.value)
+  return setImages.value.find(i => i.uid === uid) ?? null
 })
-const regexPreview = computed(() => extractWith(regexpValue.value, regexSample.value))
-// Adjusting any builder control rebuilds the pattern into the regex field (user interaction only —
-// wired via @change — so it never clobbers a hand-typed regex unless a builder control is touched).
-function applyBuilder() {
-  const r = builderMode.value === 'around'
-    ? buildLookaroundRegex(
-        { text: beforeText.value, cls: beforeCls.value },
-        { kind: extractKind.value, text: extractText.value },
-        { text: afterText.value,  cls: afterCls.value })
-    : buildFieldRegex(effectiveSep.value, builderPos.value, builderStripExt.value)
-  if (r) regexpValue.value = r
-}
 
 async function assignRegexp() {
   if (!selectedAttr.value || !regexpValue.value) return
@@ -339,10 +331,23 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           <option value="">— select attribute —</option>
           <option v-for="n in attrNames" :key="n" :value="n">{{ n }}</option>
         </select>
+        <button class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': renaming }" :disabled="!selectedAttr"
+          aria-label="Rename attribute" v-tooltip.bottom="'Rename this attribute on every image'" @click="toggleRename">
+          <i class="pi pi-pencil" />
+        </button>
         <ConfirmDeleteButton :disabled="!selectedAttr"
           title="Delete this attribute from all images."
           :armed-title="`Click again to permanently delete '${selectedAttr}' from every image.`"
           @confirm="deleteAttr" />
+      </div>
+      <div v-if="renaming && selectedAttr" class="field-row">
+        <input class="field-input flex1" v-model="renameTo" placeholder="New name…" autofocus
+          @keydown.enter="renameAttr" @keydown.escape="renaming = false"
+          v-tooltip.bottom="'Press Enter to rename, Escape to cancel'" />
+        <button class="cc-btn cc-btn-primary" :disabled="!renameTo.trim() || renameTo.trim() === selectedAttr"
+          v-tooltip.bottom="'Rename the attribute; its values stay'" @click="renameAttr">
+          Rename
+        </button>
       </div>
     </section>
 
@@ -366,141 +371,16 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <!-- ── Regex ──────────────────────────────────────────────── -->
     <section class="cc-panel-section md-section" :class="{ disabled: attrDisabled }">
       <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Extract via regex</h3>
-      <div class="field-row">
-        <input class="field-input flex1" v-model="regexpValue" placeholder="Regular expression…"
-          :disabled="attrDisabled"
-          @keydown.enter="assignRegexp"
-          v-tooltip.bottom="'Regex over the name; a (group) if present, e.g. M(\\d+)→4'" />
-        <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !regexpValue"
-          @click="assignRegexp"
-          v-tooltip.bottom="'Extract a value from each image filename or path'">
-          Apply
-        </button>
-      </div>
-
-      <!-- one live preview for the single regex field (whether typed by hand or built below) -->
-      <div class="regex-preview" v-if="regexSample && regexpValue">
-        <span class="preview-src" v-tooltip.bottom="regexSample">{{ regexSample }}</span>
-        <span class="preview-arrow">→</span>
-        <span class="preview-val">{{ regexPreview || '(no match)' }}</span>
-      </div>
-
-      <div class="radio-row">
-        <label class="radio-label">
-          <input type="radio" v-model="regexpSource" value="name" :disabled="attrDisabled"
-            v-tooltip.bottom="'Match against the file name only'" />
-          Filename
-        </label>
-        <label class="radio-label">
-          <input type="radio" v-model="regexpSource" value="path" :disabled="attrDisabled"
-            v-tooltip.bottom="'Match against the full path of the imported file'" />
-          Original path
-        </label>
-      </div>
-
-      <!-- Builder: split by a separator, take a field — writes into the SAME regex field above, so
-           there's only ever one input + one preview. For the common "no clue about regex" case. -->
-      <button class="builder-toggle cc-section-toggle" @click="builderOpen = !builderOpen" :disabled="attrDisabled"
-        v-tooltip.bottom="'Build the pattern above without writing regex — select a separator and field'">
-        <i :class="['pi', builderOpen ? 'pi-chevron-down' : 'pi-chevron-right']" /> Builder
-      </button>
-      <div v-if="builderOpen" class="builder" :class="{ disabled: attrDisabled }">
-        <div class="field-row">
-          <span class="builder-label cc-muted">Mode</span>
-          <select class="field-input" v-model="builderMode" @change="applyBuilder" :disabled="attrDisabled"
-            v-tooltip.bottom="'Split the name into fields, or extract around a marker'">
-            <option value="field">Split into fields</option>
-            <option value="around">Around a marker</option>
-          </select>
-        </div>
-
-        <!-- Field mode: split by a separator, take a field -->
-        <template v-if="builderMode === 'field'">
-          <div class="field-row">
-            <span class="builder-label cc-muted">Split by</span>
-            <select class="field-input" v-model="builderSep" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'Character the name is split on'">
-              <option value="-">- dash</option>
-              <option value="_">_ underscore</option>
-              <option value=".">. dot</option>
-              <option value="space">␣ space</option>
-              <option value="folder">/ folder</option>
-              <option value="custom">custom…</option>
-            </select>
-            <input v-if="builderSep === 'custom'" type="text" class="field-input builder-custom"
-              v-model="builderCustomSep" @input="applyBuilder" maxlength="4" placeholder="sep" :disabled="attrDisabled"
-              v-tooltip.bottom="'Your own separator character'" />
-          </div>
-          <div class="field-row">
-            <span class="builder-label cc-muted">Take</span>
-            <select class="field-input" v-model="builderPos" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'Which field of the split name to keep'">
-              <option value="first">1st field</option>
-              <option value="second">2nd field</option>
-              <option value="third">3rd field</option>
-              <option value="thirdLast">3rd-last field</option>
-              <option value="secondLast">2nd-last field</option>
-              <option value="last">last field</option>
-            </select>
-            <!-- only the last field can carry the file extension — see buildFieldRegex -->
-            <CcToggle v-if="builderPos === 'last'" class="radio-label" label="no ext" :disabled="attrDisabled"
-              :model-value="builderStripExt" @update:model-value="builderStripExt = $event; applyBuilder()"
-              v-tooltip.bottom="'Drop a trailing .extension from the captured value'" />
-          </div>
+      <ExtractRuleEditor v-model:regex="regexpValue" v-model:source="regexpSource" v-model:spec="regexSpec"
+                         :sample="regexSampleImg" :disabled="attrDisabled">
+        <template #action>
+          <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !regexpValue"
+            @click="assignRegexp"
+            v-tooltip.bottom="'Extract a value from each image filename or path'">
+            Apply
+          </button>
         </template>
-
-        <!-- Look-around mode: extract a token bounded by context — e.g. "M1a" → digits after "M" → 1 -->
-        <template v-else>
-          <div class="field-row">
-            <span class="builder-label cc-muted">Preceded by</span>
-            <input type="text" class="field-input flex1"
-              v-model="beforeText" @input="applyBuilder" placeholder="text, e.g. M" :disabled="attrDisabled"
-              v-tooltip.bottom="'Text that comes just before the part you want'" />
-            <select class="field-input" v-model="beforeCls" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'…then a varying part (a number, letters, …)'">
-              <option value="none">—</option>
-              <option value="digits">+ number</option>
-              <option value="letters">+ letters</option>
-              <option value="lower">+ lowercase</option>
-              <option value="upper">+ uppercase</option>
-            </select>
-          </div>
-          <div class="field-row">
-            <span class="builder-label cc-muted">Extract</span>
-            <select class="field-input" v-model="extractKind" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'Kind of value to capture'">
-              <option value="digits">a number</option>
-              <option value="letters">letters</option>
-              <option value="lower">lowercase</option>
-              <option value="upper">uppercase</option>
-              <option value="word">word</option>
-              <option value="custom">custom…</option>
-            </select>
-            <input v-if="extractKind === 'custom'" type="text" class="field-input flex1"
-              v-model="extractText" @input="applyBuilder" placeholder="e.g. [a-d]" :disabled="attrDisabled"
-              v-tooltip.bottom="'Your own character set to capture'" />
-          </div>
-          <div class="field-row">
-            <span class="builder-label cc-muted">Followed by</span>
-            <input type="text" class="field-input flex1"
-              v-model="afterText" @input="applyBuilder" placeholder="text, e.g. -" :disabled="attrDisabled"
-              v-tooltip.bottom="'Text that comes just after the part you want'" />
-            <select class="field-input" v-model="afterCls" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'…then a varying part (a number, letters, …)'">
-              <option value="none">—</option>
-              <option value="digits">+ number</option>
-              <option value="letters">+ letters</option>
-              <option value="lower">+ lowercase</option>
-              <option value="upper">+ uppercase</option>
-            </select>
-          </div>
-        </template>
-
-        <p v-if="builderMode === 'around'" class="builder-hint cc-muted">
-          Each side: fixed text + a part that varies (<em>+ number</em>, <em>+ letters</em>).
-        </p>
-        <p class="builder-hint cc-muted">Adjusts the pattern above — watch the preview, then <strong>Apply</strong>.</p>
-      </div>
+      </ExtractRuleEditor>
     </section>
 
     <!-- ── Group sequences ────────────────────────────────────── -->
@@ -513,6 +393,9 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         Assign
       </button>
     </section>
+
+    <!-- ── Experiment design: after the attributes it is built from ── -->
+    <SetDesignSection />
 
     <!-- ── Channel names ──────────────────────────────────────── -->
     <section class="cc-panel-section md-section" data-guide="metadata.channels">
@@ -599,55 +482,6 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   box-sizing: border-box;
 }
 .field-textarea:focus { outline: 1px solid var(--cc-accent); }
-
-.radio-row {
-  display: flex;
-  gap: 0.75rem;
-}
-.radio-label {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-}
-
-/* ── Regex builder ─────────────────────────────────────────────────────────── */
-/* + cc-section-toggle (row). This one is deliberately INLINE — it sits next to the pattern field
-   rather than heading a block — so it overrides the row's full width. */
-.builder-toggle {
-  display: inline-flex; width: auto;
-  font-size: var(--cc-fs-sm); padding: 0.1rem 0; margin-top: 0.15rem;
-}
-.builder-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
-.builder-toggle .pi { font-size: var(--cc-fs-2xs); }
-
-.builder {
-  display: flex; flex-direction: column; gap: 0.4rem;
-  margin-top: 0.35rem; padding: 0.5rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
-  background: var(--cc-surface-1);
-}
-.builder.disabled { opacity: 0.5; pointer-events: none; }
-/* fixed label width + flexible controls → every select/input lines up down the builder */
-.builder-label { flex: 0 0 5rem; white-space: nowrap; }
-.builder .field-input { flex: 1 1 0; min-width: 0; }
-.builder .builder-custom { flex: 0 0 3.5rem; }
-
-.builder-hint { margin: 0; line-height: 1.4; }
-
-/* single preview for the regex field (typed or built) */
-.regex-preview { display: flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); min-width: 0; }
-.preview-src {
-  color: var(--cc-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  flex: 1; min-width: 0;
-}
-.preview-arrow { color: var(--cc-text-dim); flex-shrink: 0; }
-.preview-val {
-  color: var(--cc-accent); font-weight: 600; font-family: var(--cc-mono);
-  flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 
 .warn-count {
   display: inline-flex; align-items: center; justify-content: center;

@@ -130,3 +130,33 @@ end
     @test isempty(experiment_design_grid(t._images[[1, 3]], nested)["paired"])
     rm(proj.root; recursive = true)
 end
+
+@testset "design replicate as the plot unit" begin
+    # design_replicates: every parent needed — Mouse 1 with no date is no replicate, never "M1"
+    mk(ps...) = (; attr = Dict{String,Any}(ps...))
+    imgs = [mk("Date" => "D1", "Mouse" => "M1"), mk("Date" => "D2", "Mouse" => "M1"), mk("Mouse" => "M1")]
+    reps = design_replicates(imgs, ["a", "b", "c"], ["Date", "Mouse"])
+    @test reps == Dict("a" => "D1 × M1", "b" => "D2 × M1")              # same mouse number, two dates: two mice; the claim check's key
+    @test isempty(design_replicates(imgs, ["a", "b", "c"], String[]))
+
+    # four images: u1 + u2 are one mouse (M1) in panel A, u3 is M2 in A, u4 is M1 again in panel B;
+    # u5 has no replicate and stays its own unit. Expected values from the definition — one value per
+    # replicate per group, the mean over all that replicate's cells (Lord et al. 2020).
+    df = DataFrame("value_name" => fill("A", 10), "pop" => fill("/p", 10),
+                   "uID" => ["u1", "u1", "u2", "u3", "u3", "u3", "u4", "u4", "u5", "u5"],
+                   "m"   => [1.0, 3.0, 5.0, 10.0, 10.0, 10.0, 2.0, 4.0, 7.0, 9.0])
+    unit_map = Dict("u1" => "D1 × M1", "u2" => "D1 × M1", "u3" => "D1 × M2", "u4" => "D1 × M1")
+    attr_map = Dict("u1" => "A", "u2" => "A", "u3" => "A", "u4" => "B", "u5" => "B")
+    r = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                             normalize = :none, by_image = true, stat_unit = :image,
+                             unit_map = unit_map, attr_map = attr_map, stats_enabled = true)
+    byg = Dict(s["uID"] => s for s in r["series"])
+    @test byg["A"]["n"] == 2 && byg["A"]["median"] == (3.0 + 10.0) / 2  # M1 = mean(1,3,5) = 3, M2 = 10
+    @test byg["B"]["n"] == 2 && byg["B"]["median"] == (3.0 + 8.0) / 2   # M1 in B = mean(2,4); u5 = mean(7,9)
+    codes = [f["code"] for f in r["comparisons"]["findings"]]
+    @test !("stats.cells_as_replicates" in codes)                      # n counts mice, not cells
+    # the same frame with cells as the unit: the finding is there
+    r0 = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, attr_map = attr_map, stats_enabled = true)
+    @test "stats.cells_as_replicates" in [f["code"] for f in r0["comparisons"]["findings"]]
+end

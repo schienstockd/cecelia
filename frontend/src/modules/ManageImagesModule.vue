@@ -13,9 +13,6 @@ import ImmunemapImportDialog from '../components/ImmunemapImportDialog.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import { IMPORT_SOURCES, type ImportSource } from '../lib/importSources'
 import SeriesPickerModal from '../components/SeriesPickerModal.vue'
-import ExperimentDesignDialog from '../components/ExperimentDesignDialog.vue'
-import { fetchDesign } from '../utils/experimentDesignApi'
-import type { DesignImage } from '../utils/experimentDesign'
 import { useTaskDefs } from '../composables/useTaskDefs'
 import { buildRegisterRecords, isProbeableMultiSeriesPath,
          unsupportedMultiSeriesExts,
@@ -193,26 +190,6 @@ function onPickerCancel() {
   advancePicker()
 }
 
-// The experiment design dialog opens after files land in a set that has no design, before they are
-// imported: their names and original folders are there to suggest one (EXPERIMENT_DESIGN_PLAN.md D5).
-const designFor = ref<{ setUid: string; setName: string; images: DesignImage[]; nAdded: number } | null>(null)
-
-async function offerDesign(setUid: string, nAdded: number) {
-  const projectUid = projectMeta.current?.uid
-  const set = project.sets.find(s => s.uid === setUid)
-  if (!projectUid || !set || nAdded === 0) return
-  try {
-    if ((await fetchDesign(projectUid, setUid)).design) return   // designed already: nothing to ask
-  } catch (e) {
-    log.warn(`Design not checked: ${(e as Error).message}`, { source: 'manageImages' })
-    return
-  }
-  designFor.value = {
-    setUid, setName: set.name, nAdded,
-    images: set.images.map(i => ({ uid: i.uid, name: i.name, oriPath: i.oriPath, attr: { ...(i.attr ?? {}) } })),
-  }
-}
-
 async function submitRegister() {
   const setUid = pendingSetUid.value
   const set    = activeSet.value
@@ -235,7 +212,6 @@ async function submitRegister() {
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
     const imgs = body.images ?? []
     project.addImagesFromApi(setUid, imgs)
-    void offerDesign(setUid, imgs.length)
     log.info(
       `Added ${imgs.length} image${imgs.length !== 1 ? 's' : ''} to "${set.name}".`,
       { source: 'manageImages' }
@@ -281,15 +257,6 @@ async function submitRegister() {
     @close="showImmunemap = false"
   />
 
-  <ExperimentDesignDialog
-    v-if="designFor && projectMeta.current"
-    :project-uid="projectMeta.current.uid"
-    :set-uid="designFor.setUid"
-    :set-name="designFor.setName"
-    :images="designFor.images"
-    :n-added="designFor.nAdded"
-    @close="designFor = null"
-  />
   <SeriesPickerModal
     v-if="pickerCurrent"
     :key="pickerCurrent.path"

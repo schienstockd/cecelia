@@ -25,6 +25,9 @@ import { useTaskStore } from '../stores/tasks'
 import InlineNote from './InlineNote.vue'
 import CcToggle from './CcToggle.vue'
 import { showImageRefs } from '../utils/labLog'
+import { useSetDesign } from '../composables/useSetDesign'
+import { saveDesign } from '../utils/experimentDesignApi'
+import { designExpectPhrase, questionChanged, withQuestion, type DesignQuestion } from '../utils/experimentDesign'
 
 const props = defineProps<{ projectUid: string; setUid: string; setName?: string }>()
 const emit = defineEmits<{ close: []; changed: [AcqCheckResult] }>()
@@ -57,8 +60,31 @@ const formPlan = computed<AcqPlan>(() => plan.value ?? emptyPlan(result.value?.s
 // the designs the form picks channels from: the suggestions carry each design's channels
 const formDesigns = computed(() => result.value?.suggestedDesigns ?? [])
 
-async function save(p: AcqPlan) {
+// The question and expectation live in the set's experiment design: the form asks them, the design
+// keeps them (docs/todo/EXPERIMENT_DESIGN_PLAN.md → T5)
+const { design } = useSetDesign(computed(() => props.projectUid), computed(() => props.setUid))
+const question = computed<DesignQuestion>(() => ({
+  question: design.value?.question ?? '', expect: design.value?.expect ?? 'unsure', expectIn: design.value?.expectIn ?? '' }))
+const expectPhrase = computed(() => designExpectPhrase(design.value))
+const setImages = computed(() => project.sets.find(s => s.uid === props.setUid)?.images ?? [])
+const groupValues = computed(() => {
+  const g = design.value?.group ?? []
+  return g.length ? [...new Set(setImages.value.map(i => g.map(a => i.attr?.[a] ?? '').join(' ')).filter(v => v.trim()))].sort() : []
+})
+const groupLabel = computed(() => design.value?.group.join(' × ') || 'Group')
+
+async function save(p: AcqPlan, q: DesignQuestion) {
   saving.value = true
+  if (questionChanged(design.value, q)) {
+    try {
+      await saveDesign(props.projectUid, props.setUid, withQuestion(design.value, q),
+                       design.value ? 'question from the acquisition check' : 'question')
+    } catch (e) {
+      saving.value = false
+      toast.add({ severity: 'error', life: 5000, summary: 'Couldn’t save the question', detail: (e as Error).message })
+      return
+    }
+  }
   const r = await saveAcqPlan(props.projectUid, props.setUid, p)
   saving.value = false
   if (!r) { toast.add({ severity: 'error', life: 5000, summary: 'Couldn’t save the plan' }); return }
@@ -153,7 +179,7 @@ const metaImage = computed(() => {
       <div class="plan cc-row" data-guide="acqCheck.plan">
         <template v-if="!editing">
           <span class="cc-muted cc-fs-xs">Plan</span>
-          <q v-if="plan">{{ plan.text || planSentence(plan) }}</q>
+          <q v-if="plan">{{ planSentence(plan, expectPhrase) || plan.text }}</q>
           <span v-else class="cc-muted">None yet — photons, balance and shared structure need one</span>
           <span class="cc-muted cc-fs-xs">{{ result.nMeasured }}/{{ result.nImages }} measured
             <template v-if="plan && result.stage === 'final'"> · final data</template>
@@ -163,6 +189,7 @@ const metaImage = computed(() => {
           </button>
         </template>
         <AcqPlanForm v-else class="form" :items="items" :plan="formPlan" :designs="formDesigns" :saving="saving"
+                     :question="question" :group-values="groupValues" :group-label="groupLabel"
                      @save="save" @cancel="editing = false" />
       </div>
 

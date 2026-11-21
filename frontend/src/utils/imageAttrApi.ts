@@ -1,4 +1,4 @@
-// Writing image attributes: the three `/api/images/attr/*` routes, one function each. Each throws with
+// Writing image attributes: the `/api/images/attr/*` routes, one function each. Each throws with
 // the server's message on failure; the caller decides how to say so.
 //
 // `setImageAttr` returns what was STORED: the route trims values, so a caller updates its state from
@@ -27,4 +27,14 @@ export async function deleteImageAttr(projectUid: string, imageUids: string[], a
 export async function setImageAttr(projectUid: string, attrName: string,
                                    values: Record<string, string>): Promise<Record<string, string>> {
   return (await post('/api/images/attr/set', { projectUid, attrName, values })).values ?? values
+}
+
+/**
+ * Rename attribute `from` to `to` on every image in `imageUids`; returns uid → value as stored under
+ * the new name. Refused (throws) when an image already has `to`. With `setUid`, the set's experiment
+ * design follows the rename.
+ */
+export async function renameImageAttr(projectUid: string, imageUids: string[], from: string, to: string,
+                                      setUid?: string): Promise<Record<string, string>> {
+  return (await post('/api/images/attr/rename', { projectUid, imageUids, from, to, setUid })).values ?? {}
 }

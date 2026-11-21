@@ -55,6 +55,8 @@ import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSel
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
+import { DEFAULT_STAT_UNIT, type StatUnit } from '../../utils/statUnitState'
+import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null
@@ -65,6 +67,7 @@ const props = defineProps<{
   scope?: 'per_image' | 'summarised'   // cross-image scope (default per_image)
   groupAttr?: string[]                 // group cross-image series by these image attributes (combined; else per-image)
   groupOrder?: string[]                // the attribute groups in the user's order (the picker's "attribute order")
+  replicateAttrs?: string[]            // the set's design replicate (its parents, outermost first); [] = none
   series: SeriesTarget[]               // selected (segmentation, pop) targets — each one a series
   seriesColor: (s: PlotSeries) => string
   vis?: VisProps                       // visual properties (log scale, legend, point size/opacity)
@@ -72,7 +75,7 @@ const props = defineProps<{
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
         statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: MatrixNormalize; smooth?: number; interval?: boolean;
-        statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median'   // datapoint = each cell/track, or each image's mean/median (one dot per image)
+        statUnit?: StatUnit; imageAgg?: 'mean' | 'median'   // datapoint = each cell/track, or each image's mean/median (one dot per image)
         metricPop?: string    // per-image metric: which of the run's populations (or pairs) to plot
         statsPair?: string    // legacy name of metricPop, from boards saved before the pair plot became a metric
         claimEntryId?: string; claimText?: string; claimUnits?: string[]; claimUnit?: string }   // a claim stated from this plot (ClaimStrip)
@@ -237,7 +240,22 @@ const normalize = computed<boolean>({ get: () => props.ui.normalize ?? defaultNo
 const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorMetric ?? 'ci95', set: v => (props.ui.errorMetric = v) })
 // statistical unit: plot each cell/track ('individual') or each IMAGE's mean ('image' — one dot per
 // image, the pseudoreplication-safe view). Only meaningful for the "each dot" charts with a measure.
-const statUnit = computed<'individual' | 'image'>({ get: () => props.ui.statUnit ?? 'individual', set: v => (props.ui.statUnit = v) })
+// With a design, the default is its replicate (each dot a mouse): resolved here at read, never written
+// back — see the NB below on writing `props.ui` from an effect. A saved 'replicate' with no design any
+// more reads as each image.
+const replicateAttrs = computed(() => props.replicateAttrs ?? [])
+const replicate = computed(() => replicateNoun(replicateAttrs.value))
+const statUnit = computed<StatUnit>({
+  get: () => {
+    const u = props.ui.statUnit ?? (replicate.value ? 'replicate' : DEFAULT_STAT_UNIT)
+    return u === 'replicate' && !replicate.value ? 'image' : u
+  },
+  set: v => (props.ui.statUnit = v),
+})
+// what the request sends for the unit: the replicate needs its attributes
+const statUnitBody = () => !canStatUnit.value || statUnit.value === 'individual' ? {}
+  : statUnit.value === 'replicate' ? { statUnit: 'replicate', replicateAttrs: replicateAttrs.value, imageAgg: imageAgg.value }
+  : { statUnit: 'image', imageAgg: imageAgg.value }
 // how each image is collapsed to its one point when statUnit==='image' (mean = average; median = robust)
 const imageAgg = computed<'mean' | 'median'>({ get: () => props.ui.imageAgg ?? 'mean', set: v => (props.ui.imageAgg = v) })
 // a categorical measure on a box/strip/violin/bar IS per image already (one point per image per category,
@@ -659,7 +677,7 @@ async function fetchData(isCurrent: () => boolean) {
         normalize: be.normalize ?? normalize.value,
         rawPoints: be.rawPoints ?? false,
         ...(groupBy.value ? { groupBy: groupBy.value } : {}),
-        ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
+        ...statUnitBody(),
         ...(composition.value ? { composition: true } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
         ...groupAttrBody(),
@@ -910,7 +928,7 @@ async function fetchRawCsv(): Promise<string | null> {
       series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
       normalize: normalize.value,
       ...(groupBy.value ? { groupBy: groupBy.value } : {}),
-      ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
+      ...statUnitBody(),
       ...(composition.value ? { composition: true } : {}),
       ...groupAttrBody(),
     }
@@ -975,7 +993,7 @@ const plotSettings = (): PlotSettings => ({
   chartType: setting(chartType, () => [...props.spec.chartTypes]),
   ...(hasMeasure.value ? { measure: setting(measure, () => [...measureOpts.value]) } : {}),
   ...(showPopTypePicker.value ? { popType: setting(popType, () => popTypeOpts.value.map(o => o.popType)) } : {}),
-  statUnit: setting(statUnit, () => ['individual', 'image']),
+  statUnit: setting(statUnit, () => replicate.value ? ['individual', 'image', 'replicate'] : ['individual', 'image']),
   imageAgg: setting(imageAgg, () => ['mean', 'median']),
   errorMetric: setting(errorMetric, () => ['sd', 'sem', 'ci95']),
   normalize: setting(normalize),
@@ -1023,7 +1041,8 @@ useVisualPanel(
       // with a `setUid` means the whole set.
       series: props.series.map(s => `${s.valueName}${s.pop}`),
       ...(groupBy.value ? { groupBy: groupBy.value } : {}),
-      ...(props.setUid ? { setUid: props.setUid, imageUids: props.imageUids ?? [], statUnit: statUnit.value }
+      ...(props.setUid ? { setUid: props.setUid, imageUids: props.imageUids ?? [], statUnit: statUnit.value,
+                           ...(statUnit.value === 'replicate' ? { replicateAttrs: replicateAttrs.value } : {}) }
                        : props.imageUid ? { imageUid: props.imageUid } : {}),
     },
     summary: plotSummary.value,
@@ -1365,16 +1384,17 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
           </label>
           <!-- statistical unit: each cell/track, or one point per image (its mean) — "each dot an image" -->
           <label v-if="canStatUnit" class="sp-pop-row cc-muted"
-                 v-tooltip.top="'Individual cells/tracks, or one point per image (n = images)'">
+                 v-tooltip.top="replicate ? `Cells/tracks, images, or ${replicate.many} (the design's n)` : 'Individual cells/tracks, or one point per image (n = images)'">
             <span>Datapoint</span>
             <select v-model="statUnit">
               <option value="individual">individual</option>
               <option value="image">image</option>
+              <option v-if="replicate" value="replicate">{{ replicate.one }}</option>
             </select>
           </label>
-          <label v-if="canStatUnit && statUnit === 'image'" class="sp-pop-row cc-muted"
-                 v-tooltip.top="'How to collapse each image to one point'">
-            <span>Per image</span>
+          <label v-if="canStatUnit && statUnit !== 'individual'" class="sp-pop-row cc-muted"
+                 v-tooltip.top="statUnit === 'replicate' ? `How to collapse each ${replicate?.one} to one point` : 'How to collapse each image to one point'">
+            <span>{{ statUnit === 'replicate' ? `Per ${replicate?.one}` : 'Per image' }}</span>
             <select v-model="imageAgg">
               <option value="mean">mean</option>
               <option value="median">median</option>

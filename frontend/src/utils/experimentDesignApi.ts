@@ -1,7 +1,12 @@
 // The experiment design routes (api/src/routes/experiment_design.jl), one function each. Shapes in
 // `experimentDesign.ts`.
 
+import { ref } from 'vue'
 import type { DesignReply, ExperimentDesign } from './experimentDesign'
+
+/** Bumped on every save and attribute rename, so a view showing a design (the Metadata page's design
+ *  section) reloads after a change made elsewhere. */
+export const designSaves = ref(0)
 
 async function call(url: string, init?: RequestInit): Promise<DesignReply> {
   const res = await fetch(url, init)
@@ -23,5 +28,8 @@ export const previewDesign = (projectUid: string, setUid: string, design: Experi
   post('/api/sets/experiment-design/preview', { projectUid, setUid, design, attrs })
 
 /** Save the design (null clears it); `change` is the history note. */
-export const saveDesign = (projectUid: string, setUid: string, design: ExperimentDesign | null, change: string) =>
-  post('/api/sets/experiment-design', { projectUid, setUid, design, change })
+export async function saveDesign(projectUid: string, setUid: string, design: ExperimentDesign | null, change: string) {
+  const reply = await post('/api/sets/experiment-design', { projectUid, setUid, design, change })
+  designSaves.value++
+  return reply
+}

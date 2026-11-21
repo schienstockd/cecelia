@@ -216,6 +216,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-image', lucide: 'image', means: 'One image' },
       { icon: 'pi-images', lucide: 'images', means: 'Images — a set, or none yet' },
       { icon: 'pi-bullseye', lucide: 'target', means: 'Experiment design — the question a set answers' },
+      { icon: 'pi-code', lucide: 'code', means: 'The pattern behind it — a rule\'s regex' },
       { icon: 'pi-gauge', lucide: 'ruler', means: 'Voxel size and frame interval' },
       { icon: 'pi-history', lucide: 'history', means: 'Earlier — past runs, versions, recent projects' },
       { icon: 'pi-server', lucide: 'server', means: 'Which resource pool it runs in' },

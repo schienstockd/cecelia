@@ -203,7 +203,7 @@ measure?, chart?, popType?, groupBy?, statUnit?, imageAgg?, pops?, highlight?, f
 Empty slots are omitted. Read-only, summary-level — never the stored layout geometry. Returns `[]`
 when the project has no boards.
 
-`statUnit` ("individual" | "image") is the summary level and is load-bearing: two boards can share
+`statUnit` ("individual" | "image" | "replicate" — the set's experiment design names the replicate) is the summary level and is load-bearing: two boards can share
 every other field and still be different figures. The panel persists it explicitly and removes it when
 the plot has no summary level, so presence is meaningful on its own and nothing is resolved here — a
 slot with no `statUnit` has no summary level (or predates the field). See `_board_slot`.
