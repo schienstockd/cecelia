@@ -19,6 +19,7 @@ import type { ElbowMetric } from '../../utils/hmmElbow'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
+import { clusterAwareFetchToken } from '../../utils/popChanges'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, defaultNormalize, chartsForMeasure, COMPOSITION_CHARTS, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
@@ -78,6 +79,7 @@ const props = defineProps<{
         claimEntryId?: string; claimText?: string; claimUnits?: string[]; claimUnit?: string }   // a claim stated from this plot (ClaimStrip)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
+  anyPopChange?: number                // bumped on EVERY pop edit — followed only while a cluster column is read
   persistKey?: string                  // CanvasPanel geometry persistence key
   docked?: boolean                     // fill a grid slot (Analysis board) instead of free-floating
 }>()
@@ -691,11 +693,14 @@ async function fetchData(isCurrent: () => boolean) {
 // Watch STABLE primitive keys (not the series array by identity — the parent rebuilds it every render,
 // which fired spurious refetches). `timeSeries` is included because it selects the aggregation
 // (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
+// a cluster column is named by the cluster pops → follow every pop edit, not only the targeted token
+const fetchToken = computed(() => clusterAwareFetchToken(props.reloadToken ?? 0, props.anyPopChange ?? 0,
+  [measure.value, matrixCategory.value, groupBy.value]))
 watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'), popType,
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, statsSuffix, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','), () => (props.groupOrder ?? []).join('\u0000'),
-       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
+       () => (props.imageUids ?? []).join(','), () => props.scope, fetchToken,
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto',
        // the run (interaction matrix / per-image metric) and the metric's population are fetch inputs
        // too — without them a run picked in the header changed nothing until another setting did

@@ -975,7 +975,9 @@ the redrawn, added or deleted pop and everything under it (`utils/popChanges.ts`
 `changedPopPaths`). The gating plots bump per-pop versions with it (`stores/gating.ts`
 `popVersion`); the summary and layout canvases key each panel's refetch off the pops it plots
 (`seriesReloadToken`, ancestors included so a derived `/_tracked` follows its parent). A new
-gate is never ticked, so it refetches no plot.
+gate is never ticked, so it refetches no plot. One exception: a panel reading a cluster column
+(measure, heatmap category or group-by — Track cluster frequency) follows **every** pop write,
+because the cluster pops name its categories server-side (`clusterAwareFetchToken`).
 
 **Manual apply** (the clock toggle on every population manager, `usePopSelectionMode`) holds two
 things until Apply: the eye toggles (`stagedSel`), and the refreshes gate writes trigger

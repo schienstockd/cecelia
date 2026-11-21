@@ -5,7 +5,7 @@
 // region panel. Behaviour-preserving: returns "clusters." for every existing type, "regions." only for
 // the new `region` type.
 
-import { popTypeInfo } from '../plots/popTypeRegistry'
+import { popTypeInfo, POP_TYPE_REGISTRY } from '../plots/popTypeRegistry'
 
 export type ClusterPopType = 'clust' | 'trackclust' | 'region'
 
@@ -16,6 +16,13 @@ export function clusterMeasurePrefix(popType: string): string {
 
 export function clusterMeasure(popType: string, suffix: string): string {
   return `${clusterMeasurePrefix(popType)}${suffix}`
+}
+
+// Is `col` a cluster-run obs column (`clusters.*` / `regions.*`) — one whose categories the cluster
+// populations name server-side (plot_data.jl `_cluster_category_names`)?
+export function isClusterColumn(col: string | null | undefined): boolean {
+  if (!col) return false
+  return POP_TYPE_REGISTRY.some(i => i.cluster && !!i.clusterPrefix && col.startsWith(i.clusterPrefix))
 }
 
 export function isClusterPopType(popType: string): popType is ClusterPopType {
