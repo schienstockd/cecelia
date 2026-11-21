@@ -268,7 +268,9 @@ popType's metadata has loaded, the panel requests only the columns the run has, 
 nothing with the new run is reseeded to that run's features (`utils/clusterHeatmapFeatures.ts`).
 
 ### Behaviour cards — one family per registry entry
-Three snapshot-card families on the analysis board, sharing a spine:
+Three snapshot-card families on the analysis board, sharing a spine. `motifCards` and
+`hmmStateCards` are also in the Behaviour page's **+ Plot…** (`modules: { behaviourAnalysis: [] }`);
+`cellCards` lives on the Cluster tracks page:
 
 - **`cellCards`** — `CLUSTER_PANELS`, `rail: 'clusterPops'`. One card per track-cluster pop the
   user ticks; medoid = the track closest to the cluster centroid.

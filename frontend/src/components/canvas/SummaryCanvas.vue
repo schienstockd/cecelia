@@ -117,7 +117,7 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, localSelRemap, reload,
+  specs, specById, segPops, seriesColor, popType: listedPopType, granularity: listedGranularity, panelReloadToken, anyPopChange, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs, designReplicate, designMarkState, useDesignCompare,
@@ -553,7 +553,7 @@ watch(segPops, () => {
                         :group-attr="panelGroupAttr" :group-order="attrGroups" :replicate-attrs="designReplicate"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
-                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
+                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`" :any-pop-change="anyPopChange"
                         @activate="activeId = p.id" @remove="removePanel(p.id)"
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />

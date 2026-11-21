@@ -45,9 +45,11 @@ export function specPages(s: PlotSpecText): string[] {
   return s.whiteboardCompatible ? [...pages, ANALYSIS] : pages
 }
 
-function viewPages(v: { clusterPage?: boolean; trackPage?: boolean; opticalFlowPage?: boolean; analysisBoard?: boolean },
+function viewPages(v: { modules?: Record<string, string[]>; clusterPage?: boolean; trackPage?: boolean;
+                        opticalFlowPage?: boolean; analysisBoard?: boolean },
                    cluster: { trackOnly?: boolean } | null): string[] {
-  const out: string[] = []
+  // the summary pages it is on (`modules`), through the same module-tag map a spec's pages use
+  const out: string[] = Object.keys(v.modules ?? {}).map(k => moduleRouteFor(k) ?? `?${k}`)
   if (cluster) out.push(...(cluster.trackOnly ? ['/clust-tracks'] : ['/clust-cells', '/clust-tracks']))
   if (v.clusterPage) out.push('/clust-cells', '/clust-tracks')
   if (v.trackPage) out.push('/track')

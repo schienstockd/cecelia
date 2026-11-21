@@ -19,6 +19,7 @@ import type { ElbowMetric } from '../../utils/hmmElbow'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
+import { clusterAwareFetchToken } from '../../utils/popChanges'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, defaultNormalize, chartsForMeasure, COMPOSITION_CHARTS, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
@@ -55,7 +56,7 @@ import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSel
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
-import { DEFAULT_STAT_UNIT, type StatUnit } from '../../utils/statUnitState'
+import { DEFAULT_STAT_UNIT, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
 import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
@@ -81,6 +82,7 @@ const props = defineProps<{
         claimEntryId?: string; claimText?: string; claimUnits?: string[]; claimUnit?: string }   // a claim stated from this plot (ClaimStrip)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
+  anyPopChange?: number                // bumped on EVERY pop edit — followed only while a cluster column is read
   persistKey?: string                  // CanvasPanel geometry persistence key
   docked?: boolean                     // fill a grid slot (Analysis board) instead of free-floating
 }>()
@@ -252,6 +254,10 @@ const statUnit = computed<StatUnit>({
   },
   set: v => (props.ui.statUnit = v),
 })
+// the n drawn, for the footer: per series, when each point is an image or a replicate (mouse)
+const unitNoun = computed(() => statUnit.value === 'replicate' && replicate.value ? replicate.value : { one: 'image', many: 'images' })
+const nLabel = computed(() => !canStatUnit.value || statUnit.value === 'individual' ? ''
+  : unitCountLabel((result.value?.series ?? []).map(s => s.n ?? s.points?.length ?? 0), unitNoun.value))
 // what the request sends for the unit: the replicate needs its attributes
 const statUnitBody = () => !canStatUnit.value || statUnit.value === 'individual' ? {}
   : statUnit.value === 'replicate' ? { statUnit: 'replicate', replicateAttrs: replicateAttrs.value, imageAgg: imageAgg.value }
@@ -709,11 +715,14 @@ async function fetchData(isCurrent: () => boolean) {
 // Watch STABLE primitive keys (not the series array by identity — the parent rebuilds it every render,
 // which fired spurious refetches). `timeSeries` is included because it selects the aggregation
 // (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
+// a cluster column is named by the cluster pops → follow every pop edit, not only the targeted token
+const fetchToken = computed(() => clusterAwareFetchToken(props.reloadToken ?? 0, props.anyPopChange ?? 0,
+  [measure.value, matrixCategory.value, groupBy.value]))
 watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'), popType,
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, statsSuffix, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','), () => (props.groupOrder ?? []).join('\u0000'),
-       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
+       () => (props.imageUids ?? []).join(','), () => props.scope, fetchToken,
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto',
        // the run (interaction matrix / per-image metric) and the metric's population are fetch inputs
        // too — without them a run picked in the header changed nothing until another setting did
@@ -1524,9 +1533,11 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
+      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="statUnit === 'replicate' ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
-                  :measure="hasMeasure ? measure : ''" :ui="ui" />
+                  :measure="hasMeasure ? measure : ''" :group-attrs="crossImage ? (groupAttr ?? []) : []"
+                  :replicate-attrs="replicateAttrs" :ui="ui" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <CcToggle v-if="!docked" v-model="settings.csvIncludeAttrs" label="Attributes" class="sp-attrs cc-fs-xs"
                 v-tooltip.top="'Add image name + attributes to the CSV'" />
@@ -1543,7 +1554,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <div v-if="!series.length && !isPrecomputed" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
-      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" :host-busy="showSpinner"
+      <PlotChart v-else-if="hasData" ref="plotRef" class="sp-plot" :data="result" :opts="buildOpts" :host-busy="showSpinner"
                  @auto-override="autoOverrides = $event"
                  @point-click="onPlotPointClick"
                  @point-brush="onPlotPointBrush" />
@@ -1582,6 +1593,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 .sp-chart { font-size: var(--cc-fs-sm); max-width: 8rem; }
 .sp-export { max-width: 7rem; }
 .sp-attrs { color: var(--cc-text-dim); }
+.sp-n { white-space: nowrap; }
 /* footer notices sit in the panel CHROME, never in `.sp-body`: the chart is height:100% there and the
    body is overflow:hidden, so a sibling after it is pushed out of view (which is why the first version
    of these notes was emitted correctly and never seen). */
@@ -1598,11 +1610,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 
 /* LINKED_BRUSHING_PLAN.md P3 — chip strip for category-source brushing on categorical
    frequency-family charts. Surface + row chrome come from the composed .cc-card + .cc-row
-   utilities; this rule is layout only (position + gap tightening + width cap so a long category
-   list wraps instead of pushing off the plot). Anchored bottom-left inside .sp-body so it
-   doesn't collide with the Claude chip at top-right or the plot's axis labels. */
-.sp-brush-strip { position: absolute; left: 6px; bottom: 6px; z-index: 5;
-  pointer-events: auto; max-width: calc(100% - 60px); padding: 2px 6px; }
+   utilities. It sits IN FLOW below the chart (.sp-body is a flex column; the chart flexes to the
+   remaining height), never as an overlay — an absolute strip covered the rotated x-axis labels. */
+.sp-brush-strip { flex: none; align-self: flex-start; margin-top: 6px; max-width: 100%; padding: 2px 6px; }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }
@@ -1626,6 +1636,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sp-pop-row select { max-width: 7rem; }
 .sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }
-.sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
+.sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden;
+  display: flex; flex-direction: column; }
+/* chart takes whatever the in-flow chip strip leaves (PlotChart's root is height:100% on its own) */
+.sp-body > .sp-plot { flex: 1 1 0; min-height: 0; height: auto; }
 .sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; padding: 12px; }
 </style>
