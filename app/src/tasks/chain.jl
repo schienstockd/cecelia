@@ -18,6 +18,8 @@ import SHA
 #   after_live.jl  — the "Queue after" node: waits for runs already going instead of starting one.
 #   api.jl         — the public entry points: `load_chain_run`, `run_chain` (two methods),
 #                    `chain_node`, `make_chain`.
+#   reuse.jl       — "Reuse unchanged steps": a node whose identical past run is still current is
+#                    marked reused instead of dispatched (opt-in per run).
 #
 # ── Chain data model: template vs. run ────────────────────────────────────────
 #
@@ -39,6 +41,7 @@ include(joinpath(@__DIR__, "chain", "execute.jl"))
 include(joinpath(@__DIR__, "chain", "manual.jl"))
 include(joinpath(@__DIR__, "chain", "after_live.jl"))
 include(joinpath(@__DIR__, "chain", "api.jl"))
+include(joinpath(@__DIR__, "chain", "reuse.jl"))
 include(joinpath(@__DIR__, "chain", "from_history.jl"))
 include(joinpath(@__DIR__, "chain", "history_params.jl"))
 include(joinpath(@__DIR__, "chain", "history_scope.jl"))

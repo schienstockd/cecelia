@@ -276,6 +276,9 @@ Base.@kwdef struct ChainRequest
     excluded::Dict{String,String} = Dict{String,String}()
     caller::Dict{String,Any}   = Dict{String,Any}()   # as TaskRequest.caller
     template::Dict{String,Any} = Dict{String,Any}()   # an inline template document; empty = by name
+    # "Reuse unchanged steps" (chain/reuse.jl). A fresh run takes it as given; a resume turns it on when
+    # true and otherwise keeps what the run recorded.
+    reuse::Bool                = false
 end
 
 # `req.by`, or this process's active profile when the asker didn't say.
@@ -285,7 +288,7 @@ chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
     "runId" => r.run_id, "startNode" => r.start_node, "fromRun" => r.from_run, "target" => string(r.target), "by" => r.by,
     "excluded" => r.excluded,
-    "caller" => r.caller, "template" => r.template)
+    "caller" => r.caller, "template" => r.template, "reuse" => r.reuse)
 
 chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     project_uid = string(get(d, "projectUid", "")),
@@ -298,7 +301,8 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     by          = string(get(d, "by", "")),
     excluded    = Dict{String,String}(string(k) => string(v) for (k, v) in get(d, "excluded", Dict())),
     caller      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "caller", Dict{String,Any}())),
-    template    = Dict{String,Any}(String(k) => v for (k, v) in get(d, "template", Dict{String,Any}())))
+    template    = Dict{String,Any}(String(k) => v for (k, v) in get(d, "template", Dict{String,Any}())),
+    reuse       = get(d, "reuse", false) === true)
 
 """
     execute_chain(req::ChainRequest; on_log, on_finished) -> Bool
@@ -326,10 +330,12 @@ function execute_chain(req::ChainRequest;
             run_chain(proj, req.image_uids; chain = isnothing(inline) ? req.chain_name : "", template = inline,
                       by = _request_by(req), caller = req.caller,
                       from_run = isempty(req.from_run) ? nothing : req.from_run,
-                      excluded = req.excluded, on_cancel_check = is_chain_cancelled, on_log = on_log)
+                      excluded = req.excluded, reuse = req.reuse,
+                      on_cancel_check = is_chain_cancelled, on_log = on_log)
         else
             run_chain(proj, String[]; run_id = req.run_id, by = _request_by(req), caller = req.caller,
                       start_node = isempty(req.start_node) ? nothing : req.start_node,
+                      reuse = req.reuse ? true : nothing,
                       on_cancel_check = is_chain_cancelled, on_log = on_log)
         end
         on_finished(true, "")

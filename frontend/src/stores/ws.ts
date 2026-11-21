@@ -631,6 +631,8 @@ export const useWsStore = defineStore('ws', () => {
         // live carrier of it — without them a node's elapsed is timed from frame arrival.
         startedAt:  parseRailTime(data.startedAt),
         finishedAt: parseRailTime(data.finishedAt),
+        // a node that reused a past run instead of running: that run's task id ("Reuse unchanged steps")
+        reused:     String(data.reused ?? '') || undefined,
       })
     }
 

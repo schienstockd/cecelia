@@ -55,6 +55,9 @@ import { withChainProducedModels } from '../utils/chainModelOptions'
 import { waitingByNode, continueFrame } from '../utils/chainManual'
 import { groupByImage, type PreflightProblem } from '../utils/chainPreflight'
 import BaseModal from '../components/BaseModal.vue'
+import CcToggle from '../components/CcToggle.vue'
+import { profileStorage } from '../utils/profileStorage'
+import { REUSE_PREF_KEY, readReusePref, reusedOf, withReuse } from '../utils/chainReuse'
 import InlineNote from '../components/InlineNote.vue'
 import { isLiveStatus } from '../lib/taskStatus'
 import { moduleRouteFor } from '../utils/moduleRoute'
@@ -124,6 +127,7 @@ interface LiveTaskLike {
   id: string; chainRunId: string; chainNodeId: string; imageUid: string
   funName: string; label?: string; status: TaskStatus
   startedAt?: number; finishedAt?: number; chainName?: string
+  reused?: string        // the past run's task id when this node reused it ("Reuse unchanged steps")
 }
 
 // Live tasks (from WS events) for this project.
@@ -157,7 +161,8 @@ async function loadRun(runId: string) {
     if (!res.ok) return
     const r = await res.json() as { chainName: string; createdAt: number
       nodes: LiveTemplateNode[]; edges: { from: string; to: string }[]
-      imageStates: Record<string, Record<string, string>> }
+      imageStates: Record<string, Record<string, string>>
+      reused?: Record<string, Record<string, string>> }
     const nodeFn = new Map(r.nodes.map(n => [n.id, n.fn]))
     const labelOf = (fn: string) => allTaskDefs.value.find(d => d.fun_name === fn)?.label ?? fn.split('.').pop() ?? fn
     const tasks: LiveTaskLike[] = []
@@ -165,7 +170,8 @@ async function loadRun(runId: string) {
       for (const [nid, status] of Object.entries(nm)) {
         const fn = nodeFn.get(nid) ?? nid
         tasks.push({ id: `${runId}:${nid}:${uid2}`, chainRunId: runId, chainNodeId: nid,
-          imageUid: uid2, funName: fn, label: labelOf(fn), status: status as TaskStatus, chainName: r.chainName })
+          imageUid: uid2, funName: fn, label: labelOf(fn), status: status as TaskStatus, chainName: r.chainName,
+          reused: reusedOf(r.reused, uid2, nid) })
       }
     }
     const m = new Map(loadedRuns.value)
@@ -216,6 +222,7 @@ const selectedRunTasks = computed<LiveTaskLike[]>(() => {
     id: t.id, chainRunId: t.chainRunId!, chainNodeId: t.chainNodeId!, imageUid: t.imageUid,
     funName: t.funName, label: t.label, status: t.status,
     startedAt: t.startedAt?.getTime(), finishedAt: t.finishedAt?.getTime(), chainName: t.chainName,
+    reused: t.reusedFrom,
   } as LiveTaskLike))
   const persisted = loadedRuns.value.get(rid)?.tasks ?? []
   if (!live.length) return persisted
@@ -353,7 +360,7 @@ const liveNodes = computed<Node[]>(() => {
       position: { x: LIVE.padX + L * LIVE.colW, y: bandY(r) + K * LIVE.laneH },
       data: {
         fn: t.funName, label: t.label, variant: nodeVariant(t.chainNodeId),
-        imageUid: t.imageUid, status: t.status,
+        imageUid: t.imageUid, status: t.status, reused: t.reused,
         startedAt: t.startedAt, finishedAt: t.finishedAt,
         nodeId: t.chainNodeId,                       // template node id — for "resume from here"
         // a parked manual step: its prompt, and a Continue for this image (or the whole set)
@@ -1405,14 +1412,18 @@ function runAnyway() {
   if (uid) startRun(uid)
 }
 
+// "Reuse unchanged steps" (utils/chainReuse.ts): opt-in, remembered per profile, sent with a fresh run
+const reuseUnchanged = ref(readReusePref(profileStorage.getItem(REUSE_PREF_KEY)))
+watch(reuseUnchanged, v => profileStorage.setItem(REUSE_PREF_KEY, String(v)))
+
 function startRun(uid: string) {
   chainRunning.value = true
-  ws.send({
+  ws.send(withReuse({
     type:       'chain:run',
     projectUid: uid,
     chain:      activeChain.value,
     imageUids:  runSelectedUids.value,
-  })
+  }, reuseUnchanged.value))
   activeTab.value = 'live'
   setTimeout(() => { chainRunning.value = false }, 500)
 }
@@ -2097,6 +2108,8 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
                         :row-class="img => ({ 'cc-row-excluded': isExcluded(img) })" />
       </div>
 
+          <CcToggle v-model="reuseUnchanged" label="Reuse unchanged steps"
+                    v-tooltip.top="'Skip steps whose identical run is still current'" />
           <button
             class="cc-btn cc-btn-primary cc-btn-run"
             data-guide="chain.run"

@@ -281,16 +281,10 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
     rows = NamedTuple{(:fn, :params, :at, :uid, :legacy, :taskId),
                       Tuple{String,Dict{String,Any},String,String,Bool,String}}[]
     want = Set(exemplars)
-    for uid in exemplars
-        img = init_object(proj.uid, uid)
-        img isa CciaImage || continue
-        for e in read_run_log(img)
-            r = run_log_row(e)
-            r.status == "done" || continue
-            push!(rows, (; r.fn, r.params, r.at, uid, r.legacy, r.taskId))
-        end
-    end
-    # chain run records: a run's frozen template + per-image status, from before the run log existed
+    # chain run records: a run's frozen template + per-image status, from before the run log existed.
+    # Pushed BEFORE the run-log rows: a run's record is stamped when it starts, often in the same second
+    # as its steps' run-log entries, and on a tie the later row wins (`_history_latest` sorts stably) —
+    # the run-log row is the one that carries the task id and the params as run.
     runs = _runs_dir(proj)
     for rid in (isdir(runs) ? readdir(runs) : String[])
         run = try load_chain_run(proj, rid) catch; continue end
@@ -300,10 +294,20 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
             node.after_live && continue   # a "Queue after" step waited; the run it waited for is logged itself
             st = get(run.image_states[uid], node.id, nothing)
             (st === nothing || st.status != NODE_DONE) && continue
+            st.reused === nothing || continue   # reused a past run: that run's own entry is the row
             # with the overrides the run recorded — what the step ran with, not just the template's values
             params = _apply_overrides(Dict{String,Any}(node.params), node.id,
                                       something(run.overrides, Dict{String,Any}()))
             push!(rows, (; fn = node.fn, params, at, uid, legacy = false, taskId = ""))   # a chain record holds no task id
+        end
+    end
+    for uid in exemplars
+        img = init_object(proj.uid, uid)
+        img isa CciaImage || continue
+        for e in read_run_log(img)
+            r = run_log_row(e)
+            r.status == "done" || continue
+            push!(rows, (; r.fn, r.params, r.at, uid, r.legacy, r.taskId))
         end
     end
     rows

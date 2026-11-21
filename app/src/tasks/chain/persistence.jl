@@ -201,12 +201,14 @@ function _save_run!(run::ChainRun)
             (isnothing(run.overrides)   ? (;) : (; overrides   = run.overrides))...,
             (isnothing(run.node_params) ? (;) : (; node_params = run.node_params))...,
             (isempty(run.from_run)      ? (;) : (; from_run    = run.from_run))...,
+            (run.reuse                  ? (; reuse = true)              : (;))...,
         ))
     end
 end
 
-# One node state as stored in run.json. `reason` is written only when there is one (a skip), so a run
-# with no skips reads exactly as before; `load_chain_run` reads a missing one as `nothing`.
+# One node state as stored in run.json. `reason` is written only when there is one (a skip), and `reused`
+# only on a reused node, so a run with neither reads exactly as before; `load_chain_run` reads a missing
+# one as `nothing`.
 function _node_state_doc(st::ImageNodeState)::Dict{String,Any}
     d = Dict{String,Any}(
         "status"      => string(st.status),
@@ -215,5 +217,6 @@ function _node_state_doc(st::ImageNodeState)::Dict{String,Any}
         "params_hash" => st.params_hash,
     )
     isnothing(st.reason) || (d["reason"] = st.reason)
+    isnothing(st.reused) || (d["reused"] = st.reused)
     d
 end
