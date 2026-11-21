@@ -499,6 +499,15 @@ end
     @test _keyframe_mask(String[]) === nothing
     @test _keyframe_mask(["cpSAM"]) == "cpSAM"
     @test_throws ArgumentError _keyframe_mask(["cpSAM", "flowTom"])
+    # a keyframe request's image version: none → the default, one → it, 2+ → refused (an animation
+    # has no compare grid). Any legacy `branchValueNames` → refused: the animation renderer never
+    # draws them, skeletons ride in the look.
+    @test _keyframe_version(String[], nothing) == ""
+    @test _keyframe_version(["default"], nothing) == "default"
+    @test _keyframe_version(["default"], String[]) == "default"
+    @test_throws ArgumentError _keyframe_version(["default", "denoised"], nothing)
+    @test_throws ArgumentError _keyframe_version(["default"], ["skel"])
+    @test_throws ArgumentError _keyframe_version(String[], ["skelA", "skelB"])
     # a keyframe request with no top-level mask (the 3D Record, the animation page) draws its look's
     @test _look_keyframe_mask(JSON3.read("{\"labelValueNames\":[\"cpSAM\"],\"labelContour\":2}")) ==
           (name = "cpSAM", contour = 2)
