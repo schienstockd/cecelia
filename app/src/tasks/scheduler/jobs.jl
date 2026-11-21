@@ -137,7 +137,9 @@ function _execute_job!(job::TaskJob)
             @warn "run-log open failed" task_id = job.id exception = e
         end
         # invokelatest: workers are spawned once at pool init; user-supplied callbacks
-        # may be defined in a later world (e.g. in test files or interactive sessions).
+        # may be defined in a later world (e.g. in test files or interactive sessions) — and so
+        # may the task itself: a custom module or plugin loaded after the pools started (Settings →
+        # Custom modules → Reload) defines its `_run_task` method in a newer world than the worker.
         # set-scope job runs _run_task over the whole image vector at once; else single image.
         job_target = run_task_target(job.target)
         result = try
@@ -147,7 +149,7 @@ function _execute_job!(job::TaskJob)
           _with_run_target(rec, job.task, representative_image(job.target),
                            line -> Base.invokelatest(job.on_log, line),
                            (stage, id) -> Base.invokelatest(job.on_hpc, stage, id)) do
-            _run_task(job.task, job_target,
+            Base.invokelatest(_run_task, job.task, job_target,
                       merge(job.params, Dict("_task_id" => job.id, "_by" => rec.by));
                       on_log      = line -> Base.invokelatest(job.on_log, line),
                       on_progress = (n, t) -> Base.invokelatest(job.on_progress, n, t),

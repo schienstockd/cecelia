@@ -726,6 +726,9 @@ tested on that movie) and in the viewer overlay test (`if sizes[3] != 1.0` — n
   the list can't go stale.
 - **Guards that skip on the fixture are the same bug.** `if <property> … end` around the assertion that
   matters makes it vacuous on a fixture without the property: ask for the property instead.
+- **A task spec can declare its own tests** — a `tests` block naming fixture properties, params and
+  assertions on the outputs, run by `app/test/suite/task_spec_tests.jl` through the same `fixture_for`
+  (a `need` makes it skip by request id). Schema: [`MODULES.md`](MODULES.md) → *Declared tests*.
 
 ---
 

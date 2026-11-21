@@ -370,3 +370,18 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
     result
 end
 
+
+"""Level-0 extent of ONE store by lower-case NGFF axis name (only the axes it has; a label store has no
+`"c"`), either layout and zarr format; empty when unreadable. Unlike `read_ome_metadata` it has X/Y: it
+describes the store passed (`img_filepath(img, vn)` / `img_labels_path(img, vn)`), not the image."""
+function store_axis_sizes(zarr_path::AbstractString)::Dict{String,Int}
+    base = series_base(zarr_path); ms = ngff_multiscales(base)
+    isnothing(ms) && return Dict{String,Int}()
+    axes = [lowercase(string(get(ax, :name, ""))) for ax in get(first(ms), :axes, [])]
+    ds   = get(first(ms), :datasets, [])
+    lvl  = isempty(ds) ? "0" : string(get(first(ds), :path, "0"))
+    path_inside(base, joinpath(base, lvl)) || (lvl = "0")   # the attrs are the file author's text
+    meta = zarr_array_meta(joinpath(base, lvl))
+    shape = isnothing(meta) ? Int[] : collect(Int, get(meta, :shape, []))
+    length(shape) == length(axes) ? Dict(zip(axes, shape)) : Dict{String,Int}()
+end

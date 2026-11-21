@@ -214,6 +214,39 @@ Cecelia.register_cohort_metrics!("customExamples.myTask", ["nCells"])
 The category you tag in the JSON (`"category": "customExamples"`) automatically appears in the lab-log
 mute bar's **Module pages** group — so a user can mute your module's `[Cecelia]` digest lines.
 
+## Declared tests (optional)
+
+Your `.json` can carry a `tests` block: a fixture named by its properties, params, and assertions on
+the outputs (label count, mean object size, centre of mass, mean intensity, mean of any measure
+column, image width/height/channels/depth/frames, each with a tolerance). The schema and every
+assertion's definition: [`MODULES.md`](MODULES.md) → *Declared tests*. The example to copy is
+`docs/examples/plugins/ccia-trackMeasures/trackTools/cumulativeChange.json`:
+
+```json
+"tests": [{
+  "name": "straightness is a fraction, and no cell is lost",
+  "fixture": {"properties": ["cells", "movie", "tracked"]},
+  "params": {"pops": ["B/_tracked"], "gap": 3},
+  "outputs": [{"cells": "B", "assert": [
+    {"type": "mean_measure", "column": "trackTools.cumulativeStraightness", "min": 0, "max": 1},
+    {"type": "n_labels", "value": 1377}
+  ]}]
+}]
+```
+
+Expected values come from what the measure means (straightness is net displacement over path length,
+so it cannot leave 0..1) or from the fixture (a measure adds columns, never rows), not from a
+previous run of your code. Fixtures are the repo's committed `test-data/`, so the tests run from a
+checkout:
+
+```bash
+CECELIA_SPEC_TEST_MODULES=~/my-modules pixi run test-pkg   # a dir laid out like <config_dir>/modules
+```
+
+The runner installs that dir next to the shipped examples in a throwaway config dir, loads it, and
+runs every declared test on a temp copy of its fixture. The shipped examples run in CI on every
+change.
+
 ## Loading & reloading
 
 Custom modules are loaded once on server start. To pick up **newly dropped** files without a restart,
