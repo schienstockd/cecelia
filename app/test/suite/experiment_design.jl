@@ -159,4 +159,23 @@ end
     r0 = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
                               normalize = :none, by_image = true, attr_map = attr_map, stats_enabled = true)
     @test "stats.cells_as_replicates" in [f["code"] for f in r0["comparisons"]["findings"]]
+
+    # the SuperPlot layer: each replicate mean with its unit, and the cells under it with theirs, so
+    # the renderer can colour a cell by the mean it went into (Lord et al. 2020)
+    for chart in ("boxplot", "points")
+        rp = Cecelia._summary_agg(df, chart; measure = "m", granularity = :cell, nbins = 10, normalize = :none,
+                                  by_image = true, stat_unit = :image, unit_map = unit_map, attr_map = attr_map,
+                                  raw_points = true)
+        a = only(s for s in rp["series"] if s["uID"] == "A")
+        @test a["points"] == [3.0, 10.0]
+        @test a["pointUnits"] == ["D1 × M1 | A", "D1 × M2 | A"]
+        @test a["cellPoints"] == [1.0, 3.0, 5.0, 10.0, 10.0, 10.0]
+        @test a["cellUnits"] == ["D1 × M1 | A", "D1 × M1 | A", "D1 × M1 | A", "D1 × M2 | A", "D1 × M2 | A", "D1 × M2 | A"]
+        b = only(s for s in rp["series"] if s["uID"] == "B")
+        @test Set(b["cellUnits"]) == Set(b["pointUnits"])               # every cell's replicate is a dot
+    end
+    # cells as the unit, or images as the unit: no layer
+    r1 = Cecelia._summary_agg(df, "boxplot"; measure = "m", granularity = :cell, nbins = 10, normalize = :none,
+                              by_image = true, stat_unit = :image, attr_map = attr_map, raw_points = true)
+    @test !any(s -> haskey(s, "cellPoints"), r1["series"])
 end

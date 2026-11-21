@@ -56,7 +56,7 @@ import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSel
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
-import { DEFAULT_STAT_UNIT, type StatUnit } from '../../utils/statUnitState'
+import { DEFAULT_STAT_UNIT, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
 import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
@@ -254,6 +254,10 @@ const statUnit = computed<StatUnit>({
   },
   set: v => (props.ui.statUnit = v),
 })
+// the n drawn, for the footer: per series, when each point is an image or a replicate (mouse)
+const unitNoun = computed(() => statUnit.value === 'replicate' && replicate.value ? replicate.value : { one: 'image', many: 'images' })
+const nLabel = computed(() => !canStatUnit.value || statUnit.value === 'individual' ? ''
+  : unitCountLabel((result.value?.series ?? []).map(s => s.n ?? s.points?.length ?? 0), unitNoun.value))
 // what the request sends for the unit: the replicate needs its attributes
 const statUnitBody = () => !canStatUnit.value || statUnit.value === 'individual' ? {}
   : statUnit.value === 'replicate' ? { statUnit: 'replicate', replicateAttrs: replicateAttrs.value, imageAgg: imageAgg.value }
@@ -1529,6 +1533,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
+      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="statUnit === 'replicate' ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
                   :measure="hasMeasure ? measure : ''" :group-attrs="crossImage ? (groupAttr ?? []) : []"
@@ -1588,6 +1593,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 .sp-chart { font-size: var(--cc-fs-sm); max-width: 8rem; }
 .sp-export { max-width: 7rem; }
 .sp-attrs { color: var(--cc-text-dim); }
+.sp-n { white-space: nowrap; }
 /* footer notices sit in the panel CHROME, never in `.sp-body`: the chart is height:100% there and the
    body is overflow:hidden, so a sibling after it is pushed out of view (which is why the first version
    of these notes was emitted correctly and never seen). */

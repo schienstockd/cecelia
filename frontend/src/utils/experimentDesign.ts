@@ -9,6 +9,7 @@
 // above a file, a leading subject token (M1-…, D3_…) and existing attributes are where any lab keeps
 // this.
 
+import { unitCountLabel } from './statUnitState'
 import type { SearchGroup } from './searchSelect'
 import { buildRegex, extractWith, regexSampleFor, type BuilderSpec, type RegexSource } from './regexBuilder'
 
@@ -537,6 +538,6 @@ export function designSketch(grid: DesignGrid, d: ExperimentDesign, cap = 10): D
   const groups = [...byGroup.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
     .map(([label, reps]) => ({ label, reps: reps.slice(0, cap), more: Math.max(0, reps.length - cap) }))
   const ns = groups.map(g => g.reps.length + g.more)
-  const caption = `${d.group.join(' × ')}: ${groups.map(g => g.label).join(' vs ')} · n = ${ns.join(' vs ')} ${repNoun.many}`
+  const caption = `${d.group.join(' × ')}: ${groups.map(g => g.label).join(' vs ')} · ${unitCountLabel(ns, repNoun)}`
   return { groups, repNoun, insideNoun, caption }
 }
