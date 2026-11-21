@@ -14,6 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
+import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { defaultSpecIds, shouldSeedDefaults } from '../../utils/defaultPlots'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, ref, watch } from 'vue'
@@ -607,7 +608,7 @@ watch(segPops, () => {
           <!-- Floating population picker: `position: absolute` on the undocked CanvasSidePanel
                anchors it to the nearest positioned ancestor, so it stays in the overlay slot
                (inside `.floating-canvas`) alongside the share chip — not below the host. -->
-          <SeriesPicker v-if="showManager" :family-note="familyNote" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
+          <SeriesPicker v-if="showManager" :family-note="familyNote" :tracks="isTrackFamily(listedPopType)" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis"
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"

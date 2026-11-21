@@ -25,6 +25,7 @@ import { needsXRotation } from './autoOverride'
 import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
+import { trackLabelPath } from '../utils/popName'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured on
@@ -339,6 +340,7 @@ export interface BuildOpts extends VisProps {
   darkTheme?: boolean                    // render-time: the app scheme on screen, false for every export
   chartType: ChartType
   byImage: boolean                       // cross-image per_image scope
+  trackFamily?: boolean                  // the series are a track family's pops (`isTrackFamily`)
   normalize: boolean                     // frequency: proportion vs count
   errorMetric: 'sd' | 'sem' | 'ci95'     // bar error bars
   colorOf: (s: PlotSeries) => string     // series colour from the host
@@ -467,21 +469,26 @@ const THEME = {
 const pathOf = (s: PlotSeries) =>
   s.value_name && s.pop.startsWith(s.value_name + '/') ? s.pop.slice(s.value_name.length + 1) : s.pop
 
-function dimsOf(series: PlotSeries[], byImage: boolean) {
+// `tracks` (a track plot, or a track family's pops): a `_tracked` series is labelled by the population it tracks, "qc/OTI" not
+// "qc/OTI/_tracked" — the same rule as the picker (`trackLabelPath`, utils/popName.ts)
+function dimsOf(series: PlotSeries[], byImage: boolean, tracks = false) {
+  const lp = tracks ? trackLabelPath(series.map(pathOf)) : (p: string) => p
   return {
+    label: (s: PlotSeries) => lp(pathOf(s)),
     img:  byImage && new Set(series.map(s => s.uID)).size > 1,
     seg:  new Set(series.map(s => s.value_name)).size > 1,
     path: new Set(series.map(s => pathOf(s))).size > 1,
     grp:  new Set(series.map(s => s.group ?? '')).size > 1,   // groupBy sub-axis (e.g. HMM state)
   }
 }
-function keyFor(s: PlotSeries, d: { img: boolean; seg: boolean; path: boolean; grp: boolean }): string {
+function keyFor(s: PlotSeries, d: { img: boolean; seg: boolean; path: boolean; grp: boolean;
+                                    label: (s: PlotSeries) => string }): string {
   const parts: string[] = []
   if (d.img) parts.push(s.uID ?? '')
   if (d.seg) parts.push(s.value_name)
-  if (d.path) parts.push(pathOf(s))
+  if (d.path) parts.push(d.label(s))
   if (d.grp) parts.push(s.group ?? '')
-  return parts.length ? parts.join(' · ') : (pathOf(s) || s.pop)
+  return parts.length ? parts.join(' · ') : (d.label(s) || s.pop)
 }
 
 // colour scale {domain, range} from the series keys in first-appearance order. NB: no `legend` key —
@@ -591,7 +598,8 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // Faceting BY IMAGE moves the image out of the series key and onto the panel header, so what is
   // left — segmentation / population / group — becomes the colour and position INSIDE each panel.
   // Leaving `img` in would repeat it in every legend entry and give each panel a single series.
-  const d = { ...dimsOf(r.series, o.byImage), ...(facetMode(o) === 'image' ? { img: false } : {}) }
+  const d = { ...dimsOf(r.series, o.byImage, r.granularity === 'track' || !!o.trackFamily),
+              ...(facetMode(o) === 'image' ? { img: false } : {}) }
   const keyOf = (s: PlotSeries) => keyFor(s, d)
   let color = colourScale(r.series, keyOf, o.colorOf)
   // When sub-split by a groupBy column (e.g. HMM state) the levels have no population-manager colour,
@@ -949,7 +957,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   // group level → X axis, not a series. Faceting BY IMAGE additionally lifts the image onto the panel
   // header, so each panel holds that movie's curves (one per segmentation/population) — which is the
   // point: five movies × two segmentations is ten overlaid LOESS curves on one axis otherwise.
-  const d = { ...dimsOf(r.series, o.byImage), grp: false,
+  const d = { ...dimsOf(r.series, o.byImage, r.granularity === 'track' || !!o.trackFamily), grp: false,
               ...(facetMode(o) === 'image' ? { img: false } : {}) }
   const keyOf = (s: PlotSeries) => keyFor(s, d)
   let color = colourScale(r.series, keyOf, o.colorOf)

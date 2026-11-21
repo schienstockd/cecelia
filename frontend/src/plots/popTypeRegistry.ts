@@ -33,6 +33,9 @@ const names = (pred: (i: PopTypeInfo) => boolean): string[] => POP_TYPE_REGISTRY
 export const STORED_POP_TYPES = names(i => i.suffix !== null)
 /** The board's populations of tracks, in picker order (the first is the default). */
 export const TRACK_FAMILY_POP_TYPES = names(i => i.trackFamily)
+/** A population family of TRACKS (`Tracked`, `Tracked (gated)`, `Track clusters`): its picker folds each
+ *  `_tracked` into the population it tracks (`pickerRows`, plots/series.ts). */
+export const isTrackFamily = (popType?: string | null): boolean => !!popTypeInfo(popType)?.trackFamily
 /** The stored, cell-grained types — what the viewer draws as centroid point overlays. */
 export const STORED_CELL_POP_TYPES = names(i => i.suffix !== null && i.grain === 'cell')
 /** Every type whose populations are cells or tracks (not branches) — what a plot of cells can draw. */

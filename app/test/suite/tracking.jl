@@ -928,11 +928,11 @@ end
     @test Cecelia._track_pop_groups(String[], "B", false)[1].refs == [("B", "")]
     pg = Cecelia._track_pop_groups(["B/tcells", "C/qc/_tracked"], "B", false)
     @test [g.refs[1] for g in pg] == [("B", "/tcells"), ("C", "/qc/_tracked")]
-    # the LEAF is what a user calls a population; the path is a file path
-    @test [g.label for g in pg] == ["tcells", "_tracked"]
-    # two tracked pops share the leaf `_tracked`: each is named by the parent that tells it apart
+    # the LEAF is what a user calls a population; the path is a file path. On a track plot a `_tracked`
+    # pop IS its population's tracks, so it is named by that population
+    @test [g.label for g in pg] == ["tcells", "qc"]
     pt = Cecelia._track_pop_groups(["T/qc/OTI/_tracked", "T/qc/gBT/_tracked"], "T", false)
-    @test [g.label for g in pt] == ["OTI/_tracked", "gBT/_tracked"]
+    @test [g.label for g in pt] == ["OTI", "gBT"]
     poolp = Cecelia._track_pop_groups(["B/a", "B/b"], "B", true)
     @test length(poolp) == 1 && length(poolp[1].refs) == 2
 

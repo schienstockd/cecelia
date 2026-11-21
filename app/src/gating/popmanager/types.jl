@@ -49,8 +49,18 @@ list shares it — then each clashing pop climbs its path one step at a time unt
 called `_tracked`, so leaf names alone make identical legend rows. `name_of(path)` overrides the own
 (last) name; the climbed parents always come from the path. Twin of the frontend `popDisplayLabels`
 (`frontend/src/utils/popName.ts`).
+
+`tracks = true`: the list is on a TRACK plot, where a `_tracked` row is named by the population it
+tracks (`track_label_path`) — "OTI", not "OTI/_tracked" — and `name_of` is asked for that population's
+path. The root's `/_tracked` is "All tracks".
 """
-function pop_display_labels(paths; name_of = _ -> nothing)::Dict{String,String}
+function pop_display_labels(paths; name_of = _ -> nothing, tracks::Bool = false)::Dict{String,String}
+    if tracks
+        as = track_label_path(paths)
+        base = pop_display_labels(as.(String.(paths));
+            name_of = q -> something(name_of(q), q == ROOT_TRACKED ? ALL_TRACKS_LABEL : nothing, Some(nothing)))
+        return Dict(String(p) => base[as(String(p))] for p in paths)
+    end
     uniq  = unique(String.(paths))
     segs  = Dict(p => String.(split(p, '/'; keepempty = false)) for p in uniq)
     depth = Dict(p => 1 for p in uniq)
@@ -74,6 +84,30 @@ function pop_display_labels(paths; name_of = _ -> nothing)::Dict{String,String}
         climbed || break
     end
     Dict(p => label(p) for p in uniq)
+end
+
+# ── tracked populations on a track plot ──────────────────────────────────────────────────────────────
+# Tracking makes a derived `P/_tracked` under each tracked population P (P's tracked cells). On a TRACK
+# plot P and `P/_tracked` are the same tracks — a track belongs to a population if any of its cells do —
+# so the row is named as P. The root's `/_tracked` (every track) has no population above it. Twin of
+# the same block in `frontend/src/utils/popName.ts`.
+const TRACKED_LEAF = "_tracked"
+const ROOT_TRACKED = "/" * TRACKED_LEAF
+const ALL_TRACKS_LABEL = "All tracks"
+
+"""The population a `_tracked` path tracks (`/qc/OTI/_tracked` → `/qc/OTI`); `nothing` for the root's
+`/_tracked` and any other path."""
+function tracked_owner(path::AbstractString)::Union{String,Nothing}
+    pop_name(path) == TRACKED_LEAF || return nothing
+    o = pop_parent(path)
+    is_root(o) ? nothing : o
+end
+
+"""The path a track-plot label is built from: a `_tracked` row's owner, unless the owner is listed
+too (then the leaf tells the two apart). Every other path is its own."""
+function track_label_path(paths)
+    listed = Set(String.(paths))
+    p -> (o = tracked_owner(p); o !== nothing && !(o in listed) ? o : String(p))
 end
 
 """Join a parent path + leaf name into a pop path."""
