@@ -6,6 +6,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
                               result      = nothing,
                               params_hash = nothing,
                               reason::Union{String,Nothing} = nothing,
+                              reused::Union{String,Nothing} = nothing,
                               waited::Bool = false,
                               quiet::Bool = false)
     captured_result = Ref{Any}(nothing)
@@ -24,6 +25,8 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
         isnothing(params_hash) || (st.params_hash = params_hash)
         # the skip reason is part of the :skipped outcome, so any other transition clears it
         st.reason = status == NODE_SKIPPED ? reason : nothing
+        # likewise the reused run's task id is part of a :done that was reused (chain/reuse.jl)
+        st.reused = status == NODE_DONE ? reused : nothing
         captured_result[]  = st.result
         captured_task_id[] = something(st.task_id, "")
         _save_run!(run)
@@ -87,6 +90,8 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             # a manual step continued by the user: its prepare task was banked when it parked, so the
             # frame builder must not bank it again (that would restamp it as finishing now)
             waited      = waited,
+            # the run-log task id of the past run this node reused instead of running; "" = it ran
+            reused      = something(reused, ""),
         ))
     elseif status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
         _fire_chain_event!("node:failed", (
@@ -373,6 +378,16 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             _await_manual_image!(run, node, image_uid, task_struct, run_params, effective_params,
                                  is_cancelled)
             continue
+        end
+
+        # "Reuse unchanged steps" (chain/reuse.jl): an identical past run whose output is still current
+        # stands in for this one. Never a manual step — what it waits for is the user's work.
+        if run.reuse && !manual && _reuse_preds_ok(run.image_states[image_uid], preds[node.id], incremental_ids)
+            hit = reusable_run(img, task_struct, node.fn, run_params)
+            if !isnothing(hit)
+                _mark_reused!(run, img, node, hit, run_params, effective_params, on_log)
+                continue
+            end
         end
 
         tid = gen_uid()
@@ -901,7 +916,7 @@ function _force_restart_from!(run::ChainRun, start_node::String)
         if st.status != NODE_PENDING
             st.status=NODE_PENDING; st.params_hash = nothing
             st.result = nothing;  st.task_id     = nothing
-            st.reason = nothing
+            st.reason = nothing;  st.reused      = nothing
             changed   = true
         end
     end
@@ -945,6 +960,7 @@ function _reset_stale_nodes!(run::ChainRun, overrides::Dict{String,Any},
                     st.result      = nothing
                     st.task_id     = nothing
                     st.reason      = nothing
+                    st.reused      = nothing
                     any_changed    = true
                 end
             end

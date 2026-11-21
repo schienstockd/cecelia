@@ -41,6 +41,9 @@ export interface TaskEntry {
   chainRunId?:   string
   chainNodeId?:  string
   chainName?:    string
+  // A chain node that reused a past run instead of running ("Reuse unchanged steps"): that run's
+  // run-log task id. Only on a `done` chain row (`chain:node:done`'s `reused`).
+  reusedFrom?:   string
   // Rebuilt from `GET /api/tasks` rather than watched live (utils/runningTasks.ts) — this tab did not
   // launch it, so it has no earlier log lines (backfilled from disk on first open) and its params come
   // from the snapshot rather than from the dispatch that created it.
@@ -362,6 +365,7 @@ export const useTaskStore = defineStore('tasks', () => {
     by?: string
     startedAt?: Date
     finishedAt?: Date
+    reused?: string
   }) {
     const syntheticId = `${opts.runId}::${opts.nodeId}::${opts.imageUid}`
     const existing = tasks.value.find(t => t.id === syntheticId)
@@ -373,6 +377,8 @@ export const useTaskStore = defineStore('tasks', () => {
       if (opts.taskId) existing.backendTaskId = opts.taskId
       // the frame names who the run executes as NOW — a resume moves it to the resumer
       if (opts.by) existing.by = opts.by
+      // reused belongs to a done node only; any other transition (a resume re-running it) clears it
+      existing.reusedFrom = opts.status === 'done' ? opts.reused : undefined
       setStatus(syntheticId, opts.status,
                 { startedAt: opts.startedAt, finishedAt: opts.finishedAt, pool: opts.pool })
       return existing
@@ -401,6 +407,7 @@ export const useTaskStore = defineStore('tasks', () => {
       pool:        opts.pool || undefined,
       // from the frame, never `launcher()`: chain frames reach every tab, not just the one that started it
       by:          opts.by,
+      reusedFrom:  opts.status === 'done' ? opts.reused : undefined,
     }
     tasks.value.unshift(entry)
     return entry

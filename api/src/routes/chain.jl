@@ -91,7 +91,9 @@ end
 # GET /api/chains/run?projectUid&runId — a single persisted run's frozen template (nodes/edges for
 # the layered layout) + per-image per-node status, so the Live view can render a past run from disk.
 # Also what the run was asked to run with: `overrides` and per-node `nodeParams` (`null` = unknown, a
-# run from before they were recorded) and `fromRun` (the run it replays, "" if none).
+# run from before they were recorded) and `fromRun` (the run it replays, "" if none). `reused` = uid =>
+# node => the run-log task id a node reused instead of running (chain/reuse.jl), only where one did;
+# `reuse` = whether the run had "Reuse unchanged steps" on.
 function api_chains_run(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)
@@ -104,11 +106,15 @@ function api_chains_run(req::HTTP.Request)
              for n in run.template_snapshot.nodes]
     edges = [(; from=e.from, to=e.to) for e in run.template_snapshot.edges]
     states = Dict{String,Any}()
+    reused = Dict{String,Any}()
     for (u, nm) in run.image_states
         states[u] = Dict{String,Any}(nid => string(st.status) for (nid, st) in nm)
+        r = Dict{String,Any}(nid => st.reused for (nid, st) in nm if st.reused !== nothing)
+        isempty(r) || (reused[u] = r)
     end
     200, JSON3.write((; runId=run.id, chainName=run.chain_name, createdAt=run.created_at,
                         imageUids=run.image_uids, nodes=nodes, edges=edges, imageStates=states,
+                        reused=reused, reuse=run.reuse,
                         overrides=run.overrides, nodeParams=run.node_params, fromRun=run.from_run))
 end
 

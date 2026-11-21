@@ -104,6 +104,10 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
         f = base(p); f["type"] = "chain:node:done"; f["params"] = p.params; f["result"] = p.result
         f["waited"] = get(p, :waited, false) === true   # the API relay must not bank it either
         f["startedAt"] = started; f["finishedAt"] = finished
+        # a node that reused a past run (chain/reuse.jl): that run's task id. It ran no task, so its
+        # `taskId` is "" and nothing above banked a row for it.
+        r = String(something(get(p, :reused, ""), ""))
+        isempty(r) || (f["reused"] = r)
         emit(f)
     end
     failed = function(p)

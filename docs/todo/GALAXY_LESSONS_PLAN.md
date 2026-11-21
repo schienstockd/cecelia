@@ -112,6 +112,8 @@ Each phase can ship on its own.
     content hash. Ours: the input's vN plus its run-log entry (`taskId`, `finishedAt`) as the identity;
     a newer run-log entry for that output = changed. Built on `stale_outputs_for`, the same walk run in
     reverse.
+  - **Built** (`app/src/tasks/chain/reuse.jl`; `docs/SCHEDULER.md` → *Reuse unchanged steps*):
+    image-scope nodes only, set-scope never reused; the key has no plugin version or git commit yet (L0).
 - **L4 — resource use per run.**
   - The `sacct`/`qstat` fields already fetched go into the run-log entry as `usage`.
   - Local runs add peak RSS of the Python child and the host (wall time is already `at`/`finishedAt`).

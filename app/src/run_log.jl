@@ -78,6 +78,10 @@
 # before dispatch (today: the image is excluded), written once by `skip_run_log!` with a `reason`. Its
 # `taskId` is the one the rest of the selection ran under, so a set-level result that covers fewer
 # images can be traced to the images it left out. Like cancelled/interrupted it produced no output.
+# A chain node that REUSED a past run ("Reuse unchanged steps", tasks/chain/reuse.jl) is skipped too,
+# with reason `reused <taskId>` (`RUN_LOG_REUSED_PREFIX`) naming the `done` run whose output it kept and
+# an empty `taskId`: that run stays the output's maker for every reader (`_run_maker`, the staleness
+# walk, the history table), which pass over skipped entries.
 #
 # Readers must therefore treat `status` as an open set and NOT assume a terminal one — `"running"` on
 # disk means "started, outcome not yet known", which is a real state, not a corrupt entry.
@@ -109,6 +113,7 @@ const RUN_LOG_ARCHIVE_FILE = "runlog.archive.jsonl"
 const RUN_LOG_RUNNING     = "running"
 const RUN_LOG_INTERRUPTED = "interrupted"
 const RUN_LOG_SKIPPED     = "skipped"     # asked for, never dispatched — see `skip_run_log!`
+const RUN_LOG_REUSED_PREFIX = "reused "   # a skip's reason when a chain node reused a past run (header)
 
 # Serialises the read-modify-write in `_update_run_log!`. Two tasks CAN target one image at once (they
 # sit in different pools), and both `open_run_log!` and `close_run_log!` rewrite the whole file, so

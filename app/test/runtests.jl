@@ -83,6 +83,26 @@ struct _TestCustomTask <: CciaTask end
 # (`_CUSTOM_SPEC_PATHS` is keyed by concrete type, so two types is also the realistic case).
 struct _TestCustomTask2 <: CciaTask end
 
+# "Reuse unchanged steps" test tasks (suite/chain_reuse.jl): each run is counted and registers its output
+# label set. Defined here, not in the suite file: a pool worker started by an earlier testset runs in an
+# older world and would not see a `_run_task` method defined later.
+struct _ReuseRelabel <: CciaTask end
+struct _ReuseSummarise <: CciaTask end
+const _REUSE_RUNS = Dict{String,Int}()
+function _reuse_count!(fn, img, params)
+    _REUSE_RUNS[fn] = get(_REUSE_RUNS, fn, 0) + 1
+    out = string(params["output"])
+    Cecelia.register_label_files!(img, out, ["$out.zarr"])
+    Dict{String,Any}("output" => out)
+end
+Cecelia._run_task(::_ReuseRelabel, img::CciaImage, params::Dict{String,Any}; kw...) =
+    _reuse_count!("relabel", img, params)
+Cecelia._run_task(::_ReuseSummarise, img::CciaImage, params::Dict{String,Any}; kw...) =
+    _reuse_count!("summarise", img, params)
+struct _ReuseModelled <: CciaTask end
+Cecelia._run_task(::_ReuseModelled, img::CciaImage, params::Dict{String,Any}; kw...) =
+    _reuse_count!("modelled", img, params)
+
 # A set-scope task that declares `requires.scale` but no `requires.axes` — the shape the chain's
 # set-scope gating must not skip over (registered with its spec inside the chain testset).
 struct _ScaleOnlySetTask <: CciaTask end
