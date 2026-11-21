@@ -10,7 +10,8 @@
 #
 # The key, all of it against the NEWEST `done` run that made the output (`_run_maker`):
 #   task        — the same `fun` (a composite sharing a step is not the same task)
-#   code        — the same `ceceliaVersion`, recorded on both sides; an entry without one never matches
+#   code        — the same `ceceliaVersion`, recorded on both sides (an entry without one never matches),
+#                 and the same `ceceliaCommit` when both the entry and this process have one
 #   params      — the sanitised params + `valueName` as `run_task` would log them (`resolve_run_params`,
 #                 `_run_log_params`), compared as canonical JSON (`_gate_canon`: keys sorted at every
 #                 level, since a stored entry comes back in file order)
@@ -67,6 +68,8 @@ function _reusable_run(img::CciaImage, task, fn::String, run_params::Dict{String
     (_rl_str(e, "fun") == fn && !isempty(tid)) || return nothing
     v = _rl_str(e, "ceceliaVersion")
     (!isempty(v) && v == (try cecelia_version() catch; "" end)) || return nothing
+    c, c_now = _rl_str(e, "ceceliaCommit"), (try cecelia_commit() catch; "" end)
+    (isempty(c) || isempty(c_now) || c == c_now) || return nothing
     env = _rl_get(e, "env", nothing)
     (env isa AbstractDict && _rl_get(env, "scaleDefaulted", nothing) !== nothing) && return nothing
     isempty(run_scale_defaults(fresh, task_requires_scale(task))) || return nothing

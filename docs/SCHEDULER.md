@@ -990,7 +990,7 @@ log (`docs/todo/GALAXY_LESSONS_PLAN.md` → L3).
 | Part | Same means |
 |---|---|
 | task | the same `fun` |
-| code | the same `ceceliaVersion`, recorded on both sides (an entry without one never matches) |
+| code | the same `ceceliaVersion`, recorded on both sides (an entry without one never matches), and the same `ceceliaCommit` when the entry and this process both have one |
 | params | the sanitised params + `valueName` that `run_task` would log (`resolve_run_params` → `_run_log_params`), as canonical JSON with keys sorted at every level |
 | inputs | every name read at the same name + vN (`run_inputs`); no recorded `inputs` on a task that reads names = no match |
 | gates | every gate read at the same content hash (`run_gates`) |
@@ -1014,9 +1014,9 @@ or anything after a node that ran. A calibration CORRECTED from one recorded val
 seen: the run log does not record the scale a run used, so a µm-dependent step is reused at the old
 scale — turn reuse off after correcting a calibration.
 
-**Code identity is coarse.** "Same code" is `ceceliaVersion`, which does not move between commits of a
-dev checkout, with a Python env upgrade, or with an edited custom module; the git SHA (plan L0) and a
-plugin version belong in the key once they are recorded.
+**Code identity is coarse.** "Same code" is `ceceliaVersion` plus, on a checkout, `ceceliaCommit`. Neither
+moves with a Python env upgrade, with an edited custom module, or with uncommitted edits (the commit is HEAD);
+a plugin version belongs in the key once recorded.
 
 **Visible, never silent** (plan Decision 3):
 - the node is `:done` with `ImageNodeState.reused` = the reused entry's `taskId` (run.json `reused`,

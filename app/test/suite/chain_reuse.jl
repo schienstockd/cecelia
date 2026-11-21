@@ -202,3 +202,23 @@ end
         @test get(_REUSE_RUNS, "modelled", 0) == 2
     end
 end
+
+@testset "Reuse: a run made by another commit is not reused" begin
+    _with_reuse_project() do proj, uid, img, _
+        isempty(Cecelia.cecelia_commit()) && return @test_skip "no commit for this process (a release)"
+        _reuse_run(proj, uid; reuse = true)
+        restamp!(c) = Cecelia._update_run_log!(img) do entries
+            map(entries) do e
+                d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
+                c === nothing ? delete!(d, "ceceliaCommit") : (d["ceceliaCommit"] = c)
+                d
+            end
+        end
+        restamp!("0"^40)                                   # made by another commit: both nodes run
+        run = _reuse_run(proj, uid; reuse = true)
+        @test _reuse_runs() == (2, 2) && _reused(run, uid, "r") === nothing
+        restamp!(nothing)                                  # no commit recorded: the version decides
+        run = _reuse_run(proj, uid; reuse = true)
+        @test _reuse_runs() == (2, 2) && _reused(run, uid, "r") !== nothing && _reused(run, uid, "s") !== nothing
+    end
+end
