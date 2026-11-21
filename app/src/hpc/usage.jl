@@ -4,6 +4,7 @@
 #
 #   hpc_job_usage(b, conn, id)   → HpcUsage, or `nothing` when the scheduler keeps no accounting
 #   hpc_usage_lines(u)           → the log lines
+#   run_usage_from_hpc(u, src)   → the same figures as a run-log `usage` report (app/src/run_usage.jl)
 
 """
 A finished job's use of what it booked. Memory in GB, times in minutes (a requested walltime of 0 = no limit); `cpu_busy` is the average
@@ -85,4 +86,24 @@ function hpc_usage_lines(u::HpcUsage)::Vector{String}
            "[HPC]   CPUs      $(round(u.cpu_busy; digits = 1)) of $(u.cpus) busy on average$(_hpc_pct(u.cpu_busy, u.cpus))"]
     isnothing(u.gpu_util) || push!(out, "[HPC]   GPU       $(round(Int, u.gpu_util))% utilised")
     out
+end
+
+"""
+    run_usage_from_hpc(u, source) -> Dict{String,Any}
+
+`u` as one run-log `usage` report (the shape in app/src/run_usage.jl): GB → bytes (1024-based, as
+`_hpc_size_gb` read them), minutes → seconds, CPUs busy × walltime → CPU seconds. A walltime booked as
+0 (no limit) and a GPU figure the site does not report are left out. `source` = the scheduler name.
+"""
+function run_usage_from_hpc(u::HpcUsage, source::AbstractString)::Dict{String,Any}
+    wall = u.walltime_min * 60
+    d = Dict{String,Any}("source" => String(source), "runs" => 1,
+                         "peakRssBytes" => round(Int, u.mem_gb * 1024^3),
+                         "reqMemBytes" => round(Int, u.mem_req_gb * 1024^3),
+                         "wallSeconds" => round(wall; digits = 3),
+                         "cpus" => u.cpus, "cpuSeconds" => round(u.cpu_busy * wall; digits = 3),
+                         "final" => u.final)
+    u.walltime_req_min > 0 && (d["reqWallSeconds"] = round(u.walltime_req_min * 60; digits = 3))
+    isnothing(u.gpu_util) || (d["gpuUtilPct"] = u.gpu_util)
+    d
 end

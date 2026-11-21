@@ -202,6 +202,59 @@ def check_contract_version(env=None):
     return want_i
 
 
+#: The env var `run_py` names the per-call usage report with (app/src/run_usage.jl). Absent = not
+#: launched by `run_py` (a hand replay, a test, a run on the cluster), and no report is written.
+USAGE_OUT_ENV = 'CECELIA_USAGE_OUT'
+
+_usage_report_registered = False
+
+
+def usage_report():
+    """What this runner used, as the run-log `usage` fields it can measure: `{peakRssBytes}`, or `{}`.
+
+    `peakRssBytes` is the largest single-process peak of resident memory: this process's own, or that of
+    the largest child it waited for (`cpu_utils.children_peak_rss_bytes` -- a joblib or multiprocessing
+    worker), whichever is bigger. Not a sum over processes. Absent when the platform cannot say.
+    """
+    from cecelia.utils import cpu_utils
+    peaks = [p for p in (cpu_utils.peak_rss_bytes(), cpu_utils.children_peak_rss_bytes()) if p]
+    return {'peakRssBytes': int(max(peaks))} if peaks else {}
+
+
+def write_usage_report(path, pid=None):
+    """Write `usage_report()` to `path` as JSON. Runs at interpreter exit; never raises.
+
+    `pid` = the process that registered it: a forked child inherits the atexit hook and must not
+    overwrite the runner's report with its own figure."""
+    if pid is not None and os.getpid() != pid:
+        return
+    try:
+        rep = usage_report()
+        if rep:
+            from cecelia.utils.atomic_io import write_json_atomic
+            write_json_atomic(path, rep)
+    except Exception:
+        pass          # a usage figure is never worth a failed run
+
+
+def register_usage_report(env=None):
+    """Write the usage report at exit when `run_py` asked for one (`CECELIA_USAGE_OUT`). Idempotent.
+
+    At EXIT because the peak is only known then; it is a lifetime high-water mark
+    (`cpu_utils.peak_rss_bytes`), so registering late (after the imports) loses nothing. A run killed
+    outright (SIGKILL, the OOM killer, a cancel) writes no report and its run-log entry then has no
+    peak -- never a guess.
+    """
+    global _usage_report_registered
+    path = (env if env is not None else os.environ).get(USAGE_OUT_ENV)
+    if not path or _usage_report_registered:
+        return None
+    import atexit
+    atexit.register(write_usage_report, path, os.getpid())
+    _usage_report_registered = True
+    return path
+
+
 def script_params():
     """
     Read and return the JSON params file passed via --params.
@@ -209,11 +262,12 @@ def script_params():
     The file is deleted after reading so temp files don't accumulate.
     Returns None if --params is not provided or the file does not exist.
 
-    Also verifies the params CONTRACT version (`check_contract_version`) — here rather than in each
-    runner, because this is the one function every runner already calls, so the guard cannot be
-    forgotten by a new one.
+    Also verifies the params CONTRACT version (`check_contract_version`) and registers the exit-time
+    usage report (`register_usage_report`) — here rather than in each runner, because this is the one
+    function every runner already calls, so neither can be forgotten by a new one.
     """
     check_contract_version()
+    register_usage_report()
 
     cli = argparse.ArgumentParser()
     cli.add_argument('--params', type=str, default=None)
