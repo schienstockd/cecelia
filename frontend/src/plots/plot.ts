@@ -1259,7 +1259,7 @@ function statsBracketMarks(
   r: PlotDataResponse,
   keyOf: (s: PlotSeries) => string,
   o: BuildOpts,
-  opts: { showNs: boolean; useStars: boolean; useLetters: boolean },
+  opts: { showNs: boolean; useStars: boolean; useLetters: boolean; color: object },
 ): unknown[] {
   const cmp = r.comparisons
   if (!cmp) return []
@@ -1268,9 +1268,11 @@ function statsBracketMarks(
   const { idx } = seriesIndex(r, keyOf, facetSingle(o))
   const labelBySeries = serverStatsLabels(r.series)
   const posByLabel = new Map<string, number>()
+  const keyByLabel = new Map<string, string>()
   for (const label of cmp.groups) {
     const s = r.series.find(ss => labelBySeries.get(ss) === label)
     if (!s) continue
+    keyByLabel.set(label, keyOf(s))
     const p = idx.get(keyOf(s))
     if (p !== undefined) posByLabel.set(label, p)
   }
@@ -1280,21 +1282,29 @@ function statsBracketMarks(
   // One letter (or letter cluster) per group at the measure-axis edge. Group N's letters come from
   // `cmp.letters[N]` — a set of 2-group brackets simply drops through to the bracket branch below
   // when letters are empty (the omnibus already IS the answer for 2 groups).
+  // `lettersScope: 'population'`: each population has its own letters, so each letter takes its box's
+  // series colour — "a" in one population and "a" in another must not read as a match.
   if (opts.useLetters && cmp.letters && cmp.letters.some(l => l.length > 0)) {
     const m = extent.max
     const marks: unknown[] = []
+    const scale = opts.color as { domain?: string[]; range?: string[] }   // the chart's colour scale
+    const colourOf = (label: string) => {
+      const i = scale.domain?.indexOf(keyByLabel.get(label) ?? '') ?? -1
+      return (i >= 0 && scale.range?.[i]) || ink
+    }
     cmp.groups.forEach((label, k) => {
       const pos = posByLabel.get(label)
       const letter = cmp.letters![k] ?? ''
       if (pos === undefined || letter === '') return
+      const fill = cmp.lettersScope === 'population' ? colourOf(label) : ink
       if (o.rotate) {
         marks.push(Plot.text([{ x: m, y: pos, label: letter }],
                              { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: STATS_GAP_PX,
-                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill }))
       } else {
         marks.push(Plot.text([{ x: pos, y: m, label: letter }],
                              { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', lineAnchor: 'bottom',
-                               dy: -STATS_GAP_PX, fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+                               dy: -STATS_GAP_PX, fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill }))
       }
     })
     return marks
@@ -1468,7 +1478,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // spans the position axis (caps, baseline)
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters, color })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -1618,7 +1628,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters, color })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -1676,7 +1686,7 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const Area = o.rotate ? Plot.areaY : Plot.areaX
   const Line = o.rotate ? Plot.lineY : Plot.lineX
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters, color })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -1744,7 +1754,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
     : 0.55
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters, color })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -1917,8 +1927,12 @@ export function plotStatsToCsv(r: PlotDataResponse): string {
   lines.push('')
   // block 1 — per-group summary (+ CLD letter when the server produced one)
   const hasLetters = !!cmp.letters && cmp.letters.some(l => (l ?? '').length > 0)
+  // per-population letters (`lettersScope`) carry no colour here, so the header says their scope:
+  // "a" in one population and "a" in another are separate displays
+  const perPop = hasLetters && cmp.lettersScope === 'population'
   lines.push('# Group summary')
-  lines.push(hasLetters ? 'name,n,mean,median,letter' : 'name,n,mean,median')
+  if (perPop) lines.push('# Letters compare groups within each population only')
+  lines.push(hasLetters ? `name,n,mean,median,${perPop ? 'letter_within_population' : 'letter'}` : 'name,n,mean,median')
   for (let i = 0; i < cmp.groups.length; i++) {
     const cols: unknown[] = [cmp.groups[i], cmp.n?.[i] ?? '', num(cmp.means?.[i]), num(cmp.medians?.[i])]
     if (hasLetters) cols.push(cmp.letters?.[i] ?? '')
