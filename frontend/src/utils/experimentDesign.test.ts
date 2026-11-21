@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyRules, assignRole, baseName, dateLabel, designChange, designCompareApply, designExpectPhrase, designMark, questionChanged, withQuestion, designPlotTip, designReplicateAttrs, followsDesign, replicateNoun, roleOf, designDraft, designReservations, designSummary, emptyDesign, gridPivot, runOf, sameNameGroups, suggestDesign,
+  applyRules, assignRole, attrRole, designSketch, setAttrRole, baseName, dateLabel, designChange, designCompareApply, designExpectPhrase, designMark, questionChanged, withQuestion, designPlotTip, designReplicateAttrs, followsDesign, replicateNoun, roleOf, designDraft, designReservations, designSummary, emptyDesign, gridPivot, runOf, sameNameGroups, suggestDesign,
   type DesignGrid, type DesignImage,
 } from './experimentDesign'
 
@@ -291,5 +291,35 @@ describe('the acquisition plan asks the design question', () => {
     expect(questionChanged(d, { question: '', expect: 'unsure', expectIn: '' })).toBe(false)
     expect(questionChanged(null, { question: '', expect: 'unsure', expectIn: 'A' })).toBe(false)  // a stray group, not an expectation
     expect(questionChanged(d, q)).toBe(true)
+  })
+})
+
+describe('step 2: one role per attribute, and the sketch', () => {
+  const d0 = { ...emptyDesign(), group: ['Panel'], parents: ['Date', 'Mouse'], unit: ['Position'] }
+  it('reads and sets one role per attribute', () => {
+    expect(['Panel', 'Mouse', 'Date', 'Position', 'Run'].map(a => attrRole(d0, a)))
+      .toEqual(['group', 'replicate', 'namedWithin', 'inside', ''])
+    // a new n replaces the old one, which leaves the design
+    const d1 = setAttrRole(d0, 'Position', 'replicate')
+    expect(d1.parents).toEqual(['Date', 'Position']); expect(d1.unit).toEqual([])
+    expect(attrRole(d1, 'Mouse')).toBe('')
+    // out of the design; moving an attribute takes it from its old role
+    expect(setAttrRole(d0, 'Panel', '').group).toEqual([])
+    const d2 = setAttrRole(d0, 'Date', 'group')
+    expect(d2.group).toEqual(['Panel', 'Date']); expect(d2.parents).toEqual(['Mouse'])
+  })
+  it('draws each group with its replicates and what sits inside them', () => {
+    const cell = (g: string, p: string[], n: number) =>
+      ({ group: [g], parent: p, units: Array.from({ length: n }, (_, i) => ({ unit: [String(i + 1)], images: [`${g}${p}${i}`] })) })
+    const grid = { cells: [cell('A', ['25', '1'], 2), cell('A', ['25', '2'], 1), cell('B', ['28', '1'], 3)],
+                   groups: [], unassigned: [], missingAttrs: [], confounded: [], paired: [], planned: { parents: null, units: null } }
+    const s = designSketch(grid, d0)!
+    expect(s.groups.map(g => [g.label, g.reps.map(r => r.inside)])).toEqual([['A', [2, 1]], ['B', [3]]])
+    expect(s.caption).toBe('Panel: A vs B · n = 2 vs 1 mice')
+    expect(s.insideNoun).toBe('positions')
+    // no replicate: each image is the n
+    const s2 = designSketch(grid, { ...d0, parents: [] })!
+    expect(s2.groups[0]!.reps).toHaveLength(3); expect(s2.repNoun.many).toBe('images')
+    expect(designSketch(grid, d0, 1)!.groups[0]!.more).toBe(1)
   })
 })

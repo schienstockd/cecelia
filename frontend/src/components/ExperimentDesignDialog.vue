@@ -12,8 +12,9 @@ import InlineNote from './InlineNote.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import SuggestInput from './SuggestInput.vue'
 import DesignQuestionFields from './DesignQuestionFields.vue'
+import DesignSketch from './DesignSketch.vue'
 import {
-  applyRules, assignRole, designChange, roleOf, type RoleSlot, designDraft, designReservations, gridPivot, runOf, sameNameGroups, suggestDesign,
+  applyRules, attrRole, designChange, designSketch, setAttrRole, type AttrRole, designDraft, designReservations, gridPivot, runOf, sameNameGroups, suggestDesign,
   type DesignGrid, type DesignImage, type DesignMode, type DesignRule, type ExperimentDesign,
 } from '../utils/experimentDesign'
 import { previewDesign, saveDesign } from '../utils/experimentDesignApi'
@@ -61,7 +62,6 @@ const attrNames = computed(() => [...new Set([
   ...props.images.flatMap(i => Object.keys(i.attr ?? {})).filter(a => !renamed.value.has(a)),
   ...rules.value.map(r => r.attr.trim()).filter(Boolean),
 ])].sort())
-const attrOptions = computed<ChipOption[]>(() => attrNames.value.map(a => ({ value: a })))
 const groupValues = computed(() =>
   [...new Set(props.images.map(i => draft.value.group.map(g => valueOf(i, g)).join(' ')).filter(Boolean))].sort())
 
@@ -70,10 +70,15 @@ const groupValues = computed(() =>
 // mouse numbers restart each day, so a mouse is named within its date); what sits inside a replicate
 // and is never the n (unit; none = each image). Stored as group / parents = [...within, replicate] / unit.
 const replicate = computed(() => draft.value.parents.at(-1) ?? '')
-function setSlot(slot: RoleSlot, v: string | string[] | null) {
-  draft.value = assignRole(draft.value, slot, Array.isArray(v) ? v : v ? [v] : [])
-}
-const slotModel = (slot: RoleSlot) => slot === 'replicate' ? (replicate.value || null) : roleOf(draft.value, slot)
+// each attribute's role, as segmented chips; "restarts the n" needs an n that isn't this attribute
+const roleOptions = (a: string): ChipOption[] => [
+  { value: 'group', label: 'Compared', tip: 'The groups you compare' },
+  { value: 'replicate', label: 'The n', tip: 'One replicate: what n counts' },
+  { value: 'namedWithin', label: 'Restarts n', tip: 'The n is numbered again per this — Mouse 1 on two days is two mice',
+    disabled: !replicate.value || replicate.value === a },
+  { value: 'inside', label: 'Inside n', tip: 'Several per replicate, never the n' },
+  { value: '', label: '—', tip: 'Not part of the design' },
+]
 
 // ── Rules ─────────────────────────────────────────────────────────────────────────────────────────
 const existingAttrs = computed(() => [...new Set(props.images.flatMap(i => Object.keys(i.attr ?? {})))].sort())
@@ -145,6 +150,7 @@ onBeforeUnmount(() => preview.cancel())
 const sameNames = computed(() => sameNameGroups(props.images))
 const reservations = computed(() => grid.value ? designReservations(grid.value, draft.value, sameNames.value) : [])
 const pivot = computed(() => grid.value ? gridPivot(grid.value, draft.value) : null)
+const sketch = computed(() => grid.value ? designSketch(grid.value, draft.value) : null)
 const groupLabel = computed(() => draft.value.group.join(' × ') || 'Group')
 const gridColumns = computed<SelectionColumn[]>(() => [
   { key: 'group', label: groupLabel.value },
@@ -230,26 +236,16 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
 
     <!-- 2 · the layout -->
     <div v-else-if="step === 2" class="xd-body">
-      <div class="xd-roles">
-        <div class="xd-role">
-          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'The groups you compare'">Compared</span>
-          <ChipSelect :model-value="slotModel('group')" :options="attrOptions" multiple
-                      @update:model-value="v => setSlot('group', v)" />
+      <!-- one row per attribute with its role, and a sketch of what the roles mean (live, from these images) -->
+      <div class="xd-layout">
+        <div class="xd-attrs">
+          <div v-for="a in attrNames" :key="a" class="xd-arow">
+            <span class="xd-aname" :title="a">{{ a }}</span>
+            <ChipSelect :model-value="attrRole(draft, a)" :options="roleOptions(a)" variant="segmented"
+                        :aria-label="`Role of ${a}`" @update:model-value="v => draft = setAttrRole(draft, a, (v ?? '') as AttrRole)" />
+          </div>
         </div>
-        <div class="xd-role">
-          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'One replicate: what n counts, e.g. Mouse'">Replicate · the n</span>
-          <ChipSelect :model-value="slotModel('replicate')" :options="attrOptions" allow-empty
-                      @update:model-value="v => setSlot('replicate', v)" />
-          <!-- always shown (disabled until a replicate is picked), so the layout never jumps -->
-          <span class="cc-muted cc-fs-2xs" v-tooltip.top="'Mouse 1 on two days is two mice'">numbers restart per</span>
-          <ChipSelect :model-value="slotModel('namedWithin')" :options="attrOptions.filter(o => o.value !== replicate)" multiple
-                      :disabled="!replicate" @update:model-value="v => setSlot('namedWithin', v)" />
-        </div>
-        <div class="xd-role">
-          <span class="cc-eyebrow cc-fs-2xs" v-tooltip.top="'Inside one replicate, never the n; none = each image'">Within a replicate</span>
-          <ChipSelect :model-value="slotModel('inside')" :options="attrOptions" multiple
-                      @update:model-value="v => setSlot('inside', v)" />
-        </div>
+        <DesignSketch class="xd-sketch" :sketch="sketch" />
       </div>
 
       <div class="xd-table">
@@ -342,9 +338,12 @@ const nextLabel = computed(() => (STEPS[step.value] ?? '').toLowerCase())
 .xd-body { display: flex; flex-direction: column; gap: 14px; }
 .xd-field { display: flex; flex-direction: column; gap: 6px; }
 .xd-field textarea { width: 100%; resize: vertical; }
-.xd-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.xd-role { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.xd-table { max-height: 260px; overflow: auto; }
+.xd-layout { display: grid; grid-template-columns: minmax(0, auto) minmax(180px, 1fr); gap: 12px; align-items: start; }
+.xd-attrs { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.xd-arow { display: flex; align-items: center; gap: 8px; }
+.xd-aname { width: 5.5rem; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--cc-fs-sm); }
+.xd-table { max-height: 170px; overflow: auto; }
+@media (max-width: 640px) { .xd-layout { grid-template-columns: 1fr; } }
 .xd-rule { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; }
 .xd-attr { width: 120px; }
 .xd-extract { flex: 1; min-width: 0; }

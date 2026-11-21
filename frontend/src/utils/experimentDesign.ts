@@ -474,3 +474,53 @@ export const questionChanged = (existing: ExperimentDesign | null, q: DesignQues
   const n = withQuestion(existing, q), o = existing ?? emptyDesign()
   return n.question !== o.question || n.expect !== o.expect || n.expectIn !== o.expectIn
 }
+
+// ── Step 2 as one row per attribute, with a sketch of what the roles mean ─────────────────────────
+
+/** An attribute's role in the design; '' = not part of it. */
+export type AttrRole = RoleSlot | ''
+
+export function attrRole(d: ExperimentDesign, a: string): AttrRole {
+  for (const s of ['group', 'replicate', 'namedWithin', 'inside'] as const) if (roleOf(d, s).includes(a)) return s
+  return ''
+}
+
+/** The design with `a` in `role` (one role per attribute; the n is one attribute, so picking another
+ *  replaces it). '' takes it out of the design. */
+export function setAttrRole(d: ExperimentDesign, a: string, role: AttrRole): ExperimentDesign {
+  if (!role) {
+    const now = attrRole(d, a)
+    return now ? assignRole(d, now, roleOf(d, now).filter(x => x !== a)) : d
+  }
+  return assignRole(d, role, role === 'replicate' ? [a] : [...roleOf(d, role).filter(x => x !== a), a])
+}
+
+/** What the sketch draws: per compared group, one mark per replicate (the n) with how many things sit
+ *  inside it. No replicate → each image is the n, nothing inside. Capped per group (`more` = hidden). */
+export interface DesignSketch {
+  groups: { label: string; reps: { label: string; inside: number }[]; more: number }[]
+  repNoun: { one: string; many: string }
+  insideNoun: string
+  caption: string
+}
+
+export function designSketch(grid: DesignGrid, d: ExperimentDesign, cap = 10): DesignSketch | null {
+  if (!d.group.length || !grid.cells.length) return null
+  const rep = d.parents.at(-1)
+  const repNoun = replicateNoun(d.parents) ?? { one: 'image', many: 'images' }
+  const insideAttr = d.unit.at(-1)
+  const insideNoun = rep ? (insideAttr ? plural(insideAttr) : 'images') : ''
+  const byGroup = new Map<string, { label: string; inside: number }[]>()
+  for (const c of grid.cells) {
+    const g = c.group.join(' · ')
+    const list = byGroup.get(g) ?? []
+    if (rep) list.push({ label: c.parent.join(' · '), inside: c.units.length })
+    else for (const u of c.units) list.push({ label: u.unit.join(' · ') || (u.images[0] ?? ''), inside: 0 })
+    byGroup.set(g, list)
+  }
+  const groups = [...byGroup.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([label, reps]) => ({ label, reps: reps.slice(0, cap), more: Math.max(0, reps.length - cap) }))
+  const ns = groups.map(g => g.reps.length + g.more)
+  const caption = `${d.group.join(' × ')}: ${groups.map(g => g.label).join(' vs ')} · n = ${ns.join(' vs ')} ${repNoun.many}`
+  return { groups, repNoun, insideNoun, caption }
+}
