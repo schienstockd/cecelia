@@ -376,11 +376,13 @@ include(joinpath(@__DIR__, "suite", "drift_partial_timepoint.jl"))
 include(joinpath(@__DIR__, "suite", "acquisition_settings.jl"))
 # the import probe's signal pass (photons, shared structure, drift) — ome_qc.jl is review-guarded
 include(joinpath(@__DIR__, "suite", "acq_signal.jl"))
+include(joinpath(@__DIR__, "suite", "acq_camera_unlisted.jl"))   # RESULT-REVIEW repro: a camera's unlisted channels
 # test-acquisition check over a set (acq_check.jl): seeded facts, each rule firing and not
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_ramp_autohv.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_boundaries.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_sampling.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
@@ -497,6 +499,8 @@ include(joinpath(@__DIR__, "suite", "label_import.jl"))
 # After label_import.jl: its fixture project is what the dispatch end-to-end runs on.
 include(joinpath(@__DIR__, "suite", "hpc_dispatch.jl"))
 include(joinpath(@__DIR__, "suite", "hpc_job.jl"))
+# After label_import.jl too: re-measure prunes run records; the correction composite keeps them.
+include(joinpath(@__DIR__, "suite", "correct_carryover_sidecars.jl"))
 # ── Pipeline golden ──────────────────────────────────────────────────────────
 # A synthetic movie with planted truth (intensities, straight-line motion, calibration) through
 # import labels + measure → btrack + track measures → a rectangle gate → clustPops, asserted against

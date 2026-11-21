@@ -13,7 +13,7 @@ export interface HistoryFinal {
   multi: boolean    // several versions can run side by side (segmentation, per-population tracking)
   at: string        // its latest run, ISO
   siblingRead?: boolean  // another version on the same inputs feeds a later step — a try the exemplars moved past
-  inputs?: string        // the populations it read, for the label
+  inputs?: string        // the input names and populations it read, for the label (the same pickers as inputsKey)
   inputsKey?: string     // what it read — the backend's identity for "same inputs": alternatives share it
 }
 export interface HistoryConflict { nodeId: string; param: string; values: Record<string, unknown> }

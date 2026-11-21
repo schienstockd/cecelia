@@ -45,7 +45,7 @@ import { closeDialogs, land, openProject, refuseSlotZero, selectProfile, settle,
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, fillFacts, FIXTURE_RECORD, isPicture, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, fillFacts, FIXTURE_RECORD, isPicture, shotFile, shotPicked, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { isScreenshotChrome, SCREENSHOT_KEEP } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'viewerScreenshot.ts')).href)
 const { anchorSelector } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'guideAnchor.ts')).href)
 
@@ -395,7 +395,7 @@ async function main() {
   refuseSlotZero(a.base, a.allowDefaultPorts)
   const issues = checkShotSets(SHOT_SETS)
   if (issues.length) { for (const i of issues) console.error(`✗ ${i.set}: ${i.problem}`); process.exit(1) }
-  const shots = SHOT_SETS.flatMap(b => b.shots.filter(s => !a.only || a.only === s.id || a.only === b.id).map(s => [b, s]))
+  const shots = SHOT_SETS.flatMap(b => b.shots.filter(s => shotPicked(b, s, a.only)).map(s => [b, s]))
   const recordPath = join(a.configDir, FIXTURE_RECORD)
   const record = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, 'utf8')) : {}
   if (shots.length === 0) throw new Error(a.only ? `no shot or set "${a.only}"` : 'no set defines a shot')

@@ -67,13 +67,15 @@ function acq_design_key(names::AbstractVector)::String
 end
 
 """
-    acq_bright_z_ramp(bz) -> Union{String,Nothing}
+    acq_bright_z_ramp(bz; auto_hv = false) -> Union{String,Nothing}
 
 The Bright Z ramp saved with a movie (`acquisition.brightZ.points`: transmission and HV per depth), as
 text — `"12→15 % over 35 µm"` (lasers joined by `/`, HV added when it changes) — or `nothing` when no
 point differs from the first (no ramp). Whether Bright Z was ON is `brightZ.enabled`, read separately.
+`auto_hv`: the movie was taken under Auto HV (`acquisition.autoHV`), where a recorded HV is not the one
+used — the per-point HV is ignored, like the detector HV in `acq_image_facts`.
 """
-function acq_bright_z_ramp(bz)::Union{String,Nothing}
+function acq_bright_z_ramp(bz; auto_hv::Bool = false)::Union{String,Nothing}
     pts = [p for p in _ag(bz, "points", Any[]) if p isa AbstractDict]
     length(pts) < 2 && return nothing
     sort!(pts; by = p -> something(_anum(_ag(p, "zFromStartUm")), 0.0))
@@ -87,7 +89,7 @@ function acq_bright_z_ramp(bz)::Union{String,Nothing}
         filter(v -> length(v) >= 2, vs)
     end
     num(v) = replace(string(round(v; digits = 1)), r"\.0$" => "")
-    tx = series("transmissionPct"); hv = series("hv")
+    tx = series("transmissionPct"); hv = auto_hv ? Vector{Float64}[] : series("hv")
     ramps(xs) = any(v -> any(!=(v[1]), v), xs)
     tx_ramps = ramps(tx); hv_ramps = ramps(hv)
     (tx_ramps || hv_ramps) || return nothing
@@ -98,9 +100,11 @@ function acq_bright_z_ramp(bz)::Union{String,Nothing}
     join(parts, ", ") * " over " * num(dz) * " µm"
 end
 
-# Whether any Bright Z point has a transmission or HV value the reader couldn't read.
-_acq_ramp_has_gaps(bz) = any(p -> p isa AbstractDict && any(k -> (d = _ag(p, k); d isa AbstractDict &&
-                                                                  any(v -> !(v isa Real), values(d))), ("transmissionPct", "hv")),
+# Whether any Bright Z point has a transmission or HV value the reader couldn't read (HV not under Auto
+# HV, where it is ignored — see `acq_bright_z_ramp`).
+_acq_ramp_has_gaps(bz; auto_hv::Bool = false) = any(p -> p isa AbstractDict && any(k -> (d = _ag(p, k); d isa AbstractDict &&
+                                                                  any(v -> !(v isa Real), values(d))),
+                                                                  auto_hv ? ("transmissionPct",) : ("transmissionPct", "hv")),
                              _ag(bz, "points", Any[]))
 
 """
@@ -124,7 +128,8 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
     # Detector settings per channel (laser scanning): detector, HV and gain — a different gain between
     # images scales their intensities like a laser %. Not under Auto HV, where the recorded HV is not
     # the one used (an FV4000 records 0). Scan settings: dwell and averaging (zoom is the pixel size).
-    det_on = acq isa AbstractDict && _ag(acq, "camera") === nothing && _ag(acq, "autoHV") !== true
+    auto_hv = acq isa AbstractDict && _ag(acq, "autoHV") === true
+    det_on = acq isa AbstractDict && _ag(acq, "camera") === nothing && !auto_hv
     detectors = det_on ? [(_ag(c, "detector"), _anum(_ag(c, "hv")), _anum(_ag(c, "gain")))
                           for c in _ag(acq, "channels", Any[]) if c isa AbstractDict] : nothing
     detectors !== nothing && all(d -> d[2] === nothing && d[3] === nothing, detectors) && (detectors = nothing)
@@ -164,10 +169,10 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
         # a time-lapse (more than one frame) — the set's findings call its members "movies" only when
         # every one is; and the technology whose wording the advice takes (`qc_technology_key`)
         "timeLapse" => something(_anum(_ag(meta, "SizeT")), 1.0) > 1, "technology" => acquisition_technology(meta),
-        "brightZRamp" => acq isa AbstractDict ? acq_bright_z_ramp(_ag(acq, "brightZ")) : nothing,
+        "brightZRamp" => acq isa AbstractDict ? acq_bright_z_ramp(_ag(acq, "brightZ"); auto_hv) : nothing,
         # no ramp found while some ramp value went unread: whether one was saved is unknown
-        "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ")) !== nothing ||
-                              !_acq_ramp_has_gaps(_ag(acq, "brightZ")), "objective" => obj, "pixelSize" => px,
+        "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ"); auto_hv) !== nothing ||
+                              !_acq_ramp_has_gaps(_ag(acq, "brightZ"); auto_hv), "objective" => obj, "pixelSize" => px,
         "channels" => chans, "shared" => shared, "probed" => probed,
         # pixel size, z-step and pinholes against the optics (acq_sampling.jl)
         "sampling" => acq_sampling(meta))

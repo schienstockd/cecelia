@@ -69,6 +69,29 @@ class BlockingReason(unittest.TestCase):
                                  recent_cwds=(str(self.workspace), str(self.theirs)))]
         self.assertIsNotNone(self.reason(f"cd {self.theirs.as_posix()}"))
 
+    def test_blocks_a_session_whose_recorded_folder_goes_through_a_symlink(self):
+        """The cd target's root is resolved; a session folder reached via a symlink is not."""
+        link = self.workspace.parent / (self.workspace.name + "-link")
+        try:
+            link.symlink_to(self.workspace, target_is_directory=True)
+        except OSError:
+            self.skipTest("cannot create symlinks here")
+        self.addCleanup(link.unlink)
+        self.sessions = [Session(2, "cecelia-7", "idle", str(link / "theirs" / "sub"),
+                                 session_id="other-id")]
+        self.assertIsNotNone(self.reason(f"cd {self.theirs.as_posix()}"))
+
+    def test_cd_within_own_checkout_reached_through_a_symlink_is_allowed(self):
+        """The session's cwd keeps a symlinked prefix; its own checkout must still match."""
+        link = self.workspace.parent / (self.workspace.name + "-own-link")
+        try:
+            link.symlink_to(self.workspace, target_is_directory=True)
+        except OSError:
+            self.skipTest("cannot create symlinks here")
+        self.addCleanup(link.unlink)
+        self.sessions.append(Session(3, "cecelia-8", "idle", str(self.mine), session_id="third-id"))
+        self.assertIsNone(self.reason("cd sub", cwd=link / "mine"))
+
     def test_allows_cd_within_own_checkout_and_into_a_free_worktree(self):
         self.assertIsNone(self.reason(f"cd {self.mine.as_posix()}/sub"))
         self.assertIsNone(self.reason(f"cd {self.free.as_posix()} && pixi run test-py"))

@@ -484,6 +484,15 @@ class SweepTest(_Repo):
         (lead,) = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs})[0]
         self.assertEqual((lead["key"], lead.get("fix_session")), ("fanout-00000001", "2026-10-06T01:00:00Z"))
 
+    def test_an_owner_answer_on_a_merged_non_lead_is_kept(self):
+        # the verified-live bug leads; the owner kept the other one `open` with a note (`apply_reviews`)
+        bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        bugs[0]["verify"] = {"verdict": "fix", "date": "2026-10-05", "effect": "it breaks"}
+        bugs[1] = {**bugs[1], "line": 2, "owner_decision": "open", "owner_answer": "fix it in the caller"}
+        (lead,) = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs})[0]
+        self.assertEqual((lead["key"], lead.get("owner_decision"), lead.get("owner_answer")),
+                         ("fanout-00000001", "open", "fix it in the caller"))
+
     def test_a_landed_fix_on_a_merged_non_lead_still_sends_the_bug_back_to_verify(self):
         # the verified-live bug leads; a commit names the other one, which the merge must not drop
         bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])

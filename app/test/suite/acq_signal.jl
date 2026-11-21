@@ -87,3 +87,39 @@ end
     m = meta(fitted); delete!(m, "acquisition")
     @test Cecelia._saturation_is_current(m)
 end
+
+@testset "signal pass — a camera image reads no photon-counted floor" begin
+    # what `lif_meta` records for a widefield DM5500B: a camera, no processing
+    acq = Dict{String,Any}("camera" => Dict{String,Any}("name" => "DFC365FX", "binning" => 1),
+                           "channels" => [Dict{String,Any}("name" => "DAPI")])
+    why = Cecelia.not_photon_counting(acq)
+    @test collect(keys(why)) == ["*"] && occursin("camera", why["*"]) && occursin("DFC365FX", why["*"])
+    @test Cecelia.not_photon_counting(JSON3.read(JSON3.write(acq))) == why
+    @test haskey(Cecelia.not_photon_counting(Dict{String,Any}("camera" => Dict{String,Any}())), "*")
+    @test isempty(Cecelia.not_photon_counting(nothing))
+    @test isempty(Cecelia.not_photon_counting(Dict{String,Any}("camera" => nothing, "channels" => [Dict{String,Any}()])))
+    @test isempty(Cecelia.not_photon_counting(Dict{String,Any}("channels" => [Dict{String,Any}("detector" => "HyD")])))
+    # a mixed-mode .czi (`czi_meta`): `camera` is set when any channel is WideField; only those count
+    mixed = Dict{String,Any}("camera" => Dict{String,Any}("name" => "Axiocam 705"),
+        "channels" => [Dict{String,Any}("acquisitionMode" => "WideField"),
+                       Dict{String,Any}("acquisitionMode" => "LaserScanningConfocalMicroscopy")])
+    @test collect(keys(Cecelia.not_photon_counting(mixed))) == ["0"]
+    # a scanning channel that records no mode, beside a WideField one: not a camera channel
+    push!(mixed["channels"], Dict{String,Any}("name" => "T-PMT"))
+    @test collect(keys(Cecelia.not_photon_counting(mixed))) == ["0"]
+    pop!(mixed["channels"])
+    # a camera image probed before the check carries a photon-counted floor: re-probed
+    ch(kind) = Dict{String,Any}("index" => 0, "profile" => Dict(), "range" => Dict(),
+                                "floor" => Dict{String,Any}("kind" => kind), "noise" => Dict(),
+                                "photons" => Dict{String,Any}("fit" => Dict("greyPerPhoton" => 30.0)))
+    meta(kind, a) = Dict{String,Any}("acquisition" => a, "saturation" => Dict{String,Any}("channels" => [ch(kind)]))
+    @test !Cecelia._saturation_is_current(meta("photon-counted", acq))
+    @test !Cecelia._saturation_is_current(JSON3.read(JSON3.write(meta("photon-counted", acq))))
+    @test Cecelia._saturation_is_current(meta("indeterminate", acq))
+    # the scanned channel of a mixed-mode image keeps a photon-counted floor without a re-probe
+    mm(kind) = Dict{String,Any}("acquisition" => mixed, "saturation" => Dict{String,Any}("channels" =>
+        [ch("indeterminate"), merge(ch(kind), Dict{String,Any}("index" => 1))]))
+    @test Cecelia._saturation_is_current(mm("photon-counted"))
+    # a photon-counting detector keeps its reading
+    @test Cecelia._saturation_is_current(meta("photon-counted", Dict{String,Any}("channels" => [Dict{String,Any}()])))
+end

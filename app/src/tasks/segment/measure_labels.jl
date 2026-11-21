@@ -95,13 +95,12 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
 
     h5ad_filename = "$(p.outputValueName).h5ad"
     # The table is new: cell clusterings / regions / HMM runs on the old one are gone with it — drop
-    # their sidecar entries. Not inside the correction composite: its carry-over restore brings those
-    # columns back (`SegmentCorrectCarryOverRestore`), so the runs stand.
-    if !isfile(_carryover_snapshot_path(task_dir))
-        new_props = joinpath(task_dir, "labelProps", h5ad_filename)
-        prune_stale_clustfeatures!(new_props; on_log = on_log)
-        prune_stale_hmmfit!(new_props; on_log = on_log)
-    end
+    # their sidecar entries. Always, even inside the correction composite: its snapshot phase keeps a
+    # copy of these records and the restore puts back the ones whose columns it brings back
+    # (`_carryover_restore_sidecars!`).
+    new_props = joinpath(task_dir, "labelProps", h5ad_filename)
+    prune_stale_clustfeatures!(new_props; on_log = on_log)
+    prune_stale_hmmfit!(new_props; on_log = on_log)
 
     # QC (advisory): bank the objective cell count so cohort stats can later flag anomalies. A count
     # of 0 (measured nothing) is the one unambiguous problem → an advisory finding. Read the count

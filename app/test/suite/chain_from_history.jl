@@ -256,6 +256,38 @@ end
     rm(proj.root; recursive = true)
 end
 
+@testset "History params table — an older run's popsToTrack \"NONE\" is the default []" begin
+    # tracking took one pop as a string ("NONE" = the whole segmentation) before it took a list
+    proj, uids = _history_project("u" => "zolIMa_UMq4v3", "v" => "zolIMa_UMq4v3")
+    for (key, val) in (("u", "NONE"), ("v", String[]))
+        img = init_object(proj.uid, uids[key])
+        log = read_run_log(img)
+        for e in log
+            e["fun"] == "tracking.bayesian_track_measures" && (e["params"]["popsToTrack"] = val)
+        end
+        write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+    end
+    trk = _hprow(history_params_table(proj, [uids["u"], uids["v"]]), "tracking.bayesian_track_measures")
+    # one step, not one per image: the old and the new value key the step alike
+    @test length(trk) == 1 && only(trk)["images"] == "2/2"
+    @test all(r -> !occursin("popsToTrack", r["changedFromDefault"]) && !occursin("popsToTrack", r["conflicts"]), trk)
+    r = chain_from_history(proj, [uids["u"], uids["v"]])
+    @test length(_hnode(r, "tracking.bayesian_track_measures")) == 1
+    @test !any(c -> c["param"] == "popsToTrack", r["conflicts"])
+    rm(proj.root; recursive = true)
+    # only a MULTI-select picker is read as a list (its spec default is []); a single picker keeps its
+    # value — branching's `refPops` default is the string "NONE"
+    lt = Cecelia._history_leaves("tracking.bayesian_track_measures")["popsToTrack"]
+    lb = Cecelia._history_leaves("segment.branching")["refPops"]
+    @test Cecelia._history_value("NONE", lt) == String[] && Cecelia._history_value("/qc", lt) == ["/qc"]
+    @test Cecelia._history_value("NONE", lb) == "NONE"
+    # board scope: "NONE" and [] both track the whole segmentation, so both ran on what is shown on it
+    lv = Cecelia._history_leaves("tracking.bayesian_track_measures")
+    shown = Dict("Tcells" => ["/qc"])
+    on(v) = Cecelia._hp_on_shown(Dict{String,Any}("valueName" => "Tcells", "popsToTrack" => v), lv, shown)
+    @test on(String[]) && on("NONE")
+end
+
 @testset "History params table — a renamed param reads under its current key (formerKeys)" begin
     # the real 4kS67f region runs were saved as `mergeUmap` (now `createUmap`, formerKeys) = true, the default
     proj, uids = _history_project("a" => "4kS67f_LUkCpP", "b" => "4kS67f_k3Tx90")
@@ -294,7 +326,7 @@ end
 
 @testset "Chain from history — a renamed input picker keys one step, not two" begin
     lv = Dict{String,Cecelia._HistoryLeaf}(
-        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["oldInput"], columns = String[], yields = ""))
+        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["oldInput"], columns = String[], yields = "", multiple = false))
     old = Cecelia._history_inputs(Dict{String,Any}("oldInput" => "denoised"), lv)
     new = Cecelia._history_inputs(Dict{String,Any}("inputName" => "denoised"), lv)
     @test old == new == "inputName=\"denoised\""
@@ -303,10 +335,54 @@ end
           Dict{String,Any}("inputName" => "b")
     # two former spellings saved: the first listed wins, as `_stored_key` says — not Dict order
     lv2 = Dict{String,Cecelia._HistoryLeaf}(
-        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["older", "old"], columns = String[], yields = ""))
+        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["older", "old"], columns = String[], yields = "", multiple = false))
     for p in (Dict{String,Any}("old" => "b", "older" => "a"), Dict{String,Any}("older" => "a", "old" => "b"))
         @test Cecelia._history_current_params(p, lv2) == Dict{String,Any}("inputName" => "a")
     end
+end
+
+@testset "Chain from history — the step label names every input the step is keyed by" begin
+    # alternatives group by `_history_inputs` (input names AND populations); the label must tell two
+    # such groups apart, also when the task has no population picker
+    leaf(t) = (; type = t, ns = "", writes = false, accepts = String[], former = String[], columns = String[], yields = "", multiple = false)
+    lv = Dict{String,Cecelia._HistoryLeaf}("valueName" => leaf("valueNameSelection"))
+    a, b = Dict{String,Any}("valueName" => "Tcells"), Dict{String,Any}("valueName" => "Bcells")
+    @test Cecelia._history_inputs(a, lv) != Cecelia._history_inputs(b, lv)
+    @test Cecelia._history_inputs_read(a, lv) == "Tcells"
+    @test Cecelia._history_inputs_read(b, lv) == "Bcells"
+    # with a population picker too: same pops, different label set → different labels
+    lv["pops"] = leaf("popSelection")
+    a["pops"] = b["pops"] = Any["/qc/frags"]
+    @test Cecelia._history_inputs_read(a, lv) == "Tcells, /qc/frags"
+    @test Cecelia._history_inputs_read(b, lv) == "Bcells, /qc/frags"
+    # a name its population refs repeat is still said: keyed apart from the run without it, so labelled apart
+    named = Dict{String,Any}("valueName" => "Tcells", "pops" => Any["Tcells/_tracked"])
+    unnamed = Dict{String,Any}("valueName" => "", "pops" => Any["Tcells/_tracked"])
+    @test Cecelia._history_inputs(named, lv) != Cecelia._history_inputs(unnamed, lv)
+    @test Cecelia._history_inputs_read(named, lv) == "Tcells, Tcells/_tracked"
+    @test Cecelia._history_inputs_read(unnamed, lv) == "Tcells/_tracked"
+    # an output name the run writes is not something it read
+    lv["outName"] = merge(leaf("valueNameSelection"), (; writes = true, ns = "labels"))
+    @test Cecelia._history_inputs_read(Dict{String,Any}("valueName" => "T", "outName" => "x"), lv) == "T"
+
+    # end to end: neighbourStats on the same populations but another neighbour graph (`graphSuffix`, a
+    # valueNameSelection) is its own step in the dialog — and its `inputs` (the row's label) says so
+    proj, uids = _history_project("a" => "4kS67f_LUkCpP")
+    img = init_object(proj.uid, uids["a"])
+    log = read_run_log(img)
+    ns = deepcopy(last(e for e in log if e["fun"] == "spatialAnalysis.neighbourStats"))
+    ns["params"]["graphSuffix"] = "default"; ns["params"]["statsSuffix"] = "other_graph"
+    ns["at"] = "2026-07-30T15:00:00"
+    push!(log, ns)
+    write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+    r = chain_from_history(proj, [uids["a"]])
+    stats = [f for f in r["finalOutputs"] if f["fn"] == "spatialAnalysis.neighbourStats"]
+    @test !any(f -> f["multi"], stats)
+    @test length(unique(f["inputsKey"] for f in stats)) == 2
+    by_key = Dict(f["inputsKey"] => f["inputs"] for f in stats)
+    @test length(unique(values(by_key))) == 2
+    @test sort(collect(values(by_key))) == ["default, B/qc, T/qc", "immune, B/qc, T/qc"]
+    rm(proj.root; recursive = true)
 end
 
 @testset "History params table — cut to what a board shows" begin

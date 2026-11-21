@@ -44,7 +44,7 @@ SIGNAL_PATCH_PX = 1024
 SIGNAL_PATCH_MARGIN_PX = int(4 * photon_utils.STRUCTURE_BG_SIGMA_PX)
 
 
-def measure_store(im_path, log=None, photons_untestable=None, on_progress=None):
+def measure_store(im_path, log=None, photons_untestable=None, on_progress=None, not_photon_counting=None):
     """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
     with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
     `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
@@ -55,6 +55,9 @@ def measure_store(im_path, log=None, photons_untestable=None, on_progress=None):
     signal-pass patches sat on it — and the signal pass reads its patches there, not on the glass.
     ``photons_untestable`` (`measure_signal`) names channels whose photons the file cannot tell: no
     photon fit, and a `photon-counted` floor on one is read as `indeterminate` (no photon count).
+    ``not_photon_counting`` — ``{channel index: reason}``, channels a camera recorded (the detector
+    cannot count photons; key ``'*'``: every channel) — reads a `photon-counted` floor on one as `indeterminate` too, so the photon fit drops its zeros and takes its offset from the background
+    (the frontend's `zeroCause` makes the same call on display); the fit itself still runs.
     ``on_progress(n, total)`` (a `StdoutLogger.progress`) is called once per channel of the histogram
     pass. Raises on a store that is not integer data (`channel_histograms`) — the caller decides
     whether that fails anything."""
@@ -106,6 +109,7 @@ def measure_store(im_path, log=None, photons_untestable=None, on_progress=None):
 
     bits = int(np.dtype(level0.dtype).itemsize * 8)
     processed = {int(k): v for k, v in (photons_untestable or {}).items() if v}
+    on_camera = {k if k == '*' else int(k): v for k, v in (not_photon_counting or {}).items() if v}
     channels = []
     for i, h in enumerate(hists):
         stats = intensity_utils.saturation_stats(h)
@@ -113,11 +117,13 @@ def measure_store(im_path, log=None, photons_untestable=None, on_progress=None):
         stats['containerBits'] = bits
         stats['range'] = intensity_utils.range_stats(h)
         stats['floor'] = intensity_utils.floor_stats(h)
-        if i in processed and stats['floor']['kind'] == 'photon-counted':
-            # the scanner wrote these values after its own processing: a gap then evenly spaced
-            # peaks is not one photon per step, so no photon count is read from it
+        why_not = processed.get(i) or on_camera.get(i) or on_camera.get('*')
+        if why_not and stats['floor']['kind'] == 'photon-counted':
+            # the scanner wrote these values after its own processing, or the detector is a camera: a
+            # gap then evenly spaced peaks is not one photon per step, so no photon count is read
+            # from it — and the signal pass (`counted`) does not treat its zeros as photon-free
             stats['floor'].update(kind='indeterminate', photonStep=None, photons=None,
-                                  evidence=f'not photon counts: {processed[i]}')
+                                  evidence=f'not photon counts: {why_not}')
         stats['noise'] = intensity_utils.noise_stats(h, floor=stats['floor'])
         stats['profile'] = profile.summary(i, intensity_utils.profile_ceiling(stats))
         channels.append(stats)

@@ -19,6 +19,7 @@
 
 import type { OrbitCamera, ViewerChannel, ViewerLens, ViewerMeta } from '../volumeViewer'
 import { cameraViewL0 } from '../viewerPick'
+import { zPlaneOf } from '../viewerOverlays'
 import { buildFocusViewState } from './focusOnCell'
 import type { ViewerViewState } from './viewState'
 import type { ViewerRefLens } from '../kiwiRef'
@@ -230,7 +231,7 @@ export function lensPopCounts(
     for (let i = 0; i < label.length; i++) {
       if (t >= 0 && tt && tt.length && Math.round(tt[i]) !== t) continue
       if (lo >= 0 && z && z.length) {
-        const pl = Math.floor(z[i] / vz)
+        const pl = zPlaneOf(z[i], vz)   // the plane the marker draws on
         if (pl < lo || pl > hi) continue
       }
       if ((x[i] - cx) ** 2 + (y[i] - cy) ** 2 <= r2) inside.add(label[i])

@@ -110,6 +110,42 @@ class ProcessedFloor(unittest.TestCase):
         self.assertEqual((fl1['kind'], fl1['photons'], fl1['photonStep']), ('indeterminate', None, None))
         self.assertIn('autofluorescence subtracted', fl1['evidence'])
 
+    def test_a_camera_image_reads_no_photon_counted_floor_and_fits_no_zeros(self):
+        # the same comb on a camera (`not_photon_counting`, from `acquisition.camera`): a camera does
+        # not count photons, so the zeros are not photon-free voxels — no floor photon count, and the
+        # photon fit neither keeps the zeros as data nor pins the zero-photon level at 0
+        rng = np.random.default_rng(9)
+        k = rng.poisson(0.6, (2, 1, 400, 1000))
+        v = np.round(k * 32 + rng.normal(0, 6, k.shape) * np.sqrt(k))
+        v[v < 15] = 0
+        ch = v.astype(np.uint16)
+        why = 'a camera does not count photons (DFC365FX)'
+        with mock.patch.object(data_path.ome_xml_utils, 'load_ome_xml', return_value=None), \
+             mock.patch.object(data_path, 'DimUtils') as du, \
+             mock.patch.object(data_path.zarr_utils, 'open_as_zarr', return_value=([ch], None)), \
+             mock.patch.object(data_path.zarr_utils, 'read_axes', return_value=['c', 'z', 'y', 'x']):
+            du.return_value.im_dim_order = 'CZYX'
+            du.return_value.dim_idx.side_effect = lambda d: 'CZYX'.index(d)
+            # channel 1 is a laser-scanning channel of a mixed-mode image: it keeps its reading
+            out = data_path.measure_store('unused', not_photon_counting={'0': why})
+        self.assertEqual(out['channels'][1]['floor']['kind'], 'photon-counted')
+        self.assertEqual(out['channels'][1]['photons']['fit']['offset'], 0.0)
+        for c in out['channels'][:1]:
+            fl, fit = c['floor'], c['photons']['fit']
+            self.assertEqual((fl['kind'], fl['photons'], fl['photonStep']), ('indeterminate', None, None))
+            self.assertIn(why, fl['evidence'])
+            self.assertNotEqual(fit['offset'], 0.0)
+            self.assertIsNone(fit['greyPerPhoton'])     # the comb's step was the only "gain" in it
+        # an all-camera image (`'*'`): every store channel, whether its settings list it or not
+        with mock.patch.object(data_path.ome_xml_utils, 'load_ome_xml', return_value=None), \
+             mock.patch.object(data_path, 'DimUtils') as du, \
+             mock.patch.object(data_path.zarr_utils, 'open_as_zarr', return_value=([ch], None)), \
+             mock.patch.object(data_path.zarr_utils, 'read_axes', return_value=['c', 'z', 'y', 'x']):
+            du.return_value.im_dim_order = 'CZYX'
+            du.return_value.dim_idx.side_effect = lambda d: 'CZYX'.index(d)
+            out = data_path.measure_store('unused', not_photon_counting={'*': why})
+        self.assertEqual([c['floor']['kind'] for c in out['channels']], ['indeterminate'] * 2)
+
 
 class HistogramPassProgress(unittest.TestCase):
     def _measure(self, arr, axes):

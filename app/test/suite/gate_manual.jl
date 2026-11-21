@@ -250,18 +250,55 @@ end
     end
 end
 
+# A project image as `save!` writes it: channel names under `default`, label set(s) `vns`.
+function _run_img!(proj, uid, names; vns = ["B"])
+    img = _set_names!(CciaImage(uid = uid, dir = joinpath(proj, "1", uid)), names)
+    for vn in vns; img.label_props[vn] = "$(vn).h5ad"; end
+    mkpath(Cecelia.img_label_props_dir(img)); Cecelia.save!(img); img
+end
+
 @testset "run_channel_names — a run's images by uid, read from the sibling's ccid.json" begin
-    proj = mktempdir(); x_dir = joinpath(proj, "1", "uX"); mkpath(x_dir)
-    x = _set_names!(CciaImage(uid = "uX", dir = x_dir), ["CD4", "CD8"])
-    sib(uid, names) = (d = joinpath(proj, "1", uid); mkpath(d);
-        write(joinpath(d, "ccid.json"), JSON3.write(Dict("uID" => uid,
-              "imChannelNames" => Dict("default" => names, "_active" => "default")))))
-    sib("uY", ["CD8", "CD4"]); sib("uE", String[])
+    proj = mktempdir()
+    x = _run_img!(proj, "uX", ["CD4", "CD8"])
+    _run_img!(proj, "uY", ["CD8", "CD4"]); _run_img!(proj, "uE", String[])
     of = Cecelia.run_channel_names(x, "B")
     @test of("uX") == ["CD4", "CD8"]                      # the image itself
     @test of("uY") == ["CD8", "CD4"]                      # a sibling, from its own ccid.json
     @test of("uE") === nothing                            # no names registered → nothing to name by
     @test of("uZ") === nothing                            # no such image
+end
+
+@testset "run_channel_names — a legacy run is named against the segment it was picked on, not partOf[1]" begin
+    # A set run on [uY, uZ, uX] where uY had no cells in the clustered pops: the task's reference for the
+    # raw `mean_intensity_N` columns was uZ (the first segment with cells), and uY's sidecar has no entry.
+    proj = mktempdir()
+    part = ["uY", "uZ", "uX"]
+    _run_img!(proj, "uY", ["CD8", "CD4"])                       # partOf[1], no entry: not the reference
+    z = _run_img!(proj, "uZ", ["CD4", "CD8"]; vns = ["A"])      # the reference, on another label set
+    x = _run_img!(proj, "uX", ["GFP", "CD4"])                   # the reader
+    for (im, vn) in ((z, "A"), (x, "B")), p in (Cecelia.img_label_props_path(im, vn), Cecelia.img_track_props_path(im, vn))
+        Cecelia._write_clust_features!(p, "m", ["mean_intensity_0"], part; at = "2026-01-01T00:00:00")
+    end
+    # Look-alikes on uY, which comes first in partOf. Each one has the same suffix and partOf but is
+    # a different run:
+    #   - another segmentation's run with other features
+    #   - a later re-run with the same features but a different `at`
+    # Neither one is the reference.
+    y = _run_img!(proj, "uY", ["CD8", "CD4"]; vns = ["B", "C"])
+    Cecelia._write_clust_features!(Cecelia.img_label_props_path(y, "B"), "m", ["mean_intensity_1"], part;
+                                   at = "2026-01-01T00:00:00")
+    Cecelia._write_clust_features!(Cecelia.img_label_props_path(y, "C"), "m", ["mean_intensity_0"], part;
+                                   at = "2026-02-01T00:00:00")
+    of = Cecelia.run_channel_names(x, "B")
+    for p in (Cecelia.img_label_props_path(x, "B"), Cecelia.img_track_props_path(x, "B"))
+        @test Cecelia.run_reference_names(of, part, p, "m") == ["CD4", "CD8"]
+        @test Cecelia._clustfeatures_features(p, "m"; chans_of = of, own_uid = "uX") == ["CD4"]
+    end
+    # a run whose images can't be read falls back to partOf[1], under the reader's value_name
+    @test Cecelia.run_reference_names(of, ["uY"], Cecelia.img_label_props_path(x, "B"), "m") == ["CD8", "CD4"]
+    # a run that already stores names needs no reference (nothing loaded)
+    Cecelia._write_clust_features!(Cecelia.img_label_props_path(x, "B"), "n", ["CD4", "area"], ["uQ"])
+    @test Cecelia._clustfeatures_features(Cecelia.img_label_props_path(x, "B"), "n"; chans_of = of) == ["CD4", "area"]
 end
 
 @testset "_clustfeatures_axes — a track run's axis features named like its features" begin

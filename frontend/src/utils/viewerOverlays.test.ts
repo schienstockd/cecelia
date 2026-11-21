@@ -6,7 +6,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow,
-  isTrackDrawable,
+  isTrackDrawable, zPlaneOf,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -854,5 +854,44 @@ describe('overlayPlaneWindow', () => {
     expect(overlayPlaneWindow([4, 10], 1, 'plane')).toEqual([4, 10])
     expect(overlayPlaneWindow([3, 3], 1, 'volume')).toEqual([3, 3])
     expect(overlayPlaneWindow([-1, -1], 1, 'plane')).toEqual([-1, -1])
+  })
+})
+
+describe('the z plane of a centroid on an integer voxel z', () => {
+  // The server sends `voxel z × voxelUm[2]` (`scale_centroids!`); the movie renderer floors the NATIVE
+  // voxel z. In doubles `(3 × 0.7) / 0.7` is 2.999…, so a bare floor put the cell one plane low in the
+  // viewer and on its own plane in a recording. Expected planes are the voxel z the µm came from.
+  const vz = 0.7
+  const ks = [3, 6, 12, 24, 29]                     // each one floors to k − 1 through the µm round trip
+  it('zPlaneOf recovers the voxel plane, at the calibrations that break a bare floor', () => {
+    for (const [v, k] of [[0.7, 3], [0.7, 6], [1.1, 15], [1.1, 30], [0.3, 31], [0.3, 57]])
+      expect(zPlaneOf(k * v, v)).toBe(k)
+  })
+  it('zPlaneOf still floors a centroid that sits inside a plane', () => {
+    expect(zPlaneOf(2.6 * vz, vz)).toBe(2)
+    expect(zPlaneOf(2.99 * vz, vz)).toBe(2)
+    expect(zPlaneOf(0, vz)).toBe(0)
+  })
+  const cells = (z: number[]) => ({
+    label: z.map((_, i) => i + 1), t: z.map((_, i) => i), x: z.map(() => 1), y: z.map(() => 1), z,
+    track: z.map(() => 1),
+  })
+  const onK = (): OverlayPayload => ({
+    ...payload(), nCells: ks.length, cells: cells(ks.map(k => k * vz)),
+    pops: [{ path: '/A', name: 'A', colour: '#ff0000', show: true, isTrack: false, labels: ks.map((_, i) => i + 1) }],
+  })
+  const m = meta({ nT: ks.length, nZ: 40, voxelUm: [0.5, 0.5, vz] })
+  it('buildPointBuffer', () => {
+    const buf = buildPointBuffer(onK(), m)
+    expect(ks.map((_, i) => at(buf, i)[6])).toEqual(ks)
+  })
+  const segPlanes = (buf: { data: Float32Array; count: number }) =>
+    Array.from({ length: buf.count }, (_, i) => buf.data[i * SEG_STRIDE + 9])
+  it('buildTrackBuffer: a segment carries the plane of its end', () => {
+    expect(segPlanes(buildTrackBuffer(onK(), m, ['#ff0000']))).toEqual(ks.slice(1))
+  })
+  it('buildMultiTrackBuffer: a segment carries the plane of its end', () => {
+    const buf = buildMultiTrackBuffer([{ vn: 'cyto', payload: onK() }], m, ['#ff0000'], 'solid')
+    expect(segPlanes(buf.segments)).toEqual(ks.slice(1))
   })
 })

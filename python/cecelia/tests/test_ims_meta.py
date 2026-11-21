@@ -274,6 +274,17 @@ class AcquisitionSettingsTest(unittest.TestCase):
         self.assertEqual(a['zStack'], {'stepUm': 4.0, 'count': 9})
         self.assertEqual(a['timelapse'], {'intervalS': 30.0, 'count': 60})
 
+    def test_objective_without_na_suffix_still_gives_magnification(self):
+        # NA recorded only in `NumericalAperture`: the name carries no `/NA`
+        self._write({'Image': {**_REAL_IMAGE_ATTRS, 'Objective': 'UPlanSApo 20x',
+                               'NumericalAperture': '0.75'}})
+        o = ims_meta.acquisition_settings(self.path)['objective']
+        self.assertEqual((o['name'], o['magnification'], o['na']), ('UPlanSApo 20x', 20.0, 0.75))
+        self.assertEqual(ims_meta._objective('20x LWD', None),
+                         {'name': '20x LWD', 'magnification': 20.0, 'na': None, 'immersion': None})
+        self.assertEqual(ims_meta._objective('Plan-Apochromat 63x/1.40 Oil', None)['na'], 1.4)
+        self.assertIsNone(ims_meta._objective('Plan-Neofluar', None)['magnification'])
+
     def test_no_metadata_is_a_reason_not_an_error(self):
         self._write({'Imaris': {'Version': '7.7'}})
         self.assertIn('reason', ims_meta.acquisition_settings(self.path))

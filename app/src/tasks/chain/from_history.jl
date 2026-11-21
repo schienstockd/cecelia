@@ -51,7 +51,8 @@ _whole_pop(v::AbstractString) = is_root(v) || v == "NONE"
 # `columns` = the param's `producesColumns` templates (`{}` = its value), `yields` its `producesPop`
 # marker: what a task writes that no namespace names, so a reader can still be wired to it.
 const _HistoryLeaf = @NamedTuple{type::String, ns::String, writes::Bool, accepts::Vector{String},
-                                 former::Vector{String}, columns::Vector{String}, yields::String}
+                                 former::Vector{String}, columns::Vector{String}, yields::String,
+                                 multiple::Bool}
 
 # a label set is named the same whether a picker lists its labels or its measurements
 _field_ns(field) = (f = string(something(field, ""));
@@ -79,7 +80,8 @@ function _spec_leaf_params!(out::Dict{String,_HistoryLeaf}, spec)
         out[k] = (; type = t, ns, writes = !isempty(ns_w),
                     accepts = String[string(a) for a in something(get(p, "accepts", nothing), [])],
                     former = String[string(f) for f in something(get(p, "formerKeys", nothing), [])],
-                    columns = cols, yields = string(something(get(p, "producesPop", nothing), "")))
+                    columns = cols, yields = string(something(get(p, "producesPop", nothing), "")),
+                    multiple = get(p, "multiple", false) == true)
     end
     isnothing(spec) || walk(get(spec, "params", []))
     out
@@ -110,6 +112,14 @@ function _history_current_params(params::AbstractDict, leaves)::Dict{String,Any}
     end
     out
 end
+
+# A saved value as the task reads it, where an older saved shape means the same thing: a multi-select
+# population picker saved as "NONE" / one bare string before it took a list reads through the parsers'
+# `_str_list` ("NONE"/"" drop out — empty IS the whole segmentation). So an old run and a new one key,
+# merge and compare as one value. A single picker (`branching.refPops`, default "NONE") is left alone.
+_history_value(v, l) =
+    l !== nothing && l.type == "popSelection" && l.multiple && (v isa AbstractString || v isa AbstractVector) ?
+        _str_list(Dict("v" => v), "v") : v
 
 # (name, namespace) a run writes: a named output param, else the spec's fixed `outputValueName`
 # (an image version).
@@ -174,7 +184,7 @@ function _history_inputs(params::Dict{String,Any}, leaves)::String
     for k in sort!(collect(keys(params)))
         l = get(leaves, k, nothing)
         (l === nothing || l.writes || !(l.type in ("valueNameSelection", "popSelection"))) && continue
-        push!(parts, "$k=$(JSON3.write(params[k]))")
+        push!(parts, "$k=$(JSON3.write(_history_value(params[k], l)))")
     end
     join(parts, "&")
 end
@@ -343,7 +353,7 @@ their models. Returns, all plain JSON:
                   is a real fork (it writes a label set, or runs per population), else the versions
                   are alternatives — keep one; `siblingRead` = another version of this task feeds a
                   later step, so this one was a try the exemplars moved past; `inputs` = the
-                  populations it read (display), `inputsKey` = what it read (`_history_inputs`, the
+                  input names and populations it read (display, `_history_inputs_read`), `inputsKey` = what it read (`_history_inputs`, the
                   same identity `siblingRead` uses) — alternatives are versions on the same inputs
 - `conflicts`   — `[{nodeId, param, values: {uid => value}}]`: exemplars disagree; the template holds
                   the latest value until the user picks
@@ -377,7 +387,8 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         cur = Dict(u => _history_current_params(r.params, lv) for (u, r) in by_img)
         for k in sort!(unique(vcat((collect(keys(p)) for p in values(cur))...)))
             vals = Dict(u => get(p, k, nothing) for (u, p) in cur)
-            length(unique(JSON3.write.(values(vals)))) > 1 &&
+            lk = get(something(lv, Dict{String,_HistoryLeaf}()), k, nothing)
+            length(unique(JSON3.write(_history_value(v, lk)) for v in values(vals))) > 1 &&
                 push!(conflicts, Dict{String,Any}("nodeId" => id, "param" => k, "values" => vals))
         end
     end
@@ -460,7 +471,7 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
                                             "multi" => _history_forks(s, leaves_of(s.fn)), "at" => s.at,
                                             "imageUids" => s.image_uids, "kept" => s.id in kept_finals,
                                             "siblingRead" => sibling(s) in read_sweeps,
-                                            "inputs" => _history_pops_read(s.params, leaves_of(s.fn)),
+                                            "inputs" => _history_inputs_read(s.params, leaves_of(s.fn)),
                                             "inputsKey" => last(sibling(s)))
                            for s in finals],
         "conflicts"    => [c for c in conflicts if c["nodeId"] in keep_ids],
@@ -537,6 +548,22 @@ function _history_pops_read(params::AbstractDict, lv)::String
         (l !== nothing && l.type == "popSelection") && append!(vals, [x for (_, x) in _keyed_strings(Dict(k => v))])
     end
     join(vals, ", ")
+end
+
+# What a run read, for the dialog's step label: the same pickers `_history_inputs` keys alternatives
+# by (input names AND populations), so two groups that key apart also read apart. Every non-empty name
+# is said, even one a population ref repeats: dropping it would let two keys share a label.
+function _history_inputs_read(params::AbstractDict, lv)::String
+    params = _history_current_params(params, lv)
+    names, pops = String[], String[]
+    for k in sort!(collect(keys(params)))
+        l = get(lv, k, nothing)
+        (l === nothing || l.writes) && continue
+        dest = l.type == "popSelection" ? pops : l.type == "valueNameSelection" ? names : continue
+        append!(dest, [x for (_, x) in _keyed_strings(Dict(k => params[k]))])
+    end
+    filter!(!isempty, names)
+    join(vcat(names, pops), ", ")
 end
 
 # Can several versions of this step sensibly run side by side? Yes when each writes its own label set

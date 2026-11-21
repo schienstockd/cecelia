@@ -38,6 +38,7 @@ import SceneAid from '../../components/SceneAid.vue'
 import { buildOverlayScene, drawsTails, renderOverlayPreview } from './overlayPreview'
 import CcToggle from '../../components/CcToggle.vue'
 import ColourPicker from '../../components/ColourPicker.vue'
+import { PALETTES } from '../../plots/plot'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
 import TaskSummaryLine from '../../tasks/TaskSummaryLine.vue'
 import TaskList from '../../tasks/TaskList.vue'
@@ -653,7 +654,8 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
                       @update:modelValue="v => setTrackSourceVisible(vn, v)"
                       :aria-label="'Show tracks from ' + vn"
                       v-tooltip.bottom="'Draw tracks from ' + vn" />
-            <ColourPicker :model-value="trackSourceColour(vn)"
+            <!-- chips = the track palette its default comes from (as VwTracksSection), not the pop one -->
+            <ColourPicker :model-value="trackSourceColour(vn)" :palette="PALETTES.cecelia"
                           @update:model-value="hex => setTrackSourceColour(vn, hex)"
                           :tip="'Colour for ' + vn + ' tracks'" />
             <span class="bm-track-name cc-fs-sm" :title="vn">{{ vn }}</span>

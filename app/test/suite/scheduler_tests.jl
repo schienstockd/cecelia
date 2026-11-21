@@ -82,6 +82,15 @@ end
     @test Dict(String(k) => String(v) for (k, v) in e2["author"]) == Dict("profile" => "bob")
     @test !haskey(e2, "env")
 
+    # a run that wrote nothing is logged `unchanged`; the runs above are not
+    tid3 = "prov3$(rand(1000:9999))"
+    run_task(_UnchangedTask(), img, Dict{String,Any}(); task_id = tid3)
+    e3 = only(filter(e -> String(get(e, "taskId", "")) == tid3, read_run_log(img)))
+    @test get(e3, "unchanged", false) === true && !haskey(e3, "replaces")
+    @test !haskey(e, "unchanged") && !haskey(e2, "unchanged")
+    @test Cecelia.run_unchanged(Dict{String,Any}("unchanged" => true))
+    @test !Cecelia.run_unchanged(Dict{String,Any}("skipDownstream" => true)) && !Cecelia.run_unchanged(nothing)
+
     # the caller survives the runner's wire format (the detached runner gets the request as JSON)
     req = Cecelia.TaskRequest(; task_id = "t", fun_name = "f", project_uid = "p", by = "alice", caller)
     @test Cecelia.task_request(JSON3.read(JSON3.write(Cecelia.task_request_dict(req)), Dict{String,Any})).caller == caller

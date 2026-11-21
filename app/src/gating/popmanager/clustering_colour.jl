@@ -111,22 +111,84 @@ function _clustfeatures_part_of(entry, own_uid::Union{AbstractString,Nothing}=no
 end
 
 """
-    run_channel_names(img, value_name) -> Function
+    run_channel_names(img, value_name) -> RunChannelNames
 
-`uid -> channel names` of segmentation `value_name` on `img` or a sibling image of its project (read
-from the sibling's ccid.json, cached; `nothing` when unreadable) — the `chans_of` a run's sidecar
-readers name legacy raw features with (`_clustfeatures_features`, `_clustfeatures_axes`).
+The `chans_of` a run's sidecar readers name legacy raw features with (`_clustfeatures_features`,
+`_clustfeatures_axes`). Called with a uid it gives that image's channel names under `value_name` (`img`
+itself or a sibling image of its project, loaded once; `nothing` when unreadable or none registered).
+The readers ask it for the run's REFERENCE segment instead (`run_reference_names`).
 """
-function run_channel_names(img::CciaImage, value_name::AbstractString)
-    cache = Dict{String,Union{Vector{String},Nothing}}()
-    uid -> get!(cache, String(uid)) do
-        String(uid) == img.uid && return channel_names(img; value_name = value_name)
-        f = state_file(joinpath(dirname(img._dir), String(uid)))
+struct RunChannelNames
+    img::CciaImage
+    value_name::String
+    sibs::Dict{String,Union{CciaImage,Nothing}}
+end
+run_channel_names(img::CciaImage, value_name::AbstractString) =
+    RunChannelNames(img, String(value_name), Dict{String,Union{CciaImage,Nothing}}())
+
+# A run's image by uid — `img` itself, or the sibling loaded from its state file (`nothing` if none).
+function _run_image(r::RunChannelNames, uid::AbstractString)
+    String(uid) == r.img.uid && return r.img
+    get!(r.sibs, String(uid)) do
+        f = state_file(dirname(dirname(r.img._dir)), String(uid))
         isfile(f) || return nothing
-        n = try ccid_channel_names(read_ccid_raw(f), value_name) catch; nothing end
-        (n === nothing || isempty(n)) ? nothing : n
+        try _load_image(dirname(f)) catch; nothing end
     end
 end
+
+_nonempty_names(n) = (n === nothing || isempty(n)) ? nothing : n
+function (r::RunChannelNames)(uid::AbstractString)
+    im = _run_image(r, uid)
+    im === nothing ? nothing : _nonempty_names(channel_names(im; value_name = r.value_name))
+end
+
+"""
+    run_reference_names(r, part, props_path, suffix; family) -> Vector{String} | nothing
+
+The channel names a LEGACY run's raw features (`mean_intensity_N`) mean: those of the segment the run
+picked them on. The task took the first segment of its pooled cells — the first image of `partOf` with
+cells in the clustered populations, under ITS segmentation — not `partOf[1]` (the set's first image,
+which may have had none). That segment is the first `(uid in partOf, value_name)` whose own sidecar of
+the same kind as `props_path` (cell or `__tracks` table) records this run — same `partOf`, same features
+and, when stamped, the same `at`. Two unstamped runs with identical features stay indistinguishable. The
+sidecar does not record the task's pooled segment order, so these cases stay undecidable: a reference
+whose entry was pruned since (`prune_stale_clustfeatures!`), overwritten by a later run under the same
+suffix, or whose image is gone (the next match is used, often the reader itself), and a reference image
+that took part with two segmentations (`versioned_keys` order). Falls
+back to `partOf[1]` under `r.value_name` when no image of the run can be read.
+"""
+function run_reference_names(r::RunChannelNames, part::AbstractVector, props_path::AbstractString,
+                             suffix::AbstractString; family::AbstractString = "clusters")
+    track = endswith(basename(props_path), "$(TRACK_PROPS_SUFFIX).h5ad")
+    # The same RUN, not just the same suffix: a suffix reused on another segmentation (two `default`
+    # runs, one on A pops and one on B pops) or a later re-run over the same images records the same
+    # `partOf`, so the candidate must also carry this entry's features and, when stamped, its `at`.
+    own_feats = _clustfeatures_features(props_path, suffix; family = family)
+    own_at = cluster_run_at(props_path, suffix; family = family)
+    function same_run(p)
+        e = _clustfeatures_entry(p, suffix; family = family)
+        e !== nothing && _clustfeatures_part_of(e) == part &&
+            _clustfeatures_features(p, suffix; family = family) == own_feats &&
+            (own_at === nothing || cluster_run_at(p, suffix; family = family) == own_at)
+    end
+    for uid in part
+        im = _run_image(r, uid)
+        im === nothing && continue
+        for vn in versioned_keys(im.label_props)
+            v = String(vn)
+            p = track ? img_track_props_path(im, v) : img_label_props_path(im, v)
+            same_run(p) || continue
+            return _nonempty_names(channel_names(im; value_name = v))
+        end
+    end
+    r(first(part))
+end
+
+# The names a run's stored features are read against: the run's reference segment for a
+# `run_channel_names` (`run_reference_names`); a plain `uid -> names` is asked for `partOf[1]`.
+_run_chans(chans_of::RunChannelNames, part, props_path, suffix, family) =
+    run_reference_names(chans_of, part, props_path, suffix; family = family)
+_run_chans(chans_of, part, props_path, suffix, family) = chans_of(first(part))
 
 """
     _clustfeatures_axes(props_path, suffix; family, chans_of, own_uid) -> AbstractDict | nothing
@@ -136,7 +198,7 @@ A track run's `behaviourAxes` (axis names + top features), with each `top[].feat
 """
 function _clustfeatures_axes(props_path::AbstractString, suffix::AbstractString;
                              family::AbstractString = "clusters",
-                             chans_of::Union{Function,Nothing} = nothing,
+                             chans_of = nothing,
                              own_uid::Union{AbstractString,Nothing} = nothing)
     e = _clustfeatures_entry(props_path, suffix; family = family)
     e === nothing && return nothing
@@ -144,7 +206,7 @@ function _clustfeatures_axes(props_path::AbstractString, suffix::AbstractString;
     a isa AbstractDict || return nothing
     part = _clustfeatures_part_of(e, own_uid)
     (chans_of === nothing || isempty(part)) && return a
-    chans = chans_of(first(part))
+    chans = _run_chans(chans_of, part, props_path, suffix, family)
     out = Dict{String,Any}(String(k) => v for (k, v) in a)
     axes = get(out, "axes", nothing)
     axes isa AbstractVector || return out
@@ -165,12 +227,12 @@ end
 
 # One run's recorded feature columns (the heatmap's row universe), `String[]` when unrecorded.
 # Intensities by channel NAME (docs/todo/CHANNEL_NAMES_PLAN.md): a run recorded before that stored the
-# raw columns of its first segment — the one the features were picked on — so `chans_of(uid)` (the
-# channel names of an image of the run, or `nothing`) names them against the run's first image
-# (`partOf[1]`, else `own_uid`). Without `chans_of` the features come back as stored.
+# raw columns of its first segment — the one the features were picked on — so `chans_of` (a
+# `run_channel_names`, or a plain `uid -> names`) names them against that segment (`run_reference_names`;
+# `own_uid` for a run with no `partOf`). Without `chans_of` the features come back as stored.
 function _clustfeatures_features(props_path::AbstractString, suffix::AbstractString;
                                  family::AbstractString = "clusters",
-                                 chans_of::Union{Function,Nothing} = nothing,
+                                 chans_of = nothing,
                                  own_uid::Union{AbstractString,Nothing} = nothing)::Vector{String}
     e = _clustfeatures_entry(props_path, suffix; family=family)
     e === nothing && return String[]
@@ -178,7 +240,8 @@ function _clustfeatures_features(props_path::AbstractString, suffix::AbstractStr
     feats = f isa AbstractVector ? String[string(x) for x in f] : String[]
     chans_of === nothing && return feats
     part = _clustfeatures_part_of(e, own_uid)
-    isempty(part) ? feats : canonical_channel_columns(feats, chans_of(first(part)))
+    (isempty(part) || !any(c -> _split_channel_column(c) !== nothing, feats)) && return feats
+    canonical_channel_columns(feats, _run_chans(chans_of, part, props_path, suffix, family))
 end
 
 """
@@ -258,6 +321,8 @@ end
 Which population of run `suffix` holds each cluster id on map `m`. A cluster id belongs to at most one
 population of a run (the manager's tick moves it); the routes that write cluster ids refuse one another
 population holds. `except` leaves out the population(s) being edited: one path, or a collection of them.
+Only a population that CLAIMS its values (`_claims_values`: `in`/`eq`/legacy) holds them — a `neq 3`
+population holds every cluster but 3, so it never holds 3.
 """
 function cluster_id_owners(m::PopulationTree, suffix::AbstractString; except = nothing)::Dict{Int,String}
     out = Dict{Int,String}()
@@ -265,7 +330,7 @@ function cluster_id_owners(m::PopulationTree, suffix::AbstractString; except = n
     for path in m.order
         skip(path) && continue
         p = m.pops[path]
-        cluster_pop_suffix(p) == suffix || continue
+        (cluster_pop_suffix(p) == suffix && _claims_values(p)) || continue
         for v in _as_value_vec(p.filter_values)
             id = as_cluster_id(v)
             id === nothing || get!(out, id, path)

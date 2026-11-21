@@ -561,9 +561,17 @@ def _merge(group: list[dict]) -> dict:
     for b in group:
         landed += [c for c in b.get("fix_landed") or [] if c["commit"] not in {h["commit"] for h in landed}]
     session = max((b["fix_session"] for b in group if b.get("fix_session")), default=None)
+    # the owner's answers (`apply_reviews`), lead's first: every member's note is kept, and a kept-`open`
+    # decision anywhere wins, since it is what puts the bug on the work list (`review.work_items`)
+    members = [lead, *(b for b in group if b is not lead)]
+    decisions = [b["owner_decision"] for b in members if b.get("owner_decision")]
+    decision = "open" if "open" in decisions else next(iter(decisions), None)
+    answers = list(dict.fromkeys(b["owner_answer"] for b in members if b.get("owner_answer")))
     return {**lead, **({"sources": sources, "also": also} if len(sources) > 1 else {}),
             **({"owner_only": True} if owner else {}), **({"fix_landed": landed} if landed else {}),
-            **({"fix_session": session} if session else {})}
+            **({"fix_session": session} if session else {}),
+            **({"owner_decision": decision} if decision else {}),
+            **({"owner_answer": " / ".join(answers)} if answers else {})}
 
 
 def stranded_commits(head: str | None, head_oid: str | None, sha: str, repo: pathlib.Path,

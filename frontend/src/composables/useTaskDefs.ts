@@ -59,7 +59,7 @@ export function useTaskDefs(category: string | string[]) {
         await new Promise(r => setTimeout(r, RETRY_DELAY))
         return load(attempt + 1)
       }
-      console.warn(`[useTaskDefs] Failed to load defs for "${cats.join(', ')}" after ${MAX_RETRIES} retries:`, e)
+      console.warn('[useTaskDefs] Failed to load defs for "%s" after %d retries:', cats.join(', '), MAX_RETRIES, e)
     } finally {
       loading.value = false
     }
