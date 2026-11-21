@@ -179,3 +179,26 @@ end
                               by_image = true, stat_unit = :image, attr_map = attr_map, raw_points = true)
     @test !any(s -> haskey(s, "cellPoints"), r1["series"])
 end
+
+@testset "Experiment design — what an exported figure records" begin
+    proj = create_project!(name = "xd-fig-$(rand(1000:9999))")
+    s  = add_set!(proj; name = "T cell types")
+    s2 = add_set!(proj; name = "No design")
+    a  = add_image!(s; name = "a", meta = Dict{String,Any}("ori_path" => "/tmp/a.tif"))
+    b  = add_image!(s2; name = "b", meta = Dict{String,Any}("ori_path" => "/tmp/b.tif"))
+    @test isempty(board_designs(proj, [a.uid, b.uid]))                 # no design anywhere: nothing recorded
+    d = experiment_design_from(Dict("group" => ["Panel"], "parents" => ["Date", "Mouse"]))
+    set_experiment_design!(proj, s.uid, d; change = "suggested")
+    rec = only(board_designs(proj, [a.uid, b.uid]))                    # the undesigned set is left out
+    @test rec["setUid"] == s.uid && rec["setName"] == "T cell types"
+    @test rec["version"] == 1 && rec["hash"] == experiment_design_hash(d)
+    @test rec["status"] == "inferred" && rec["group"] == ["Panel"] && rec["parents"] == ["Date", "Mouse"]
+    @test isempty(board_designs(proj, [b.uid]))                        # a figure of set 2 only: none
+    # the design changes after the figure: a new version and hash, which is how a reader tells
+    confirmed = experiment_design_from(merge(experiment_design_dict(d), Dict("status" => "confirmed")))
+    set_experiment_design!(proj, s.uid, confirmed; change = "confirmed")
+    now = only(board_designs(proj, [a.uid]))
+    @test now["version"] == 2 && now["hash"] != rec["hash"]
+    @test haskey(board_export_provenance(proj, [a.uid]), "designs")
+    rm(proj.root; recursive = true)
+end

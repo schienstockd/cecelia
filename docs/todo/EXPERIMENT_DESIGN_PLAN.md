@@ -241,7 +241,9 @@ Design check and the Acquisition check cover them. In order:
    (`unitCountLabel`), and the SuperPlot layer — built: with the replicate as the unit, the box and
    strip charts draw each replicate's mean over its cells, both in the replicate's colour
    (`plots/superplot.ts`, `_superplot!`).
-4. **Freeze and stale (T6)** (build step 5).
+4. **Freeze and stale (T6)** (build step 5). Exported figures: built — the record names each set's
+   design (version + hash, `board_designs`) and the record dialog flags one that changed or is gone
+   since the export. Still open: stats runs and the caption with the n of units and parents.
 
 Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate
 "place these images" step (frame 3b; the Design check counts them and opens the dialog), per-row marks

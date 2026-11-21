@@ -6,7 +6,7 @@ import {
   buildProvenanceRecord, recordForBoard, applyPdfProvenance, boardProvenanceUrl,
   PROVENANCE_SCHEMA, PDF_PROVENANCE_KEY, type ParamsSnapshot, type BoardProvenanceResponse,
   parseProvenanceRecord, svgProvenanceText, pdfProvenanceText, readFigureRecord, recordGateFiles,
-  popGateStatus,
+  popGateStatus, designFlag, designLabel, type RecordDesign,
 } from './boardProvenance'
 import { historyParamsCsv, type HistoryParamsRow } from './chainFromHistory'
 import { buildBoardSvgs } from '../plots/boardSvg'
@@ -88,6 +88,11 @@ describe('provenance record', () => {
     expect(b.populations[0].gateFiles).toEqual(['1/img1/gating/Bcells.json'])
     expect(b.runs.map(r => r.taskIds)).toEqual([['t1'], ['t2']])
     expect(b.parameters).toEqual({ source: 'rebuilt', differs: false })
+  })
+  it('carries the commit when the server names one, and leaves it out for a release', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    expect(buildProvenanceRecord([{ title: 'Fig 1', server: server({ ceceliaCommit: sha }) }], 'now')!.ceceliaCommit).toBe(sha)
+    expect('ceceliaCommit' in buildProvenanceRecord([{ title: 'Fig 1', server: server({ ceceliaCommit: '' }) }], 'now')!).toBe(false)
   })
   it('names the frozen runs when the board has a snapshot, and the re-run too when a rebuild differs', () => {
     const rerun = { ...seg, lastRun: '2026-11-05T08:00:00', taskIds: ['t9'] }
@@ -187,5 +192,32 @@ describe('a population gates since the record', () => {
     expect(popGateStatus(['a'], m, ['a', 'b'])).toBe('edited')
     expect(popGateStatus([], m, ['b'])).toBe('edited')
     expect(popGateStatus(['a'], m, ['a'])).toBe('unchanged')
+  })
+})
+
+describe('the experiment design a figure was drawn under', () => {
+  const d: RecordDesign = { setUid: 'S1', setName: 'T cell types', version: 2, hash: 'h2', mode: 'designed',
+    status: 'confirmed', group: ['Panel'], parents: ['Date', 'Mouse'] }
+  it('the record carries each set design once, across boards', () => {
+    const rec = buildProvenanceRecord([
+      { title: 'A', server: server({ designs: [d] }) },
+      { title: 'B', server: server({ designs: [{ ...d, version: 9 }] }) },
+    ], '2026-11-21T00:00:00.000Z')!
+    expect(rec.designs).toEqual([d])
+    // a board with no designed set: no key, so older readers and records look alike
+    expect('designs' in buildProvenanceRecord([{ title: 'A', server: server() }], '2026-11-21T00:00:00.000Z')!).toBe(false)
+  })
+  it('names the design in words', () => {
+    expect(designLabel(d)).toBe('T cell types v2 · Panel in Date × Mouse')
+    expect(designLabel({ ...d, status: 'inferred' })).toBe('T cell types v2 · Panel in Date × Mouse (not confirmed)')
+    expect(designLabel({ ...d, mode: 'exploratory', status: 'inferred' })).toBe('T cell types v2 · exploratory')
+  })
+  it('flags a design that changed, or is gone, since the export', () => {
+    expect(designFlag(d, [d])).toBeNull()
+    expect(designFlag(d, null)).toBeNull()                             // nothing to compare with
+    expect(designFlag(d, [{ ...d, version: 3, hash: 'h3' }])!.short).toBe('design changed · now v3')
+    expect(designFlag(d, [])!.short).toBe('design gone')
+    // same content under a later version number (cleared, then set back): not a change
+    expect(designFlag(d, [{ ...d, version: 4 }])).toBeNull()
   })
 })

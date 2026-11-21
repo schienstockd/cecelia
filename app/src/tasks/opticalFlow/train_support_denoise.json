@@ -2,6 +2,7 @@
   "task": "trainSupportDenoise",
   "fun_name": "opticalFlow.trainSupportDenoise",
   "label": "Train denoise model (SUPPORT)",
+  "citations": ["10.1038/s41592-023-02005-8"],
   "purpose": "Train a SUPPORT denoise model on a set's photon-limited movies",
   "useWhen": [
     "Before Denoising (SUPPORT), which runs a trained model",

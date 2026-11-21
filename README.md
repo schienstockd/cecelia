@@ -26,9 +26,12 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## What Cecelia does
 
-<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia structure. Optional AI on top reads the same record; everything works with it off. Pipeline: acquire (microscope), import (calibration), process (segment, track), populations (gating), analyse (plots, statistics), export (figures, tables). Every step leaves a record, each run's settings, inputs, version, who and when: microscope settings, source fingerprint, parameters and inputs, gate history, frozen parameters, a record in the exported file. The record feeds the checks, which warn and say what to do but never block: at each step saturation, calibration, drift, counts and tracks, gates, statistics; and claims from a plot, e.g. whether T and B cells were processed the same way. Chains replay the same steps on new images, or a past run exactly." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia overview in three panels. 1, Design first: groups A and B, one ring per replicate (the n) with its images inside, the question (does it differ between A and B?) and the expected answer, or the set declared exploratory. 2, Every step is recorded: images, segment, populations, analyse and claim check around one record of settings, version, who, when and design, which chains replay on new images. Each step carries a check that warns but never blocks, and the claim check is checked against the design. Kiwi and Claude Code are optional sidekicks that read the same record. 3, What you can ask: gate, cluster, track, lens, regions, per replicate." width="100%"></p>
 
 Cecelia is a structured platform for image analysis: analysis you can hand off and check afterwards.
+Every set starts with a **design**: the question, the groups, and what counts as a replicate. Images
+are added into that design, or the set is declared exploratory. Plots, statistics and checks read the
+design and warn when the data drift from it.
 Every step runs through one scheduler that checks its params and logs the run, so the **record** says
 what was done, by whom, with which version, what it read and what it replaced. Raw files are
 fingerprinted at import, gates keep their history, and exported figures carry their provenance.

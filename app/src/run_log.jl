@@ -32,11 +32,16 @@
 #              `replaces` stamped at open: the output is byte-identical, nothing was overwritten. Such a run
 #              made nothing — `_run_maker` and the staleness walk (`stale_outputs_for`) pass over it.
 #
-# ── What made it: `ceceliaVersion`, `author`, `env` ────────────────────────────────────────────────
+# ── What made it: `ceceliaVersion`, `ceceliaCommit`, `source`, `author`, `env` ────────────────────────────────────────────────
 # So a result can say which code, which launcher and which machine made it. All three are ABSENT on
 # entries written before they were recorded, and absent whenever the value is not known — never a guess:
 #   ceceliaVersion — `cecelia_version()` of the process that RAN it (the detached runner can lag the
 #                    backend by a version), stamped at open.
+#   ceceliaCommit  — `cecelia_commit()`: the git commit of a checkout or dev install; absent for a release,
+#                    whose version already names the code. Stamped at open.
+#   source         — where a NON-built-in task came from (`task_source_stamp`): `{tier: "plugin", plugin,
+#                    version, ref?}` or `{tier: "hand-dropped", file}`. Absent for a built-in, whose code is
+#                    named by the two fields above. Stamped at open.
 #   author         — the `author_stamp()` shape {profile, via?, model?, session?}: `by` plus the caller
 #                    the asking side captured (`caller_stamp`). No `via` = the asker did not say (a REPL
 #                    call, a chain node — see `run_author`).
@@ -329,6 +334,10 @@ function _run_log_stamp!(e::Dict{String,Any}, by::AbstractString, author::Abstra
     isempty(a) || (e["author"] = a)
     v = try cecelia_version() catch; "" end
     isempty(v) || (e["ceceliaVersion"] = v)
+    c = try cecelia_commit() catch; "" end
+    isempty(c) || (e["ceceliaCommit"] = c)
+    src = try task_source_stamp(_rl_str(e, "fun")) catch; nothing end
+    src === nothing || (e["source"] = src)
     e
 end
 

@@ -243,6 +243,12 @@ end
             @test _kiwi_claude_dir("alice") == joinpath(tmp, "user-profiles", "alice")
             @test api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=bob"))[1] == 200
 
+            # Login start runs `claude auth login` under the profile — refused for a retired one
+            # (fresh credentials for a frozen identity), before any process is spawned.
+            code, body = api_kiwi_profiles_login_start(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            @test code == 409
+            @test occursin("retired", JSON3.read(body).error)
+
             # Idempotent retire → 200 + alreadyRetired flag.
             code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 200
