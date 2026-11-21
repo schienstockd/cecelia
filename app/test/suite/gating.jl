@@ -191,6 +191,16 @@ end
     @test pop_display_labels(["/a/x"]; name_of = _ -> "N") == Dict("/a/x" => "N")   # no clash: own name only
     @test pop_display_labels(["/"]) == Dict("/" => "/")
     @test pop_display_labels(["/_t", "/qc/_t"]) == Dict("/_t" => "_t", "/qc/_t" => "qc/_t")
+    # on a track plot a `_tracked` pop is named by the population it tracks; the root's is "All tracks"
+    let l = pop_display_labels(["/qc/OTI/_tracked", "/qc/non-OTI/gBT/_tracked", "/_tracked"]; tracks = true)
+        @test (l["/qc/OTI/_tracked"], l["/qc/non-OTI/gBT/_tracked"], l["/_tracked"]) == ("OTI", "gBT", "All tracks")
+    end
+    @test pop_display_labels(["/a/CD8/_tracked", "/b/CD8/_tracked"]; tracks = true) ==
+          Dict("/a/CD8/_tracked" => "a/CD8", "/b/CD8/_tracked" => "b/CD8")
+    let l = pop_display_labels(["/qc", "/qc/_tracked"]; tracks = true)   # both listed: still told apart
+        @test l["/qc"] != l["/qc/_tracked"]
+    end
+    @test pop_display_labels(["/qc/OTI/_tracked"]) == Dict("/qc/OTI/_tracked" => "_tracked")   # cell plot: as was
 
     m = PopulationTree(pop_type="flow", value_name="B")
     add_pop!(m, "cd4"; parent=ROOT, gate=RectangleGate("x", "y", 0, 10, 0, 10), colour="#f00")

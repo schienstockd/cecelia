@@ -460,6 +460,14 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   segmentations `popRowLabels`) / Julia `pop_display_labels` (`gating/popmanager/types.jl`): the
   leaf, unless another pop in the SAME list shares it — then each climbs its path until they differ
   (`OTI/_tracked`, `gBT/_tracked`). A tree view (indented) shows the parent already and keeps leaves.
+- **In a track family `_tracked` folds into its population.** A track belongs to a population if any of
+  its cells do, so on a track plot `P` and `P/_tracked` are the same tracks, and a *Tracked* family
+  (`isTrackFamily` — live / track / trackclust, whatever the plot's grain) means P's tracked cells. There
+  the series picker shows ONE row named `P` that picks `P/_tracked` (`pickerRows`, `frontend/src/plots/series.ts`), greys
+  a plain pop with no `_tracked` of its own, and names the root's `/_tracked` *All tracks*. Chips and
+  legends follow (`popDisplayLabels(…, { tracks: true })` / `pop_display_labels(…; tracks = true)` →
+  `OTI`, `gBT`; summary-plot keys via `dimsOf(…, tracks)` in `plots/plot.ts`). Selections stay stored
+  as `…/_tracked` paths. Cell plots keep the `_tracked` leaf: there the two are different cells.
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths
@@ -975,7 +983,9 @@ the redrawn, added or deleted pop and everything under it (`utils/popChanges.ts`
 `changedPopPaths`). The gating plots bump per-pop versions with it (`stores/gating.ts`
 `popVersion`); the summary and layout canvases key each panel's refetch off the pops it plots
 (`seriesReloadToken`, ancestors included so a derived `/_tracked` follows its parent). A new
-gate is never ticked, so it refetches no plot.
+gate is never ticked, so it refetches no plot. One exception: a panel reading a cluster column
+(measure, heatmap category or group-by — Track cluster frequency) follows **every** pop write,
+because the cluster pops name its categories server-side (`clusterAwareFetchToken`).
 
 **Manual apply** (the clock toggle on every population manager, `usePopSelectionMode`) holds two
 things until Apply: the eye toggles (`stagedSel`), and the refreshes gate writes trigger

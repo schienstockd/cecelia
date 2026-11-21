@@ -1,3 +1,4 @@
+import { isClusterColumn } from './clusterMeasure'
 import { popPath, isInSubtree } from './popName'
 
 // Which populations a gate write changed — THE rule every canvas refreshes by, so a gate write
@@ -90,4 +91,15 @@ export function seriesReloadToken(base: number, changes: Readonly<Record<string,
     for (const [k, n] of Object.entries(changes)) if (isInSubtree(key, k)) t += n
   }
   return t
+}
+
+/**
+ * A panel's fetch token once it knows which columns it READS: the host's targeted `reloadToken`, plus
+ * `anyChange` while any of `readCols` is a cluster column — those categories are named by the cluster
+ * populations server-side, so a cluster-pop rename / regroup / delete changes the plot though none of
+ * its series moved (a Track cluster frequency plot of `/OTI/_tracked` after `/Directed` is regrouped).
+ */
+export function clusterAwareFetchToken(reloadToken: number, anyChange: number,
+                                       readCols: readonly (string | null | undefined)[]): number {
+  return readCols.some(isClusterColumn) ? reloadToken + anyChange : reloadToken
 }

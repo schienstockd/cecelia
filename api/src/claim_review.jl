@@ -58,13 +58,16 @@ last: the claim as the record WOULD support it. If the record raises nothing, ab
 function claim_review_prompt(c::AbstractDict, found::AbstractVector = String[])::String
     ua = _claim_unit_attrs(c)
     unit = isempty(ua) ? "none named" : join(ua, " × ")
+    ga = _claim_group_attrs(c)
+    compared = isempty(ga) ? "Populations compared: $(join(c["populations"], ", "))" :
+        "Populations: $(join(c["populations"], ", ")); compared between the groups of image attribute $(join(ga, " × "))"
     known = isempty(found) ? "The rule checks found nothing." :
         "The rule checks already found these — the analyst sees them, so do NOT repeat or rephrase them:\n" *
         join(("- " * f for f in found), "\n")
     """
     Claim: “$(c["text"])”
     Set: $(c["setUid"])
-    Populations compared: $(join(c["populations"], ", "))
+    $(compared)
     Measure: $(c["measure"])
     Replicate (image attributes; one value combination = one replicate): $(unit)
 

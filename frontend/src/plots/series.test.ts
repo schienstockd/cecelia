@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tkey, parseTkey, seriesMemo, pickedOrderChips, mergePickOrder, sortCats, attrGroupsOf, orderedAttrGroups } from './series'
+import { tkey, parseTkey, seriesMemo, pickedOrderChips, pickerRows, rowTarget, mergePickOrder, sortCats, attrGroupsOf, orderedAttrGroups } from './series'
 
 describe('tkey / parseTkey', () => {
   it('round-trips a population on a segmentation', () => {
@@ -116,3 +116,49 @@ describe('attribute groups — the attribute-order strip', () => {
   })
 })
 
+
+// the gating tree as the server lists it for a track plot (picker.jl `plot_population_groups`): every
+// stored pop, each tracked one followed by its derived `_tracked`
+const TRACK_LIST = [
+  { path: '/qc', name: 'qc', colour: '#1', popType: 'live', uid: 'q', granularity: 'cell' as const },
+  { path: '/qc/_tracked', name: '_tracked', colour: '#1', popType: 'live', uid: '', granularity: 'track' as const },
+  { path: '/qc/OTI', name: 'OTI', colour: '#2', popType: 'live', uid: 'o', granularity: 'cell' as const },
+  { path: '/qc/OTI/_tracked', name: '_tracked', colour: '#2', popType: 'live', uid: '', granularity: 'track' as const },
+  { path: '/qc/dead', name: 'dead', colour: '#3', popType: 'live', uid: 'd', granularity: 'cell' as const },
+  { path: '/fast', name: 'fast', colour: '#4', popType: 'track', uid: 'f', granularity: 'track' as const },
+]
+
+describe('pickerRows — the series picker on a track plot', () => {
+  it('folds each _tracked row into the population it tracks', () => {
+    const rows = pickerRows(TRACK_LIST, true)
+    expect(rows.map(r => [r.name, r.path, r.depth, r.inert])).toEqual([
+      ['qc', '/qc/_tracked', 0, false],
+      ['OTI', '/qc/OTI/_tracked', 1, false],
+      ['dead', '/qc/dead', 1, true],          // a plain pop with no tracks of its own
+      ['fast', '/fast', 0, false],            // a track-gated pop is its own row
+    ])
+  })
+  it('names the root tracked set All tracks', () => {
+    const rows = pickerRows([{ path: '/_tracked', name: '_tracked', colour: '#0', popType: 'live', uid: '',
+                               granularity: 'track' }], true)
+    expect(rows.map(r => r.name)).toEqual(['All tracks'])
+  })
+  it('lists a cell plot as it is', () => {
+    expect(pickerRows(TRACK_LIST, false).map(r => r.path)).toEqual(TRACK_LIST.map(p => p.path))
+  })
+  it('a folded row stands for a plain pick saved before the fold, so it can be taken off', () => {
+    const oti = pickerRows(TRACK_LIST, true).find(r => r.name === 'OTI')!
+    const litOf = (picked: string[]) => (q: string) => picked.includes(q)
+    expect(rowTarget(oti, litOf(['/qc/OTI']))).toBe('/qc/OTI')                // stale plain pick
+    expect(rowTarget(oti, litOf([]))).toBe('/qc/OTI/_tracked')                // picks the tracks
+    expect(rowTarget(oti, litOf(['/qc/OTI', '/qc/OTI/_tracked']))).toBe('/qc/OTI/_tracked')
+  })
+})
+
+describe('pickedOrderChips — on a track plot', () => {
+  it('names a tracked pick by its population, not _tracked', () => {
+    const groups = [{ valueName: 'T', populations: TRACK_LIST }]
+    expect(pickedOrderChips(['live::T/qc/OTI/_tracked', 'live::T/qc/_tracked'], groups, { tracks: true })
+      .map(c => c.label)).toEqual(['OTI', 'qc'])
+  })
+})

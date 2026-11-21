@@ -16,6 +16,7 @@
 //     (`resolveParamsExport`), instead of silently exporting the rebuild. A board from before the
 //     snapshot existed has none and exports the rebuild, marked as such.
 
+import { designRoles, type DesignMode, type DesignStatus } from './experimentDesign'
 import { boardScopeQuery, type BoardParamsScope, type HistoryParamsRow } from './chainFromHistory'
 import { rowsToCsv } from '../plots/export'
 import { paramTree, paramLeaves, splitParams, insertParam, type ParamNode } from './paramTree'
@@ -124,6 +125,32 @@ export interface BoardProvenanceResponse {
   populations: { key: string; popType: string; valueName: string; pop: string; gateFiles: string[] }[]
   runs: HistoryParamsRow[]
   author: Record<string, string>
+  designs?: RecordDesign[]          // absent from servers before the design was recorded
+}
+
+/** The experiment design of a set a figure's images belong to, as it was at export (`board_designs`):
+ *  its history version and content hash, so a reader can tell whether it changed since. */
+export interface RecordDesign {
+  setUid: string; setName: string; version: number; hash: string
+  mode: DesignMode; status: DesignStatus; group: string[]; parents: string[]
+}
+
+/** One design as the record dialog names it: "T cell types v2 · Panel in Date × Mouse" (`designRoles`). */
+export function designLabel(d: RecordDesign): string {
+  const roles = d.mode === 'exploratory' ? 'exploratory' : designRoles(d)
+  const unconfirmed = d.mode !== 'exploratory' && d.status !== 'confirmed' ? ' (not confirmed)' : ''
+  return `${d.setName} v${d.version}${roles ? ` · ${roles}` : ''}${unconfirmed}`
+}
+
+/** Whether a recorded design still holds: null when it does, or when there is nothing to compare with
+ *  (`now` null: another project, or the check failed); else what a reader should know. */
+export function designFlag(d: RecordDesign, now: readonly RecordDesign[] | null): { short: string; detail: string } | null {
+  if (!now) return null
+  const cur = now.find(x => x.setUid === d.setUid)
+  if (!cur) return { short: 'design gone', detail: 'This set has no experiment design now' }
+  if (cur.hash === d.hash) return null
+  return { short: `design changed · now v${cur.version}`,
+           detail: 'The set’s design changed after the export: what is compared, the replicate, or its status' }
 }
 
 export function boardProvenanceUrl(projectUid: string, imageUids: string[], scope: BoardParamsScope): string {
@@ -160,6 +187,7 @@ export interface ProvenanceRecord {
   project: { uid: string; name: string }
   images: { uid: string; name: string }[]
   boards: ProvenanceBoard[]
+  designs?: RecordDesign[]          // the sets' experiment designs at export; absent in older records
 }
 
 /**
@@ -174,10 +202,13 @@ export function buildProvenanceRecord(boards: readonly ProvenanceBoardIn[], expo
   const first = boards[0].server
   const images = new Map<string, { uid: string; name: string }>()
   for (const b of boards) for (const im of b.server.images) if (!images.has(im.uid)) images.set(im.uid, im)
+  const designs = new Map<string, RecordDesign>()
+  for (const b of boards) for (const d of b.server.designs ?? []) if (!designs.has(d.setUid)) designs.set(d.setUid, d)
   return {
     schema: PROVENANCE_SCHEMA, exportedAt,
     ceceliaVersion: first.ceceliaVersion, author: first.author, project: first.project,
     images: [...images.values()],
+    ...(designs.size ? { designs: [...designs.values()] } : {}),
     boards: boards.map(b => {
       const p = resolveParamsExport(b.snapshot, b.server.runs, b.scope)
       return {

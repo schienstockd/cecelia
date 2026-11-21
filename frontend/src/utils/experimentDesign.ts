@@ -9,6 +9,7 @@
 // above a file, a leading subject token (M1-…, D3_…) and existing attributes are where any lab keeps
 // this.
 
+import { unitCountLabel } from './statUnitState'
 import type { SearchGroup } from './searchSelect'
 import { buildRegex, extractWith, regexSampleFor, type BuilderSpec, type RegexSource } from './regexBuilder'
 
@@ -327,9 +328,12 @@ export type DesignState = 'none' | 'exploratory' | 'inferred' | 'confirmed'
 export function designSummary(d: ExperimentDesign | null): { state: DesignState; tip: string } {
   if (!d) return { state: 'none', tip: 'Add the metadata, then set up the design' }
   if (d.mode === 'exploratory') return { state: 'exploratory', tip: 'Exploratory — no design' }
-  const roles = [d.group.join(' × '), d.parents.length ? `in ${d.parents.join(' × ')}` : ''].filter(Boolean).join(' ')
-  return { state: d.status, tip: `Design: ${roles || 'no roles'}${d.status === 'inferred' ? ' (not confirmed)' : ''}` }
+  return { state: d.status, tip: `Design: ${designRoles(d) || 'no roles'}${d.status === 'inferred' ? ' (not confirmed)' : ''}` }
 }
+
+/** A design's roles in words, "Panel in Date × Mouse" — the one phrasing (the Design check, a figure's record). */
+export const designRoles = (d: Pick<ExperimentDesign, 'group' | 'parents'>): string =>
+  [d.group.join(' × '), d.parents.length ? `in ${d.parents.join(' × ')}` : ''].filter(Boolean).join(' ')
 
 /**
  * The draft the dialog opens with. A new design starts from the suggestion; an existing one from
@@ -537,6 +541,6 @@ export function designSketch(grid: DesignGrid, d: ExperimentDesign, cap = 10): D
   const groups = [...byGroup.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
     .map(([label, reps]) => ({ label, reps: reps.slice(0, cap), more: Math.max(0, reps.length - cap) }))
   const ns = groups.map(g => g.reps.length + g.more)
-  const caption = `${d.group.join(' × ')}: ${groups.map(g => g.label).join(' vs ')} · n = ${ns.join(' vs ')} ${repNoun.many}`
+  const caption = `${d.group.join(' × ')}: ${groups.map(g => g.label).join(' vs ')} · ${unitCountLabel(ns, repNoun)}`
   return { groups, repNoun, insideNoun, caption }
 }

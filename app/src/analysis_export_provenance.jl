@@ -18,6 +18,8 @@ project-relative gating sidecars that define the population, one per image that 
 `labels` key, which draws the objects themselves) and `runs` — the board-scoped parameter-table rows
 as they are (`history_params_table`: step, task, output, relation, images, lastRun, taskIds,
 changedFromDefault, conflicts, note), so the client can compare them with the board's frozen snapshot.
+`designs` — the experiment design of each set holding these images (`board_designs`), so a figure says
+which design it was drawn under and a reader can tell when that design has changed since.
 """
 function board_export_provenance(proj::CciaProject, image_uids::Vector{String};
                                  pops::AbstractVector = String[],
@@ -46,7 +48,31 @@ function board_export_provenance(proj::CciaProject, image_uids::Vector{String};
         "project" => Dict{String,Any}("uid" => proj.uid, "name" => proj.name),
         "images" => Any[Dict{String,Any}("uid" => img.uid, "name" => img.name) for img in imgs],
         "populations" => populations,
-        "runs" => runs)
+        "runs" => runs,
+        "designs" => board_designs(proj, image_uids))
+end
+
+"""
+    board_designs(proj, image_uids) -> Vector{Dict}
+
+The experiment design of every set that holds one of these images and has a design, in the project's
+set order: `{setUid, setName, version, hash, mode, status, group, parents}` (`version` and `hash` from
+the set's design history, `experiment_design_version` / `experiment_design_hash`). A figure records it;
+a later reader compares the hash with today's to see whether the design changed since
+(docs/todo/EXPERIMENT_DESIGN_PLAN.md, T6).
+"""
+function board_designs(proj::CciaProject, image_uids::AbstractVector)::Vector{Dict{String,Any}}
+    want = Set(String.(image_uids))
+    out = Dict{String,Any}[]
+    for s in sets(proj)
+        any(in(want), s.image_uids) || continue
+        d = experiment_design(s)
+        d === nothing && continue
+        push!(out, Dict{String,Any}("setUid" => s.uid, "setName" => s.name,
+            "version" => experiment_design_version(s), "hash" => experiment_design_hash(d),
+            "mode" => string(d.mode), "status" => string(d.status), "group" => d.group, "parents" => d.parents))
+    end
+    out
 end
 
 """

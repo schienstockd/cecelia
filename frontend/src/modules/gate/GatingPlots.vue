@@ -14,6 +14,7 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
+import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
@@ -716,7 +717,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                     aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
           </div>
           <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
-                        :groups="segPops" :selected="activePopSel" :scope="scope"
+                        :tracks="isTrackFamily(activeFamily)" :groups="segPops" :selected="activePopSel" :scope="scope"
                         :single="activeSinglePop"
                         @toggle="togglePop" @reorder="reorderPops" @update:scope="scope = $event" />
           <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"

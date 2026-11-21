@@ -48,6 +48,28 @@ export const isInSubtree = (path: string, sub: string) => path === sub || path.s
 
 const segsOf = (path: string) => path.split('/').filter(Boolean)
 
+// ── tracked populations on a track plot ─────────────────────────────────────────────────────────────
+// Tracking makes a derived `P/_tracked` under each tracked population P (P's tracked cells). On a TRACK
+// plot P and `P/_tracked` are the same tracks — a track belongs to a population if any of its cells do —
+// so the row is named, and picked, as P. The root's `/_tracked` (every track) has no population above it.
+export const TRACKED_LEAF = '_tracked'
+export const ROOT_TRACKED = `/${TRACKED_LEAF}`
+export const ALL_TRACKS_LABEL = 'All tracks'
+
+/** The population a `_tracked` path tracks (`/qc/OTI/_tracked` → `/qc/OTI`); null for the root's
+ *  `/_tracked` and for any other path. */
+export function trackedOwner(path: string): string | null {
+  if (!path.endsWith(`/${TRACKED_LEAF}`)) return null
+  return path.slice(0, -TRACKED_LEAF.length - 1) || null
+}
+
+/** The path a track-plot label is built from: a `_tracked` row's owner — unless the owner is listed too
+ *  (then the two rows need the leaf to tell them apart). Every other path is its own. */
+export function trackLabelPath(paths: readonly string[]): (path: string) => string {
+  const listed = new Set(paths)
+  return p => { const o = trackedOwner(p); return o && !listed.has(o) ? o : p }
+}
+
 /**
  * Display labels for populations SHOWN TOGETHER, by path: each pop's own name, unless another pop in
  * the same list shares it — then each clashing pop climbs its path one step at a time until they
@@ -57,10 +79,20 @@ const segsOf = (path: string) => path.split('/').filter(Boolean)
  * `nameOf` overrides a pop's own (leaf) name — a payload's `name` field — when it can differ from the
  * path's last segment; the climbed parents always come from the path. A path listed twice gets one
  * label. The Julia twin is `pop_display_labels` (`app/src/gating/popmanager/types.jl`).
+ *
+ * `tracks`: the list is on a TRACK plot, where a `_tracked` row is named by the population it tracks
+ * (`trackLabelPath`) — "OTI", not "OTI/_tracked" — and `nameOf` is asked for that population's path.
  */
 export function popDisplayLabels(
   paths: readonly string[], nameOf?: (path: string) => string | undefined,
+  opts: { tracks?: boolean } = {},
 ): Map<string, string> {
+  if (opts.tracks) {
+    const as = trackLabelPath(paths)
+    const base = popDisplayLabels(paths.map(as),
+      q => nameOf?.(q) ?? (q === ROOT_TRACKED ? ALL_TRACKS_LABEL : undefined))
+    return new Map(paths.map(p => [p, base.get(as(p))!]))
+  }
   const uniq = [...new Set(paths)]
   const segs = new Map(uniq.map(p => [p, segsOf(p)]))
   const depth = new Map(uniq.map(p => [p, 1]))
