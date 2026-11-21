@@ -23,7 +23,7 @@
 # abstained after calling three reads missing from this list).
 const KIWI_READ_TOOLS = [
     "get_project_info", "get_session_briefing", "find_object", "list_images", "get_image_info",
-    "get_image_notes", "get_image_attributes", "get_populations", "get_measure_summary",
+    "get_image_notes", "get_image_attributes", "get_experiment_design", "get_populations", "get_measure_summary",
     "get_behaviour_summary", "get_cluster_summary", "get_region_clusters", "get_contact_stats",
     "get_spatial_patterns",   # one population clustered or random among the tissue's cells
     "get_proximity_profiles", # which populations sit near a structure, in distance bands
