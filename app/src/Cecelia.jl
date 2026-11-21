@@ -66,7 +66,9 @@ export parse_image_status
 export save!
 export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
-export delete_image!, delete_set!, rename_set!, set_recipe!, set_name_taken, move_image!
+export delete_image!, delete_set!, rename_set!, set_recipe!,
+       ExperimentDesign, experiment_design, experiment_design_from, experiment_design_dict, experiment_design_hash,
+       set_experiment_design!, experiment_design_history, experiment_design_version, experiment_design_grid, set_name_taken, move_image!
 export discard!, move_aside, discard_later, sweep_discarded!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes, img_defaulted_scale, run_scale_defaults,
        image_included, IMAGE_EXCLUDED_REASON, ImageRating, RATING_NONE, RATING_GOOD, RATING_CAUTION,
@@ -348,6 +350,7 @@ include("model/set.jl")
 include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
 include("qc_gating.jl")   # after qc_cohort.jl — gating QC reuses its outlier test
+include("experiment_design.jl")   # after CciaSet/CciaProject — one design per set (EXPERIMENT_DESIGN_PLAN)
 include("claim_checks.jl")   # after qc_cohort.jl — claim recital S0/S1 over a set
 include("acq_sampling.jl")   # pixel size / z-step / pinhole against the optics (acq_check.jl reads it)
 include("acq_check.jl")      # test-acquisition check over a set (reads meta only)

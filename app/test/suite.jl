@@ -379,6 +379,8 @@ include(joinpath(@__DIR__, "suite", "acq_signal.jl"))
 include(joinpath(@__DIR__, "suite", "acq_camera_unlisted.jl"))   # RESULT-REVIEW repro: a camera's unlisted channels
 # test-acquisition check over a set (acq_check.jl): seeded facts, each rule firing and not
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
+# the experiment design record + grid (experiment_design.jl): one design per set, history, placement
+include(joinpath(@__DIR__, "suite", "experiment_design.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))

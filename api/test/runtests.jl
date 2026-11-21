@@ -200,6 +200,7 @@ include(joinpath(@__DIR__, "suite", "plugins_and_observer.jl"))
 include(joinpath(@__DIR__, "suite", "cohort_and_analysis.jl"))
 include(joinpath(@__DIR__, "suite", "claim_entries.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_routes.jl"))
+include(joinpath(@__DIR__, "suite", "experiment_design_routes.jl"))
 include(joinpath(@__DIR__, "suite", "claim_review.jl"))
 include(joinpath(@__DIR__, "suite", "acq_review.jl"))
 
