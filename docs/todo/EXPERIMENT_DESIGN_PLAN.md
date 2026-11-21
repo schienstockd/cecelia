@@ -93,8 +93,13 @@ Two things to note:
 5. **The design is set up on the Metadata page, after the metadata** (the maintainer, 2026-11-21;
    replaces "the dialog opens after register"). A design is built from attributes, and right after
    register most sets have none yet: names and original paths, nothing else. So no dialog pops up when
-   files land. The Metadata page has an *Experiment design* section, amber while the set has no design
-   or an unconfirmed one ("Add the metadata, then set up the design"). The dialog still suggests from
+   files land. The entry is the **Design check** in the Checks cluster (beside Acquisition and QC, on
+   every page with an image table, the Metadata page included): amber while the set has no design or
+   an unconfirmed one ("Add the metadata, then set up the design"), and amber with a count when images
+   sit outside a confirmed design — added after it was set up, or missing a design attribute. What the
+   dialog showed at confirm (confounding, few replicates) is not raised again. A first version put a
+   section on the Metadata page; it was dropped because a design set up once there is forgotten when
+   the set grows (the maintainer, 2026-11-21). The dialog still suggests from
    attributes, file names and original paths, and a suggested design stays *inferred* until confirmed.
    - *Set already designed, files added later*: a short "place these images" step (later PR). Each
      image goes into a grid cell or Unassigned, and the grid's reservations update.
@@ -196,7 +201,7 @@ notices. A build step is done when its rows are.
 | T4 | **Kiwi / MCP**: `guidance.py` tells the model to size groups itself and pass `unit_attrs`/`compare_by`; `add_analysis_board(compare_by="")`; board summaries and `kiwi_refs` omit the compare attribute | `get_experiment_design` first (#2416); `compare_by`, `unit_attrs`, `statUnit` default to the design; summaries carry group + unit | Kiwi's boards and claims match the design without being told |
 | T5 | **Acquisition plan**: `AcqPlanForm.vue` free-text "Expected"; `planSentence` | The design's question and expectation (Decision 4); the check compares against the declared group | One question, typed once |
 | T6 | **Export**: stats CSV (`plotStatsToCsv`) has no unit or group attribute; PDF/SVG provenance (`boardProvenance.ts`) carries neither; captions blank | Group, replicate, n of each, design version; the caption (step 5) | A figure says how it was computed |
-| T7 | **Tables**: image table and Movies show attribute columns, no group counts | Images outside the grid marked (Unassigned) | Low — the dialog's grid already shows this |
+| T7 | **Tables**: image table and Movies show attribute columns, no group counts | Images outside the grid marked (Unassigned) | The Design check counts images outside the design (built); per-row marks in the table are still open |
 | T8 | **Notebooks**: `CeceliaNb` pools cells, never reads `img.attr` | A per-replicate summary helper | Low — notebook users choose their own unit |
 
 T1 and T2 are built (branch `feat/experiment-design-dialog`, uncommitted): a canvas on the untouched
@@ -219,7 +224,7 @@ designs where one subject appears in several groups.
 
 ## Build order
 
-1. **Record + dialog.** The design record and versions; the dialog on the Metadata page (suggest,
+1. **Record + dialog.** The design record and versions; the dialog behind the Design check (suggest,
    confirm), "Set up a design" on an empty set, and the "place these images" step; the grid; the
    no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
    metadata comes with it, because neither example set has attributes yet. The suggestion reuses the
