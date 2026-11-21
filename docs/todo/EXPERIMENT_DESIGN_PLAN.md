@@ -88,8 +88,8 @@ Two things to note:
    A set with images that is neither is in the **no-design** state. The page says so ("No design for
    this set") and offers to generate one or to declare the set exploratory. An exploratory set can be
    promoted to designed later, and the history keeps the step.
-4. **The question is part of the design.** One sentence, plus the expected direction (none, higher,
-   lower). The acquisition check's plan sentence reads it instead of keeping its own.
+4. **The question is part of the design.** One sentence, plus the expectation: not sure, no
+   difference, or higher / lower in one group (a null is a valid design, and differs from not sure). The acquisition check's plan sentence reads it instead of keeping its own.
 5. **The dialog opens after register, before import** (the maintainer, 2026-11-21). A new set is empty,
    so there is nothing to suggest from. Adding images already happens in two steps
    (`frontend/src/modules/ManageImagesModule.vue`, `submitRegister`):
@@ -138,7 +138,7 @@ Gate history belongs to an image and value name, and this one belongs to a set, 
 need a set-level path. That fit has not been checked yet.
 
 ```
-question     one sentence + expected direction (none | higher | lower)
+question     one sentence + expectation (unsure | same | higher | lower) + expectIn (the group value)
 mode         designed | exploratory
 status       inferred | confirmed
 group        attribute(s)            e.g. ["Panel"]
@@ -164,7 +164,8 @@ set: what the data can and cannot support yet.
 | Reservation | Raised at | Exists today? |
 |---|---|---|
 | Unassigned images; empty or unbalanced grid cells; planned vs actual n | import, attribute edit | no — new, from the grid |
-| Group in only one parent (confounded) | import, attribute edit | no — needs a group in the claim scope |
+| Group in only one parent (confounded) | import, attribute edit | built in the grid (`confounded`): an outer parent or other attribute whose every value falls in one group; the innermost parent (the replicate) is nested by design and left out |
+| Paired / blocked design: every identity at a parent level holds every group (each mouse both conditions, each day every group) | design confirm | built in the grid (`paired`), info line: linked replicates need a paired test or a two-way ANOVA with the replicate as a factor; testing them as independent is too conservative (Lord et al. 2020, doi:10.1083/jcb.202001064; Zweifach 2024, doi:10.1083/jcb.202401074). The claim check's S2 already decides paired vs unpaired for populations sharing units (`app/src/claim_checks.jl`, `ev["design"]`), with a looser rule: any overlap is paired, n = the shared units. Step 3 makes the two one rule |
 | Too few units per group for a test; too few parents | import, then stats | partly — S2 `few_units` at claim time only |
 | Stats on cells or tracks as the n (below the unit) | plot / stats | partly — `statUnit` exists, defaults to `individual` |
 | Acquisition differs between groups | import | partly — acquisition check, but against inferred label designs, not the declared group |
@@ -176,6 +177,7 @@ set: what the data can and cannot support yet.
 | Imported metadata disagrees with the design (channel list, acquisition settings vs the declared group) | after import | no |
 | Shared acquisition claimed but not in the record ("one scan") | design confirm | no — derive it from a common source file or run; otherwise word it as unverified |
 | Comparisons checked on this set | claim | no — a count, not a correction |
+| Cells per unit: how precise each unit's mean is | claim / stats check (it depends on the measure, so not the grid) | no. The CV of a unit's mean, SD_cells / √n / mean, as a band: about 5% unpaired, about 2.5% paired. Cells needed = ceil((SD_target / SD_cells)²), with the upper 95% CI of the SD when it is uncertain (Zweifach 2024). Also flag very unbalanced cells per unit (Lord et al. 2020: keep observations per sample similar). Zweifach assumes a whole-cell property at one time point, so the wording for track and time measures needs care. Validate against his Data S1 calculator when built |
 
 The wording comes from the design. It does not depend on the technology. For few units nested in
 few parents, the claim check must say so outright: for example "Movie-level, from 2 mice:
@@ -196,14 +198,23 @@ and mice are real; plot values, parameters and history entries are placeholders.
    Metadata panel's extraction (`frontend/src/utils/regexBuilder.ts`: file name or original path,
    split-and-take and look-around builders). It does not add a second parser.
 2. **Plots and stats read the design.** Grouping and unit default to the design. The plot header
-   shows group, unit, n and parents. A summary level at the unit attribute gives one dot per unit,
-   coloured by parent, with parent means beside them. Overrides recorded.
+   shows group, unit, n and parents. The summary plot is a SuperPlot (Lord et al. 2020,
+   doi:10.1083/jcb.202001064): the cell or track dots underneath, coloured by unit or parent, the unit
+   means on top, and the test run on the means. Unit dots alone would hide the spread between cells.
+   Once a set has a design, its unit is the default `statUnit` (today's default `individual` counts
+   cells as the n; both papers treat cells as not independent replicates and the sample mean as the
+   n). Overrides recorded.
 3. **Claim check reads the design.** Unit and group come from the design. New checks: group confounded
    with parent, too few parents, unconfirmed design, exploratory set used for a claim, override noted.
+   One rule each, shared with the grid: paired vs unpaired (S2's `ev["design"]` and the grid's
+   `paired` disagree on a partial overlap today), and confounded (S1's `claim.confounded` over record
+   variables and the grid's `confounded` over design attributes — one finding code, two subjects).
 4. **Reservations as work progresses + the readiness view.** The acquisition check compares against
    the declared group. Processing consistency (S1) runs after each task, not only at claim time.
 5. **Freeze and stale.** Stats runs and exported figures carry the design version and are marked
-   stale when the design changes.
+   stale when the design changes. An exported figure's caption carries the n of units and parents and
+   how the means and the test were computed (Lord et al. 2020). Open: whether summary error bars are
+   the SEM across units or the SD across cells — not checked.
 6. **Two worked examples, different technologies.** lfGUDg (intravital) and xxHqjQ (PhenoCycler),
    designed from their current state. Then the Nature Protocols validation as an update to
    `CECELIA_STRUCTURE_PLAN.md`.
@@ -211,6 +222,8 @@ and mice are real; plot values, parameters and history entries are placeholders.
 ## Out of scope
 
 - New statistics (mixed models, power calculation). The design states the n. It does not compute power.
+  The cells-per-unit band (reservations) sits just inside this line: it says how precise each unit's
+  mean is from the cells already measured, and does not plan a sample size for a test.
 - Designs that span sets. A comparison lives inside one set, and a set can hold every group.
 - Blocking anything.
 
