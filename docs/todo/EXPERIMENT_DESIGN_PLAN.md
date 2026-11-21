@@ -90,22 +90,14 @@ Two things to note:
    promoted to designed later, and the history keeps the step.
 4. **The question is part of the design.** One sentence, plus the expectation: not sure, no
    difference, or higher / lower in one group (a null is a valid design, and differs from not sure). The acquisition check's plan sentence reads it instead of keeping its own.
-5. **The dialog opens after register, before import** (the maintainer, 2026-11-21). A new set is empty,
-   so there is nothing to suggest from. Adding images already happens in two steps
-   (`frontend/src/modules/ManageImagesModule.vue`, `submitRegister`):
-   - *register* (`POST /api/images/register`) creates image records with name and original path, and
-     converts nothing;
-   - *import* (the `importImages` task) converts later.
-
-   The dialog sits between the two, when names and original paths exist and nothing has been
-   processed. One record, three moments:
-   - *Empty set*: no dialog. The set bar offers "Set up a design" for anyone who wants to design first
-     (declare the grid and planned n, then images land in it).
-   - *First files registered into a set with no design*: the dialog opens with a suggestion (question,
-     mode, layout, confirm). Cecelia suggests from attributes, file names and original paths. A
-     suggested design stays *inferred* until confirmed, and the record says "inferred, then confirmed".
-   - *Files registered into a designed set*: a short "place these images" step. Each image goes into a
-     grid cell or Unassigned, and the grid's reservations update.
+5. **The design is set up on the Metadata page, after the metadata** (the maintainer, 2026-11-21;
+   replaces "the dialog opens after register"). A design is built from attributes, and right after
+   register most sets have none yet: names and original paths, nothing else. So no dialog pops up when
+   files land. The Metadata page has an *Experiment design* section, amber while the set has no design
+   or an unconfirmed one ("Add the metadata, then set up the design"). The dialog still suggests from
+   attributes, file names and original paths, and a suggested design stays *inferred* until confirmed.
+   - *Set already designed, files added later*: a short "place these images" step (later PR). Each
+     image goes into a grid cell or Unassigned, and the grid's reservations update.
 
    After import, channel lists and acquisition settings arrive. They never change a confirmed design.
    Where they disagree with it (a "panel A" movie with panel B's channel list), that is a reservation.
@@ -189,29 +181,65 @@ descriptive, not confirmatory."
 from registering files to the claim check. A static mock: the T cell set's names, runs, folders, panels
 and mice are real; plot values, parameters and history entries are placeholders.
 
+## Where the design takes effect
+
+A design nobody reads is a form to fill in. Today nothing outside the dialog reads it (the one
+exception: an attribute rename updates it). Each place below chooses group or unit on its own; each
+row is what the design fills in there, and what the user sees change. Ordered by how soon a user
+notices. A build step is done when its rows are.
+
+| # | Surface (where it chooses today) | Design fills in / checks | The user sees |
+|---|---|---|---|
+| T1 | **Plot compare row**: `useSummaryData.ts` `compareMode` (default `per_image`) + `compareAttr` (default first attribute); the same row in `SummaryCanvas.vue` and `LayoutCanvas.vue`; `trackGroups.ts`; `image_metrics.jl` (region, proximity, spatial); UMAP `facetBy`/`colourBy` attribute (`ClusterMapView.vue`) | `by_attr` on the design's group, ordered as declared; facet/colour by group | A new plot is already grouped by Panel, not per image or by the first attribute |
+| T2 | **Plot stats unit**: "Datapoint" `individual` (`statUnitState.ts`, `plotting_api.jl:245`); collapse goes to the image at most (`plot_data.jl:669,731`); `stats_qc_findings` assumes the image is the replicate | Datapoint = the replicate (Mouse): a new collapse level above the image, per parent; SuperPlot dots coloured by replicate; the QC findings count replicates | The amber "Test counts each cell or track as a replicate" lines go; n reads "5 mice" |
+| T3 | **Claim check**: replicate picker default by name regex (`claimApi.ts` `defaultUnitAttr`); compared groups are always populations (`claimScopeOf`); S1b/S2 infer pairing and confounding themselves | Replicate from the design; attribute groups as the compared groups; S1b/S2 read `confounded`/`paired` from the grid; new: unconfirmed design, exploratory set, override | The picker is filled in; the claim check says what the dialog said |
+| T4 | **Kiwi / MCP**: `guidance.py` tells the model to size groups itself and pass `unit_attrs`/`compare_by`; `add_analysis_board(compare_by="")`; board summaries and `kiwi_refs` omit the compare attribute | `get_experiment_design` first (#2416); `compare_by`, `unit_attrs`, `statUnit` default to the design; summaries carry group + unit | Kiwi's boards and claims match the design without being told |
+| T5 | **Acquisition plan**: `AcqPlanForm.vue` free-text "Expected"; `planSentence` | The design's question and expectation (Decision 4); the check compares against the declared group | One question, typed once |
+| T6 | **Export**: stats CSV (`plotStatsToCsv`) has no unit or group attribute; PDF/SVG provenance (`boardProvenance.ts`) carries neither; captions blank | Group, replicate, n of each, design version; the caption (step 5) | A figure says how it was computed |
+| T7 | **Tables**: image table and Movies show attribute columns, no group counts | Images outside the grid marked (Unassigned) | Low — the dialog's grid already shows this |
+| T8 | **Notebooks**: `CeceliaNb` pools cells, never reads `img.attr` | A per-replicate summary helper | Low — notebook users choose their own unit |
+
+T1 and T2 are built (branch `feat/experiment-design-dialog`, uncommitted): a canvas on the untouched
+compare default switches once to the design's group, a bullseye in the compare row says so, and a
+panel with no saved Datapoint reads as the replicate ("mouse"). Open in T2: the SuperPlot layer (cell
+dots under the replicate means), and the per-image metric plots (region, proximity, spatial) still
+take the image as the unit. Kiwi boards with no `compare_by` / `statUnit` get both through the same
+defaults; board specs may name `statUnit: "replicate"`. The compare row's bullseye shows whenever the
+set has a design: plain when the row follows it, amber when it differs (one click switches back).
+
+T5 is built too: the question and expectation live in the design only. The acquisition plan form
+asks them through the same fields as the dialog (`DesignQuestionFields`) and saves them into the
+design (a set with none gets an inferred design holding just the question); the plan sentence and the
+model review read them from there. A plan's old `expectation` text is read only when the design says
+nothing.
+
+Pairing: for intravital, each mouse is imaged in one group only (transferred with one panel's
+cells), so a replicate never spans groups and an unpaired test is right. `paired` matters only for
+designs where one subject appears in several groups.
+
 ## Build order
 
-1. **Record + dialog.** The design record and versions; the dialog after register (suggest,
+1. **Record + dialog.** The design record and versions; the dialog on the Metadata page (suggest,
    confirm), "Set up a design" on an empty set, and the "place these images" step; the grid; the
    no-design state; the exploratory declaration. Suggesting a design from names, channel lists and
    metadata comes with it, because neither example set has attributes yet. The suggestion reuses the
    Metadata panel's extraction (`frontend/src/utils/regexBuilder.ts`: file name or original path,
    split-and-take and look-around builders). It does not add a second parser.
-2. **Plots and stats read the design.** Grouping and unit default to the design. The plot header
+2. **Plots and stats read the design (T1, T2; T4's board defaults with them).** Grouping and unit default to the design. The plot header
    shows group, unit, n and parents. The summary plot is a SuperPlot (Lord et al. 2020,
    doi:10.1083/jcb.202001064): the cell or track dots underneath, coloured by unit or parent, the unit
    means on top, and the test run on the means. Unit dots alone would hide the spread between cells.
    Once a set has a design, its unit is the default `statUnit` (today's default `individual` counts
    cells as the n; both papers treat cells as not independent replicates and the sample mean as the
    n). Overrides recorded.
-3. **Claim check reads the design.** Unit and group come from the design. New checks: group confounded
+3. **Claim check reads the design (T3, T4's claim defaults).** Unit and group come from the design. New checks: group confounded
    with parent, too few parents, unconfirmed design, exploratory set used for a claim, override noted.
    One rule each, shared with the grid: paired vs unpaired (S2's `ev["design"]` and the grid's
    `paired` disagree on a partial overlap today), and confounded (S1's `claim.confounded` over record
    variables and the grid's `confounded` over design attributes — one finding code, two subjects).
-4. **Reservations as work progresses + the readiness view.** The acquisition check compares against
+4. **Reservations as work progresses + the readiness view (T5).** The acquisition check compares against
    the declared group. Processing consistency (S1) runs after each task, not only at claim time.
-5. **Freeze and stale.** Stats runs and exported figures carry the design version and are marked
+5. **Freeze and stale (T6).** Stats runs and exported figures carry the design version and are marked
    stale when the design changes. An exported figure's caption carries the n of units and parents and
    how the means and the test were computed (Lord et al. 2020). Open: whether summary error bars are
    the SEM across units or the SD across cells — not checked.
