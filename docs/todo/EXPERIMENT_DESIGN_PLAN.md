@@ -233,7 +233,9 @@ Design check and the Acquisition check cover them. In order:
 2. **T3 — the claim check reads the design** (build step 3).
 3. **Plot header n + replicate dots**: "per mouse · 8 mice (5 / 3)" in the header, dots coloured by
    replicate with the replicate means (the rest of build step 2).
-4. **Freeze and stale (T6)** (build step 5).
+4. **Freeze and stale (T6)** (build step 5). Exported figures: built — the record names each set's
+   design (version + hash, `board_designs`) and the record dialog flags one that changed or is gone
+   since the export. Still open: stats runs and the caption with the n of units and parents.
 
 Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate
 "place these images" step (frame 3b; the Design check counts them and opens the dialog), per-row marks

@@ -17,7 +17,7 @@ import { paramLines, paramSummary } from '../../utils/paramTree'
 import type { HistoryParamsRow } from '../../utils/chainFromHistory'
 import {
   boardProvenanceUrl, buildProvenanceRecord, readFigureRecord, recordRows, recordRowsCsv, recordGateFiles, rowParamTree,
-  popGateStatus, type ProvenanceRecord, type ProvenanceBoardIn, type BoardProvenanceResponse, type GateEdit,
+  popGateStatus, designFlag, designLabel, type RecordDesign, type ProvenanceRecord, type ProvenanceBoardIn, type BoardProvenanceResponse, type GateEdit,
   type RowStatus,
 } from '../../utils/boardProvenance'
 
@@ -38,6 +38,7 @@ const gates = ref(new Map<string, GateEdit>())
 const note = ref('')
 const loading = ref(false)
 const comparable = ref(true)                               // false: a file from another project
+const nowDesigns = ref<RecordDesign[] | null>(null)       // today's set designs, for a figure file; null = don't compare
 
 async function loadGateEdits(rec: ProvenanceRecord) {
   gates.value = new Map()
@@ -56,6 +57,7 @@ async function showCurrent() {
     if (!b || !record.value) { note.value = 'Nothing on this board yet.'; return }
     nowRuns.value = [null]
     nowGateFiles.value = [{}]
+    nowDesigns.value = null
     since.value = record.value.boards[0].parameters.takenAt ?? ''
     await loadGateEdits(record.value)
   } finally { loading.value = false }
@@ -75,6 +77,7 @@ async function onFile(e: Event) {
     if (!rec) { note.value = 'No Cecelia record in this file.'; return }
     since.value = rec.exportedAt
     comparable.value = rec.project.uid === props.projectUid
+    nowDesigns.value = null
     if (!comparable.value) {
       gates.value = new Map()
       note.value = `From project “${rec.project.name}” — open it to see what changed since.`
@@ -90,6 +93,7 @@ async function onFile(e: Event) {
       } catch { return null }
     }))
     nowRuns.value = today.map(t => t?.runs ?? [])
+    nowDesigns.value = today[0] ? today[0].designs ?? [] : null
     nowGateFiles.value = today.map(t => Object.fromEntries((t?.populations ?? []).map(p => [p.key, p.gateFiles])))
     await loadGateEdits(rec)
   } finally { loading.value = false }
@@ -139,7 +143,11 @@ const boards = computed(() => (record.value?.boards ?? []).map((b, i) => {
     }),
   }
 }))
-const anyFlag = computed(() => boards.value.some(b => b.table.some(r => r.flag) || b.pops.some(p => p.flag)))
+// the sets' experiment designs the figure was drawn under, flagged when one changed since
+const designs = computed(() => (record.value?.designs ?? []).map(d => ({ key: d.setUid, label: designLabel(d),
+  flag: comparable.value ? designFlag(d, nowDesigns.value) : null })))
+const anyFlag = computed(() => boards.value.some(b => b.table.some(r => r.flag) || b.pops.some(p => p.flag))
+  || designs.value.some(d => d.flag))
 
 const summary = computed(() => {
   const r = record.value
@@ -167,6 +175,12 @@ function downloadCsv() {
         <div v-if="anyFlag" class="cc-muted cc-fs-xs">
           Flags mark what changed since the {{ fileName ? 'export' : 'board was frozen' }}; hover one for details.
         </div>
+      </div>
+      <div v-if="designs.length" class="cc-row cc-fs-xs rec-designs">
+        <span class="cc-muted" v-tooltip.bottom="'The experiment design of each set, as it was at export'">Design</span>
+        <span v-for="d in designs" :key="d.key" class="cc-row-group">
+          {{ d.label }}<InlineNote v-if="d.flag" :short="d.flag.short" :detail="d.flag.detail" severity="warn" />
+        </span>
       </div>
       <section v-for="(b, bi) in boards" :key="bi" class="rec-board">
         <h4 v-if="boards.length > 1" class="cc-eyebrow">{{ b.title }}</h4>
@@ -213,6 +227,7 @@ function downloadCsv() {
 
 <style scoped>
 .rec-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.rec-designs { margin-bottom: 10px; }
 .rec-board { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .rec-spacer { flex: 1; }
 .rec-params { cursor: pointer; }
