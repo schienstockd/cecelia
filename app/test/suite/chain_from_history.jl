@@ -344,7 +344,7 @@ end
 @testset "Chain from history — the step label names every input the step is keyed by" begin
     # alternatives group by `_history_inputs` (input names AND populations); the label must tell two
     # such groups apart, also when the task has no population picker
-    leaf(t) = (; type = t, ns = "", writes = false, accepts = String[], former = String[], columns = String[], yields = "")
+    leaf(t) = (; type = t, ns = "", writes = false, accepts = String[], former = String[], columns = String[], yields = "", multiple = false)
     lv = Dict{String,Cecelia._HistoryLeaf}("valueName" => leaf("valueNameSelection"))
     a, b = Dict{String,Any}("valueName" => "Tcells"), Dict{String,Any}("valueName" => "Bcells")
     @test Cecelia._history_inputs(a, lv) != Cecelia._history_inputs(b, lv)

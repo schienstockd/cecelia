@@ -101,6 +101,21 @@ describe('plotStatsToCsv — between-group hypothesis test sidecar', () => {
     ],
   }
 
+  it('per-population letters say their scope — the CSV has no colour to tell the families apart', () => {
+    const cmp: ComparisonsResult = { ...threeGroupCmp, groups: ['1 · OTI', '2 · OTI', '1 · gBT', '2 · gBT'],
+      n: [5, 5, 5, 5], means: [1, 2, 3, 4], medians: [1, 2, 3, 4], statistic: NaN, pValue: NaN, significance: '',
+      comparisonPairs: [], letters: ['a', 'b', 'a', 'a'], lettersScope: 'population' }
+    const lines = plotStatsToCsv({ chartType: 'boxplot', measure: 'm', granularity: 'cell', series: [], comparisons: cmp }).split('\n')
+    expect(lines).toContain('# Letters compare groups within each population only')
+    expect(lines).toContain('name,n,mean,median,letter_within_population')
+    expect(lines).toContain('1 · gBT,5,3,3,a')
+    // one family: the plain letter column, no scope line
+    const one = plotStatsToCsv({ chartType: 'boxplot', measure: 'm', granularity: 'cell', series: [],
+      comparisons: { ...threeGroupCmp, letters: ['a', 'b', 'c'] } }).split('\n')
+    expect(one).toContain('name,n,mean,median,letter')
+    expect(one.some(l => l.includes('within each population'))).toBe(false)
+  })
+
   it('emits nothing when the response carries no comparisons', () => {
     const r: PlotDataResponse = { chartType: 'boxplot', measure: 'live.cell.speed', granularity: 'cell', series: [] }
     expect(plotStatsToCsv(r)).toBe('')

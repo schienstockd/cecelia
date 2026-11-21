@@ -670,8 +670,11 @@ row says so. The SuperPlot layer (cell dots under the replicate means) is not bu
 **Grouped by image attribute, the test runs within each population.** With `attr_map` the boxes are
 population × attribute group (× `groupBy` level), so `_summary_agg` tests through `_stats_within_pops`:
 one test per (population, level) over its attribute groups, each its own Bonferroni family, as if
-plotted alone. Pairs only ever join a population to itself; there is no omnibus p or letters across
-populations (they would compare /a in WT with /b in KO). One population and level = the plain test;
+plotted alone. Pairs only ever join a population to itself; there is no omnibus p across populations
+(it would compare /a in WT with /b in KO). Compact letters are each population's own display (a
+2-group population's from its one pair), merged parallel to `groups` with `lettersScope: "population"`;
+the renderer draws each letter in its box's series colour, so "a" in /a and "a" in /b never read as a
+match. One population and level = the plain test (no `lettersScope`);
 so is a plot where every population is a single box (one attribute value, or summarised values where
 the attribute never reaches the series) — there the populations are compared, within that one group.
 Without an attribute the populations themselves are the comparison and one test spans them.

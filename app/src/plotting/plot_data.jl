@@ -290,9 +290,12 @@ end
 # composition category) splits the same way: WT vs KO for state 1, never state 1 in WT vs state 2 in KO. Each population is its own family: its pairs are
 # adjusted among themselves, as if plotted alone. The parts merge into ONE result in the renderer's
 # shape — pairs only within a population (a 2-group test's omnibus becomes its pair) — with the labels
-# computed over the WHOLE series set, so they match the chart's (`serverStatsLabels`). No omnibus p and
-# no letters: neither has a meaning across populations, and per-population letters would repeat "a"
-# across populations as if they matched. One population = the plain test, unchanged.
+# computed over the WHOLE series set, so they match the chart's (`serverStatsLabels`). No omnibus p: it
+# has no meaning across populations. Letters are each population's own compact letter display, so they
+# compare within a population only — "a" in one and "a" in another say nothing about each other; the
+# result carries `lettersScope = "population"` and the renderer draws each family in its series colour.
+# A 2-group population gets letters from its one pair, so no population drops out of the letter view.
+# One population = the plain test, unchanged.
 function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
     pkey(g) = (g.vn, g.sid, g.grp)
     pk = pkey.(groups)
@@ -312,13 +315,17 @@ function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
     isempty(parts) && return nothing
     length(parts) == 1 && return only(parts)
     pairs = Dict{String,Any}[]
+    letters = String[]
     for r in parts
         ps = r["comparisonPairs"]
         if isempty(ps) && length(r["groups"]) == 2
-            push!(pairs, Dict{String,Any}("a" => r["groups"][1], "b" => r["groups"][2],
+            g1, g2 = r["groups"]
+            push!(pairs, Dict{String,Any}("a" => g1, "b" => g2,
                                           "pAdj" => r["pValue"], "significance" => r["significance"]))
+            append!(letters, _cld_letters(String[g1, g2], [(g1, g2, Float64(r["pValue"]), r["significance"])]))
         else
             append!(pairs, ps)
+            append!(letters, r["letters"])
         end
     end
     tests = unique(String[r["test"] for r in parts])
@@ -337,7 +344,8 @@ function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
                                                                 ", within each population"),
         "autoReason"      => join(unique(filter(!isempty, String[r["autoReason"] for r in parts])), "; "),
         "comparisonPairs" => pairs,
-        "letters"         => fill("", length(groups_out)),
+        "letters"         => letters,
+        "lettersScope"    => "population",
         "findings"        => unique(reduce(vcat, [r["findings"] for r in parts])),
     )
 end
