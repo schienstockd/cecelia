@@ -134,6 +134,7 @@ export interface HistoryParamsRow {
   changedFromDefault: string // "key=value; …"
   conflicts: string          // "key: a (n) | b (m); …" — the images disagree
   note: string               // why it is not something a chain repeats, or why its params are unknown
+  cite?: string              // the task's citation DOIs, '; '-joined (absent in snapshots taken before it was added)
   relation?: HistoryRelation // board-scoped only
   taskIds?: string[]         // the run-log task ids behind the row (export provenance; not a CSV column)
   recorded?: string          // board export only: frozen <time> / rebuilt / now (differs) — utils/boardProvenance
@@ -187,5 +188,6 @@ export function historyParamsCsv(rows: HistoryParamsRow[]): string {
     step: r.step, task: r.task, output: r.output, ...(scoped ? { relation: r.relation ?? '' } : {}),
     images: r.images, last_run: r.lastRun,
     changed_from_default: r.changedFromDefault, differs_between_images: r.conflicts, note: r.note,
+    cite: r.cite ?? '',
   })))
 }

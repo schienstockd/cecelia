@@ -89,6 +89,11 @@ describe('provenance record', () => {
     expect(b.runs.map(r => r.taskIds)).toEqual([['t1'], ['t2']])
     expect(b.parameters).toEqual({ source: 'rebuilt', differs: false })
   })
+  it('carries the commit when the server names one, and leaves it out for a release', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    expect(buildProvenanceRecord([{ title: 'Fig 1', server: server({ ceceliaCommit: sha }) }], 'now')!.ceceliaCommit).toBe(sha)
+    expect('ceceliaCommit' in buildProvenanceRecord([{ title: 'Fig 1', server: server({ ceceliaCommit: '' }) }], 'now')!).toBe(false)
+  })
   it('names the frozen runs when the board has a snapshot, and the re-run too when a rebuild differs', () => {
     const rerun = { ...seg, lastRun: '2026-11-05T08:00:00', taskIds: ['t9'] }
     const rec = buildProvenanceRecord([{ title: 'Fig 1', server: server({ runs: [rerun, trk] }), snapshot: snap([seg, trk]), scope }], 'now')!

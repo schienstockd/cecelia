@@ -96,11 +96,16 @@ describe('historyParamsCsv', () => {
     const shuffled = { note: '', conflicts: '', images: '7/7', task: row.task, step: row.step, output: row.output,
                        changedFromDefault: row.changedFromDefault, lastRun: row.lastRun }
     const [header] = historyParamsCsv([shuffled]).split('\n')
-    expect(header).toBe('step,task,output,images,last_run,changed_from_default,differs_between_images,note')
+    expect(header).toBe('step,task,output,images,last_run,changed_from_default,differs_between_images,note,cite')
   })
   it('quotes a cell holding a comma-separated channel list', () => {
     const csv = historyParamsCsv([{ ...row, changedFromDefault: 'channels=SHG, nuc-GFP' }])
     expect(csv.split('\n')[1]).toContain('"channels=SHG, nuc-GFP"')
+  })
+  it('ends each row with the task citations, blank for a row (or old snapshot) without any', () => {
+    const lines = historyParamsCsv([{ ...row, cite: '10.1038/s41592-020-01018-x' }, row]).split('\n')
+    expect(lines[1].endsWith(',10.1038/s41592-020-01018-x')).toBe(true)
+    expect(lines[2].endsWith(',')).toBe(true)
   })
   it('lists the images in the url', () => {
     expect(new URL(historyParamsUrl('P', ['a', 'b']), 'http://x').searchParams.get('imageUids')).toBe('a,b')

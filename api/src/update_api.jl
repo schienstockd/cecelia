@@ -457,6 +457,12 @@ function api_update_apply(body_bytes::Vector{UInt8})
             # "dev @" marker in `_running_version` covers the same case if VERSION is stale, but
             # cleaning the file on disk is the durable fix.
             write(joinpath(payload, "VERSION"), "dev\n")
+        else
+            # The release bundle carries VERSION but no `.cecelia-version`, so a dev → stable update
+            # would leave the old `dev @ <branch> <sha>` marker behind: `_running_version` would keep
+            # saying "dev" and run records would name a commit that is no longer running. Write the
+            # tag, as install.sh does for a stable install.
+            write(joinpath(payload, ".cecelia-version"), "$tag\n")
         end
         pending_marker = channel == "dev" ? "dev@$tag" : tag
         write(joinpath(_APP_ROOT, ".pending-update"), pending_marker)   # marker the launcher looks for

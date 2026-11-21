@@ -2,6 +2,7 @@
   "task": "clusterRegions",
   "fun_name": "clustRegions.cluster",
   "label": "Cluster regions",
+  "citations": ["10.1016/j.celrep.2020.107523", { "doi": "10.1038/s41598-019-41695-z", "showIf": { "clusterMethod": "leiden" } }],
   "purpose": "Group cells into regions by the mix of cell types around them",
   "useWhen": [
     "Finding tissue niches from neighbourhood composition",
