@@ -6,6 +6,9 @@ import { contentBox } from './useCanvasWorkspace'
 
 /** One panel on a canvas: a stable id, an optional Tile/Cascade command, and opaque per-panel
  *  state owned by the host (e.g. gating's displayed-parent/highlight; a summary plot's spec). */
+/** How far a duplicated panel is offset from its source (px), so the copy doesn't hide it. */
+const DUP_OFFSET = 30
+
 export interface CanvasItem<S> { id: number; arrange: ArrangeCmd | null; state: S }
 
 /**
@@ -56,6 +59,16 @@ export function useCanvasPanels<S>(
     e.activeId = id
     return id
   }
+  // Duplicate: a new panel at the SOURCE's size, nudged down-right so both stay visible. Seeds the
+  // copy's persisted geometry before it mounts — CanvasPanel restores position + size from it —
+  // because a bare `add()` lands at the default size and the user has to resize the copy to compare.
+  // The host still copies the panel's `state` (its shape is the host's concern).
+  function duplicate(srcId: number): number {
+    const id = add()
+    const g = store.getGeom(`${keyRef.value}:${srcId}`)
+    if (g) store.setGeom(`${keyRef.value}:${id}`, { ...g, x: g.x + DUP_OFFSET, y: g.y + DUP_OFFSET })
+    return id
+  }
   function remove(id: number) {
     const e = cur()
     e.panels = e.panels.filter(p => p.id !== id)
@@ -102,5 +115,5 @@ export function useCanvasPanels<S>(
   // but that panel (see `contentBox`).
   const contentBounds = computed<{ w: number; h: number }>(prev => contentBox(store.geom, `${keyRef.value}:`, prev))
 
-  return { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds }
+  return { panels, activeId, activePanel, shared, add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds }
 }

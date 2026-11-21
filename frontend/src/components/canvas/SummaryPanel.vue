@@ -1531,7 +1531,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="statUnit === 'replicate' ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
-                  :measure="hasMeasure ? measure : ''" :ui="ui" />
+                  :measure="hasMeasure ? measure : ''" :group-attrs="crossImage ? (groupAttr ?? []) : []"
+                  :replicate-attrs="replicateAttrs" :ui="ui" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <CcToggle v-if="!docked" v-model="settings.csvIncludeAttrs" label="Attributes" class="sp-attrs cc-fs-xs"
                 v-tooltip.top="'Add image name + attributes to the CSV'" />
@@ -1548,7 +1549,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <div v-if="!series.length && !isPrecomputed" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
-      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" :host-busy="showSpinner"
+      <PlotChart v-else-if="hasData" ref="plotRef" class="sp-plot" :data="result" :opts="buildOpts" :host-busy="showSpinner"
                  @auto-override="autoOverrides = $event"
                  @point-click="onPlotPointClick"
                  @point-brush="onPlotPointBrush" />
@@ -1604,11 +1605,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 
 /* LINKED_BRUSHING_PLAN.md P3 — chip strip for category-source brushing on categorical
    frequency-family charts. Surface + row chrome come from the composed .cc-card + .cc-row
-   utilities; this rule is layout only (position + gap tightening + width cap so a long category
-   list wraps instead of pushing off the plot). Anchored bottom-left inside .sp-body so it
-   doesn't collide with the Claude chip at top-right or the plot's axis labels. */
-.sp-brush-strip { position: absolute; left: 6px; bottom: 6px; z-index: 5;
-  pointer-events: auto; max-width: calc(100% - 60px); padding: 2px 6px; }
+   utilities. It sits IN FLOW below the chart (.sp-body is a flex column; the chart flexes to the
+   remaining height), never as an overlay — an absolute strip covered the rotated x-axis labels. */
+.sp-brush-strip { flex: none; align-self: flex-start; margin-top: 6px; max-width: 100%; padding: 2px 6px; }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }
@@ -1632,6 +1631,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sp-pop-row select { max-width: 7rem; }
 .sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }
-.sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
+.sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden;
+  display: flex; flex-direction: column; }
+/* chart takes whatever the in-flow chip strip leaves (PlotChart's root is height:100% on its own) */
+.sp-body > .sp-plot { flex: 1 1 0; min-height: 0; height: auto; }
 .sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; padding: 12px; }
 </style>
