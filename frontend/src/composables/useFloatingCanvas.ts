@@ -56,6 +56,7 @@ export function useFloatingCanvas<S>(
     activePanel: canvas.activePanel,
     shared: canvas.shared,
     add: canvas.add,
+    duplicate: canvas.duplicate,
     remove: canvas.remove,
     removeAll: canvas.removeAll,
     arrangeGrid: canvas.arrangeGrid,
