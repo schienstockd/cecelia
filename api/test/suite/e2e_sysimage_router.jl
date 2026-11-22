@@ -262,11 +262,12 @@ end
     GET_ROUTES = [
         "/api/analysis/behaviour", "/api/analysis/board-provenance", "/api/analysis/boards",
         "/api/analysis/chains",
-        "/api/analysis/clusters", "/api/analysis/lineage",
+        "/api/analysis/clusters", "/api/analysis/lineage", "/api/analysis/methods",
         "/api/analysis/measures", "/api/analysis/populations",
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs", "/api/chains/suggest", "/api/chains/history-params",
+        "/api/chains/runs/ro-crate",
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
         "/api/viewer/overlays",
@@ -511,7 +512,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 131 && length(POST_ROUTES) == 205
+    @test length(GET_ROUTES) == 133 && length(POST_ROUTES) == 205
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

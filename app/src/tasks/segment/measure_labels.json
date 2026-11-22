@@ -20,6 +20,22 @@
           "mem": [{"base_gb": 1, "per_cpu_gb": 0.65, "per_cpu_frame": 0.75}]},
   "qcPlot": "segmentation_qc",
   "requires": { "scale": ["xy"] },
+  "tests": [
+    {
+      "name": "six planted cubes",
+      "fixture": {"properties": ["cells", "image-store", "label-store", "marker-names"], "technology": "synthetic"},
+      "params": {"outputValueName": "seg", "intensityValueName": "default"},
+      "outputs": [
+        {"cells": "seg", "assert": [
+          {"type": "n_labels", "value": 6},
+          {"type": "mean_object_size", "value": 32, "delta": 0.01},
+          {"type": "center_of_mass", "value": {"x": 11.5, "y": 7.5, "z": 1.5}, "delta": 0.01},
+          {"type": "mean_intensity", "channel": "pop", "value": 200, "delta": 0.01},
+          {"type": "mean_intensity", "channel": "flat", "value": 50, "delta": 0.01}
+        ]}
+      ]
+    }
+  ],
   "params": [
     {
       "key": "outputValueName",

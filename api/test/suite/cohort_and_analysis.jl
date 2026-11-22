@@ -236,6 +236,68 @@ end
     end
 end
 
+@testset "API: methods report" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _mr(t) = api_analysis_methods(HTTP.Request("GET", "/api/analysis/methods" * t))
+    try
+        proj = create_project!(name = "api-methods")
+        s    = add_set!(proj; name = "set-A")
+        img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        append_run_log!(img, "importImages.omezarr", "default", "done")
+        @test _mr("")[1] == 400                                             # missing projectUid
+        @test _mr("?projectUid=$(proj.uid)")[1] == 400                     # no scope
+        @test _mr("?projectUid=nope&setUid=$(s.uid)")[1] == 404
+        @test _mr("?projectUid=$(proj.uid)&runId=nope")[1] == 404          # no such chain run
+        @test _mr("?projectUid=$(proj.uid)&imageUids=$(img.uid)&pops=notjson")[1] == 400
+        st, body = _mr("?projectUid=$(proj.uid)&setUid=$(s.uid)")
+        @test st == 200
+        d = JSON3.read(body)
+        @test startswith(String(d.markdown), "> **Draft.**") && d.scope.kind == "set"
+        @test length(d.table) == 1 && d.table[1].task == "importImages.omezarr"
+        # the board scope: the same query the board's Parameters CSV sends, plus its name
+        q = "?projectUid=$(proj.uid)&imageUids=$(img.uid)&pops=" * HTTP.escapeuri("[\"live::B/qc\"]") * "&clusterRuns=%5B%5D&board=Fig1"
+        st, body = _mr(q)
+        @test st == 200
+        b = JSON3.read(body)
+        @test b.scope.kind == "board" && occursin("analysis board \"Fig1\"", String(b.markdown))
+        # same request, same text
+        @test _mr(q)[2] == body
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+# The chain run's RO-Crate download: a zip of the crate's four files (app/src/ai/ro_crate.jl).
+@testset "API: chain run RO-Crate" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _rc(t) = api_chains_run_ro_crate(HTTP.Request("GET", "/api/chains/runs/ro-crate" * t))
+    try
+        proj = create_project!(name = "api-crate")
+        img  = add_image!(add_set!(proj; name = "s"); name = "i")
+        save_chain_template!(proj, ChainTemplate("c",
+            [ChainNode(id = "n1", fn = "testTasks.image_task", scope = "image", params = Dict{String,Any}())], ChainEdge[]))
+        run = run_chain(proj, [img.uid]; chain = "c", on_log = _ -> nothing)
+        @test _rc("")[1] == 400
+        @test _rc("?projectUid=$(proj.uid)")[1] == 400                     # no run
+        @test _rc("?projectUid=nope&runId=$(run.id)")[1] == 404
+        @test _rc("?projectUid=$(proj.uid)&runId=nope")[1] == 404
+        st, body = _rc("?projectUid=$(proj.uid)&runId=$(run.id)")
+        @test st == 200 && body isa Vector{UInt8}
+        @test body[1:4] == UInt8[0x50, 0x4b, 0x03, 0x04]                  # a ZIP local file header ("PK\3\4")
+        # the first entry is the metadata file, the same bytes the Julia front door writes
+        @test String(body[31:30 + length("ro-crate-metadata.json")]) == "ro-crate-metadata.json"
+        @test body == chain_run_ro_crate_zip(proj, run.id)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: gate edits since a board record" begin
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)

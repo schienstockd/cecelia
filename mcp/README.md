@@ -95,6 +95,7 @@ its kind becomes the tool's MCP `readOnlyHint` / `destructiveHint`.
 | `get_plot_catalogue(module="")` | `GET /api/plots/definitions` | plot types the board can render (chart types, data needs, scope modes) — to suggest a visualization. Project-independent |
 | `get_cohort_qc(project_uid, set_uid, fun_name, value_name=None)` | `GET /api/qc/cohort` | per-set mean/SD + z-scored outliers over a task's banked metric; no `value_name` → `byValueName` map |
 | `get_analysis_lineage(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/lineage` | synthesized pipeline: per-image `steps` + seg/track/cluster/gating links, project chains/boards, roll-up |
+| `get_methods_report(project_uid, set_uid="", run_id="", image_uids=None)` | `GET /api/analysis/methods` | draft Methods section (Markdown + parameter table) for a set, image list or chain run; who started each step, by recorded model |
 | `get_populations(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/populations` | per-image population definitions: tree + gate geometry / filter rule (defs only; counts are the measure slice) |
 | `get_measure_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/measures` | per-population phenotype (intensities+morphology) + motility summaries (median/quantiles/mean/n); gated pops else base |
 | `get_behaviour_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/behaviour` | per-image HMM state distribution (fraction per state) + transition counts |

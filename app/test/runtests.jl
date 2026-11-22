@@ -153,6 +153,27 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
 
+# A task that runs two Python processes through `run_py`, each allocating `mb` MiB and touching every
+# page — used to assert the run log's `usage` takes the larger peak, not the sum (suite/run_usage.jl).
+const _RU_SCRIPT = """
+from cecelia.utils import script_utils
+params = script_utils.script_params()
+buf = b'\\x01' * (int(params['mb']) * 2**20)
+print('allocated', len(buf))
+"""
+struct _RuTwoPyTask <: CciaTask end
+function Cecelia._run_task(::_RuTwoPyTask, img::CciaImage, params::Dict{String,Any};
+                           on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                           on_process::Function = _ -> nothing)
+    script = joinpath(Cecelia.task_run_dir(img._dir), "ru_alloc_run.py")
+    mkpath(dirname(script)); write(script, _RU_SCRIPT)
+    for _ in 1:2
+        Cecelia.run_py(script, (; mb = params["mb"]), Cecelia.task_run_dir(img._dir);
+                       on_log, on_process) || return nothing
+    end
+    Dict{String,Any}("ok" => true)
+end
+
 # A task that reports its run-time environment in its result, as a real task copies a runner's
 # `runEnv` (cellpose.jl) — used to assert the scheduler stamps it onto the run log as `env`.
 struct _RunEnvTask <: CciaTask end

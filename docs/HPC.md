@@ -242,6 +242,10 @@ booked, from the scheduler's own accounting (`hpc_job_usage`, `app/src/hpc/usage
 - **CPUs busy** is CPU time ÷ walltime: 0.3 of 12 means the job mostly waited on the GPU or on disk.
 - **One run, one image.** It is the use of that image's run; a bigger image needs more (*Memory hint*).
   A Gadi gpuvolta node has 384 GB for 48 CPUs, so a GPU job's 12 CPUs come with a node share of 96 GB.
+- **Kept with the run.** The same figures are stamped on the image's run-log entry as `usage`
+  (`run_usage_from_hpc`: bytes and seconds, `source: "slurm"|"pbs"`), so they outlive the task log and
+  can be compared with the spec's memory hint across runs (`docs/SCHEDULER.md` → *What it used*). A
+  job a rerun adopted already finished reports none.
 
 ## On the cluster
 

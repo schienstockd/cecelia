@@ -233,11 +233,93 @@ def rss_bytes():
         return None
 
 
-def peak_rss_bytes():
-    """The process high-water mark, or `None`. Used to price a transient peak that is already over."""
+def _ru_maxrss_bytes(who):
+    """`getrusage(who).ru_maxrss` in bytes (Linux reports kB, macOS bytes), or `None` without `resource`."""
     try:
         import resource, sys
-        ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        ru = resource.getrusage(who).ru_maxrss
         return ru if sys.platform == 'darwin' else ru * 1024
     except Exception:
         return None
+
+
+def _windows_peak_working_set():
+    """`PeakWorkingSetSize` of this process (Windows' peak resident memory), or `None`.
+
+    Through `GetProcessMemoryInfo` with `ctypes` — the call psutil makes for `memory_info().peak_wset`,
+    without psutil, which is only a transitive dependency of the default env and absent from others.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _Counters(ctypes.Structure):          # PROCESS_MEMORY_COUNTERS (psapi.h)
+            _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD),
+                        ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+                        ('QuotaPeakPagedPoolUsage', ctypes.c_size_t), ('QuotaPagedPoolUsage', ctypes.c_size_t),
+                        ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
+                        ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+                        ('PagefileUsage', ctypes.c_size_t), ('PeakPagefileUsage', ctypes.c_size_t)]
+
+        k32, psapi = ctypes.WinDLL('kernel32'), ctypes.WinDLL('psapi')
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Counters), wintypes.DWORD]
+        psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+        c = _Counters()
+        c.cb = ctypes.sizeof(_Counters)
+        if not psapi.GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(c), c.cb):
+            return None
+        return int(c.PeakWorkingSetSize)
+    except Exception:
+        return None
+
+
+def _linux_vm_hwm():
+    """`VmHWM` from `/proc/self/status` in bytes — the peak RSS of THIS program's address space — or `None`."""
+    try:
+        with open('/proc/self/status', encoding='utf-8') as fh:
+            for line in fh:
+                if line.startswith('VmHWM:'):
+                    return int(line.split()[1]) * 1024            # reported in kB
+    except Exception:
+        pass
+    return None
+
+
+def peak_rss_bytes():
+    """The process high-water mark, or `None`. Used to price a transient peak that is already over.
+
+    Linux: `VmHWM`, NOT `getrusage(RUSAGE_SELF).ru_maxrss`. The kernel carries `ru_maxrss` across
+    `execve`, so a runner forked from the Julia backend starts with the backend's RSS as its peak —
+    measured: a 12 MB Python child reporting 1.07 GB under a Julia parent holding a 0.8 GB array.
+    `VmHWM` belongs to the new address space and starts from zero at exec. macOS: `ru_maxrss`. Windows:
+    the peak working set.
+    """
+    if os.name == 'nt':
+        return _windows_peak_working_set()
+    hwm = _linux_vm_hwm()
+    if hwm is not None:
+        return hwm
+    try:
+        import resource
+    except Exception:
+        return None
+    return _ru_maxrss_bytes(resource.RUSAGE_SELF)
+
+
+def children_peak_rss_bytes():
+    """The high-water mark of the LARGEST child process this one has waited for, or `None`.
+
+    `getrusage(RUSAGE_CHILDREN).ru_maxrss` — the biggest single child, not the sum of them, and only
+    children already reaped. `None` on Windows (no equivalent) and when no child was ever waited for.
+    On Linux a forked child's figure includes this process's RSS at the fork (see `peak_rss_bytes`), so
+    it never reads above this process's own peak for that reason alone.
+    """
+    if os.name == 'nt':
+        return None
+    try:
+        import resource
+    except Exception:
+        return None
+    v = _ru_maxrss_bytes(resource.RUSAGE_CHILDREN)
+    return v if v else None

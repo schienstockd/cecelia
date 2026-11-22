@@ -263,13 +263,15 @@ end
 
 # Pretty-printer that keeps `JSON3.write`'s escaping for keys and scalars. Format target: 4-space
 # indent; non-empty containers span multiple lines; empty containers stay on one line (`{}` / `[]`).
-# See `write_json_atomic` above for why this exists rather than `JSON3.pretty`.
-function _pretty_json(io::IO, data)
-    _pretty_json_walk(io, data, 0)
+# See `write_json_atomic` above for why this exists rather than `JSON3.pretty`. `key_order`, when
+# given, is a `by` function every object's keys are sorted with (a fixed, readable order — the RO-Crate
+# metadata, ai/ro_crate.jl); without it a dict's own iteration order is kept.
+function _pretty_json(io::IO, data; key_order = nothing)
+    _pretty_json_walk(io, data, 0, key_order)
     write(io, "\n")
     nothing
 end
-function _pretty_json_walk(io::IO, x, depth::Int)
+function _pretty_json_walk(io::IO, x, depth::Int, key_order = nothing)
     if x isa AbstractDict
         if isempty(x)
             write(io, "{}")
@@ -277,12 +279,13 @@ function _pretty_json_walk(io::IO, x, depth::Int)
             write(io, "{\n")
             pad = repeat("    ", depth + 1)
             n = length(x); i = 0
-            for (k, v) in x
+            ks = key_order === nothing ? collect(keys(x)) : sort!(collect(keys(x)); by = key_order)
+            for k in ks
                 i += 1
                 write(io, pad)
                 JSON3.write(io, string(k))
                 write(io, ": ")
-                _pretty_json_walk(io, v, depth + 1)
+                _pretty_json_walk(io, x[k], depth + 1, key_order)
                 i < n && write(io, ",")
                 write(io, "\n")
             end
@@ -297,7 +300,7 @@ function _pretty_json_walk(io::IO, x, depth::Int)
             n = length(x)
             for (i, v) in enumerate(x)
                 write(io, pad)
-                _pretty_json_walk(io, v, depth + 1)
+                _pretty_json_walk(io, v, depth + 1, key_order)
                 i < n && write(io, ",")
                 write(io, "\n")
             end

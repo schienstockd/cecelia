@@ -38,3 +38,27 @@ export async function renameImageAttr(projectUid: string, imageUids: string[], f
                                       setUid?: string): Promise<Record<string, string>> {
   return (await post('/api/images/attr/rename', { projectUid, imageUids, from, to, setUid })).values ?? {}
 }
+
+/**
+ * Write a table import's plan (`utils/attrTable.ts` → `planImport`): create its new attribute columns on
+ * every image in `imageUids`, then one `attr/set` per attribute with the changed cells. `store` hears
+ * each step (the project store's `addAttrKey` / `setAttrValues`), fed from what was STORED. Returns the
+ * number of values written. Shared by the Metadata page's table dialog and the design dialog's confirm.
+ */
+export async function writeImportPlan(
+  projectUid: string, imageUids: string[],
+  plan: { newAttrs: string[]; writes: Record<string, Record<string, string>> },
+  store: { addAttrKey: (attr: string) => void; setAttrValues: (attr: string, values: Record<string, string>) => void },
+): Promise<number> {
+  for (const a of plan.newAttrs) {
+    await createImageAttr(projectUid, imageUids, a)
+    store.addAttrKey(a)
+  }
+  let n = 0
+  for (const [a, values] of Object.entries(plan.writes)) {
+    if (!Object.keys(values).length) continue
+    store.setAttrValues(a, await setImageAttr(projectUid, a, values))
+    n += Object.keys(values).length
+  }
+  return n
+}

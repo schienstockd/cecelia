@@ -227,6 +227,10 @@ include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_hmm_sibling.jl"))
 include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
 include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
+# The draft Methods section: set / board / chain-run scopes (ai/methods_report.jl).
+include(joinpath(@__DIR__, "suite", "methods_report.jl"))
+# A chain run as an RO-Crate (Workflow Run Crate 0.5): the profile's MUST list (ai/ro_crate.jl).
+include(joinpath(@__DIR__, "suite", "ro_crate.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 # …and its follow-ups: re-measure `replaces`, format number, custom weights, raw source check.
@@ -235,6 +239,7 @@ include(joinpath(@__DIR__, "suite", "run_record_fields.jl"))
 include(joinpath(@__DIR__, "suite", "gate_history.jl"))
 # Reuse unchanged steps: a chain node marked reused instead of dispatched (tasks/chain/reuse.jl).
 include(joinpath(@__DIR__, "suite", "chain_reuse.jl"))
+include(joinpath(@__DIR__, "suite", "run_usage.jl"))   # `usage`: peak memory, host, cluster accounting
 
 
 
@@ -512,6 +517,11 @@ include(joinpath(@__DIR__, "suite", "correct_carryover_sidecars.jl"))
 # import labels + measure → btrack + track measures → a rectangle gate → clustPops, asserted against
 # the truth by construction. ~22 s in the full suite (~45 s alone), mostly the Python subprocesses.
 include(joinpath(@__DIR__, "suite", "pipeline_golden.jl"))
+# ── Declared task-spec tests ─────────────────────────────────────────────────
+# Every `tests` block in a spec (built-ins, docs/examples/, CECELIA_SPEC_TEST_MODULES) run against its
+# fixture, plus the evaluator's own unit tests. After plugins.jl and the `spec_dirs` helpers.
+include(joinpath(@__DIR__, "suite", "task_spec_tests.jl"))
+include(joinpath(@__DIR__, "suite", "spec_test_output_written.jl"))
 
 # ── chipSelect param type ────────────────────────────────────────────────────
 # "1,2,4,8" was a raw text field, which is a parse error waiting to happen and reads as unfinished.

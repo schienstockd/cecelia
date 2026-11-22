@@ -173,6 +173,46 @@ function api_analysis_board_provenance(req::HTTP.Request)
     200, JSON3.write(rec)
 end
 
+# GET /api/analysis/methods?projectUid&(runId | setUid | imageUids=a,b[&pops=[…]&clusterRuns=[…]&board=])
+# → {markdown, table, scope}: the draft Methods section (`methods_report`, app/src/ai/methods_report.jl).
+# One generator, three scopes: a chain run, a set (or image list), a board (its populations + cluster
+# run, the same query as the board's Parameters CSV). Read-only.
+function api_analysis_methods(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    uid  = get(q, "projectUid", "")
+    rid  = get(q, "runId", ""); sid = get(q, "setUid", "")
+    uids = _query_list(q, "imageUids")
+    (isempty(uid) || (isempty(rid) && isempty(sid) && isempty(uids))) &&
+        return 400, JSON3.write((; error="projectUid and one of runId, setUid or imageUids required"))
+    list(k) = (v = get(q, k, nothing); v === nothing ? nothing : String.(JSON3.read(v, Vector{String})))
+    pops, runs = try (list("pops"), list("clusterRuns")) catch
+        return 400, JSON3.write((; error="pops and clusterRuns must be JSON arrays of strings"))
+    end
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    r = try
+        methods_report(proj; run_id = rid, set_uid = sid, image_uids = uids, pops,
+                       cluster_runs = something(runs, String[]), board = get(q, "board", ""))
+    catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write(r)
+end
+
+# GET /api/chains/runs/ro-crate?projectUid&runId → the chain run's RO-Crate as one `.zip` (bytes): the
+# Workflow Run Crate metadata, the methods report + parameter CSV and the frozen template, no image data
+# (`chain_run_ro_crate_zip`, app/src/ai/ro_crate.jl; docs/ANALYSIS.md → *RO-Crate export*). Read-only.
+function api_chains_run_ro_crate(req::HTTP.Request)
+    q   = HTTP.queryparams(HTTP.URI(req.target))
+    uid = get(q, "projectUid", ""); rid = get(q, "runId", "")
+    (isempty(uid) || isempty(rid)) && return 400, JSON3.write((; error="projectUid and runId required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    try
+        200, chain_run_ro_crate_zip(proj, rid)
+    catch e
+        404, JSON3.write((; error=sprint(showerror, e)))
+    end
+end
+
 # POST /api/analysis/gate-edits { projectUid, since, files } → { files: [{file, status, edits, lastAt}] }:
 # whether each gating sidecar a board record names (`gateFiles`) changed after `since` (ISO, UTC — the
 # figure's export time or the board's frozen-parameters time). `gate_file_edits` reads the gate history;

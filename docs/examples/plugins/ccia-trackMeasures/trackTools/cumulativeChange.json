@@ -7,6 +7,20 @@
   "resource_pool": "cpu",
   "scope": "image",
   "outputValueName": "default",
+  "tests": [
+    {
+      "name": "straightness is a fraction, and no cell is lost",
+      "fixture": {"properties": ["cells", "movie", "tracked"]},
+      "params": {"pops": ["B/_tracked"], "gap": 3},
+      "outputs": [
+        {"cells": "B", "assert": [
+          {"type": "mean_measure", "column": "trackTools.cumulativeStraightness", "min": 0, "max": 1},
+          {"type": "mean_measure", "column": "trackTools.cumulativeSpeed", "min": 0},
+          {"type": "n_labels", "value": 1377}
+        ]}
+      ]
+    }
+  ],
   "params": [
     {
       "key": "pops",

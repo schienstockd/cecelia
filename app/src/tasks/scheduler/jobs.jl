@@ -81,6 +81,9 @@ function _execute_job!(job::TaskJob)
     post!(result) = (posted[] || (posted[] = true; put!(job.done, result)))
 
     rec = job.rec
+    # What the run USES — peak Python memory, cluster accounting — reported into this by `run_py` and the
+    # HPC dispatch while `_run_task` runs, stamped on the run log's `usage` at close (app/src/run_usage.jl).
+    usage = RunUsage()
     # Images this run registers with `add_image!` — discarded unless it ends done (`discard_new_images!`).
     new_images = Tuple{CciaSet,String}[]
     discard_unfinished!() = try
@@ -137,17 +140,20 @@ function _execute_job!(job::TaskJob)
             @warn "run-log open failed" task_id = job.id exception = e
         end
         # invokelatest: workers are spawned once at pool init; user-supplied callbacks
-        # may be defined in a later world (e.g. in test files or interactive sessions).
+        # may be defined in a later world (e.g. in test files or interactive sessions) — and so
+        # may the task itself: a custom module or plugin loaded after the pools started (Settings →
+        # Custom modules → Reload) defines its `_run_task` method in a newer world than the worker.
         # set-scope job runs _run_task over the whole image vector at once; else single image.
         job_target = run_task_target(job.target)
         result = try
+          with_run_usage(usage) do
           tracking_new_images(new_images) do   # every image `add_image!` registers lands in new_images
           # On `TARGET_HPC` the handler still runs here; its `run_py` calls go to the cluster
           # (hpc/dispatch.jl). A dispatch that cannot be set up fails the task before it starts.
           _with_run_target(rec, job.task, representative_image(job.target),
                            line -> Base.invokelatest(job.on_log, line),
                            (stage, id) -> Base.invokelatest(job.on_hpc, stage, id)) do
-            _run_task(job.task, job_target,
+            Base.invokelatest(_run_task, job.task, job_target,
                       merge(job.params, Dict("_task_id" => job.id, "_by" => rec.by));
                       on_log      = line -> Base.invokelatest(job.on_log, line),
                       on_progress = (n, t) -> Base.invokelatest(job.on_progress, n, t),
@@ -161,6 +167,7 @@ function _execute_job!(job::TaskJob)
                           end
                           Base.invokelatest(job.on_process, proc)
                       end)
+          end
           end
           end
         catch e
@@ -195,6 +202,7 @@ function _execute_job!(job::TaskJob)
                                fun_name = fun_name, value_name = value_name, params = job.params,
                                pool = rec.pool_name, by = rec.by, caller = rec.caller,
                                env = _run_env_with_scale(run_env_of(result), get(defaulted, tgt.uid, nothing)),
+                               usage = run_usage(usage),
                                unchanged = final === TASK_DONE && run_unchanged(result))
             end
         catch e
@@ -228,7 +236,8 @@ function _execute_job!(job::TaskJob)
                 close_run_log!(tgt, job.id, "failed";
                                fun_name = fun_name, value_name = value_name, params = job.params,
                                pool = rec.pool_name, by = rec.by, caller = rec.caller,
-                               env = _run_env_with_scale(Dict{String,Any}(), get(defaulted, tgt.uid, nothing)))
+                               env = _run_env_with_scale(Dict{String,Any}(), get(defaulted, tgt.uid, nothing)),
+                               usage = run_usage(usage))
             end
         catch; end
     finally

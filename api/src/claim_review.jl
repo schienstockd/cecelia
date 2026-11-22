@@ -16,6 +16,7 @@ const CLAIM_REVIEW_TOOLS = (
     "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes", "get_experiment_design",
     "get_populations", "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
     "get_region_clusters", "get_contact_stats", "get_spatial_patterns", "get_proximity_profiles", "get_analysis_lineage",
+    "get_methods_report",
     "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "get_object_ids", "get_task_catalogue", "get_guide",
     "get_acquisition_knowledge", "gate_plot", "gate_cells_view", "gate_histogram", "gate_stats",

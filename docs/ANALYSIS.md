@@ -539,6 +539,112 @@ be determined (no history from then, or the check failed) is flagged **gate ?**,
 A file from another project is shown but not compared. A board that was never frozen has nothing to
 compare against, so nothing is flagged.
 
+## Methods report — a draft Methods section
+
+`⤓ Export` → **Methods (draft)** opens `MethodsReportModal` on the active board's draft Methods: the text,
+**Copy**, a `.md` download and the parameter table as CSV. The chain page's Live view has the same modal
+for the run it shows (**Methods** beside the run id, with **RO-Crate** next to it — *RO-Crate export* below). Claude reads the same text through the MCP tool
+`get_methods_report` (Kiwi too). One generator behind all three — `methods_report`
+(`app/src/ai/methods_report.jl`), served by `GET /api/analysis/methods`. Read-only: nothing is written,
+the lab log included.
+
+**Scopes.** One text, three scopes, picked by the query:
+
+- **board** — `imageUids` + `pops` + `clusterRuns` (the board's Parameters CSV query) + `board` (the tab
+  name): the steps behind the plots, then each population, marked when Claude drew it;
+- **set** — `setUid` (or a bare `imageUids` list): every step that ran on its images;
+- **chain run** — `runId`: the run's images, the runs its nodes made (`history_params_table(…; task_ids)`,
+  so later runs on the same images stay out), a table with one row per node — its parameters as the
+  run recorded them (`node_params`, only those that differ from the spec default), status across images
+  (with skip reasons), start, finish and duration — and the set's latest stored cohort check for each of its steps, marked as
+  not necessarily this run's (a check is per set, and the record keeps no check time per sidecar). Persisted
+  runs keep no timing; it is joined from the run log (`at` / `finishedAt`) by each node's `task_id`, so a
+  node whose entries were never logged shows blank times.
+
+**What the text says, and from where.** Deterministic (no clock, sorted lists), so the same record gives
+the same text. It opens with a draft banner. Each step is one numbered sentence built from its
+`history_params_table` row: task label, output, `n/N` images, the parameters changed from default, the
+images' disagreements and the row's note. A task spec may carry an optional `methodsText` with `{param}`
+slots (`docs/MODULES.md`); when every slot has a value, and the images agree on it, it replaces the
+generic sentence. No built-in task
+has one yet. Under a step:
+
+- **Started by Claude (model)** — from the run-log `author` stamp (`via: claude` or `kiwi`). The model is
+  the recorded one; a stamp without it reads **model not recorded**, never a guess. Chain templates
+  (`createdBy` / `updatedBy`), board tabs (`createdBy`) and populations (`created_by`, plus "then edited
+  by hand" when a person's `updated_by` follows) are listed under *AI assistance* the same way. Runs from
+  before author stamps are counted as such.
+- **Cite** — a row's `cite` (task citation DOIs), when the table carries one. The Cecelia version comes
+  from the runs' `ceceliaVersion`, plus `ceceliaCommit` when entries carry it.
+
+A step Claude suggested and a person then ran is stamped as that person's, so the text says the AI list
+can miss suggestions. That limit is accepted for now; attaching a session summary would be opt-in later.
+
+The parameter CSV is the server's (`history_params_csv`, the `csv` field of the response), so the CSV
+the modal downloads and the one in a chain run's RO-Crate are the same bytes. Its columns match the
+frontend's `historyParamsCsv`, which the history dialog and the board export still use.
+
+### RO-Crate export — a chain run for Zenodo and WorkflowHub
+
+**RO-Crate** beside **Methods** in the chain Live view (and in the Methods modal of a chain run) saves
+`run_<id>_ro-crate.zip`: the run as an [RO-Crate](https://www.researchobject.org/ro-crate/1.1/) that
+conforms to the [Workflow Run Crate](https://w3id.org/ro/wfrun/workflow/0.5) profile, which repositories
+such as Zenodo and WorkflowHub read. `chain_run_ro_crate(proj, run_id, dest)` (`app/src/ai/ro_crate.jl`)
+writes it as a `.zip` or a directory; `GET /api/chains/runs/ro-crate` serves the zip. Read-only.
+
+**Four files, no image data.**
+
+| File | What |
+|---|---|
+| `ro-crate-metadata.json` | the JSON-LD description (RO-Crate 1.1) |
+| `methods.md`, `parameters.csv` | `methods_report(proj; run_id)`: the same text and table as the modal |
+| `chain_template.json` | the frozen template the run executed (the content cache; its SHA-256 is the run's `template_hash`) |
+
+Images, label sets and cell tables are not copied. Each is described by its path inside the project
+folder, under a local `#…` identifier with the path in `alternateName`. RO-Crate does not require a
+local identifier to be in the payload, and the crate's description says the data is not included.
+
+**Profiles and version.** The root conforms to Process Run Crate 0.5, Workflow Run Crate 0.5 and
+Workflow RO-Crate 1.0, as Galaxy's invocation export does. 0.5 is the newest Workflow Run Crate on
+RO-Crate 1.1; 0.6 also resolves but moves to RO-Crate 1.3, which consumers have yet to catch up with.
+
+**Entities.**
+
+- the template as the `mainEntity` (`File` + `SoftwareSourceCode` + `ComputationalWorkflow`, its version
+  the content hash), written in the `ComputerLanguage` "Cecelia chain template";
+- one `CreateAction` for the whole run, with the template as `instrument` (the profile's MUST), the
+  images in as `object`, every step's results as `result`, and the methods report as `subjectOf`;
+- one `CreateAction` per node × image run-log entry, with the task as a `SoftwareApplication`
+  `instrument`, its inputs (the run log's `inputs`) and output by path, `startTime` / `endTime`, and
+  `actionStatus` (done → Completed; failed, cancelled, interrupted → Failed with `error`; still running →
+  Active). A node that never ran on an image has no action; the methods report says why;
+- Cecelia as a `SoftwareApplication` per recorded `ceceliaVersion`, identified by its release tag or by
+  `ceceliaCommit` when the entries carry one, citing the Cecelia paper;
+- each task's `cite` DOIs, when the parameter table carries them, as `ScholarlyArticle`s with
+  `@id` `https://doi.org/<doi>`;
+- the profile from the author stamp as a `Person` `agent`, plus Claude as an agent (a
+  `SoftwareApplication` with the recorded model as its version) when the stamp says `via: claude` or
+  `kiwi`.
+
+Times are UTC with a `+00:00` offset. The run log writes local wall-clock time with no zone, so it is
+read in the exporting machine's zone at that instant. The licence is a placeholder ("No licence
+chosen"): Cecelia doesn't pick one for the user's data, and Zenodo asks for one at upload.
+
+**Validation.** `app/test/suite/ro_crate.jl` exports a real chain run and checks it against the
+profiles' MUST lists. The official validator ([`rocrate-validator`](https://github.com/crs4/rocrate-validator),
+CRS4) is not in the pixi env. Run by hand on that crate, it passes every REQUIRED check of
+`workflow-run-crate-0.5` (57 of 57, over RO-Crate 1.1, Workflow RO-Crate 1.0 and Process Run Crate 0.5):
+
+```bash
+uv venv /tmp/rocv && VIRTUAL_ENV=/tmp/rocv uv pip install roc-validator
+/tmp/rocv/bin/rocrate-validator validate -p workflow-run-crate-0.5 run_<id>_ro-crate.zip
+```
+
+At `-l recommended` it still lists these SHOULDs: no `README.md`, the workflow does not claim the
+Bioschemas ComputationalWorkflow profile, the template has no `url`, local (not absolute) ids for the
+task applications, no `publisher` or author affiliation, and a Claude agent that is not a `Person` or
+`Organization`.
+
 ## Rendering a board headless
 
 The agent-run record (`scripts/agent_eval/run_record.py` → `stage_boards.py`) puts each pipeline

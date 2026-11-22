@@ -709,9 +709,10 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
             # `formerKeys` renames, group order, axis guards), then validated — the watcher calls
             # `_run_task` directly, so nothing else does either. Unlike `run_task` it writes no
             # run-log entry: docs/TODO.md → *Incremental node subprocesses not killed on chain cancel*.
-            p = resolve_run_params(task_struct, run_params, imgs_snap)
-            validate_params(task_struct, p)
-            _run_task(task_struct, imgs_snap, p;
+            # invokelatest: a plugin task reloaded while this watcher runs lives in a newer world
+            p = Base.invokelatest(resolve_run_params, task_struct, run_params, imgs_snap)
+            Base.invokelatest(validate_params, task_struct, p)
+            Base.invokelatest(_run_task, task_struct, imgs_snap, p;
                       on_log     = line -> Base.invokelatest(on_log, "[incr/$(node.id)] $line"),
                       on_process = _ -> nothing)
         catch e

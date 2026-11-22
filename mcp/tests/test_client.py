@@ -665,6 +665,19 @@ class ClientTest(unittest.TestCase):
             self.c.get_analysis_lineage("p", image_uid="i1")       # scoped to one image
         self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
 
+    def test_methods_report_builds_url_per_scope(self):
+        self.assertIn(("GET", "/api/analysis/methods"), ALLOWED_ROUTES)
+        with _patch_urlopen({"markdown": ""}) as u:
+            self.c.get_methods_report("p", run_id="r1")            # a chain run
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/analysis/methods?", url)
+        self.assertIn("runId=r1", url)
+        self.assertNotIn("setUid", url)                            # unset scopes dropped
+        self.assertNotIn("imageUids", url)
+        with _patch_urlopen({"markdown": ""}) as u:
+            self.c.get_methods_report("p", image_uids=["a", "b"])  # a list of images, comma-joined
+        self.assertIn("imageUids=a%2Cb", u.call_args[0][0].full_url)
+
     def test_populations_builds_url_and_drops_unset(self):
         self.assertIn(("GET", "/api/analysis/populations"), ALLOWED_ROUTES)
         with _patch_urlopen({"images": []}) as u:

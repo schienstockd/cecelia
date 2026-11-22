@@ -308,4 +308,5 @@ Step 2 makes the claim true. Proposed opening, ahead of the scheduler sentence:
 3. **New sets.** Should the dialog open on every new set, or only when the first image arrives?
 4. **The example sets' attributes.** lfGUDg: answered. `Test` is the panel, and date and mouse come
    from the original path and file name. Position is not reliable from the name (see above), so the unit
-   is the movie. xxHqjQ: which tissue and donor is each core?
+   is the movie. xxHqjQ: which tissue and donor is each core? Once known, it goes in from one table (Metadata →
+   *From a table*, `GALAXY_LESSONS_PLAN.md` L5).

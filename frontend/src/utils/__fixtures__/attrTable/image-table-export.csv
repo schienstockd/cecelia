@@ -1,0 +1,4 @@
+Name,Channels,Channel 1,Channel 2,Z slices,Frames,Duration,Time increment,Time unit,Pixel size X,Pixel size Y,Pixel size Z,Pixel unit,Blocked,Donor,Tissue,attr_name,Excluded,Exclusion note
+Core A1,2,DAPI,CD3,1,1,,,,0.5,0.5,1,µm,no,007,Liver,core-a1,no,
+Core A2,2,DAPI,CD3,1,1,,,,0.5,0.5,1,µm,no,012,"Lymph node, mesenteric",,no,
+Core B1,2,DAPI,CD3,1,1,,,,0.5,0.5,1,µm,no,,Tonsil,,yes,"torn, ""folded"" core"

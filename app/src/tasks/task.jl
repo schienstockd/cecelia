@@ -41,6 +41,7 @@ include("task/registry.jl")
 include("task/validate.jl")
 include("task/sections.jl")
 include("task/composite.jl")
+include("task/spec_tests.jl")
 
 """
     task_scope(task) -> "image" | "set"
