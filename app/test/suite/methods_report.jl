@@ -115,6 +115,10 @@ end
     # per-node params as the run recorded them: node a ran on defaults, node b changed the message
     @test occursin("(node a)", rows[1]) && occursin("| defaults |", rows[1])
     @test occursin("(node b)", rows[2]) && occursin("message=second", rows[2])
+    # `overwrite` (replace a label set of the same name) is how a node writes, not a method
+    np = Cecelia._mr_node_params((; node_params = Dict("x" => Dict("overwrite" => true, "message" => "second"))),
+                                 (; id = "x", fn = "testTasks.image_task"))
+    @test occursin("message=second", np) && !occursin("overwrite", np)
     # the table is the runs these nodes made, nothing else on the images
     ids = Set(st.task_id for m in values(run.image_states) for st in values(m))
     @test !isempty(r["table"]) && all(row -> all(in(ids), row["taskIds"]), r["table"])
