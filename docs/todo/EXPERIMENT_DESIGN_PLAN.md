@@ -243,7 +243,11 @@ Design check and the Acquisition check cover them. In order:
    (`plots/superplot.ts`, `_superplot!`).
 4. **Freeze and stale (T6)** (build step 5). Exported figures: built — the record names each set's
    design (version + hash, `board_designs`) and the record dialog flags one that changed or is gone
-   since the export. Still open: stats runs and the caption with the n of units and parents.
+   since the export. The caption: built — every export of a summary plot carries one line under the
+   chart, "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse
+   means" (`plotCaption`, `svgWithCaption`); the parents are in the record's design line. Stats runs:
+   nothing to build — the test is computed per render and never stored, so the figure record's design
+   version is the stats' too.
 
 Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate
 "place these images" step (frame 3b; the Design check counts them and opens the dialog), per-row marks

@@ -475,6 +475,29 @@ export function svgWithOverlays(svg: SVGSVGElement, items: OverlayItem[]): SVGSV
   return out
 }
 
+/** Height of the caption band `svgWithCaption` adds under a chart, in SVG px. */
+export const CAPTION_H = 16
+
+/**
+ * The chart with one caption line under it (a summary plot's n and how its points and test were made —
+ * `plotCaption`), so every export of the plot carries it: the PDF, the board SVG, a downloaded image and
+ * the MCP plot image all go through the panel's one `toImageURL`. The band is added below the chart, so
+ * nothing in the chart moves. '' returns the chart unchanged.
+ */
+export function svgWithCaption(svg: SVGSVGElement, caption: string, ink = PAPER_INK): SVGSVGElement {
+  if (!caption) return svg
+  const out = svg.cloneNode(true) as SVGSVGElement
+  const w = out.width.baseVal.value || Number(out.getAttribute('width')) || 1
+  const h = out.height.baseVal.value || Number(out.getAttribute('height')) || 1
+  out.setAttribute('height', String(h + CAPTION_H))
+  const vb = out.viewBox?.baseVal
+  if (vb && vb.width) out.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.width} ${vb.height + CAPTION_H}`)
+  const doc = new DOMParser().parseFromString(svgDoc({ width: w, height: h + CAPTION_H,
+    body: svgText(w / 2, h + CAPTION_H - 4, caption, { fill: ink, size: 10, anchor: 'middle' }) }), 'image/svg+xml')
+  for (const n of Array.from(doc.documentElement.childNodes)) out.appendChild(document.importNode(n, true))
+  return out
+}
+
 /**
  * Split a figure into its chart <svg> and the sibling overlays to snapshot around it. `chart` defaults to
  * the figure's last direct <svg> (a Plot `<figure>`); pass it when the chart sits inside a child — a
