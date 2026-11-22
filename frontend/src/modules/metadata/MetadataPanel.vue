@@ -9,6 +9,7 @@ import ExtractRuleEditor from '../../components/ExtractRuleEditor.vue'
 import { parseChannelNameList, channelNamesAsText, referenceCandidates,
          splitByChannelCount, skippedChannelCountMsg } from '../../utils/channelNames'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
+import AttrTableDialog from '../../components/AttrTableDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SuggestInput from '../../components/SuggestInput.vue'
 import { createImageAttr, deleteImageAttr, renameImageAttr, setImageAttr } from '../../utils/imageAttrApi'
@@ -282,6 +283,8 @@ const attrDisabled = computed(() => !selectedAttr.value)
 // cramming a full editor into this narrow sidebar; see feedback after the first version shipped.
 
 const showPhysDialog = ref(false)
+// Attributes from a pasted / dropped CSV or TSV (components/AttrTableDialog.vue)
+const showTableDialog = ref(false)
 const physFocusUid = computed(() => props.selectedUids[0] ?? setImages.value[0]?.uid ?? null)
 const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(i)).length)
 </script>
@@ -321,6 +324,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           Create
         </button>
       </div>
+
+      <button class="cc-btn cc-btn-ghost at-open" data-guide="metadata.fromTable" :disabled="!setImages.length"
+        v-tooltip.bottom="'Set attributes from a CSV or TSV, one row per image'" @click="showTableDialog = true">
+        <i class="pi pi-table" /> From a table
+      </button>
+      <AttrTableDialog v-if="showTableDialog && setUid && projectMeta.current"
+        :project-uid="projectMeta.current.uid" :set-uid="setUid" :images="setImages"
+        @close="showTableDialog = false" />
 
       <!-- select + delete -->
       <div class="field-row">
@@ -448,6 +459,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 /* + .cc-panel-section (padding, divider); the stack inside is ours, so the heading's own margin goes */
 .md-section { display: flex; flex-direction: column; gap: var(--cc-space-sm); }
 .md-section > .cc-panel-heading { margin: 0; }
+.at-open { align-self: flex-start; }
 .md-section.disabled { opacity: 0.45; pointer-events: none; }
 
 .section-hint { margin: 0; line-height: 1.5; }
