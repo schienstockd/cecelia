@@ -57,7 +57,7 @@ import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSel
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
-import { DEFAULT_STAT_UNIT, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
+import { DEFAULT_STAT_UNIT, plotCaption, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
 import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
@@ -90,7 +90,7 @@ const props = defineProps<{
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
                            readout: [PlotReadout] }>()
 const plotRef = useTemplateRef<{
-  toImageURL(t: 'png' | 'svg'): Promise<string | null>
+  toImageURL(t: 'png' | 'svg', caption?: string): Promise<string | null>
   axisRect(): FrameRect | null
 }>('plotRef')
 const settings = useSettingsStore()
@@ -259,6 +259,9 @@ const statUnit = computed<StatUnit>({
 const unitNoun = computed(() => statUnit.value === 'replicate' && replicate.value ? replicate.value : { one: 'image', many: 'images' })
 const nLabel = computed(() => !canStatUnit.value || statUnit.value === 'individual' ? ''
   : unitCountLabel((result.value?.series ?? []).map(s => s.n ?? s.points?.length ?? 0), unitNoun.value))
+// the line every export of this plot carries under it: n, what a point is, what the test ran on
+const exportCaption = computed(() => plotCaption({ nLabel: nLabel.value, statUnit: statUnit.value,
+  imageAgg: imageAgg.value, noun: unitNoun.value, test: result.value?.comparisons?.methodNote }))
 // what the request sends for the unit: the replicate needs its attributes
 const statUnitBody = () => !canStatUnit.value || statUnit.value === 'individual' ? {}
   : statUnit.value === 'replicate' ? { statUnit: 'replicate', replicateAttrs: replicateAttrs.value, imageAgg: imageAgg.value }
@@ -883,7 +886,7 @@ function exportAs(kind: string) {
     }).finally(() => { exporting.value = false })
   } else if (kind === 'png' || kind === 'svg') {
     exporting.value = true
-    plotRef.value?.toImageURL(kind).then(url => {
+    plotRef.value?.toImageURL(kind, exportCaption.value).then(url => {
       if (!url) return
       const a = document.createElement('a'); a.href = url; a.download = `${stem}.${kind}`; a.click()
     }).finally(() => { exporting.value = false })
@@ -977,11 +980,11 @@ function csvName(): string {
   return plotAxisSuffix(measure.value, applied ? groupBy.value : '', hasMeasure.value)
 }
 // a plot-only, LIGHT-theme PNG for the PDF export (no panel chrome; dark theme is on-screen only)
-async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png')) ?? null }
+async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', exportCaption.value)) ?? null }
 // full vector <svg> string for the board→SVG export (docs/ANALYSIS.md). PlotChart.toImageURL('svg')
 // returns an SVG DATA URL; decode its payload back to the raw markup so the board can nest it.
 async function exportSvg(): Promise<string | null> {
-  const url = await plotRef.value?.toImageURL('svg')
+  const url = await plotRef.value?.toImageURL('svg', exportCaption.value)
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
