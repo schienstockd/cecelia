@@ -192,6 +192,21 @@ function api_analysis_methods(req::HTTP.Request)
     200, JSON3.write(r)
 end
 
+# GET /api/chains/runs/ro-crate?projectUid&runId → the chain run's RO-Crate as one `.zip` (bytes): the
+# Workflow Run Crate metadata, the methods report + parameter CSV and the frozen template, no image data
+# (`chain_run_ro_crate_zip`, app/src/ai/ro_crate.jl; docs/ANALYSIS.md → *RO-Crate export*). Read-only.
+function api_chains_run_ro_crate(req::HTTP.Request)
+    q   = HTTP.queryparams(HTTP.URI(req.target))
+    uid = get(q, "projectUid", ""); rid = get(q, "runId", "")
+    (isempty(uid) || isempty(rid)) && return 400, JSON3.write((; error="projectUid and runId required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    try
+        200, chain_run_ro_crate_zip(proj, rid)
+    catch e
+        404, JSON3.write((; error=sprint(showerror, e)))
+    end
+end
+
 # POST /api/analysis/gate-edits { projectUid, since, files } → { files: [{file, status, edits, lastAt}] }:
 # whether each gating sidecar a board record names (`gateFiles`) changed after `since` (ISO, UTC — the
 # figure's export time or the board's frozen-parameters time). `gate_file_edits` reads the gate history;

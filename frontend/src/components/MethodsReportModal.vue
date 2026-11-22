@@ -1,15 +1,15 @@
 <!--
   The draft Methods section for a board, a set or a chain run (`GET /api/analysis/methods`,
   app/src/ai/methods_report.jl), read-only: the server's Markdown as it is, with Copy, a Markdown
-  download and the parameter table as CSV. docs/ANALYSIS.md → *Methods report*.
+  download and the parameter table as CSV — and, for a chain run, its RO-Crate (`downloadRoCrate`).
+  docs/ANALYSIS.md → *Methods report*, *RO-Crate export*.
 -->
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { downloadText } from '../plots/export'
-import { historyParamsCsv } from '../utils/chainFromHistory'
-import { methodsReportUrl, methodsFileBase, type MethodsReport, type MethodsScope } from '../utils/methodsReport'
+import { methodsReportUrl, methodsFileBase, downloadRoCrate, type MethodsReport, type MethodsScope } from '../utils/methodsReport'
 
 const props = defineProps<{ projectUid: string; scope: MethodsScope; name: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -31,6 +31,9 @@ onMounted(async () => {
 })
 
 const base = () => methodsFileBase(props.name)
+
+const crateBusy = ref(false)
+const saveCrate = () => props.scope.kind === 'chainRun' && downloadRoCrate(props.projectUid, props.scope.runId, crateBusy)
 </script>
 
 <template>
@@ -41,12 +44,16 @@ const base = () => methodsFileBase(props.name)
     <template #footer>
       <button class="cc-btn cc-btn-ghost" type="button" :disabled="!report?.table.length"
               v-tooltip.top="'The parameter table as CSV'"
-              @click="report && downloadText(`${base()}_parameters.csv`, historyParamsCsv(report.table), 'text/csv')">
+              @click="report && downloadText(`${base()}_parameters.csv`, report.csv, 'text/csv')">
         <i class="pi pi-download" /> CSV
       </button>
       <button class="cc-btn cc-btn-ghost" type="button" :disabled="!report" v-tooltip.top="'Save as Markdown'"
               @click="report && downloadText(`${base()}.md`, report.markdown, 'text/markdown')">
         <i class="pi pi-download" /> .md
+      </button>
+      <button v-if="scope.kind === 'chainRun'" class="cc-btn cc-btn-ghost" type="button" :disabled="!report || crateBusy"
+              v-tooltip.top="'Methods, parameters and template as an RO-Crate (.zip)'" @click="saveCrate">
+        <i :class="['pi', crateBusy ? 'pi-spin pi-spinner' : 'pi-download']" /> RO-Crate
       </button>
       <span class="mr-spacer" />
       <button class="cc-btn cc-btn-primary" type="button" :disabled="!report" @click="report && copy(report.markdown)">

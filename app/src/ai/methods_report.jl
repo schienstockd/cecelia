@@ -163,10 +163,38 @@ function _mr_scope(proj::CciaProject, image_uids, set_uid, pops, run)
     String.(image_uids), pops === nothing ? "selected images" : "analysis board"
 end
 
+# ── the parameter table as CSV ──
+# Columns in a fixed order, `relation` only when a row says one — the same columns and quoting as the
+# frontend's `historyParamsCsv` + `rowsToCsv` (utils/chainFromHistory.ts, plots/export.ts), which the
+# history dialog and the board export still use. The Methods modal and the RO-Crate take this one, so
+# the CSV a user downloads and the one in the crate are the same bytes.
+const _MR_CSV_COLS = [("step", "step"), ("task", "task"), ("output", "output"), ("relation", "relation"),
+                      ("images", "images"), ("last_run", "lastRun"), ("changed_from_default", "changedFromDefault"),
+                      ("differs_between_images", "conflicts"), ("note", "note")]
+_mr_csv_cell(v) = (s = v === nothing ? "" : string(v);
+                   occursin(r"[\",\n]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s)
+
+"""
+    history_params_csv(table) -> String
+
+The Methods parameter table (`history_params_table` rows) as CSV, "" for no rows. `relation` appears
+only when some row carries one (a board-scoped table).
+"""
+function history_params_csv(table::AbstractVector)::String
+    isempty(table) && return ""
+    scoped = any(r -> !isempty(string(something(get(r, "relation", ""), ""))), table)
+    cols = [c for c in _MR_CSV_COLS if scoped || c[1] != "relation"]
+    lines = [join(first.(cols), ",")]
+    for r in table
+        push!(lines, join((_mr_csv_cell(get(r, k, "")) for (_, k) in cols), ","))
+    end
+    join(lines, "\n")
+end
+
 """
     methods_report(proj; image_uids, set_uid, pops, cluster_runs, run_id, board) -> Dict
 
-A draft Methods section, `{markdown, table, scope}`. Three scopes, one text:
+A draft Methods section, `{markdown, table, csv, scope}`. Three scopes, one text:
 
 - **set** — `set_uid` (or a list of `image_uids`): every step that ran on its images;
 - **board** — `image_uids` + `pops` (board population keys) + `cluster_runs` (`"popType:suffix"`),
@@ -176,7 +204,7 @@ A draft Methods section, `{markdown, table, scope}`. Three scopes, one text:
   and the cohort QC last checked on its sets.
 
 `table` is the parameter table the text is written from (`history_params_table` rows, `cite` included
-when the rows carry it). Deterministic: no clock, no randomness, every list sorted. Read-only.
+when the rows carry it), `csv` that table as CSV (`history_params_csv`). Deterministic: no clock, no randomness, every list sorted. Read-only.
 """
 function methods_report(proj::CciaProject; image_uids::AbstractVector = String[],
                         set_uid::AbstractString = "", pops::Union{Nothing,AbstractVector} = nothing,
@@ -265,7 +293,7 @@ function methods_report(proj::CciaProject; image_uids::AbstractVector = String[]
     isempty(cites) || push!(md, "- Cite: $(join(cites, "; ")).")
     push!(md, "", "The supplementary parameter table (CSV) lists the same $(length(table)) step$(length(table) == 1 ? "" : "s").")
 
-    Dict{String,Any}("markdown" => join(md, "\n") * "\n", "table" => table,
+    Dict{String,Any}("markdown" => join(md, "\n") * "\n", "table" => table, "csv" => history_params_csv(table),
                      "scope" => Dict{String,Any}("kind" => run !== nothing ? "chainRun" : pops !== nothing ? "board" : "set",
                                                  "label" => scope, "imageUids" => uids))
 end

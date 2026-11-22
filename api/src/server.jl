@@ -337,6 +337,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/chains/run" => (req, body_bytes) -> (api_chains_run(req)),
     "/api/chains/suggest" => (req, body_bytes) -> (api_chains_suggest(req)),
     "/api/chains/history-params" => (req, body_bytes) -> (api_chains_history_params(req)),
+    "/api/chains/runs/ro-crate" => (req, body_bytes) -> (api_chains_run_ro_crate(req)),
     "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent(req)),
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
     "/api/observer/chat"     => _ai_gated((req, body_bytes) -> (api_observer_chat(req))),

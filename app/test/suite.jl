@@ -229,6 +229,8 @@ include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
 include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
 # The draft Methods section: set / board / chain-run scopes (ai/methods_report.jl).
 include(joinpath(@__DIR__, "suite", "methods_report.jl"))
+# A chain run as an RO-Crate (Workflow Run Crate 0.5): the profile's MUST list (ai/ro_crate.jl).
+include(joinpath(@__DIR__, "suite", "ro_crate.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 # …and its follow-ups: re-measure `replaces`, format number, custom weights, raw source check.
