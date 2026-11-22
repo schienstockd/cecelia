@@ -5,6 +5,7 @@ import type { TaskStatus } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
+import { liveStatusText, reusedTip } from '../utils/chainReuse'
 
 const props = defineProps<{
   id: string
@@ -14,6 +15,7 @@ const props = defineProps<{
     variant?: string      // distinguishing value_name (e.g. fan-out output "T" vs "default")
     imageUid: string
     status: TaskStatus
+    reused?: string       // the past run's task id when this node reused it instead of running
     startedAt?: number    // epoch ms
     finishedAt?: number   // epoch ms
     nodeId?: string       // chain template node id (for "resume from here")
@@ -55,11 +57,12 @@ const STATUS_LOOK: Record<TaskStatus, { bg: string, border: string }> = {
     <Handle type="target" :position="Position.Left" class="live-handle" :connectable="false" />
     <Handle type="source" :position="Position.Right" class="live-handle" :connectable="false" />
     <span v-if="data.restart === 'start'" class="restart-badge">resume from</span>
-    <div class="live-status-bar" :style="{ background: STATUS_LOOK[data.status].bg }">
-      <i :class="['pi', TASK_STATUS[data.status].icon]"
+    <div class="live-status-bar" :style="{ background: STATUS_LOOK[data.status].bg }"
+         v-tooltip.top="reusedTip(data.reused)">
+      <i :class="['pi', data.reused ? 'pi-replay' : TASK_STATUS[data.status].icon]"
          :style="{ color: TASK_STATUS[data.status].color }" />
       <span class="live-status-label" :style="{ color: TASK_STATUS[data.status].color }">
-        {{ data.status }}
+        {{ liveStatusText(data.status, data.reused) }}
       </span>
       <span v-if="elapsed" class="live-elapsed">{{ elapsed }}</span>
     </div>

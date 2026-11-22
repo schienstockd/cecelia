@@ -751,6 +751,8 @@ function handle_chain_run(ws, data)
     # (chain/after_live.jl). Its name stands in for `chain`; the executing process parses + validates it.
     template    = (resuming || replaying) ? Dict{String,Any}() : _to_str_dict(get(data, :template, nothing))
     isempty(template) || isempty(chain_name) && (chain_name = string(get(template, "name", "Queue after")))
+    # "Reuse unchanged steps" (chain/reuse.jl): opt-in, off unless the payload says `true`
+    reuse       = get(data, :reuse, false) === true
 
     if !isempty(project_uid) && replaying
         src = _chain_run_header(project_uid, from_run)
@@ -808,7 +810,7 @@ function handle_chain_run(ws, data)
     # is already executing there, and starting a second execution would have two processes writing the
     # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
     creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, from_run, excluded,
-                          by = active_profile_name(), caller = caller_stamp(), template)
+                          by = active_profile_name(), caller = caller_stamp(), template, reuse)
     outcome = _submit_chain_to_runner(creq)
     outcome === :accepted && return
     if outcome === :refused

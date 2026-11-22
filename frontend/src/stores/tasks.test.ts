@@ -31,6 +31,15 @@ describe('task store — who launched a row', () => {
     expect(tasks.addFromChainEvent({ ...ev, by: 'carol' }).by).toBe('carol')
   })
 
+  it('a reused chain node keeps the run it reused, and loses it when it runs again', () => {
+    const tasks = useTaskStore()
+    const ev = { runId: 'r', nodeId: 'n', imageUid: 'i1', fn: 'segment.cellpose', projectUid: 'p1' }
+    expect(tasks.addFromChainEvent({ ...ev, status: 'done', reused: 'tid1' }).reusedFrom).toBe('tid1')
+    // a resume re-runs it: the same row goes queued, then done without a reuse
+    expect(tasks.addFromChainEvent({ ...ev, status: 'queued' }).reusedFrom).toBeUndefined()
+    expect(tasks.addFromChainEvent({ ...ev, status: 'done' }).reusedFrom).toBeUndefined()
+  })
+
   it('a re-run from this tab is this tab\'s launch', () => {
     useAppControlStore().activeProfileName = 'alice'
     const tasks = useTaskStore()

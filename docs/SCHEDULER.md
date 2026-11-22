@@ -975,6 +975,62 @@ a **fresh** task id and the task store resets the existing entry to it (`restart
 rather than appending a duplicate. Fresh, because every frame is routed to its row by id: under a
 reused id the old run's late final `cancelled` landed on the re-run and pinned it.
 
+### Reuse unchanged steps — a past run stands in for an identical one
+
+`params_hash` skips a node only within ONE run (resume). Across runs, a chain run started with
+**`reuse = true`** (REPL `run_chain(...; reuse = true)`, `ChainRequest.reuse`, WS `chain:run` `reuse`,
+the Run panel's *Reuse unchanged steps* toggle, remembered per profile) marks an image-scope node
+**reused** instead of dispatching it when the image's run log holds an identical run whose output is
+still current (`app/src/tasks/chain/reuse.jl`). Off by default. Galaxy's job cache read onto the run
+log (`docs/todo/GALAXY_LESSONS_PLAN.md` → L3).
+
+**The key** — compared against the newest `done`, not-`unchanged` entry that made the node's output
+(`_run_maker`, archive included):
+
+| Part | Same means |
+|---|---|
+| task | the same `fun` |
+| code | the same `ceceliaVersion`, recorded on both sides (an entry without one never matches), and the same `ceceliaCommit` when the entry and this process both have one |
+| params | the sanitised params + `valueName` that `run_task` would log (`resolve_run_params` → `_run_log_params`), as canonical JSON with keys sorted at every level |
+| inputs | every name read at the same name + vN (`run_inputs`); no recorded `inputs` on a task that reads names = no match |
+| gates | every gate read at the same content hash (`run_gates`) |
+
+**"Unchanged since"** is identity, never a content hash or a stat: the output is still on the image
+(`_run_has_output`), no later `done` run made it (it would be the maker), and nothing the run read
+has been replaced since, directly or upstream — `stale_outputs_for` lists it neither stale nor
+unknown. A re-run of an upstream step `replaces` what the downstream run read, so the staleness walk
+catches it. Not a stat of the store (`store_rev`): the run log records no stamp of the store as a run
+left it, and an mtime against `finishedAt` (local time, whole seconds) is not a comparison worth
+trusting. The cost: a change no task records (a hand-edited store, a calibration rewrite) is invisible
+to reuse, as it is to the staleness walk.
+
+**Which nodes.** Image-scope task nodes whose every chain predecessor was itself reused (a
+predecessor that ran wrote its output anew). Never: set-scope or incremental nodes, "Queue after"
+steps, manual steps, a node whose output namespace the image cannot check (only image versions and
+label sets are — `_preflight_fields`; clusters, graphs, stats… always run), a fixed `default` output (a
+new image's), a task with a model picker (a model retrained under the same name changes nothing the
+key sees), a run that assumed a missing scale or would now (`env.scaleDefaulted`, `run_scale_defaults`),
+or anything after a node that ran. A calibration CORRECTED from one recorded value to another is not
+seen: the run log does not record the scale a run used, so a µm-dependent step is reused at the old
+scale — turn reuse off after correcting a calibration.
+
+**Code identity is coarse.** "Same code" is `ceceliaVersion` plus, on a checkout, `ceceliaCommit`. Neither
+moves with a Python env upgrade, with an edited custom module, or with uncommitted edits (the commit is HEAD);
+a plugin version belongs in the key once recorded.
+
+**Visible, never silent** (plan Decision 3):
+- the node is `:done` with `ImageNodeState.reused` = the reused entry's `taskId` (run.json `reused`,
+  `GET /api/chains/run` → `reused`); it ran no task, so its `task_id` stays empty and nothing is banked;
+- `chain:node:done` carries `reused`, and the Live view shows **reused** (tooltip: the run it kept);
+- the image's run log gets a `skipped` entry, reason `reused <taskId>` (`RUN_LOG_REUSED_PREFIX`), empty
+  `taskId`. Readers pass over skipped entries, so the reused run stays the output's maker for
+  `_run_maker`, `stale_outputs_for` and `history_params_table` (`_history_rows` also drops a reused
+  node's chain-record row);
+- the executor logs `REUSE [uid/node] fn: unchanged since run <taskId>`.
+
+A resume keeps the run's recorded `reuse` unless the caller passes it. Tests:
+`app/test/suite/chain_reuse.jl`.
+
 ---
 
 ## Event bus
@@ -1380,6 +1436,10 @@ run.overrides; run.node_params           # what it was asked to run with (`nothi
 
 # Replay: a NEW run of that run's frozen template + recorded overrides (empty uids = its images)
 rerun = run_chain(proj, String[]; from_run = run.id)
+
+# Reuse unchanged steps: a node whose identical past run is still current is marked reused, not run
+run = run_chain(proj, image_uids; chain = "my-chain", reuse = true)
+run.image_states[uid]["n2"].reused      # the reused run's taskId, or nothing if it ran
 ```
 
 ---
@@ -1391,6 +1451,7 @@ rerun = run_chain(proj, String[]; from_run = run.id)
 | `app/src/tasks/scheduler.jl` | Resource pools + dispatchers, `TaskRecord`/`_TASKS`, `run_task`, cancel registry |
 | `app/src/tasks/chain.jl` | Chain data model, executor, barriers, resume logic, `chain_node`/`make_chain` REPL helpers |
 | `app/src/tasks/chain/manual.jl` | Manual steps: park, continue registry, on-disk continue |
+| `app/src/tasks/chain/reuse.jl` | Reuse unchanged steps: the reuse key, `reusable_run`, `_mark_reused!` |
 | `app/src/events.jl` | Package-level pub/sub event bus |
 | `app/src/tasks/testTasks/image_task.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
 | `app/src/tasks/testTasks/set_task.jl` | Mock set-scope task |

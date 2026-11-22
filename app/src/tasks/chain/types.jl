@@ -132,10 +132,16 @@ mutable struct ImageNodeState
     # only alongside NODE_SKIPPED and cleared on any other transition, so a set-scope result that fit on
     # fewer images says which were left out and why. `nothing` on run.json written before it existed.
     reason::Union{String,Nothing}
+    # The run-log `taskId` of the past run this node REUSED instead of dispatching ("Reuse unchanged
+    # steps", chain/reuse.jl). Set only alongside NODE_DONE; any other transition clears it. `nothing` =
+    # the node ran (or has not yet), and on run.json written before reuse existed.
+    reused::Union{String,Nothing}
 end
 
-ImageNodeState() = ImageNodeState(NODE_PENDING, nothing, nothing, nothing, nothing)
-ImageNodeState(status, task_id, result, params_hash) = ImageNodeState(status, task_id, result, params_hash, nothing)
+ImageNodeState() = ImageNodeState(NODE_PENDING, nothing, nothing, nothing, nothing, nothing)
+ImageNodeState(status, task_id, result, params_hash) = ImageNodeState(status, task_id, result, params_hash, nothing, nothing)
+ImageNodeState(status, task_id, result, params_hash, reason) =
+    ImageNodeState(status, task_id, result, params_hash, reason, nothing)
 
 mutable struct ChainRun
     id::String
@@ -169,7 +175,17 @@ mutable struct ChainRun
     overrides::Union{Nothing,Dict{String,Any}}
     node_params::Union{Nothing,Dict{String,Any}}
     from_run::String                        # the run this one replays (`from_run`); "" = started from a template
+    # "Reuse unchanged steps" (chain/reuse.jl): an image-scope node whose identical past run is still
+    # current is marked reused instead of dispatched. Opt-in per run; a resume keeps what the run recorded.
+    reuse::Bool
 end
+# The pre-reuse form: reuse off.
+ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+         created_at, by, resumed_by, excluded_images::AbstractDict, _dir, _lock, _barriers, _barriers_done,
+         caller::AbstractDict, overrides, node_params, from_run::AbstractString) =
+    ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+             created_at, by, resumed_by, Dict{String,String}(excluded_images), _dir, _lock, _barriers,
+             _barriers_done, Dict{String,Any}(caller), overrides, node_params, String(from_run), false)
 # The pre-replay form: overrides and node params unknown, not a replay.
 ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
          created_at, by, resumed_by, excluded_images::AbstractDict, _dir, _lock, _barriers, _barriers_done,

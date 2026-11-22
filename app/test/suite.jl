@@ -237,6 +237,8 @@ include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 include(joinpath(@__DIR__, "suite", "run_log_followups.jl"))
 include(joinpath(@__DIR__, "suite", "run_record_fields.jl"))
 include(joinpath(@__DIR__, "suite", "gate_history.jl"))
+# Reuse unchanged steps: a chain node marked reused instead of dispatched (tasks/chain/reuse.jl).
+include(joinpath(@__DIR__, "suite", "chain_reuse.jl"))
 include(joinpath(@__DIR__, "suite", "run_usage.jl"))   # `usage`: peak memory, host, cluster accounting
 
 
