@@ -680,16 +680,19 @@ function _claim_s2(rows, scope)
         foreach(sort!, values(imgs_per_unit))
         ev = Dict{String,Any}("attrs" => scope.unit_attrs, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
                               "imagesPerUnit" => imgs_per_unit)
+        partial = nothing
         if length(gs) >= 2
-            shared = reduce(intersect, values(units))
-            disjoint = all(isempty(intersect(units[a], units[b])) for a in gs for b in gs if a < b)
-            if disjoint
+            # the design grid's rule (`replicate_pairing`): paired only when every replicate holds every
+            # group. A partial overlap is tested on the replicates that hold every group, and said so.
+            kind, shared = replicate_pairing(units)
+            if kind == :unpaired
                 # more than two groups: the floor of the weakest pairwise comparison, the two smallest
                 ns = sort!([length(units[g]) for g in gs])
                 ev["design"] = "unpaired"; ev["minP"] = claim_min_p_unpaired(ns[1], ns[2]); n = ns[1]
             else
-                ev["design"] = "paired"; n = length(shared)
+                ev["design"] = kind == :partial ? "partly paired" : "paired"; n = length(shared)
                 ev["minP"] = claim_min_p_paired(n)
+                kind == :partial && (partial = (n, length(reduce(union, values(units)))))
             end
         elseif length(gs) == 1
             n = length(only(values(units)))
@@ -699,7 +702,7 @@ function _claim_s2(rows, scope)
         end
         ev["n"] = n
         pmin = round(ev["minP"]; sigdigits = 3)
-        if n == 0
+        if all(isempty, values(units))
             # no unit filled in where the claim has data — S0's `claim.unit_blank` already says so
         elseif ev["minP"] > CLAIM_ALPHA
             push!(findings, qc_finding("warn", "claim.few_units"; attr = attr, n = n, p = pmin,
@@ -708,6 +711,8 @@ function _claim_s2(rows, scope)
             push!(findings, qc_finding("info", "claim.unit_count"; attr = attr, n = n,
                 detail = _claim_detail("S2", ev)))
         end
+        partial === nothing || push!(findings, qc_finding("info", "claim.partly_paired"; attr = attr,
+            n = partial[1], n_all = partial[2], detail = _claim_detail("S2", ev)))
         # several images from one unit: a test per image would count that unit more than once
         multi = sort!([u for (u, is) in imgs_per_unit if length(is) > 1])
         isempty(multi) || push!(findings, qc_finding("info", "claim.images_per_unit"; attr = attr,

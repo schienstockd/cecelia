@@ -881,7 +881,7 @@ end
                      "count", "min", "tiles", "suggest",
                      # combined findings (multi-channel roll-ups): `n` count, `s` plural suffix,
                      # `channels` comma-joined list — see import.photon_limited
-                     "n", "s", "channels",
+                     "n", "s", "channels", "n_all",
                      # correction staleness: `scope` is "labels" or "tracks" — see
                      # correction.stale_artefacts
                      "scope",
