@@ -59,6 +59,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'runs', label: 'Step settings and their valid ranges', tools: ['get_module_params'], kiwi: true, terminal: true },
   { group: 'runs', label: 'Which step does what, and the guides', tools: ['get_task_catalogue', 'get_guide'], kiwi: true, terminal: true },
   { group: 'runs', label: 'How each result was produced', tools: ['get_analysis_lineage'], kiwi: true, terminal: true },
+  { group: 'runs', label: 'A draft Methods section from the record', tools: ['get_methods_report'], kiwi: true, terminal: true },
   { group: 'runs', label: 'The app console', tools: ['get_recent_logs'], kiwi: false, terminal: true },
 
   { group: 'results', label: 'Populations, and gates as pictures', tools: ['get_populations', 'gate_plot', 'gate_cells_view'], kiwi: true, terminal: true },

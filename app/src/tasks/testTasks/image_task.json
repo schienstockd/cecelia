@@ -3,6 +3,7 @@
   "task": "imageTask",
   "label": "Test image task",
   "resource_pool": "cpu",
+  "methodsText": "a test step logged \"{message}\" after waiting {waitMs} ms.",
   "params": [
     {
       "key": "waitMs",

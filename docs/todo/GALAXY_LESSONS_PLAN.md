@@ -138,6 +138,14 @@ Each phase can ship on its own.
 - **L6 — RO-Crate export of a chain run.** It reuses L1's content and writes `ro-crate-metadata.json`
   (Workflow Run Crate profile) beside the report and parameter table, so Zenodo and WorkflowHub can read
   it. Checkpoint: the crate passes an RO-Crate validator.
+  - **Built** (stacked on the methods report, #2440): `chain_run_ro_crate` (`app/src/ai/ro_crate.jl`),
+    `GET /api/chains/runs/ro-crate`, **RO-Crate** in the chain Live view and the Methods modal. Workflow
+    Run Crate 0.5 on RO-Crate 1.1; one CreateAction for the run plus one per node × image. Checkpoint
+    met by hand: `rocrate-validator` (not in the pixi env) passes every REQUIRED check; the suite
+    checks the MUST list. `docs/ANALYSIS.md` → *RO-Crate export*. Shape after Galaxy's
+    `WorkflowRunCrateProfileBuilder` (`lib/galaxy/model/store/ro_crate_utils.py`): the three profile
+    CreativeWorks on the root's `conformsTo`, the workflow as `mainEntity`, one CreateAction with it as
+    `instrument`. Ideas only, no code (Decision 1).
 
 ## Open decisions (the maintainer's call)
 

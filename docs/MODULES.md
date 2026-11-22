@@ -567,6 +567,13 @@ or TS change needed to promote a task from coming-soon to shipped.
 Wired through `frontend/src/utils/taskGating.ts` → `taskGatingReason` short-circuits `comingSoon`
 before the `requires` checks; the picker + Run button read the same predicate.
 
+### `methodsText` — optional: the step's sentence in a Methods report
+
+A one-sentence template with `{param}` slots, e.g. `"cells were segmented with Cellpose ({model})."`.
+The draft Methods report (`docs/ANALYSIS.md` → *Methods report*) uses it for this task's step when every
+slot has a value — the run's params over the spec defaults — and falls back to the generic sentence
+(task label, output, non-default params) otherwise. Optional: no built-in task carries one yet.
+
 ### `sweep` — run the task once per value of one param
 
 ```json
