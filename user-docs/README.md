@@ -49,7 +49,7 @@ as a chain.
 | Recipe | When this is you | Steps |
 |---|---|---|
 | **Few-marker tissue** | A fixed section with a handful of markers, e.g. a confocal stack of spleen. | 10 (3 optional) |
-| **Multiplex tissue** | Many markers on one section, e.g. IBEX or CODEX of a lymph node or spleen. | 10 (2 optional) |
+| **Multiplex tissue** | Many markers on one section, e.g. IBEX or PhenoCycler of a lymph node or spleen. | 10 (2 optional) |
 | **Intravital timelapse** | A time-lapse of cells moving in tissue, e.g. T cells in a lymph node. | 14 (6 optional) |
 | **Live cells and structures** | A time-lapse where cells move along a structure, e.g. T cells and lymphatics in skin. | 11 (2 optional) |
 | **In vitro migration** | Cells migrating in a dish or chamber, e.g. a cancer cell line under two treatments. | 9 (1 optional) |
