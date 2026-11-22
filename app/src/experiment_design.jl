@@ -310,24 +310,40 @@ function _design_confounded(placed, d::ExperimentDesign)::Vector{String}
     out
 end
 
+# How the replicates sit across the compared groups — the one rule the design grid and the claim
+# check's S2 share. `:paired` every replicate holds every group (each mouse carries both conditions);
+# `:unpaired` no replicate holds two groups; `:partial` anything between. Linked replicates call for a
+# paired test, or a two-way ANOVA with the replicate as a factor; testing them as independent is too
+# conservative. A partial overlap is neither: a paired test keeps only the replicates that hold every
+# group, an unpaired one counts the shared replicates twice. Lord et al. 2020, SuperPlots, J Cell Biol
+# 219(6):e202001064, doi:10.1083/jcb.202001064; Zweifach 2024, J Cell Biol 223(8):e202401074,
+# doi:10.1083/jcb.202401074. Returns the kind and the replicates every group holds.
+function replicate_pairing(units_by_group::AbstractDict)
+    sets = [Set(u) for u in values(units_by_group)]
+    length(sets) >= 2 || return (:none, Set{eltype(eltype(sets))}())
+    shared = reduce(intersect, sets)
+    every  = reduce(union, sets)
+    disjoint = sum(length, sets) == length(every)
+    kind = isempty(every) ? :none :
+           disjoint ? :unpaired :
+           length(shared) == length(every) ? :paired : :partial
+    (kind, shared)
+end
+
 # The parent levels the design is paired (blocked) on — the opposite of confounded: every identity at
 # that level holds every group, as when each mouse carries both conditions or each day images every
-# group. A level is a prefix of `parents`, so a mouse is named within its date when both are parents
-# ("mouse 1" on two days is two mice). Linked replicates call for a paired test, or a two-way ANOVA with
-# the replicate as a factor; testing them as independent is too conservative. Lord et al. 2020,
-# SuperPlots, J Cell Biol 219(6):e202001064, doi:10.1083/jcb.202001064; Zweifach 2024, J Cell Biol
-# 223(8):e202401074, doi:10.1083/jcb.202401074. Returns each level as its attributes joined by " × ".
+# group (`replicate_pairing` is `:paired`). A level is a prefix of `parents`, so a mouse is named within
+# its date when both are parents ("mouse 1" on two days is two mice). Returns each level as its
+# attributes joined by " × ".
 function _design_paired(placed, d::ExperimentDesign)::Vector{String}
-    groups = unique(first.(placed))
-    length(groups) >= 2 || return String[]
     out = String[]
     for k in eachindex(d.parents)
         level = d.parents[1:k]
-        groups_of = Dict{Vector{String},Set{Vector{String}}}()
+        units_of = Dict{Vector{String},Set{Vector{String}}}()
         for (g, a) in placed
-            push!(get!(groups_of, String[strip(a[p]) for p in level], Set{Vector{String}}()), g)
+            push!(get!(units_of, g, Set{Vector{String}}()), String[strip(a[p]) for p in level])
         end
-        all(gs -> length(gs) == length(groups), values(groups_of)) && push!(out, join(level, " × "))
+        first(replicate_pairing(units_of)) == :paired && push!(out, join(level, " × "))
     end
     out
 end

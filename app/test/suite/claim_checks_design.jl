@@ -91,3 +91,38 @@ end
     r = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"], design = _cd_design()))
     @test only(_cc_find(r, "claim.design_group_differs"))["subs"]["group"] == "the populations"
 end
+
+@testset "paired, partly paired, unpaired: one rule for the grid and the claim" begin
+    # the rule from its definition: every replicate in every group / none in two / between
+    @test first(replicate_pairing(Dict("A" => ["1", "2"], "B" => ["2", "1"]))) == :paired
+    @test first(replicate_pairing(Dict("A" => ["1", "2"], "B" => ["3", "4"]))) == :unpaired
+    k, shared = replicate_pairing(Dict("A" => ["1", "2", "3"], "B" => ["1", "2"]))
+    @test k == :partial && shared == Set(["1", "2"])
+    # three groups, every pair overlapping but no replicate in all three
+    k, shared = replicate_pairing(Dict("A" => ["1"], "B" => ["1", "2"], "C" => ["2"]))
+    @test k == :partial && isempty(shared)
+    @test first(replicate_pairing(Dict("A" => ["1"]))) == :none
+
+    # mice 1–4 imaged in both panels; mouse 5 in panel A only
+    mk(uid, panel, mouse) = _cd_image(uid, panel, "D1", mouse)
+    both = vcat([mk("a$i", "A", "$i") for i in 1:4], [mk("b$i", "B", "$i") for i in 1:4])
+    part = vcat(both, [mk("a5", "A", "5")])
+    d = _cd_design(; parents = ["Mouse"])
+    grid(imgs) = experiment_design_grid(imgs, d)["paired"]
+
+    # every mouse in both panels: the grid and the claim both call it paired
+    @test grid(both) == ["Mouse"]
+    rb = _cd_run(both; design = d)
+    @test _cd_s2(rb)["design"] == "paired" && _cd_s2(rb)["n"] == 4
+    @test isempty(_cc_find(rb, "claim.partly_paired"))
+
+    # one mouse in one panel only: not paired in the grid, and not paired in the claim either —
+    # tested on the four mice that hold both panels, and said so
+    @test isempty(grid(part))
+    rp = _cd_run(part; design = d)
+    ev = _cd_s2(rp)
+    @test ev["design"] == "partly paired" && ev["n"] == 4 && ev["minP"] ≈ 2 / 2^4
+    f = only(_cc_find(rp, "claim.partly_paired"))
+    @test f["level"] == "info"
+    @test f["short"] == "4 of 5 replicates (Mouse) hold every group"
+end

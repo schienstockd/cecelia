@@ -502,6 +502,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "claim.unit_count" => (
         short = "{attr}: n = {n}",
         long  = "Report n as the number of replicates, not cells or tracks."),
+    "claim.partly_paired" => (
+        short = "{n} of {n_all} replicates ({attr}) hold every group",
+        long  = "A paired test uses only those {n}; image the rest in every group, or report them as descriptive."),
     "claim.images_per_unit" => (
         short = "{n_images} images from {n} replicates ({attr})",
         long  = "Summarise per replicate before testing — a test per image counts some replicates more than once."),
