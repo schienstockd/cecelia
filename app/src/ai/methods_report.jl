@@ -306,7 +306,7 @@ function _mr_node_params(run, n)::String
     flat = _hp_flat(Dict{String,Any}(string(k) => v for (k, v) in np), _history_param_defaults(n.fn), _history_leaves(n.fn))
     changed = String[]
     for k in sort!(collect(keys(flat)))
-        startswith(k, "_") && continue
+        (startswith(k, "_") || is_bookkeeping_param(k)) && continue
         v, d = flat[k]
         (d === missing ? _hp_empty(v) : _hp_key(v) == _hp_key(d)) || push!(changed, "$k=$(_hp_show(v))")
     end

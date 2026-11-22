@@ -87,7 +87,8 @@ const _CLAIM_META_UNITS   = ("TimeIncrementUnit", "PhysicalSizeUnit")
 # A numeric difference below this fraction is shown, not flagged (pixel size 0.596 vs 0.5964).
 const CLAIM_REL_TOLERANCE = 0.01
 # Param keys that name inputs and outputs: equal by construction across images of one population,
-# different by construction between populations. Never a processing difference.
+# different by construction between populations. Never a processing difference (nor is a
+# bookkeeping param, `is_bookkeeping_param`).
 const _CLAIM_NAME_KEY = r"(?i)(valueName|valueNameSuffix)$"
 # Keys that differ between populations BY DESIGN — each population is segmented from its own channel
 # and has its own gate. Compared across images, skipped in the between-group confound list.
@@ -299,7 +300,7 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
         end
         sources = Dict{String,Any}()
         addparams!(fun, p) = for (k, v) in _claim_flatten!(Dict{String,Any}(), "params." * fun, p)
-            occursin(_CLAIM_NAME_KEY, k) || (vars[k] = v)
+            (occursin(_CLAIM_NAME_KEY, k) || is_bookkeeping_param(k)) || (vars[k] = v)
         end
         inputs = Dict{String,String}()      # image version read => when the reading run ran ("" = unknown)
         for kind in _claim_kinds(scope.measure)
