@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  attrColumns, detectKey, imagesForKey, parseDelimited, parseTable, planImport, planSummary, planWrites,
-  sniffDelimiter, writesByImage, type ParsedTable, type TableImage,
+  attrColumns, columnRoles, detectKey, imagesForKey, parseDelimited, parseTable, planImport, planSummary, planWrites,
+  sniffDelimiter, templateTable, toDelimited, writesByImage, type ParsedTable, type TableImage,
 } from './attrTable'
 import { imageTableCsvRows } from './imageTable'
 import { rowsToCsv } from '../plots/export'
@@ -252,5 +252,70 @@ describe('attribute columns', () => {
     const r = attrColumns(t('Name,Frames,,Frames\nA,1,2,3\n'), 0, [])
     expect(r.attrs.map(a => a.attr)).toEqual(['Frames'])
     expect(r.ignored.map(i => i.why)).toEqual(['key', 'blank', 'duplicate'])
+  })
+})
+
+describe('how the table was read (column roles)', () => {
+  it('names the key, each attribute (new or existing) and each column left out, in column order', () => {
+    const t: ParsedTable = { delimiter: ',', header: ['Tissue', 'Core', '', 'Donor', 'tissue2', 'Donor'], rows: [] }
+    const imgs: TableImage[] = [{ uid: 'a', name: 'A', attr: { Donor: '1' } }]
+    expect(columnRoles(t, 1, imgs)).toEqual([
+      { column: 0, header: 'Tissue', role: 'attr', attr: 'Tissue', isNew: true },
+      { column: 1, header: 'Core', role: 'key' },
+      { column: 2, header: '', role: 'ignored', why: 'blank' },
+      { column: 3, header: 'Donor', role: 'attr', attr: 'Donor', isNew: false },
+      { column: 4, header: 'tissue2', role: 'attr', attr: 'tissue2', isNew: true },
+      { column: 5, header: 'Donor', role: 'ignored', why: 'duplicate' },
+    ])
+  })
+
+  it('agrees with the plan on the core map', () => {
+    const t = parseTable(fx('cores.csv'))!
+    const key = detectKey(t, CORES)!
+    const roles = columnRoles(t, key.column, CORES)
+    expect(roles.filter(r => r.role === 'key').map(r => r.header)).toEqual(['Core'])
+    expect(roles.flatMap(r => r.role === 'attr' ? [r.attr] : [])).toEqual(planImport(t, CORES, key).attrs)
+  })
+})
+
+describe('the fill-in template', () => {
+  const imgs: TableImage[] = [
+    { uid: 'a', name: 'Core A1.oir', attr: { Tissue: 'Liver', Note: 're-cut, "thin"' } },
+    { uid: 'b', name: 'Core A2.oir', attr: { Donor: '007' } },
+    { uid: 'c', name: 'Core A3.oir', attr: null },
+  ]
+
+  it('lists every image with the attributes the set has', () => {
+    expect(templateTable(imgs)).toEqual({
+      header: ['Name', 'Tissue', 'Note', 'Donor'],
+      rows: [['Core A1.oir', 'Liver', 're-cut, "thin"', ''], ['Core A2.oir', '', '', '007'], ['Core A3.oir', '', '', '']],
+    })
+  })
+
+  it.each([[',', 'CSV'], ['\t', 'TSV']] as const)('pasted back unchanged as %j it is a no-op (%s)', (d, _label) => {
+    const t = parseTable(toDelimited(templateTable(imgs), d))!
+    expect(t.delimiter).toBe(d)
+    const key = detectKey(t, imgs)!
+    expect(key).toEqual({ column: 0, kind: 'name' })
+    const plan = planImport(t, imgs, key)
+    expect(plan.matched).toHaveLength(3)
+    expect(planWrites(plan)).toBe(false)
+  })
+
+  it('filled in, it writes just the new cells', () => {
+    const tpl = templateTable(imgs)
+    tpl.rows[2][1] = 'Spleen'
+    const plan = planImport(parseTable(toDelimited(tpl, ','))!, imgs, { column: 0, kind: 'name' })
+    expect(plan.writes).toEqual({ Tissue: { c: 'Spleen' } })
+  })
+
+  it('an attribute called Name does not collide with the name column', () => {
+    const named: TableImage[] = [{ uid: 'a', name: 'A.oir', attr: { Name: 'mouse 1' } }]
+    const tpl = templateTable(named)
+    expect(tpl.header).toEqual(['Name', 'attr_Name'])
+    const t = parseTable(toDelimited(tpl, ','))!
+    const plan = planImport(t, named, detectKey(t, named)!)
+    expect(plan.attrs).toEqual(['Name'])
+    expect(planWrites(plan)).toBe(false)
   })
 })
