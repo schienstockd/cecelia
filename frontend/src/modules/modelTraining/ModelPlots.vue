@@ -23,6 +23,7 @@
   rather than a population.
 -->
 <script setup lang="ts">
+import { scopeSetter } from '../../utils/scopeSwitch'
 import { computed, watch } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
@@ -83,6 +84,8 @@ const panelModel = (st: FlowPanelState) =>
   scope.value === 'global' ? model.value : (st.model ?? model.value)
 const activeModel = computed(() =>
   scope.value === 'global' ? model.value : (activePanel.value?.state.model ?? model.value))
+// global → local keeps what's drawn: every plot's own model starts as the global one
+const setScope = scopeSetter(scope, () => { for (const p of panels.value) p.state.model = model.value })
 function setModel(v: string) {
   if (scope.value === 'global') model.value = v
   else if (activePanel.value) activePanel.value.state.model = v
@@ -150,7 +153,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
         <!-- outside the zoom layer, like the population manager: the vault stays full-size -->
         <template #overlay>
           <ModelVault v-if="showManager" :selected="activeModel" :scope="scope" :kind="vaultKind"
-                      @update:selected="setModel" @update:scope="scope = $event"
+                      @update:selected="setModel" @update:scope="setScope"
                       @update:kind="vaultKind = $event" />
         </template>
       </FloatingCanvasHost>

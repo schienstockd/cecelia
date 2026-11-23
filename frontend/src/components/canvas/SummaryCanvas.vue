@@ -14,6 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
+import { scopeCopy, scopeSetter } from '../../utils/scopeSwitch'
 import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { defaultSpecIds, shouldSeedDefaults } from '../../utils/defaultPlots'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
@@ -219,6 +220,10 @@ const activeSinglePop = computed(() => {
   return !!k && singlePopFor(String(k))
 })
 const panelVis = (s: PanelState) => scope.value === 'global' ? gVis.value : s.vis
+// global → local keeps what's drawn: every plot's own copy starts from the committed global values
+const setScope = scopeSetter(scope, () => {
+  for (const p of panels.value) { p.state.sel = scopeCopy(gSel.value); p.state.vis = scopeCopy(gVis.value) }
+})
 const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
 // the stats test each panel's last result actually ran (`auto` resolves it server-side from the group
 // count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:
@@ -619,7 +624,7 @@ watch(segPops, () => {
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"
                         @toggle="toggleTarget" @reorder="reorderTargets"
-                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="scope = $event" @update:vis="setVis"
+                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="setScope" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />

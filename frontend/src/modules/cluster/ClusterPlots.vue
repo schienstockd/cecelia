@@ -15,6 +15,7 @@
   cluster numbering; the heatmap pools via setUid).
 -->
 <script setup lang="ts">
+import { scopeCopy, scopeSetter } from '../../utils/scopeSwitch'
 import { toggleSelected } from '../../utils/selection'
 import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
@@ -140,6 +141,10 @@ const activeHL = computed(() => scope.value === 'global'
 // plot styling (VisProps) follows the SAME global/local scope as the highlights (like the summary
 // canvas): GLOBAL = one styling bag for every plot; LOCAL = the active plot's own. The pop manager
 // edits the active scope's bag; each panel renders with its own effective bag.
+// global → local keeps what's drawn: every plot's own copy starts from the committed global values
+const setScope = scopeSetter(scope, () => {
+  for (const p of panels.value) { p.state.hl = scopeCopy(highlighted.value); p.state.vis = scopeCopy(gVis.value) }
+})
 const panelVis = (s: ClusterPanelState) => scope.value === 'global' ? gVis.value : (s.vis ?? DEFAULT_VIS)
 const activeVis = computed(() =>
   scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
@@ -416,7 +421,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :vis="activeVis" :readout="activeReadout"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
-                             @update:selected="selectedPop = $event" @update:scope="scope = $event"
+                             @update:selected="selectedPop = $event" @update:scope="setScope"
                              @update:vis="setVis" @toggle-highlight="toggleHighlight"
                              @update:manualApply="manualApply = $event"
                              @apply:staged="applyStaged" @discard:staged="discardStaged"

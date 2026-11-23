@@ -3178,7 +3178,9 @@ page — and the Analysis board — reuses them unchanged:
   Selection is keyed by `tkey(valueName, pop)` (`plots/series.ts`). A footer **global/local scope**
   toggle and an **Options** box (log scale, legend, point size/opacity — `VisProps`) both obey that
   scope: global = one value shared by every plot, local = the active plot only (mirrors the gating
-  manager's plot-options model).
+  manager's plot-options model). Switching global → local copies the global values into every plot
+  first, so nothing redraws differently and a local edit starts from what was on screen — every host
+  routes its scope control through `scopeSetter` (`utils/scopeSwitch.ts`).
 - **`components/canvas/CanvasSidePanel.vue`** — the **shared chrome** for a canvas SIDE PANEL, the box
   beside the plots that manages what they show: the draggable/collapsible container + top-right
   placement (`useFloatingPanel`), the header (`icon` · `title` · `count` · collapse), and two **opt-in**
