@@ -65,10 +65,10 @@
             view_centroid_cols(lp; order = [:x, :y, :z])
             raw = as_df(lp)
             @test !(Float64(raw[1, :centroid_x]) ≈ Float64(d.cells.x[1]))   # pixels ≠ µm here
-            @test Float64(raw[1, :centroid_x]) * sizes[3] ≈ Float64(d.cells.x[1])
-            @test Float64(raw[1, :centroid_y]) * sizes[2] ≈ Float64(d.cells.y[1])
+            @test Float64(raw[1, :centroid_x]) * sizes[3] ≈ Float64(d.cells.x[1]) rtol = 1e-6   # Float32 on the wire
+            @test Float64(raw[1, :centroid_y]) * sizes[2] ≈ Float64(d.cells.y[1]) rtol = 1e-6   # Float32 on the wire
             if "z" in d.axes                               # z scales by its own size, not x's
-                @test Float64(raw[1, :centroid_z]) * sizes[1] ≈ Float64(d.cells.z[1])
+                @test Float64(raw[1, :centroid_z]) * sizes[1] ≈ Float64(d.cells.z[1]) rtol = 1e-6   # Float32 on the wire
             end
             # t stays a FRAME index — scaling it would silently redefine every frame-counted
             # parameter, the same choice `scale_centroids!` makes on disk.
