@@ -15,7 +15,7 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import { replicateOf, superplotColours } from './superplot'
+import { replicateOf, sinaOffsets, superplotColours, superplotOn } from './superplot'
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
@@ -131,6 +131,7 @@ export interface VisProps {
   pointSize: number                          // raw-point radius (beeswarm / strip / box overlay)
   pointOpacity: number                       // raw-point opacity (R alphaInput)
   colorData: boolean                         // colour points by series (else single grey) (R colorData)
+  superplot?: boolean                        // draw the cells under replicate means (plots/superplot.ts); absent = on
   // statistics / legend
   legend: boolean                            // show the colour legend
   // OUTER width PlotChart renders at, in px. Needed to decide whether the x tick labels fit their
@@ -311,7 +312,7 @@ const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, serie
   facetMode(v) === 'image' ? (s.uID ?? '') : seriesKey
 
 export const defaultVis = (): VisProps => ({
-  jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
+  jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true, superplot: true,
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, facetBy: 'none',
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
@@ -1384,16 +1385,18 @@ function superplotCellRows(series: readonly PlotSeries[], keyOf: (s: PlotSeries)
     const vals = s.cellPoints ?? []
     if (i === undefined || !vals.length) continue
     const units = s.cellUnits ?? []
-    const off = offsetsFor(o, vals, halfWidth)
+    const off = sinaOffsets(vals, halfWidth)                  // density-shaped cloud, not a swarm
     vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
                                        fill: colours.get(replicateOf(units[k] ?? '')) ?? 'currentColor' }))
   }
   return rows
 }
-// small, faint, no outline: the spread between cells, under the means that carry the test
+// small, faint, no outline: the spread between cells, under the means that carry the test. Clipped to
+// the frame: the axis is fitted to the boxes and means, so a fast outlier cell is cut, not drawn
+// over the legend (Y max shows it).
 function superplotCellMarks(Plot: PlotModule, cells: SpCellRow[], o: BuildOpts, a: ReturnType<typeof axM>, f: object) {
-  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(1, o.pointSize * 0.6),
-                                           fill: 'fill', fillOpacity: 0.35, ...f })] : []
+  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(0.8, o.pointSize * 0.5),
+                                           fill: 'fill', fillOpacity: Math.min(0.3, o.pointOpacity), clip: true, ...f })] : []
 }
 
 // coord_flip (R): when rotated, the series (position) axis is Y and the MEASURE axis is X; otherwise
@@ -1576,7 +1579,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const pts: Array<{ series: string; fkey: string; xj: number; value: number; unitFill?: string;
                      pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
   // SuperPlot: the dots are replicate means, coloured by replicate, with their cells underneath
-  const sp = superplotColours(r.series, POPULATION_PALETTE)
+  const sp = superplotOn(r.series, o.superplot) ? superplotColours(r.series, POPULATION_PALETTE) : null
   const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.26) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
@@ -1655,7 +1658,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : o.pointOpacity
+    : sp ? 0.9 : o.pointOpacity                              // a replicate mean must read over its cells
   const ptStrokeWidth = activeIds
     ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
     : 0.5
@@ -1752,7 +1755,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   type PtRow = { series: string; fkey: string; xj: number; value: number; unitFill?: string;
                  pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
   const rows: PtRow[] = []
-  const sp = superplotColours(r.series, POPULATION_PALETTE)                       // SuperPlot: means over their cells
+  const sp = superplotOn(r.series, o.superplot) ? superplotColours(r.series, POPULATION_PALETTE) : null  // SuperPlot: means over their cells
   const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.42) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
@@ -1788,7 +1791,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const ptFill = sp ? ((d: PtRow) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : o.pointOpacity
+    : sp ? 0.9 : o.pointOpacity                              // a replicate mean must read over its cells
   const ptStrokeWidth = activeIds
     ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
     : 0.5
