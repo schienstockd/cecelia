@@ -2356,7 +2356,7 @@ def get_plot_image(project_uid: str, plot_id: str, max_side: int = 1600) -> list
 @_gui_tool
 def set_plot_view(project_uid: str, plot_id: str, settings: dict) -> dict:
     """CHANGE how one of the user's open plots is drawn — what its own controls change: a UMAP's
-    colouring (`colourBy`, `colourPops`, `colourAttr`), facets, layout; a summary chart's `chartType`,
+    colouring (`colourBy`, `colourPops`, `colourAttr`, `colourFeature`), facets, layout; a summary chart's `chartType`,
     `measure`, `statUnit` … Each name and value must be one `get_plot_image`'s `settings` lists for
     this plot (take one first); a multi setting takes the full list, e.g.
     `{"colourBy": "population", "colourPops": ["trackclust::B/movement/fast", …]}`.

@@ -1102,8 +1102,26 @@ end
 # 19) can find the labels its bag names without a second round-trip. `label` is `cdf.label` (the
 # same column pop-membership resolution reads): for `trackclust` = track_id, for `clust` = cell
 # label_id. Old callers get the 4-float layout untouched. Small ints stay exact in Float32.
+#
+# Opt-in `colourFeature=<column>` appends one more float per point: that column's value (NaN where the
+# point has none) — a feature the run clustered on (`live.cell.speed`, a marker by channel NAME, an HMM
+# frequency), so the UMAP can be coloured by it. Read per segmentation through the label_props view
+# with the image's channel names, so a marker name resolves to this segmentation's own column.
 # The obsm key a cluster-map layout reads, or `nothing` for an unknown basis (`CLUSTER_MAP_BASES`).
 _cluster_map_key(basis, suffix) = basis in Cecelia.CLUSTER_MAP_BASES ? "X_$(basis).$(suffix)" : nothing
+
+# One `colourFeature` value per obs row of `path` (obs order, like the embedding), NaN where a row has
+# none — or for every row when this segmentation lacks the column or its name is ambiguous here.
+function _cluster_map_values(img, vn, path, feature, n)::Vector{Float32}
+    df = try
+        label_props(path; channel_names = channel_names(img; value_name = vn), value_name = vn) |>
+            v -> select_cols(v, [feature]) |> as_df
+    catch
+        return fill(NaN32, n)
+    end
+    feature in names(df) || return fill(NaN32, n)
+    Float32[(v isa Real && !ismissing(v)) ? Float32(v) : NaN32 for v in df[!, feature]]
+end
 
 function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -1146,8 +1164,10 @@ function api_plots_cluster_map(req::HTTP.Request)
     pop_of = pop_index_by_label(img, colour_toks, pop_type; granularity = grain)   # (value_name, label) → popIdx
 
     with_labels = get(q, "withLabels", "") == "1"
-    stride = with_labels ? 5 : 4
-    out = Float32[]   # [x, y, code, popIdx (, label)] tuples, concatenated across the co-clustered segmentations
+    feature = String(get(q, "colourFeature", ""))
+    with_value = !isempty(feature)
+    stride = 4 + with_labels + with_value
+    out = Float32[]   # [x, y, code, popIdx (, label) (, value)] tuples, concatenated across the co-clustered segmentations
     for vn in vns
         path = track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
         isfile(path) || continue
@@ -1174,6 +1194,7 @@ function api_plots_cluster_map(req::HTTP.Request)
         @inbounds for i in 1:size(xy, 1)
             (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
         end
+        vals = with_value ? _cluster_map_values(img, vn, path, feature, size(xy, 1)) : Float32[]
         idx = findall(keep)
         base = length(out); resize!(out, base + stride * length(idx))
         @inbounds for (j, i) in enumerate(idx)
@@ -1185,6 +1206,7 @@ function api_plots_cluster_map(req::HTTP.Request)
             if with_labels
                 out[base + stride*(j-1) + 5] = Float32(cdf.label[i])
             end
+            with_value && (out[base + stride*j] = vals[i])
         end
     end
     isempty(out) && return _gerr(404, basis == "diffmap" ? "No $emb_key — a track run writes it; re-run clustering" :
