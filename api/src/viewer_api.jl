@@ -1089,7 +1089,21 @@ end
 # the overlay lands in the same space as `extentUm` and nothing has to rescale it. `t` is deliberately
 # NOT scaled: it stays a frame index, which is what the client filters on and what the column means on
 # disk.
-const OVERLAY_MAX_CELLS = 300_000
+#
+# µm COORDINATES GO OUT AS Float32. A Float64 µm value prints as ~18 JSON characters
+# ("587.2083129882812"); a Float32 as ~8 ("587.2083"). The client lands them in a `Float32Array`, so
+# nothing it could see is lost — and that is why it is Float32 and NOT decimal rounding: rounding to
+# 0.01 µm moved z by up to 0.005 µm, and on a z step like 0.6918 µm that pushed ~45% of single-plane
+# cells past `zPlaneOf`'s 1e-3 snap and onto the plane below (RESULT-REVIEW result-4f7d8a2c). Float32 is
+# also what `/skeletons` and `/spatial-graphs` already send.
+#
+# THE CAP IS WHOLE-MOVIE CELL ROWS, and it was first set (300k) with no measurement behind it. The first
+# real dataset past it (2026-11-23, KiTRYL/xipvLh/Bcells) was 608,144 rows — but 181 frames of ~3,400
+# cells, which the viewer draws one frame at a time. Measured on synthetic payloads in this shape (node
+# JSON.parse + Float32Array, laptop): 608k rows = 48 MB / 173 ms at Float64, 33 MB / 112 ms at Float32;
+# 3M rows = 167 MB / 0.6 s at Float32. Past 3M the one-shot request stops being the right shape (fetch
+# per frame, or a binary body) rather than a number to raise again.
+const OVERLAY_MAX_CELLS = 3_000_000
 
 function api_viewer_overlays(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
@@ -1141,6 +1155,7 @@ function api_viewer_overlays(req::HTTP.Request)
         need = vcat(String["centroid_$a" for a in axes], has("centroid_t") ? ["centroid_t"] : String[])
         idx = findall(_finite_rows(df, need))
         col(name) = has(name) ? Float64[Float64(df[i, name]) for i in idx] : Float64[]
+        ucol(name) = Float32.(col(name))       # µm axes only — see the Float32 note above `OVERLAY_MAX_CELLS`
         # "" rather than null for "no track source": one sentinel the client tests, and it stays a
         # String[] so JSON3 serialises it without missings. Both "no track_id column" AND "column
         # present but this cell wasn't authored (missing/NaN/empty)" collapse to "" — the reader rule
@@ -1152,7 +1167,7 @@ function api_viewer_overlays(req::HTTP.Request)
         end
         cells = (; label = Int[Int(df[i, :label]) for i in idx],
                    t     = col("centroid_t"),
-                   x     = col("centroid_x"), y = col("centroid_y"), z = col("centroid_z"),
+                   x     = ucol("centroid_x"), y = ucol("centroid_y"), z = ucol("centroid_z"),
                    # -1 rather than 0/NaN for "not tracked": one sentinel the client tests, and it stays
                    # an integer, so it survives JSON without a float's rounding question.
                    track = has("track_id") ?
