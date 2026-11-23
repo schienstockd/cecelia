@@ -25,10 +25,12 @@ describe('README.md screenshots', () => {
 
   it('the first shot and a heroRow shot share the top row, each with its own caption', () => {
     const top = renderReadmeShots(facts, widths).split('\n')[1]
-    expect(top.startsWith('<table align="center"><tr>')).toBe(true)
+    expect(top.startsWith('<table width="100%"><tr>')).toBe(true)
     expect(top.match(/<td /g)?.length).toBe(2)
     // equal columns, whatever each caption's length
     expect(top.match(/<td valign="top" width="50%">/g)?.length).toBe(2)
+    // each figure fills its column, so the row fills the page
+    expect(top.match(/<img [^>]*width="100%"/g)?.length).toBe(2)
     expect(top.indexOf('readme-lens')).toBeLessThan(top.indexOf('readme-viewer'))
   })
 
