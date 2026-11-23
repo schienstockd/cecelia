@@ -762,8 +762,11 @@ readable record beside it.
 
 ### Queue after — a run that starts when one already going finishes
 
-The runner's **Queue after {function}** button (shown while that function is queued or running on any
-selected image) sends `chain:run` with an inline `template` instead of a `chain` name: a chain built on
+The runner's **Queue after** control (shown while a function is queued or running on any selected
+image) is ONE button: it names the function when only one is live, and gains a picker of the live
+functions when several are — with no default, since the task list's order is not a reliable dispatch
+order and waiting for the wrong run starts the follow-up on missing outputs (`queueAfterTarget`,
+`utils/queueAfter.ts`). It sends `chain:run` with an inline `template` instead of a `chain` name: a chain built on
 the spot and never saved (`run_chain(...; template)`, validated like a saved one; run.json keeps its
 frozen copy, so resume and replay work as for any run). It has two nodes:
 

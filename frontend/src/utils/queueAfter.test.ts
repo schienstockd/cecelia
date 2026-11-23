@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { liveGroups, queueAfterTemplate } from './queueAfter'
+import { liveGroups, queueAfterTarget, queueAfterTemplate, type LiveGroup } from './queueAfter'
 import type { TaskEntry } from '../stores/tasks'
 
 function row(p: Partial<TaskEntry>): TaskEntry {
@@ -57,5 +57,18 @@ describe('queueAfterTemplate', () => {
                                        barrier_policy: 'successful_only', resource_pool: 'cpu' })
     expect(t.edges).toEqual([{ from: 'wait', to: 'next' }])
     expect(t.name).toBe('Cellpose → Cell clustering')
+  })
+})
+
+describe('queueAfterTarget', () => {
+  const g = (funName: string): LiveGroup => ({ funName, label: funName, waitFor: {} })
+  const groups = [g('cluster'), g('track'), g('segment')]
+  it('nothing live → nothing to queue after', () => { expect(queueAfterTarget([], 'track')).toBeNull() })
+  it('one live function needs no pick', () => { expect(queueAfterTarget([g('track')], null)?.funName).toBe('track') })
+  it('several live → no guess until one is picked', () => { expect(queueAfterTarget(groups, null)).toBeNull() })
+  it('keeps the pick while it is live', () => { expect(queueAfterTarget(groups, 'segment')?.funName).toBe('segment') })
+  it('a pick that finished asks again — unless one live function is left', () => {
+    expect(queueAfterTarget(groups.slice(0, 2), 'segment')).toBeNull()
+    expect(queueAfterTarget(groups.slice(0, 1), 'segment')?.funName).toBe('cluster')
   })
 })

@@ -58,7 +58,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
-import { liveGroups, queueAfterTemplate, type LiveGroup } from '../utils/queueAfter'
+import { liveGroups, queueAfterTarget, queueAfterTemplate, type LiveGroup } from '../utils/queueAfter'
 import { taskParamsName, namesParamsRecord, taskReads } from '../utils/taskOutput'
 import { staleReadNote } from '../lib/staleOutputs'
 import { useStaleOutputsStore } from '../stores/staleOutputs'
@@ -877,8 +877,13 @@ const queueAfterGroups = computed<LiveGroup[]>(() =>
   (sweepPlan.value || onHpc.value) ? [] :
     liveGroups(taskStore.tasks, props.selectedUids, projectUid.value))
 
-function queueAfter(live: LiveGroup) {
-  if (!canRun.value || !taskDef.value) return
+// ONE control however many functions are live: a picker when there's a choice, and no guess — Queue
+// after waits for the run picked. The pick names a run in progress, not a setting, so it isn't persisted.
+const queueAfterPick = ref<string | null>(null)
+const queueAfterLive = computed(() => queueAfterTarget(queueAfterGroups.value, queueAfterPick.value))
+
+function queueAfter(live: LiveGroup | null) {
+  if (!live || !canRun.value || !taskDef.value) return
   const def = taskDef.value
   profileStorage.setItem(`cc-fn:${props.module}`, def.task)
   drafts.set(currentDraftKey.value, paramValues.value)   // as `run()`: keep what was submitted
@@ -1203,14 +1208,22 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
       </div>
 
       <!-- Queue after: the same run, started when what is already going on these images finishes -->
-      <button v-for="g in queueAfterGroups" :key="g.funName"
-        class="cc-btn cc-btn-ghost cc-fs-xs queue-after-btn"
-        :disabled="!canRun"
-        @click="queueAfter(g)"
-        v-tooltip.left="`Run on the selected images once ${g.label} finishes`">
-        <i class="pi pi-forward" />
-        Queue after {{ g.label }}
-      </button>
+      <div v-if="queueAfterGroups.length" class="queue-after-row cc-row cc-row-tight">
+        <button class="cc-btn cc-btn-ghost cc-fs-xs queue-after-btn"
+          :disabled="!canRun || !queueAfterLive"
+          @click="queueAfter(queueAfterLive)"
+          v-tooltip.left="queueAfterLive ? `Run on the selected images once ${queueAfterLive.label} finishes`
+                                         : 'Select the running task to wait for'">
+          <i class="pi pi-forward" />
+          Queue after<template v-if="queueAfterGroups.length === 1"> {{ queueAfterGroups[0]!.label }}</template>
+        </button>
+        <select v-if="queueAfterGroups.length > 1" class="queue-after-pick cc-fs-xs"
+          :value="queueAfterLive?.funName ?? ''" @change="queueAfterPick = ($event.target as HTMLSelectElement).value"
+          v-tooltip.bottom="'Which running task to wait for'">
+          <option value="" disabled>Wait for…</option>
+          <option v-for="g in queueAfterGroups" :key="g.funName" :value="g.funName">{{ g.label }}</option>
+        </select>
+      </div>
 
       <!-- The pool is picked from the task; changing it is rare, so it sits behind one quiet button
            together with the throttle (progressive disclosure), not as chips on every page. -->
@@ -1401,5 +1414,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
    either side hardcoding a number — so a change to Run's padding can't silently desync them. */
 .run-row { display: flex; align-items: stretch; gap: 0.4rem; flex-wrap: wrap; }
 .run-btn { flex: 1 1 auto; width: auto; min-width: 0; }
-.queue-after-btn { width: 100%; margin-top: 0.3rem; justify-content: center; }   /* + .cc-btn .cc-btn-primary .cc-btn-run; shares the row with Preview */
+.queue-after-row { margin-top: 0.3rem; flex-wrap: nowrap; }
+.queue-after-btn { flex: 1 1 auto; justify-content: center; }
+.queue-after-pick { flex: 1 1 0; min-width: 0; }
 </style>
