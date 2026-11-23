@@ -36,6 +36,7 @@ import { placeChips } from '../../plots/chipPlacement'
 import { asinhSpread } from '../../plots/diffmapScale'
 import { tkey, parseTkey } from '../../plots/series'
 import { popWireToken } from '../../plots/popPositions'
+import { debouncedLatest } from '../../utils/debouncedLatest'
 import { popDisplayLabels, popRowLabels, withOwnName } from '../../utils/popName'
 import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
@@ -483,10 +484,16 @@ function recolour() {
   }
 }
 
-async function load() {
+// Every refetch goes through ONE latest-wins scheduler: ticking several populations in a row (each
+// changes `colourPops`) is one fetch of the last pick, and a fetch a newer pick superseded never paints.
+// A large map is a multi-MB body per image, so firing per tick queued seconds of stale redraws.
+// `loading` follows the scheduler, so a queued refetch already reads as busy (an export waits for it)
+const loader = debouncedLatest<void>((_a, isCurrent) => fetchMap(isCurrent),
+  { wait: 200, onState: st => { loading.value = st !== 'idle' } })
+function load() { loader.schedule() }
+async function fetchMap(isCurrent: () => boolean) {
   err.value = ''
   if (!props.projectUid || !props.imageUids.length) { points.value = null; rawPoints = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
-  loading.value = true
   try {
     // wire = flat Float32 [x, y, clusterCode, popIdx, label] per point (20 B via `withLabels=1`). We
     // fetch per image (so we can tag each point with its image → colour/facet by attribute) and
@@ -504,8 +511,10 @@ async function load() {
                                       suffix: props.suffix, basis: basis.value, withLabels: '1' })
       if (cp.length) q.set('colourPops', cp.join(','))
       const res = await fetch(`/api/plots/cluster-map?${q}`)
+      if (!isCurrent()) return
       if (!res.ok) continue
       const f = new Float32Array(await res.arrayBuffer())
+      if (!isCurrent()) return
       for (let i = 0; i < f.length; i++) rec.push(f[i])
       // per-point image index, and the image uid the highlight bag scopes with.
       const iuid = props.imageUids[ui]
@@ -539,9 +548,10 @@ async function load() {
     distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
     applyDisplay()
   } catch (e) {
+    if (!isCurrent()) return
     err.value = e instanceof Error ? e.message : String(e)
     log.error(`${layoutName.value}: ${err.value}`, { source: 'cluster' })
-  } finally { loading.value = false }
+  }
 }
 
 // raw → display coordinates, extents and centroid sums, then recolour. Diffusion axes crowd most
@@ -600,13 +610,13 @@ watch(dark, repaint)
 // styling knobs that only affect the canvas paint (no refetch): point size + opacity
 watch([() => props.vis?.pointSize, () => props.vis?.pointOpacity], repaint)
 onMounted(() => {
-  load()
+  load(); loader.flush()   // the first map needs no debounce
   // observe the STABLE square box (present from mount) so a panel resize always repaints + repositions
   // the HTML labels/titles (which read boxW/boxH, set on every step by onBoxResize)
   if (plotBoxEl.value) dro = observeBoxChanges(plotBoxEl.value, onBoxResize)
   repaint()
 })
-onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel() })
+onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel(); loader.cancel() })
 
 // ── export (surfaced by the host InteractivePanel via defineExpose) ──
 // PNG composites the 2D dot canvas + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
