@@ -467,11 +467,16 @@ function api_track_detections(req::HTTP.Request)
         # `length(df.label)`, not `nrow` — `api/` does not `using DataFrames`; same as api_track_selection
         for r in 1:length(df.label)
             Cecelia._is_untracked(df[r, :track_id]) || continue
-            t = Int(round(Float64(df[r, :centroid_t])))
+            # a missing / NaN coordinate skips the cell: rounding a NaN `t` throws, and a NaN x/y/z
+            # would reach the payload as a bare `NaN` token, which is not JSON
+            num(v) = v isa Real ? Float64(v) : NaN
+            tf = num(df[r, :centroid_t])
+            x = has_x ? num(df[r, :centroid_x]) : 0.0
+            y = has_y ? num(df[r, :centroid_y]) : 0.0
+            z = has_z ? num(df[r, :centroid_z]) : 0.0
+            all(isfinite, (tf, x, y, z)) || continue
+            t = Int(round(tf))
             lab = Int(round(Float64(df[r, :label])))
-            x = has_x ? Float64(df[r, :centroid_x]) : 0.0
-            y = has_y ? Float64(df[r, :centroid_y]) : 0.0
-            z = has_z ? Float64(df[r, :centroid_z]) : 0.0
             push!(get!(buckets, t, Tuple{Int,Float64,Float64,Float64}[]), (lab, x, y, z))
         end
         ts = sort!(collect(keys(buckets)))

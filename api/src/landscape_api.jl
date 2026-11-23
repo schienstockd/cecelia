@@ -1053,7 +1053,7 @@ function _source_run_for_pops(img::CciaImage, vn::AbstractString,
     # Fingerprint the gating map by its on-disk mtime — a reader comparing two envelopes'
     # `sourceRun.pops.gatingMtime` knows whether the underlying map moved between shares.
     # String, not Float — JSON round-trips exact seconds with no precision loss, and matches
-    # the shape `Cecelia.gating`'s internal `_pop_df_mtime` cache key uses ("∅" when absent).
+    # "∅" when absent.
     mtime_s = try
         path = gating_path(img._dir, String(vn); pop_type = String(pop_type))
         isfile(path) ? string(mtime(path)) : "∅"

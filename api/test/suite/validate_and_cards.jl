@@ -260,6 +260,29 @@ end
     @test length(_medoid_state_run(st, tid, ts, 1.0; seed = 1).run_rows) in (2, 3)
 end
 
+# A cell with a NaN centroid is skipped from a card's trace, not carried into it: a NaN `t` threw on
+# `Int(round(NaN))` and a NaN `x`/`y` wrote a bare `NaN` token into the JSON response.
+@testset "Behaviour cards: NaN centroids are dropped from the trace" begin
+    @test trace_point(2.0, 3.5, 4.0) == (2, 3.5, 4.0)
+    @test trace_point(NaN, 1.0, 1.0) === nothing
+    @test trace_point(1.0, Inf, 1.0) === nothing
+    @test trace_point(1.0, 1.0, missing) === nothing
+    col = "live.cell.hmm.state.movement"
+    df = Cecelia.DataFrames.DataFrame(track_id = [1.0, 1.0, 1.0, 1.0, 1.0], centroid_t = [0.0, 1.0, 2.0, NaN, 4.0],
+                   centroid_x = [1.0, NaN, 3.0, 4.0, 5.0], centroid_y = [1.0, 2.0, 3.0, 4.0, 5.0])
+    df[!, col] = fill(1.0, 5)
+    prev_col = _HMM_COL_FOR_CARD[]
+    _HMM_COL_FOR_CARD[] = col
+    card = try
+        _hmm_state_card(df, collect(1:5), 1.0, "moving", "#ff0000")
+    finally
+        _HMM_COL_FOR_CARD[] = prev_col
+    end
+    @test [p[1] for p in card.trace_history] == [0, 2, 4]
+    @test all(p -> isfinite(p[2]) && isfinite(p[3]), card.trace_history)
+    @test !occursin("NaN", JSON3.write(card.trace_history))
+end
+
 # gating_api._require_ids — audit task #33. Sites that used to hand-roll `body["projectUid"]`
 # now go through this helper so a missing id is a 400 with the field name, never a bare
 # KeyError. Both empty AND absent should behave the same.

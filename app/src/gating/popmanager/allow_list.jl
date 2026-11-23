@@ -162,39 +162,35 @@ function _inject_derived_pops!(m::PopulationTree, paths, pop_type::PopTypeArg)::
     m
 end
 
-_pop_df_mtime(p::AbstractString) = isfile(p) ? string(mtime(p)) : "∅"
 
-# Stable cache key for a pop_df request (mirrors R popDT's md5 of the request signature). Folds in
-# the on-disk mtimes of each involved value_name's gating map + h5ad so a saved gate edit or a
-# re-tracked h5ad auto-invalidates the cache: pop_df always reflects the on-disk state (it reloads
-# the map and reads the h5ad fresh), so a changed stamp == a real change. `flush_cache` remains as
-# a manual override for in-memory edits that were never written to disk.
+# Cache slot + stamp for a pop_df request. The
+# KEY is the request — the image's directory plus every argument that changes the frame — so a gate
+# edit REPLACES its slot instead of adding one. The STAMP is what the frame was read from:
+# `_gating_inputs_stamp` per involved value_name (every gating map's digest — a cluster pop type
+# borrows a sibling's map — the sidecars, the cell h5ad, the µm/px) plus the files only some reads
+# touch: the per-track and per-branch tables. pop_df always reflects the on-disk state, so a changed
+# stamp == a real change; `flush_cache` remains as a manual override for in-memory edits never written.
 function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols, include_x,
                            include_obs, unique_labels, drop_na, raw_channel_names,
                            granularity, cell_measures, categorical, centroids = false,
-                           labels_version = nothing)::String
+                           labels_version = nothing)::@NamedTuple{key::String, stamp::String}
     is_track  = is_track_grained(pop_type)
     is_branch = string(pop_type) == "branch"
     stamps = String[]
     for vn in sort(collect(keys(_group_pops_by_value_name(pops, value_name))))
-        # stamp the map file the read actually loads — `{vn}__tracks.json`, `__trackclust.json`,
-        # `__clust.json`, `__branch.json`…, or `flow`'s for a derived pop_type (`_stored_pop_type`) —
-        # so a saved edit to ANY of them invalidates. Always fold the cell h5ad (track_props derives
-        # from it; branch_props does not, but folding it costs one stat and disambiguates keys).
-        gmtime = _pop_df_mtime(gating_path(img._dir, vn; pop_type=_stored_pop_type(pop_type)))
-        s = string(vn, "@", gmtime, "/", _pop_df_mtime(img_label_props_path(img, vn)))
+        s = string(vn, "@", _gating_inputs_stamp(img, vn))
         # channel names decide which column a NAME reads and what an intensity column is called — a
         # rename (ccid.json, not the h5ad) must not serve the old column (docs/todo/CHANNEL_NAMES_PLAN.md)
         s *= "#" * join(something(channel_names(img; value_name = vn), String[]), "\u1f")
         # :track granularity and track-gating both read the companion track table — fold its mtime
         # so a re-run (or a saved track gate) auto-invalidates.
         (granularity === :track || is_track) &&
-            (s *= "/" * _pop_df_mtime(img_track_props_path(img, vn)))
+            (s *= "/" * file_stamp(img_track_props_path(img, vn)))
         # branch pop_type reads the per-branch sidecar; fold its mtime for cache invalidation.
-        is_branch && (s *= "/" * _pop_df_mtime(img_branch_props_path(img, vn)))
+        is_branch && (s *= "/" * file_stamp(img_branch_props_path(img, vn)))
         push!(stamps, s)
     end
-    parts = (pop_type, value_name, join(sort(String.(collect(pops))), "&"),
+    parts = (img._dir, pop_type, value_name, join(sort(String.(collect(pops))), "&"),
              pop_cols === nothing ? "" : join(sort(String.(collect(pop_cols))), "&"),
              include_x, include_obs, unique_labels, drop_na, raw_channel_names, granularity,
              join(sort(String.(collect(cell_measures))), "&"),
@@ -204,10 +200,10 @@ function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols,
              # `:physical` legitimately share one cached read instead of doubling the entries.
              centroids !== false,
              # the pin changes which cell table is read — a pinned and an unpinned read never share
-             something(labels_version, ""),
-             join(stamps, "|"))
-    string(hash(parts))
+             something(labels_version, ""))
+    (key = bytes2hex(SHA.sha256(join(string.(parts), "\u1e"))), stamp = join(stamps, "|"))
 end
+
 
 """
     _pop_has_authored_tracks(pop_uid, pop_labels, label_to_source) -> Bool
@@ -339,7 +335,7 @@ function label_track_sources(img::CciaImage, value_name::AbstractString)::Dict{I
 end
 
 # MODULE-LEVEL, NOT ON THE IMAGE: `init_object` builds a fresh `CciaImage` per request, so the
-# `img._pop_df_cache` this used to live in never survived one — every viewer overlay, landscape and
+# image-held cache this used to live in never survived one — every viewer overlay, landscape and
 # mask-colour request re-ran the gate evaluation (the same trap `_TRACKED_PARENTS_CACHE` documents).
 # ONE SLOT per (image dir, value_name, pop_type) holding (stamp, result): a gate edit replaces the
 # slot rather than adding a key, so the cache holds at most one membership set per segmentation × pop
@@ -348,6 +344,19 @@ end
 # BOUNDED (`BoundedCache`, utils.jl): a slot's labels are ~5 MB on a 600k-cell table, and a session
 # that opens many images would otherwise keep every one.
 const _RESOLVE_POPS_CACHE = BoundedCache(32)
+
+# `pop_df`'s frames, same reasoning (they used to live on the image too). A frame can be large — a
+# 600k-cell read with every channel runs to ~100 MB — so this one is bounded by bytes as well as by
+# count, and a single frame over the byte budget is returned without being kept.
+# A frame's size for the byte budget — an ESTIMATE, cheap on purpose: `Base.summarysize` walks every
+# object through an IdDict (1.3 s on a 608k-row frame with a String column). Inline element types
+# are exact; otherwise a pointer per row plus each string's bytes (shared strings counted per row,
+# so it errs high) or a flat 16 bytes for any other boxed value.
+_col_nbytes(v::AbstractVector{T}) where {T} = Base.allocatedinline(T) ?
+    Base.aligned_sizeof(T) * length(v) + (isbitstype(T) ? 0 : length(v)) :
+    8 * length(v) + sum(x -> x isa AbstractString ? sizeof(x) : 16, v; init = 0)
+_df_nbytes(df::DataFrame)::Int = sum(_col_nbytes, eachcol(df); init = 0)
+const _POP_DF_CACHE = BoundedCache(64; max_bytes = 1 << 30, nbytes = _df_nbytes)
 
 # Everything a segmentation's gate evaluation depends on, for a cache that outlives a request
 # (`_RESOLVE_POPS_CACHE`, `_TRACKED_PARENTS_CACHE`). A gating-map mtime alone was enough for a cache
@@ -377,7 +386,7 @@ function _gating_inputs_stamp(img::CciaImage, vn::AbstractString)::String
             (startswith(f, vn) && endswith(f, ".json")) && print(io, "|", f, "=", _file_sha256(joinpath(ld, f)))
         end
     end
-    print(io, "|h5ad=", _pop_df_mtime(lpp), "/", isfile(lpp) ? filesize(lpp) : "none")
+    print(io, "|h5ad=", file_stamp(lpp))
     String(take!(io))
 end
 
@@ -507,7 +516,8 @@ function _pop_df_finish(df::DataFrame, img::CciaImage, centroids::Union{Bool,Sym
 end
 
 # a hooked read is not cached (see `pop_df`)
-_pop_df_store!(img::CciaImage, ckey, df, map_hook) = (map_hook === nothing && (img._pop_df_cache[ckey] = df); df)
+_pop_df_store!(img::CciaImage, ckey, df, map_hook) =
+    (map_hook === nothing && cache_put!(_POP_DF_CACHE, ckey.key, ckey.stamp, df); df)
 
 """
     pop_df(img, pop_type, pops; value_name=nothing, pop_cols=nothing, include_x=false,
@@ -615,11 +625,12 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
     ckey = _pop_df_cache_key(img, pop_type, resolved_vn, pops, pop_cols, include_x, include_obs,
                              unique_labels, drop_na, raw_channel_names, granularity,
                              cell_measures, categorical, centroids, labels_version)
-    flush_cache && delete!(img._pop_df_cache, ckey)
     # A `map_hook` edits the map in memory, which no on-disk stamp can see, and a closure has no
     # stable key — so a hooked read neither reads nor fills the cache (`_pop_df_store!`).
-    (map_hook === nothing && haskey(img._pop_df_cache, ckey)) &&
-        return _pop_df_finish(copy(img._pop_df_cache[ckey]::DataFrame), img, centroids)
+    if map_hook === nothing && !flush_cache
+        hit = cache_get(_POP_DF_CACHE, ckey.key, ckey.stamp)
+        hit === nothing || return _pop_df_finish(copy(something(hit)::DataFrame), img, centroids)
+    end
 
     # `track` / `trackclust` pop_types: membership is defined directly on per-track properties
     # (one point per track), evaluated over the `track_props` table — `track` via hand-drawn gates
