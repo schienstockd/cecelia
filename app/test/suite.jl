@@ -262,6 +262,7 @@ include(joinpath(@__DIR__, "suite", "labelprops.jl"))
 # EOF conflicts on every append. The extracted file loads inside this file's aggregating
 # testset scope, so any helpers defined earlier in suite.jl are still in scope (lexical).
 include(joinpath(@__DIR__, "suite", "gating.jl"))
+include(joinpath(@__DIR__, "suite", "split_gates.jl"))
 # ── Population types + cluster/region + spatial obs testsets ─────────────
 # 10 sections covering GATING_POP_TYPES, img_has_value_name, clust/trackclust pop types,
 # region pop type (spatial regions), contact_matrix, region pop auto-share, bare

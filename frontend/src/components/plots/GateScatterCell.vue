@@ -5,7 +5,7 @@
   (Analysis board) reuses it instead of forking a second one (feedback_use_existing_framework).
 
   It renders whatever it's given: the host owns data fetching, axis selection, and gate state. Interactive
-  use (Gate page) passes `mode` = rectangle/polygon and handles @draw/@edit; read-only use (Analysis
+  use (Gate page) passes `mode` = rectangle/polygon/slice/quadrant and handles @draw/@edit; read-only use (Analysis
   canvas) passes `mode='off'` so nothing can be drawn or edited. Host-specific overlays (e.g. the gate
   naming input) go in the default slot (absolutely positioned inside the plot body).
 
@@ -52,7 +52,7 @@ const props = withDefaults(defineProps<{
   // binned = the colour-by mean field
   renderMode?: RenderMode
   showPops?: boolean
-  mode?: 'off' | 'rectangle' | 'polygon'         // 'off' = read-only (no draw/edit)
+  mode?: 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant'   // 'off' = read-only (no draw/edit)
   gateLineWidth?: number
   gateLabels?: boolean
   viewTick?: number

@@ -24,7 +24,7 @@ import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
   type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate, type ColourBy,
-  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate, fitGridCols,
+  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate, outlineToGate, fitGridCols,
 } from '../../plots/montage'
 import { splitXYL, splitXYZL } from '../../plots/valueColour'
 import { DOT_R } from '../../plots/density'
@@ -195,9 +195,7 @@ async function loadPanels() {
       const gates = (await Promise.all(d.children.map(async c => {
         const sg = gmap.get(c.path)
         if (!sg) return null
-        const gate = { kind: sg.kind, x_channel: d.xChan, y_channel: d.yChan,
-          x_transform: o.swap ? m.effB : m.effA, y_transform: o.swap ? m.effA : m.effB,
-          x_min: sg.x_min, x_max: sg.x_max, y_min: sg.y_min, y_max: sg.y_max, vertices: sg.vertices } as GateSpec
+        const gate = outlineToGate(sg, d.xChan, d.yChan, o.swap ? m.effB : m.effA, o.swap ? m.effA : m.effB)
         return { path: c.path, colour: c.colour, gate, label: await labelFor(c) }
       }))).filter((g): g is { path: string; colour: string; gate: GateSpec; label: string } => g !== null)
       const popLayers = await Promise.all((props.highlight ?? []).map(async h => {

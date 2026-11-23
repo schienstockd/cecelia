@@ -3,7 +3,7 @@
 # A gate is self-contained: it names its two channels, carries the per-axis transform,
 # and stores its geometry in TRANSFORMED coordinates. Membership = transform the raw
 # channel values, then test geometry in transformed space (docs/POPULATION.md).
-# Rectangle + polygon now; the abstract `Gate` leaves room for ellipse/quadrant/boolean.
+# Rectangle + polygon here; the split gates (slice, quadrant) in split_gates.jl.
 
 abstract type Gate end
 
@@ -120,6 +120,14 @@ function gate_from_spec(spec::AbstractDict)::Gate
     elseif kind == "polygon"
         verts = [(float(v[1]), float(v[2])) for v in g("vertices")]
         PolygonGate(g("x_channel"), g("y_channel"), verts; x_transform=xt, y_transform=yt)
+    elseif kind == "slice"
+        SliceGate(g("x_channel"), g("y_channel"), g("vertices");
+                  side = Int(something(g("side"), 1)), group = string(something(g("group"), "")),
+                  x_transform=xt, y_transform=yt)
+    elseif kind == "quadrant"
+        QuadrantGate(g("x_channel"), g("y_channel"), g("centre"), g("arms");
+                     quadrant = Int(something(g("quadrant"), 1)), group = string(something(g("group"), "")),
+                     x_transform=xt, y_transform=yt)
     else
         error("Unknown gate kind: $kind")
     end
@@ -149,19 +157,20 @@ function project_gate(g::Gate, xcol::AbstractString, ycol::AbstractString,
         swap ? (apply_transform(xt, rgy), apply_transform(yt, rgx)) :   # gate x ↦ plot Y, gate y ↦ plot X
                (apply_transform(xt, rgx), apply_transform(yt, rgy))
     end
-    if g isa RectangleGate
-        (ax, ay) = to_disp(g.x_min, g.y_min)
-        (bx, by) = to_disp(g.x_max, g.y_max)
-        Dict{String,Any}("kind" => "rectangle",
-            "x_min" => min(ax, bx), "x_max" => max(ax, bx),
-            "y_min" => min(ay, by), "y_max" => max(ay, by))
-    else
-        # Map corners 1:1. A cross-transform view (gate stored under transform A, shown under B) draws
-        # edges straight in the DISPLAY transform, not the gate's — a mild outline drift near a curve.
-        # Membership is untouched (`inside` uses the stored transform). Never densify: the client sends
-        # this list back on any handle drag, and a densified round-trip would silently multiply the
-        # vertex count on every edit until the gate is un-editable (12× per cross-transform round-trip).
-        pts = [collect(to_disp(vx, vy)) for (vx, vy) in g.vertices]
-        Dict{String,Any}("kind" => "polygon", "vertices" => pts)
-    end
+    _projected(g, to_disp, swap)
 end
+
+function _projected(g::RectangleGate, to_disp, swap)
+    (ax, ay) = to_disp(g.x_min, g.y_min)
+    (bx, by) = to_disp(g.x_max, g.y_max)
+    Dict{String,Any}("kind" => "rectangle",
+        "x_min" => min(ax, bx), "x_max" => max(ax, bx),
+        "y_min" => min(ay, by), "y_max" => max(ay, by))
+end
+# Map corners 1:1. A cross-transform view (gate stored under transform A, shown under B) draws
+# edges straight in the DISPLAY transform, not the gate's — a mild outline drift near a curve.
+# Membership is untouched (`inside` uses the stored transform). Never densify: the client sends
+# this list back on any handle drag, and a densified round-trip would silently multiply the
+# vertex count on every edit until the gate is un-editable (12× per cross-transform round-trip).
+_projected(g::PolygonGate, to_disp, swap) =
+    Dict{String,Any}("kind" => "polygon", "vertices" => [collect(to_disp(vx, vy)) for (vx, vy) in g.vertices])

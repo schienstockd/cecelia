@@ -178,7 +178,7 @@ end
 function _claim_gate_flatten!(out::Dict{String,Any}, g, parent)
     isnothing(g) && return out
     pre = _claim_gate_prefix(parent)
-    spec = gate_spec(g)
+    spec = gate_shape_spec(g)                   # a split gate's `group` is an id, not shape
     geo = ""
     for k in sort!(collect(keys(spec))); v = spec[k]
         ks = string(k)

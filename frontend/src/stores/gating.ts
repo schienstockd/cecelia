@@ -24,11 +24,15 @@ export interface TransformSpec {
   T?: number; W?: number; M?: number; A?: number; cofactor?: number; floor?: number
 }
 export interface GateSpec {
-  kind: 'rectangle' | 'polygon'
+  // slice / quadrant are SPLIT gates — one divider, one population per region (plots/splitGeometry.ts)
+  kind: 'rectangle' | 'polygon' | 'slice' | 'quadrant'
   x_channel: string; y_channel: string
   x_transform: TransformSpec; y_transform: TransformSpec
   x_min?: number; x_max?: number; y_min?: number; y_max?: number
-  vertices?: [number, number][]
+  vertices?: [number, number][]              // polygon outline · slice dividing line
+  side?: number                              // slice: 1 = left of the line's direction, -1 = right
+  centre?: [number, number]; arms?: [number, number][]; quadrant?: number   // quadrant: 4 CCW arms, sector 1–4
+  group?: string                             // split: the id the region populations share
 }
 // one AND-ed condition of a compound filter (Decision 15)
 export interface FilterCondition { measure: string; fun: string; values: unknown }
@@ -381,6 +385,9 @@ export function createGatingStore(initialPopType: string) {
   const updateBooleanPop = (path: string, spec: BooleanSpec) =>
     _post('/api/gating/pop/update', { path, boolean: spec })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
+  // every region of a split gate (slice / quadrant) at once — one request, one undo step
+  const addSplit = (gate: GateSpec, parent: string, pops: { name: string; colour: string; region: number }[]) =>
+    _post('/api/gating/pop/add-split', { gate, parent, pops })
   // Step through the server's history. `_post` handles the response tree + flags like any other
   // mutation, so an undo lands on screen exactly the way the edit it reverses did. `mirrorUids` is
   // empty on the gating pages (it is the cluster pages' set-wide replay), so no mirroring here.
@@ -528,7 +535,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,
