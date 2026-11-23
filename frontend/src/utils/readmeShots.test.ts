@@ -27,6 +27,8 @@ describe('README.md screenshots', () => {
     const top = renderReadmeShots(facts, widths).split('\n')[1]
     expect(top.startsWith('<table align="center"><tr>')).toBe(true)
     expect(top.match(/<td /g)?.length).toBe(2)
+    // equal columns, whatever each caption's length
+    expect(top.match(/<td valign="top" width="50%">/g)?.length).toBe(2)
     expect(top.indexOf('readme-lens')).toBeLessThan(top.indexOf('readme-viewer'))
   })
 
