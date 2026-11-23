@@ -32,10 +32,47 @@
         @test L.show === true && L.is_track === false
         @test sort(L.labels) == want                       # membership == the gate's cells
 
-        # cached: a second call returns the SAME stored object (no recompute), keyed under poplayers:
-        again = resolve_pops(img, "flow"; value_name="B")
-        @test again === layers
-        @test any(k -> startswith(k, "poplayers:"), keys(img._pop_df_cache))
+        # cached ACROSS image objects: every API request builds a fresh `CciaImage` (`init_object`), so
+        # a cache held on the object never hit — each viewer overlay re-ran the gate evaluation. A new
+        # object over the same dir must get the SAME stored result (no recompute).
+        img2 = CciaImage(uid="KDIeEm", dir=td)
+        img2.label_props["B"] = "B.h5ad"; img2.label_props["_active"] = "B"
+        @test resolve_pops(img2, "flow"; value_name="B") === layers
+        # …and a saved gate edit invalidates it — with NO sleep: the map's CONTENT is in the stamp, so a
+        # second save inside one mtime tick (1 s on HFS+/FAT) is still seen (RESULT-REVIEW result-a781a721).
+        m2 = load_pop_tree(img2; value_name="B", pop_type="flow")
+        add_pop!(m2, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
+                                               -1e12, 1e12, -1e12, 1e12), colour="#3b82f6")
+        save_pop_tree!(m2, img2)
+        after = resolve_pops(img2, "flow"; value_name="B")
+        @test after !== layers && length(after) == 2
+        # …and a calibration edit invalidates it — `load_pop_tree` scales µm gates by the image's µm/px,
+        # and that edit touches only ccid.json (RESULT-REVIEW result-2e42f118).
+        img3 = CciaImage(uid="KDIeEm", dir=td)
+        img3.label_props["B"] = "B.h5ad"; img3.label_props["_active"] = "B"
+        @test resolve_pops(img3, "flow"; value_name="B") === after
+        img3.meta["PhysicalSizeX"] = "0.5"; img3.meta["PhysicalSizeY"] = "0.5"
+        @test resolve_pops(img3, "flow"; value_name="B") !== after
+        # …and so does an edit to ANOTHER segmentation's map on the image — a cluster pop type with no
+        # map of its own borrows a sibling's (`_borrow_cluster_pop_tree`), so the stamp reads them all.
+        st = Cecelia._gating_inputs_stamp(img3, "B")
+        write(joinpath(td, "gating", "Other__clust.json"), "{}")
+        @test Cecelia._gating_inputs_stamp(img3, "B") != st
+        # this segmentation's sidecars count, another segmentation's do not
+        st = Cecelia._gating_inputs_stamp(img3, "B")
+        write(joinpath(td, "labelProps", "Other.clustfeatures.json"), "{}")
+        @test Cecelia._gating_inputs_stamp(img3, "B") == st
+        write(joinpath(td, "labelProps", "B.clustfeatures.json"), "{}")
+        @test Cecelia._gating_inputs_stamp(img3, "B") != st
+        # the cache is bounded (`BoundedCache`): past `max` slots the oldest goes, the newest stays;
+        # a new stamp replaces its slot rather than adding one; a hit needs the same stamp.
+        bc = Cecelia.BoundedCache(3)
+        for k in 1:5; Cecelia.cached!(() -> k, bc, "k$k"); end
+        @test length(bc) == 3 && haskey(bc, "k5") && !haskey(bc, "k2")
+        @test Cecelia.cached!(() -> 99, bc, "k5") == 5                 # hit
+        @test Cecelia.cached!(() -> 7, bc, "k5"; stamp = "s2") == 7    # new stamp → recompute…
+        @test length(bc) == 3                                          # …in the same slot
+        @test Cecelia.cached!(() -> 8, bc, "k5"; stamp = "s2", flush = true) == 8
     end
 end
 

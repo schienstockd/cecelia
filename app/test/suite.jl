@@ -337,6 +337,7 @@ include(joinpath(@__DIR__, "suite", "pop_plot_cols.jl"))
 # file's aggregating testset scope, so any helpers defined earlier in suite.jl are still
 # in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "resolve_labels.jl"))
+include(joinpath(@__DIR__, "suite", "gating_stamp_large_map.jl"))   # RESULT-REVIEW result-9e123c3f
 
 # ── summary-plot aggregation (server-side; pop_df → bins / freq counts) ────
 # ── plot_summary_data + motion + uns + anisotropy testsets ─────────────
