@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { POPOUT_ROUTES, POPOUT_WINDOW_NAMES, popoutUrl, popoutRouteOfWindow, isPopoutWindow, nameMainWindow, mainWindowUrl, MAIN_WINDOW_NAME,
-  rightHalf, toggleSideBySide, savedPlacement, isSideBySide, PLACE_MOVE_DELAY_MS, PLACE_SETTLE_MS } from './popout'
+  rightHalf, toggleSideBySide, savedPlacement, isSideBySide, PLACE_MOVE_DELAY_MS, PLACE_SETTLE_MS,
+  PLACE_VERDICT_MS, snapKeys, type PlaceOutcome } from './popout'
 
 const BASE = { origin: 'http://localhost:8080', pathname: '/' }
 // The suite runs in node, with no `window` — so every call passes the window name it is asking about.
@@ -150,6 +151,50 @@ describe('side by side', () => {
     settle()
     expect(calls).toEqual(['resize 941x1048', 'move 979,32'])
     expect(savedPlacement(store)).toEqual({ x: 300, y: 200, w: 941, h: 1048 })   // the new way back
+  })
+
+  it('reports a placement that landed', () => {
+    const { win } = fakeWin(); const store = memStore(); const got: PlaceOutcome[] = []
+    toggleSideBySide(win, area, store, o => got.push(o)); vi.advanceTimersByTime(PLACE_VERDICT_MS)
+    expect(got).toEqual(['placed'])
+  })
+
+  // Native Wayland (Firefox; Chromium/Brave by default): the popup resizes but never moves, and its
+  // position always reads (0, 0).
+  function waylandWin(w = 1200, h = 1000) {
+    const { calls, win } = fakeWin(0, 0, w, h)
+    win.moveTo = (x: number, y: number) => { calls.push(`move ${x},${y} (no-op)`) }
+    return { calls, win }
+  }
+
+  it('Wayland: resized but not moved → "sized", so the header can name the keys', () => {
+    const { win } = waylandWin(); const store = memStore(); const got: PlaceOutcome[] = []
+    expect(toggleSideBySide(win, area, store, o => got.push(o))).toBe(true)
+    vi.advanceTimersByTime(PLACE_VERDICT_MS)
+    expect(got).toEqual(['sized'])
+  })
+
+  it('Wayland: side by side is read from the size, so the second click goes BACK', () => {
+    const { win } = waylandWin(); const store = memStore()
+    toggleSideBySide(win, area, store); settle()
+    expect(isSideBySide(win, area, store)).toBe(true)
+    expect(toggleSideBySide(win, area, store)).toBe(false)
+    settle()
+    expect([win.outerWidth, win.outerHeight]).toEqual([1200, 1000])
+    expect(savedPlacement(store)).toBeNull()
+  })
+
+  it('a window that will not resize either (maximised) → "refused"', () => {
+    const { win } = fakeWin(0, 0, 1920, 1080); const store = memStore(); const got: PlaceOutcome[] = []
+    win.resizeTo = () => {}; win.moveTo = () => {}
+    toggleSideBySide(win, area, store, o => got.push(o)); vi.advanceTimersByTime(PLACE_VERDICT_MS)
+    expect(got).toEqual(['refused'])
+  })
+
+  it('names the system tiling keys per platform', () => {
+    expect(snapKeys('right', 'Linux x86_64')).toBe('Super+→')
+    expect(snapKeys('left', 'MacIntel')).toBe('Fn+Control+←')
+    expect(snapKeys('right', 'Win32')).toBe('Win+→')
   })
 
   it('reads a damaged saved placement as not side by side', () => {
