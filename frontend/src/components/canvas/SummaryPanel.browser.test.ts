@@ -7,6 +7,7 @@ import { routeLocationKey } from 'vue-router'
 import SummaryPanel from './SummaryPanel.vue'
 import { frames, mountInto } from '../../test/browser/mount'
 import spec from '../../../../app/src/plotDefinitions/track_cluster_frequency.json'
+import trackSpec from '../../../../app/src/plotDefinitions/track_measures.json'
 import type { PlotSpec } from '../../plots/types'
 
 const CATS = ['fast high-turning', 'fast straight', 'long meandering', 'long-range displacing',
@@ -57,5 +58,38 @@ describe('SummaryPanel Select strip', () => {
     expect(s.top).toBeGreaterThanOrEqual(p.bottom - 0.5)      // no overlap with the chart (axis labels included)
     expect(s.bottom).toBeLessThanOrEqual(b.bottom + 0.5)      // and not clipped off the panel body
     expect(p.height).toBeGreaterThan(150)                     // the chart still gets the room left over
+  })
+})
+
+describe('SummaryPanel Show series picker', () => {
+  // It was an absolute popup inside the panel, so the panel's overflow:hidden clipped it at the plot
+  // edge — rows and the Show button were unreachable. It is now teleported out of the panel.
+  it('opens outside the panel, whole box on screen and clickable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = String(url).includes('/api/plot_data') ? { chartType: 'boxplot', measure: 'live.track.speed', series: [] } : {}
+      return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+    }))
+    const host = mountInto({ setup() { provide(routeLocationKey, reactive({ path: '/analysis', query: {}, params: {} }) as never) },
+      render: () => h('div', { class: 't-panel', style: 'margin-top:300px;width:320px;height:240px;display:flex;flex-direction:column;overflow:hidden' },
+      [h(SummaryPanel, {
+        index: 0, active: true, spec: trackSpec as unknown as PlotSpec, projectUid: 'p', imageUid: 'A',
+        series: [{ valueName: 'default', pop: 'default/tracked', popType: 'live' }],
+        seriesColor: () => '#888', ui: { chartType: 'boxplot' }, docked: false,
+      })]) })
+    await frames(4)
+    const btn = [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.querySelector('.pi-chart-bar'))
+    expect(btn, 'Show series button rendered').toBeTruthy()
+    btn!.click()
+    await frames(4)
+    const pop = document.querySelector<HTMLElement>('.sp-explode-pop')
+    expect(pop, 'picker open').not.toBeNull()
+    expect(host.querySelector('.t-panel')!.contains(pop)).toBe(false)   // escaped the clipping panel
+    const r = pop!.getBoundingClientRect()
+    expect(r.height).toBeGreaterThan(100)                              // all ten measures, not a sliver
+    expect(r.left).toBeGreaterThanOrEqual(0)
+    expect(r.right).toBeLessThanOrEqual(window.innerWidth)
+    const show = [...pop!.querySelectorAll('button')].find(b => b.textContent?.startsWith('Show'))!
+    const s = show.getBoundingClientRect()
+    expect(show.contains(document.elementFromPoint(s.left + s.width / 2, s.top + s.height / 2))).toBe(true)
   })
 })
