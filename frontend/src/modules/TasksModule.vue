@@ -504,7 +504,7 @@ const FILTERS: ChipOption[] = [
 .tm-search { width: 12rem; flex-shrink: 1; min-width: 6rem; }
 
 
-.tm-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
+.tm-view { display: flex; flex-direction: column; gap: 0.45rem; }
 
 /* view / throttle / pop-out — one bare-icon treatment */
 .tm-icon { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */

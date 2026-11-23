@@ -204,7 +204,7 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 
 <template>
   <!-- `plot:<persistKey>` — the anchor a Kiwi plot ref points at (utils/guideAnchor, PointerBubble) -->
-  <div ref="root" class="panel" :data-guide="persistKey ? `plot:${persistKey}` : undefined"
+  <div ref="root" class="panel" :data-guide="persistKey ? `plot:${persistKey}` : undefined" :data-snap-panel="docked ? undefined : ''"
        :class="{ active, collapsed, docked,
                                           'controls-pinned': chromeMode === 'visible',
                                           'controls-hidden': chromeMode === 'hidden' }"

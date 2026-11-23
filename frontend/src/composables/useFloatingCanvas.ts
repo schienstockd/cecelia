@@ -1,4 +1,5 @@
-import { ref, provide, type Ref } from 'vue'
+import { ref, computed, provide, type Ref } from 'vue'
+import { CANVAS_SNAP_KEY } from './useFloatingPanel'
 import { useCanvasPanels } from './useCanvasPanels'
 import { useCanvasWorkspace } from './useCanvasWorkspace'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from './useCanvasZoom'
@@ -43,6 +44,9 @@ export function useFloatingCanvas<S>(
   const zoomApi = useCanvasZoom(canvasEl,
     () => ({ w: canvas.contentBounds.value.w || null, h: canvas.contentBounds.value.h }))
   provide(CANVAS_ZOOM_KEY, zoomApi.zoom)
+  // Snap: dragged panels snap to each other and the canvas edges. Per canvas, persisted in its bag.
+  const snap = computed<boolean>({ get: () => canvas.shared.value.snap === true, set: v => { canvas.shared.value.snap = v } })
+  provide(CANVAS_SNAP_KEY, () => snap.value)
   const workspace = useCanvasWorkspace(canvasEl, zoomApi.zoom, () => canvas.contentBounds.value)
 
   return {
@@ -55,6 +59,7 @@ export function useFloatingCanvas<S>(
     activeId: canvas.activeId,
     activePanel: canvas.activePanel,
     shared: canvas.shared,
+    snap,
     add: canvas.add,
     duplicate: canvas.duplicate,
     remove: canvas.remove,

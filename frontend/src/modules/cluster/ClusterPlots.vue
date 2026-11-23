@@ -15,6 +15,7 @@
   cluster numbering; the heatmap pools via setUid).
 -->
 <script setup lang="ts">
+import { scopeCopy, scopeSetter } from '../../utils/scopeSwitch'
 import { toggleSelected } from '../../utils/selection'
 import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
@@ -73,7 +74,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<ClusterPanelState>(
@@ -100,7 +101,7 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
   suffixes, labelMap, channelNames, clusterIds, clusterRunAt, featureOptions, hmmStateCols, hmmTransitionCols,
-  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes,
+  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes, allFeatures,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
   popType: computed(() => props.popType), suffix, g,
@@ -140,6 +141,10 @@ const activeHL = computed(() => scope.value === 'global'
 // plot styling (VisProps) follows the SAME global/local scope as the highlights (like the summary
 // canvas): GLOBAL = one styling bag for every plot; LOCAL = the active plot's own. The pop manager
 // edits the active scope's bag; each panel renders with its own effective bag.
+// global → local keeps what's drawn: every plot's own copy starts from the committed global values
+const setScope = scopeSetter(scope, () => {
+  for (const p of panels.value) { p.state.hl = scopeCopy(highlighted.value); p.state.vis = scopeCopy(gVis.value) }
+})
 const panelVis = (s: ClusterPanelState) => scope.value === 'global' ? gVis.value : (s.vis ?? DEFAULT_VIS)
 const activeVis = computed(() =>
   scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
@@ -222,6 +227,7 @@ const ctxFor = (s: ClusterPanelState) => ({
   vis: panelVis(s),   // canvas styling (dark-theme etc.) — interactive views read it if they theme
   axes: clusterAxes.value[suffix.value] ?? null,   // the run's diffusion axis names (cluster map layout)
   nameMap: labelMap.value,
+  features: allFeatures.value,   // what the run clustered on — the map can be coloured by one
 })
 
 // the population row the manager treats as selected (clicking a row); cluster ticking is per-row,
@@ -316,8 +322,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           </select>
         </label>
         <PlotPicker :options="plotTypes" @pick="addKind" />
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
@@ -416,7 +422,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :vis="activeVis" :readout="activeReadout"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
-                             @update:selected="selectedPop = $event" @update:scope="scope = $event"
+                             @update:selected="selectedPop = $event" @update:scope="setScope"
                              @update:vis="setVis" @toggle-highlight="toggleHighlight"
                              @update:manualApply="manualApply = $event"
                              @apply:staged="applyStaged" @discard:staged="discardStaged"

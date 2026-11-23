@@ -366,26 +366,34 @@ function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::Abst
     # Build label → tile_index, filtered to this t (and to the Z slab when the viewer sent one
     # — see `_bin_centroids_to_tiles`, same round-then-in-range rule). A label absent from the
     # map (wrong t, wrong z, NaN centroid) is silently skipped when a pop asks about it.
+    # Typed columns once (non-number → NaN, then skipped), never `df[i, name]` per cell — the rule by
+    # `_finite_rows` (overlay_author.jl).
+    C(c) = getproperty(df, Symbol(c))
+    clab = _col_or(C("label"), NaN)::Vector{Float64}
+    cx = _col_or(C("centroid_x"), NaN)::Vector{Float64}
+    cy = _col_or(C("centroid_y"), NaN)::Vector{Float64}
+    ct = (has_t ? _col_or(C("centroid_t"), NaN) : Float64[])::Vector{Float64}
+    cz = (has_z ? _col_or(C("centroid_z"), NaN) : Float64[])::Vector{Float64}
     label_to_tile = Dict{Int,Int}()
-    @inbounds for i in 1:size(df, 1)
-        lab = df[i, :label]
-        (lab isa Real && isfinite(Float64(lab))) || continue
-        px = df[i, :centroid_x]; py = df[i, :centroid_y]
-        (px isa Real && py isa Real && isfinite(Float64(px)) && isfinite(Float64(py))) || continue
+    @inbounds for i in eachindex(clab)
+        lab = clab[i]
+        isfinite(lab) || continue
+        px = cx[i]; py = cy[i]
+        (isfinite(px) && isfinite(py)) || continue
         if has_t
-            tv = df[i, :centroid_t]
-            (tv isa Real && isfinite(Float64(tv))) || continue
-            Int(round(Float64(tv))) == t || continue
+            tv = ct[i]
+            isfinite(tv) || continue
+            Int(round(tv)) == t || continue
         end
         if has_z
-            zv = df[i, :centroid_z]
-            (zv isa Real && isfinite(Float64(zv))) || continue
-            zr = Int(round(Float64(zv)))
+            zv = cz[i]
+            isfinite(zv) || continue
+            zr = Int(round(zv))
             (z_lo <= zr <= z_hi) || continue
         end
         ti = _tile_of(px, py, ncols, nrows, sizeX, sizeY, view)
         ti == 0 && continue
-        label_to_tile[Int(round(Float64(lab)))] = ti
+        label_to_tile[Int(round(lab))] = ti
     end
     # Resolve the pops the manager knows about — SHOW-filtered per Decision 3 (only the ones
     # the user has ticked visible on the panel). `resolve_pops` gives us (path, name, labels,
@@ -516,11 +524,19 @@ function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
     # filter here would count a track's duration as ONLY the frames its centroid is inside the
     # viewer slab — that misrepresents track lifetime for a summary that means "how long has
     # this cell been alive." The Z filter belongs on the second pass (tile membership) only.
+    # Typed columns once (non-number → NaN, then skipped) — never `df[i, name]` per cell.
+    C(c) = getproperty(df, Symbol(c))
+    ck = _col_or(C("track_id"), NaN)::Vector{Float64}
+    cx = _col_or(C("centroid_x"), NaN)::Vector{Float64}
+    cy = _col_or(C("centroid_y"), NaN)::Vector{Float64}
+    ct = (has_t ? _col_or(C("centroid_t"), NaN) : Float64[])::Vector{Float64}
+    cz = (has_z ? _col_or(C("centroid_z"), NaN) : Float64[])::Vector{Float64}
+    csp = (has_speed ? _col_or(C("live.cell.speed"), NaN) : Float64[])::Vector{Float64}
     duration_by_track = Dict{Int,Int}()
-    @inbounds for i in 1:size(df, 1)
-        tid = df[i, :track_id]
-        (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
-        k = Int(round(Float64(tid)))
+    @inbounds for i in eachindex(ck)
+        tid = ck[i]
+        (isfinite(tid) && tid > 0) || continue
+        k = Int(round(tid))
         duration_by_track[k] = get(duration_by_track, k, 0) + 1
     end
     # Second pass: bin cells at the shown t (and inside the viewer's Z slab when the frontend
@@ -530,29 +546,29 @@ function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
     tile_track_ids = [Set{Int}() for _ in 1:n_tiles]
     tile_speed_sum = zeros(Float64, n_tiles)
     tile_speed_n   = zeros(Int, n_tiles)
-    @inbounds for i in 1:size(df, 1)
-        tid = df[i, :track_id]
-        (tid isa Real && isfinite(Float64(tid)) && Float64(tid) > 0) || continue
-        px = df[i, :centroid_x]; py = df[i, :centroid_y]
-        (px isa Real && py isa Real && isfinite(Float64(px)) && isfinite(Float64(py))) || continue
+    @inbounds for i in eachindex(ck)
+        tid = ck[i]
+        (isfinite(tid) && tid > 0) || continue
+        px = cx[i]; py = cy[i]
+        (isfinite(px) && isfinite(py)) || continue
         if has_t
-            tv = df[i, :centroid_t]
-            (tv isa Real && isfinite(Float64(tv))) || continue
-            Int(round(Float64(tv))) == t || continue
+            tv = ct[i]
+            isfinite(tv) || continue
+            Int(round(tv)) == t || continue
         end
         if has_z
-            zv = df[i, :centroid_z]
-            (zv isa Real && isfinite(Float64(zv))) || continue
-            zr = Int(round(Float64(zv)))
+            zv = cz[i]
+            isfinite(zv) || continue
+            zr = Int(round(zv))
             (z_lo <= zr <= z_hi) || continue
         end
         ti = _tile_of(px, py, ncols, nrows, sizeX, sizeY, view)
         ti == 0 && continue
-        push!(tile_track_ids[ti], Int(round(Float64(tid))))
+        push!(tile_track_ids[ti], Int(round(tid)))
         if has_speed
-            sp = df[i, Symbol("live.cell.speed")]
-            if sp isa Real && isfinite(Float64(sp))
-                tile_speed_sum[ti] += Float64(sp)
+            sp = csp[i]
+            if isfinite(sp)
+                tile_speed_sum[ti] += sp
                 tile_speed_n[ti]   += 1
             end
         end

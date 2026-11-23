@@ -237,6 +237,8 @@ include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 include(joinpath(@__DIR__, "suite", "run_log_followups.jl"))
 include(joinpath(@__DIR__, "suite", "run_record_fields.jl"))
 include(joinpath(@__DIR__, "suite", "gate_history.jl"))
+# Reuse unchanged steps: a chain node marked reused instead of dispatched (tasks/chain/reuse.jl).
+include(joinpath(@__DIR__, "suite", "chain_reuse.jl"))
 include(joinpath(@__DIR__, "suite", "run_usage.jl"))   # `usage`: peak memory, host, cluster accounting
 
 
@@ -260,6 +262,7 @@ include(joinpath(@__DIR__, "suite", "labelprops.jl"))
 # EOF conflicts on every append. The extracted file loads inside this file's aggregating
 # testset scope, so any helpers defined earlier in suite.jl are still in scope (lexical).
 include(joinpath(@__DIR__, "suite", "gating.jl"))
+include(joinpath(@__DIR__, "suite", "split_gates.jl"))
 # ── Population types + cluster/region + spatial obs testsets ─────────────
 # 10 sections covering GATING_POP_TYPES, img_has_value_name, clust/trackclust pop types,
 # region pop type (spatial regions), contact_matrix, region pop auto-share, bare
@@ -335,6 +338,7 @@ include(joinpath(@__DIR__, "suite", "pop_plot_cols.jl"))
 # file's aggregating testset scope, so any helpers defined earlier in suite.jl are still
 # in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "resolve_labels.jl"))
+include(joinpath(@__DIR__, "suite", "gating_stamp_large_map.jl"))   # RESULT-REVIEW result-9e123c3f
 
 # ── summary-plot aggregation (server-side; pop_df → bins / freq counts) ────
 # ── plot_summary_data + motion + uns + anisotropy testsets ─────────────

@@ -71,3 +71,21 @@ export function unitCountLabel(ns: number[], noun: { one: string; many: string }
   const lo = Math.min(...xs), hi = Math.max(...xs)
   return `n = ${lo === hi ? lo : `${lo}–${hi}`} ${name} per group`
 }
+
+/**
+ * The line an exported summary plot carries under it, as a figure legend states it (Lord et al. 2020,
+ * SuperPlots, J Cell Biol 219(6):e202001064, doi:10.1083/jcb.202001064): the n, what each point is, and
+ * what the test ran on — "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on
+ * the mouse means". '' when each point is a cell or track (`nLabel` is '' then): no unit to state.
+ * `cellsBeneath`: the SuperPlot cell layer is drawn (box/strip, toggle on) — not whenever the unit is a replicate.
+ */
+export function plotCaption(o: {
+  nLabel: string; statUnit: StatUnit; imageAgg: ImageAgg; noun: { one: string; many: string }; test?: string
+  cellsBeneath?: boolean
+}): string {
+  if (!o.nLabel || o.statUnit === 'individual') return ''
+  const points = `${o.noun.one} ${o.imageAgg}s`
+  const parts = [o.nLabel, o.cellsBeneath ? `${points}, cells beneath` : points]
+  if (o.test) parts.push(`${o.test} on the ${points}`)
+  return parts.join(' · ')
+}

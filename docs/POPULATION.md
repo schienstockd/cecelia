@@ -12,7 +12,7 @@ gating module. Gating is one way to *define* a population; the manager, the unif
 
 | type | membership defined by | data source | stored sidecar |
 |------|----------------------|-------------|----------------|
-| `flow` | gates (polygon, rectangle; later ellipse/quadrant/boolean) on cell measurements | gate strategy + H5AD | `gating/{vn}.json` |
+| `flow` | gates (rectangle, polygon, slice, quadrant) on cell measurements | gate strategy + H5AD | `gating/{vn}.json` |
 | `live` | tracking (btrack links cells across time) + optional track-measure filters | H5AD `.obs` (`track_id`) | none (derived off `flow`) |
 | `track` | gates on **per-track** properties (one point per track) | `track_props` (motility + on-read aggregates) | `gating/{vn}__tracks.json` |
 | `clust` | a filter on the **cell** cluster column (`filter_fun="in"` over `clusters.{suffix}`) | cell H5AD `.obs` column (clustPops) | `gating/{vn}__clust.json` |
@@ -785,8 +785,8 @@ after fixing a gate. The GET cohort route computes the same answer without writi
 ## Gating engine
 
 - Lives in Julia; operates on H5AD read via `label_props`.
-- Gate types: rectangle, polygon first; abstract `Gate` so ellipse/quadrant/boolean slot
-  in. Vertices in transformed space.
+- Gate types: rectangle, polygon (`gates.jl`) and the split gates slice and quadrant
+  (`split_gates.jl`, below). Vertices in transformed space.
 - `recompute!`: walk the tree in topological order, child membership = parent ∩ child
   gate. Cache the measurement matrix per image. Synchronous, in-process (no task pool) —
   interactive latency.
@@ -814,6 +814,41 @@ after fixing a gate. The GET cohort route computes the same answer without writi
   **bounding box** — lossy and widening (the pop can only gain cells), so that direction arms
   before it fires. Both keep the channels and per-axis transforms, since the stored coords are
   already in transformed space.
+
+### Split gates — slice and quadrant
+
+A rectangle or polygon encloses ONE population. A **split gate** divides the whole plane, and every region
+is its own population — drawing one adds them all at once (`POST /api/gating/pop/add-split`, one undo step).
+
+- **Slice** — a dividing line of 2+ vertices (it may bend). Both ends run on to infinity, so the line splits
+  the plane in two: `side: 1` is the region LEFT of the line's direction, `side: -1` the right. The GUI
+  draws it with the slice tool (click vertices, double-click to end) and names the regions `name+` / `name-`;
+  `+` is the side toward higher values (above a line that runs more across than up, right of one that runs
+  more up than across — `positiveSide`, `plots/splitGeometry.ts`).
+- **Quadrant** — a centre and four arms listed counter-clockwise; region `quadrant: q` is the sector from
+  arm q to arm q+1. One click with the quadrant tool places the centre with arms along the axes, so
+  sectors 1–4 are `X+ Y+`, `X- Y+`, `X- Y-`, `X+ Y-` (named from the axis labels). Dragging an arm handle
+  tilts it — FlowJo's "spider" quadrant. An arm cannot be swung past its neighbour (the constructor
+  refuses arms that are not counter-clockwise; the editor holds the arm at its last good spot).
+
+Each region's population stores the SAME divider plus its own region, and the populations of one split
+share a `group` id. **`set_gate!` moves the whole group**: an edit of any member rewrites every sibling under
+the same parent with that `group` to the new divider, each keeping its region. So the regions always tile the
+plane: every cell with finite values on both axes is in exactly one; a NaN/Inf cell is in none (as for
+rectangle/polygon). The negative side is computed as "finite and not on the left", never as a second
+polygon, so the two sides of a slice are exact complements even when a bent line's extension crosses itself.
+
+**Axis swap.** A gate shown with its axes swapped is a mirror image: left becomes right, and
+counter-clockwise arms run clockwise. `project_gate` therefore reverses the arm list (to stay
+counter-clockwise) and mirrors the region (`side → -side`, `q → 4 - q` mod 4) — `mirror_region`; the
+client's `transposeSplit` and `orientGate` apply the same rule, and `set_gate!` carries a sibling's region
+across a swapped edit. Each axis transform is increasing, so a transform change never mirrors.
+
+Display: the divider is drawn once per group (in ink), each region's name at the centroid of its visible
+part; a split gate is never selected by a click inside it (its regions cover the whole plot) — its line
+moves it, its vertices / arm handles reshape it. A region is built by closing the divider round a box
+(`slice_left_polygon` / `quadrant_polygon` in Julia, the same in `splitGeometry.ts`); membership uses a box
+padded past every cell, display the view box. The MCP `add_gate` still draws rectangles and polygons only.
 
 ## Undo / redo
 

@@ -40,6 +40,6 @@ const tip = computed(() => props.hidden
 </template>
 
 <style scoped>
-.vault-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
+.vault-view { display: flex; flex-direction: column; gap: 0.45rem; }
 .vault-view-set { color: var(--cc-accent); }   /* a view preference is off its default */
 </style>

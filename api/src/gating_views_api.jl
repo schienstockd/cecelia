@@ -364,7 +364,8 @@ function _example_picks(mode::AbstractString, n::Int, ins::AbstractVector{Bool},
 end
 
 # Each cell's distance to the gate's EDGE in the transformed plane, both axes scaled to the cells' own
-# 1–99 % range so neither axis dominates. Rectangle and polygon alike: the nearest edge segment.
+# 1–99 % range so neither axis dominates. Rectangle and polygon alike: the nearest edge segment; a split
+# gate's edge is its divider.
 function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector)::Vector{Float64}
     xt = Float64[apply_transform(g.x_transform, float(x)) for x in xraw]
     yt = Float64[apply_transform(g.y_transform, float(y)) for y in yraw]
@@ -374,9 +375,14 @@ function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector
         max(at(0.99) - at(0.01), eps())
     end
     sx = span(xt); sy = span(yt)
-    verts = g isa RectangleGate ?
-        [(g.x_min, g.y_min), (g.x_max, g.y_min), (g.x_max, g.y_max), (g.x_min, g.y_max)] : g.vertices
-    segs = [(verts[k], verts[k % length(verts) + 1]) for k in eachindex(verts)]
+    segs = if g isa Cecelia.SplitGate
+        # the divider, run out past the cells — a split gate's edge is its line / arms
+        Cecelia.divider_segments(g, Cecelia._plane_box(xt, yt, Cecelia._divider_points(g)))
+    else
+        verts = g isa RectangleGate ?
+            [(g.x_min, g.y_min), (g.x_max, g.y_min), (g.x_max, g.y_max), (g.x_min, g.y_max)] : g.vertices
+        [(verts[k], verts[k % length(verts) + 1]) for k in eachindex(verts)]
+    end
     map(eachindex(xt)) do i
         (isfinite(xt[i]) && isfinite(yt[i])) || return Inf
         px = xt[i] / sx; py = yt[i] / sy

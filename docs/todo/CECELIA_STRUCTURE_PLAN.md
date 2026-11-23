@@ -90,11 +90,13 @@ gates (`qc_gating.jl`), statistics (`plotting/stats.jl` `stats_qc_findings`); cl
 "calibration kept" was image (OME-TIFF) export QC, not figure export; both are gone.
 
 **v3 (2026-11-21):** the README figure is redrawn design first, by
-`structure_figures/make_readme_overview.py` (v2's generator now writes the plan copy only). Three
-panels, pictograms over words: (1) the set's design as the app's design sketch draws it, with the
+`structure_figures/make_readme_overview.py` (v2's generator now writes the plan copy only). A
+recipe strip over three panels, pictograms over words: four of the written recipes
+(`lib/guides/recipes.ts`), unnumbered, one shown picked and named under heading 2 (a recipe suggests the next
+step); any Bio-Formats file converted to OME-Zarr; (1) the set's design as the app's design sketch draws it, with the
 question, the expectation and the exploratory option; (2) the steps around one record (settings,
-version, who, when, design; chains replay it), a check per step, and the claim check pointing back at
-the design; Kiwi and Claude Code beside it as optional sidekicks; (3) what you can ask. The design
+version, who, when, design), a check per step, and the claim check pointing back at
+the design; Kiwi and Claude Code beside it as optional sidekicks; (3) what the record gives you (trace, replay, out of date, write it up). The design
 layout (5 vs 3 replicates) is an example, not a dataset. It depends on
 [`EXPERIMENT_DESIGN_PLAN.md`](EXPERIMENT_DESIGN_PLAN.md): the dialog and the per-replicate plot (#2417)
 and the claim check reading the design (step T3) must exist before the README shows it.

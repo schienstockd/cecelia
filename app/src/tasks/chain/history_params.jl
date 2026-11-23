@@ -8,6 +8,16 @@
 # Unlike the chain, nothing is dropped: an import or a crop (never replayed) is a row with a note,
 # a run logged before params were recorded is a row saying so, and a training step stays in.
 
+"""
+    is_bookkeeping_param(key) -> Bool
+
+A task param that says how a run writes, not how it processes: `overwrite` (replace a label set of the
+same name) — the cells come out the same either way. `key` is the param name or a dotted path to it.
+The Methods table and the claim checks leave it out; a chain still replays it.
+"""
+const BOOKKEEPING_PARAMS = ("overwrite",)
+is_bookkeeping_param(key::AbstractString) = last(split(key, '.')) in BOOKKEEPING_PARAMS
+
 """Flat spec defaults of task `fn` — `key => default`; a repeatable group is `key => (params, entry)`."""
 function _history_param_defaults(fn::String)::Dict{String,Any}
     task = try _task_from_fun_name(fn) catch; nothing end
@@ -154,6 +164,7 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
         changed = String[]; conflicts = String[]
         for k in sort!(unique(vcat((collect(keys(f)) for f in flats)...)))
             k == "valueName" && continue                       # shown as the output
+            is_bookkeeping_param(k) && continue
             l = get(something(leaves_of(fn), Dict{String,_HistoryLeaf}()), k, nothing)
             # a crop box is drawn per image; its coordinates mean nothing in a table
             (l !== nothing && l.type == "imagePicker") && (push!(changed, "$k=(set per image)"); continue)

@@ -70,7 +70,7 @@ export delete_image!, delete_set!, rename_set!, set_recipe!,
        ExperimentDesign, experiment_design, experiment_design_from, experiment_design_dict, experiment_design_hash,
        set_experiment_design!, rename_design_attr,
        DataSource, DataSourceBy, SOURCE_BY_IMPORT, SOURCE_BY_USER, data_source, data_source_from, data_source_dict,
-       data_source_reply, set_data_source!, set_image_data_source!, image_set, image_set_index, inherit_data_source!, suggest_data_source, immunemap_data_source, experiment_design_history, experiment_design_version, experiment_design_grid, design_replicates, design_expect_phrase, set_name_taken, move_image!
+       data_source_reply, set_data_source!, set_image_data_source!, image_set, image_set_index, inherit_data_source!, suggest_data_source, immunemap_data_source, experiment_design_history, experiment_design_version, experiment_design_grid, replicate_pairing, design_replicates, design_expect_phrase, set_name_taken, move_image!
 export discard!, move_aside, discard_later, sweep_discarded!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes, img_defaulted_scale, run_scale_defaults,
        image_included, IMAGE_EXCLUDED_REASON, ImageRating, RATING_NONE, RATING_GOOD, RATING_CAUTION,
@@ -125,7 +125,7 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
 export apply_transform, invert_transform, transform_spec, transform_from_spec
 export transform_kind, transform_collapses, effective_transform
-export Gate, RectangleGate, PolygonGate
+export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group
 export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
@@ -332,6 +332,7 @@ include("run_log.jl")
 include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")
+include("gating/split_gates.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")

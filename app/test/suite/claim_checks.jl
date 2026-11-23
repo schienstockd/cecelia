@@ -206,6 +206,11 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     @test length(f) == 1 && f[1]["detail"]["evidence"]["images"] == ["c"]
     @test haskey(f[1]["detail"]["evidence"]["byValue"], "(not set)")
 
+    # ── `overwrite` (replace a label set of the same name) is not processing: never a difference ──
+    imgs = _cc_clean()
+    imgs[3].meta["funParamsByName"]["tracking.bayesian_track_measures"]["B"]["overwrite"] = true
+    @test isempty(_cc_find(_cc_run(imgs), "claim.differs_across_images"))
+
     # ── a gate drawn differently on one image, for B and T: one fact, named plainly, gate advice ──
     # (on the record table — the rules are pure; the synthetic gates aren't what this exercises)
     sc = ClaimScope(_cc_set(_cc_clean()), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"])

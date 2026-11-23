@@ -115,7 +115,7 @@ useDelayedLoading(loading)
 const error = ref('')
 async function fetchTiles(isCurrent: () => boolean) {
   if (!props.projectUid || !uids.value.length) { tiles.value = []; return }
-  loading.value = true; error.value = ''
+  error.value = ''
   try {
     const out: Tile[] = []
     for (const uid of uids.value) {
@@ -135,13 +135,13 @@ async function fetchTiles(isCurrent: () => boolean) {
     if (!out.length) error.value = 'No cells to show'
   } catch (e) {
     if (isCurrent()) error.value = String(e)
-  } finally {
-    if (isCurrent()) loading.value = false
   }
 }
-// one coalesced request per change burst (ticking several populations is several updates)
+// one coalesced request per change burst (ticking several populations is several updates); `loading`
+// follows the scheduler, so a queued request already reads as busy (an export waits for it)
 const run = debouncedLatest<void>((_a, isCurrent) => fetchTiles(isCurrent),
-  { wait: 150, onError: e => { error.value = e instanceof Error ? e.message : String(e); loading.value = false } })
+  { wait: 150, onState: st => { loading.value = st !== 'idle' },
+    onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 watch([() => uids.value.join(','), family, () => pops.value.map(p => p.token).join(','), () => colourBy.value],
       () => run.schedule(), { immediate: true })
 onBeforeUnmount(() => run.cancel())

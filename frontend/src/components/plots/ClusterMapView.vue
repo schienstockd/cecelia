@@ -31,11 +31,15 @@ import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob
          svgDoc, svgCircles, svgText, svgRect, downloadText, svgSizeWarning } from '../../plots/export'
 import { paletteRange, POPULATION_PALETTE, type VisProps } from '../../plots/plot'
 import { categoryColours } from '../../plots/categoryColours'
-import { fitLabel } from '../../plots/valueColour'
+import { fitLabel, colourBarSvg } from '../../plots/valueColour'
+import { valueBins } from '../../plots/valueBins'
+import ColourBarLegend from './ColourBarLegend.vue'
+import SearchSelect from '../SearchSelect.vue'
 import { placeChips } from '../../plots/chipPlacement'
 import { asinhSpread } from '../../plots/diffmapScale'
 import { tkey, parseTkey } from '../../plots/series'
 import { popWireToken } from '../../plots/popPositions'
+import { debouncedLatest } from '../../utils/debouncedLatest'
 import { popDisplayLabels, popRowLabels, withOwnName } from '../../utils/popName'
 import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
@@ -63,20 +67,27 @@ const props = defineProps<{
   // when the run recorded `axes` (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md).
   // axisScale: diffusion axes only — 'spread' (default, asinh: plots/diffmapScale) or 'linear'.
   state: { labels?: boolean; basis?: 'umap' | 'diffmap'; axisScale?: 'spread' | 'linear'
-           colourBy?: 'cluster' | 'population' | 'attribute'
-           colourPops?: string[]; colourAttr?: string
+           colourBy?: 'cluster' | 'population' | 'attribute' | 'feature'
+           colourPops?: string[]; colourAttr?: string; colourFeature?: string
            facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
   // BIDIR PR #4b — the panel's `persistKey`, forwarded from InteractivePanel so this view can
   // filter Claude's point-out marks by `(family='cluster-map', plotId=<this>)`. Absent → no marker.
   plotId?: string
   axes?: BehaviourAxes | null   // the run's diffusion axis names (cluster context); absent on cell runs
   nameMap?: Record<string, string>   // the run's column → label map (`labelMap`), for the axis titles
+  features?: string[]                // the columns the run clustered on — colour by feature offers these
 }>()
 const log = useLogStore()
 const project = useProjectStore()
 const colourBy = computed({ get: () => props.state.colourBy ?? 'cluster', set: v => (props.state.colourBy = v) })
 const colourPops = computed<string[]>({ get: () => props.state.colourPops ?? [], set: v => (props.state.colourPops = v) })
 const colourAttr = computed({ get: () => props.state.colourAttr ?? '', set: v => (props.state.colourAttr = v) })
+// colour by a feature the run clustered on (speed, a marker, an HMM frequency): a per-point value the
+// server appends to the map (`colourFeature`), drawn on the value ramp with a colour bar
+const colourFeature = computed({ get: () => props.state.colourFeature ?? '', set: v => (props.state.colourFeature = v) })
+const featureLabel = (f: string) => props.nameMap?.[f] ?? f
+const featureGroups = computed(() => [{ options: (props.features ?? []).map(f => ({ value: f, label: featureLabel(f) })) }])
+const useValue = computed(() => colourBy.value === 'feature' && !!colourFeature.value)
 const facetBy = computed({ get: () => props.state.facetBy ?? 'none', set: v => (props.state.facetBy = v) })
 const facetAttr = computed({ get: () => props.state.facetAttr ?? '', set: v => (props.state.facetAttr = v) })
 // the population dimension (popIdx) is needed whenever EITHER colour OR facet is by population
@@ -139,6 +150,8 @@ let rawPoints: Float32Array | null = null         // as stored — what the CSV 
 const categories = ref<Float32Array | null>(null)
 const palette = ref<string[]>([])
 const legend = ref<{ label: string; colour: string; n: number }[]>([])
+// colour by feature: the ramp's range + ticks for the colour bar (null in every other mode)
+const valueScale = ref<{ extent: [number, number]; ticks: { pos: number; label: string }[]; label: string } | null>(null)
 const centroids = ref<{ label: string; x: number; y: number }[]>([])
 // cluster count when it is over the drawing limit (utils/clusterLimit) — labels and legend are skipped
 const tooManyClusters = ref(0)
@@ -341,6 +354,8 @@ const pointImg = ref<Uint16Array | null>(null)   // reactive so facets/attr colo
 // read from the `withLabels=1` wire. Enables per-point subscription to pickHighlight (Decision 19)
 // without a second round-trip.
 const labelsRef = ref<Float32Array | null>(null)
+// per-point `colourFeature` value (NaN = none), present only while colouring by feature
+const valuesRef = ref<Float32Array | null>(null)
 
 // ── colour-by pickers (populations + image attributes), reusing the shared endpoints/helpers ────────
 // colour + facet controls live in ONE options popover (the bar gets crowded, esp. docked on the board)
@@ -429,7 +444,21 @@ function recolourByAttr() {
 // (re)compute the per-point colours + legend. Population / attribute modes go through the generic
 // key path; cluster mode keeps its shownPops-aware behaviour (colour each cluster by the population
 // that owns it and grey the rest; otherwise plain colour-by-cluster).
+// colour-by-feature: each point on the value ramp, binned (plots/valueBins) so the categorical painter
+// and its SVG export draw it unchanged; a point with no value is grey, and the colour bar names the range
+function recolourByValue(vals: Float32Array) {
+  const b = valueBins(vals, UNCLUSTERED)
+  palette.value = b.palette
+  categories.value = b.cats
+  legend.value = []
+  centroids.value = []
+  valueScale.value = b.extent ? { extent: b.extent, ticks: b.ticks, label: featureLabel(colourFeature.value) } : null
+}
+
 function recolour() {
+  valueScale.value = null
+  // until a feature is picked and its values are in, the map stays coloured by cluster
+  if (useValue.value && valuesRef.value) { recolourByValue(valuesRef.value); return }
   if (colourBy.value === 'population') {
     const pk = popIdxRef.value
     if (pk) recolourByKey(pk, k => popLabelForKey(colourPops.value[k] ?? ''), 'other')
@@ -483,10 +512,16 @@ function recolour() {
   }
 }
 
-async function load() {
+// Every refetch goes through ONE latest-wins scheduler: ticking several populations in a row (each
+// changes `colourPops`) is one fetch of the last pick, and a fetch a newer pick superseded never paints.
+// A large map is a multi-MB body per image, so firing per tick queued seconds of stale redraws.
+// `loading` follows the scheduler, so a queued refetch already reads as busy (an export waits for it)
+const loader = debouncedLatest<void>((_a, isCurrent) => fetchMap(isCurrent),
+  { wait: 200, onState: st => { loading.value = st !== 'idle' } })
+function load() { loader.schedule() }
+async function fetchMap(isCurrent: () => boolean) {
   err.value = ''
   if (!props.projectUid || !props.imageUids.length) { points.value = null; rawPoints = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
-  loading.value = true
   try {
     // wire = flat Float32 [x, y, clusterCode, popIdx, label] per point (20 B via `withLabels=1`). We
     // fetch per image (so we can tag each point with its image → colour/facet by attribute) and
@@ -495,7 +530,8 @@ async function load() {
     // alongside x/y so a per-point subscription to pickHighlight/trackHighlight (BIDIR PR #4b
     // Decision 19) can find the highlighted points without a second round-trip.
     const cp = usePopIdx.value ? colourPops.value.map(popToken).filter(Boolean) : []
-    const stride = 5
+    const feat = useValue.value ? colourFeature.value : ''
+    const stride = feat ? 6 : 5
     const rec: number[] = []
     const imgOf: number[] = []
     const vnOf: string[] = []
@@ -503,9 +539,12 @@ async function load() {
       const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType,
                                       suffix: props.suffix, basis: basis.value, withLabels: '1' })
       if (cp.length) q.set('colourPops', cp.join(','))
+      if (feat) q.set('colourFeature', feat)
       const res = await fetch(`/api/plots/cluster-map?${q}`)
+      if (!isCurrent()) return
       if (!res.ok) continue
       const f = new Float32Array(await res.arrayBuffer())
+      if (!isCurrent()) return
       for (let i = 0; i < f.length; i++) rec.push(f[i])
       // per-point image index, and the image uid the highlight bag scopes with.
       const iuid = props.imageUids[ui]
@@ -521,12 +560,14 @@ async function load() {
     }
     const pts = new Float32Array(n * 2), codes = new Float32Array(n), popIdx = new Float32Array(n)
     const labs = new Float32Array(n)
+    const vals = feat ? new Float32Array(n) : null
     const img = new Uint16Array(n)
     for (let i = 0; i < n; i++) {
       const x = rec[stride * i], y = rec[stride * i + 1]
       pts[2 * i] = x; pts[2 * i + 1] = y
       codes[i] = rec[stride * i + 2]; popIdx[i] = rec[stride * i + 3]
       labs[i] = rec[stride * i + 4]
+      if (vals) vals[i] = rec[stride * i + 5]
       img[i] = imgOf[i]
     }
     rawPoints = pts
@@ -534,14 +575,16 @@ async function load() {
     popIdxRef.value = popIdx
     pointImg.value = img
     labelsRef.value = labs
+    valuesRef.value = vals
     countsMap = new Map<number, number>()
     for (let i = 0; i < n; i++) countsMap.set(codes[i], (countsMap.get(codes[i]) ?? 0) + 1)
     distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
     applyDisplay()
   } catch (e) {
+    if (!isCurrent()) return
     err.value = e instanceof Error ? e.message : String(e)
     log.error(`${layoutName.value}: ${err.value}`, { source: 'cluster' })
-  } finally { loading.value = false }
+  }
 }
 
 // raw → display coordinates, extents and centroid sums, then recolour. Diffusion axes crowd most
@@ -586,6 +629,8 @@ watch(() => [props.vis?.palette, props.vis?.userColors], recolour)
 watch(colourBy, () => recolour())
 watch(() => colourPops.value.join(','), () => { if (usePopIdx.value) load() })
 watch(colourAttr, () => { if (colourBy.value === 'attribute') recolour() })
+// colour by feature needs the values from the server: refetch when it turns on/off or the feature changes
+watch([useValue, colourFeature], () => { if (useValue.value || valuesRef.value) load() })
 // usePopIdx flips (colour OR facet by population toggled on/off) → refetch to get/drop popIdx
 watch(usePopIdx, () => load())
 // facet controls only re-partition + redraw (no refetch, except the popIdx case above); attribute
@@ -600,13 +645,13 @@ watch(dark, repaint)
 // styling knobs that only affect the canvas paint (no refetch): point size + opacity
 watch([() => props.vis?.pointSize, () => props.vis?.pointOpacity], repaint)
 onMounted(() => {
-  load()
+  load(); loader.flush()   // the first map needs no debounce
   // observe the STABLE square box (present from mount) so a panel resize always repaints + repositions
   // the HTML labels/titles (which read boxW/boxH, set on every step by onBoxResize)
   if (plotBoxEl.value) dro = observeBoxChanges(plotBoxEl.value, onBoxResize)
   repaint()
 })
-onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel() })
+onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel(); loader.cancel() })
 
 // ── export (surfaced by the host InteractivePanel via defineExpose) ──
 // PNG composites the 2D dot canvas + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
@@ -646,7 +691,7 @@ function exportSvg(): string {
   const pts = points.value, cats = categories.value, pal = palette.value
   if (!pts || !cats || !pal.length) return ''
   const S = Math.round(boxH.value || boxW.value || 600)   // square plot area (vector = resolution-free)
-  const LW = (showLegend.value && legend.value.length) ? 150 : 0
+  const LW = (showLegend.value && (legend.value.length || valueScale.value)) ? 150 : 0
   const alpha = dotAlpha.value, r = dotR.value, fsz = labelFont.value
   const ghostLight = CLUSTER_GHOST.light
   // ggplot geom_label look: white box + thin dark border + dark text (matches labelStyle, both themes)
@@ -688,7 +733,11 @@ function exportSvg(): string {
   if (xTitle.value) body += svgText(S / 2, S - 4, xTitle.value, { fill: PAPER_INK, size: fsz, anchor: 'middle' })
   if (yTitle.value) body += svgText(fsz, S / 2, yTitle.value, { fill: PAPER_INK, size: fsz, anchor: 'middle', rotate: -90 })
   // legend column (swatch + label + count per row) as vector, right of the plot
-  if (LW) {
+  if (LW && valueScale.value) {
+    const v = valueScale.value
+    body += colourBarSvg({ x: S + 8, y: 16, w: 132, h: 8 },
+                         { extent: v.extent, ticks: v.ticks, label: v.label, ink: PAPER_INK, orient: 'h' })
+  } else if (LW) {
     let ly0 = 14
     for (const l of legend.value) {
       body += svgRect(S + 8, ly0 - 8, 9, 9, { fill: l.colour, rx: 1, stroke: PAPER_INK, width: 0.75 })
@@ -747,7 +796,8 @@ const umapFrame: Frame = {
 }
 // what MCP set_plot_view may change — the options popover's own controls, with the values it offers
 const plotSettings: PlotSettings = {
-  colourBy: setting(colourBy, () => ['cluster', 'population', 'attribute']),
+  colourBy: setting(colourBy, () => ['cluster', 'population', 'attribute', ...(props.features?.length ? ['feature'] : [])]),
+  colourFeature: setting(colourFeature, () => props.features ?? []),
   colourPops: setting(colourPops, async () => {
     if (!popGroups.value.length) await loadPopGroups()
     return popGroups.value.flatMap(g => g.populations.map(p => tkey(p.popType, g.valueName, p.path)))
@@ -907,7 +957,11 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
               <option value="cluster">cluster</option>
               <option value="population">population</option>
               <option value="attribute">attribute</option>
+              <option v-if="features?.length" value="feature">feature</option>
             </select>
+          </label>
+          <label v-if="colourBy === 'feature'" class="uv-opt cc-muted" v-tooltip.top="'A feature the clustering run used'"><span>Feature</span>
+            <SearchSelect v-model="colourFeature" :groups="featureGroups" aria-label="Feature" placeholder="feature…" />
           </label>
           <label v-if="colourBy === 'attribute'" class="uv-opt cc-muted" v-tooltip.top="'Image attribute mapped to colour'"><span>Colour attribute</span>
             <select v-model="colourAttr">
@@ -948,7 +1002,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
         </div>
       </TeleportPopover>
       <span class="uv-spacer" />
-      <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} {{ colourBy === 'cluster' ? 'clusters' : 'groups' }}</span>
+      <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }}<template v-if="!valueScale"> · {{ legend.length }} {{ colourBy === 'cluster' ? 'clusters' : 'groups' }}</template></span>
     </div>
     <div ref="plotEl" class="uv-body">
       <!-- SquarePlot keeps the embedding a 1:1 square (centred in the panel), so it never warps and the
@@ -993,6 +1047,9 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
       </SquarePlot>
       <div v-if="showLegend && tooManyClusters" class="uv-legend cc-fs-2xs" :style="{ color: legendInk, background: legendBg }">
         {{ tooManyClustersText(tooManyClusters) }}
+      </div>
+      <div v-if="showLegend && valueScale" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
+        <ColourBarLegend :extent="valueScale.extent" :ticks="valueScale.ticks" :label="valueScale.label" />
       </div>
       <div v-if="showLegend && legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
         <div v-for="l in legend" :key="l.label" class="leg-row">

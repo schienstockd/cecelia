@@ -5,13 +5,13 @@
 [![License: GPL v3+](https://img.shields.io/badge/License-GPLv3+-blue.svg)](LICENSE)
 
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
-tracking, gating, behavioural analysis, and clustering of multiplexed and live-cell microscopy
-data. It is a ground-up reimplementation of the original R/Shiny
+gating, clustering, spatial and behavioural analysis — for fixed tissue (few-marker or multiplex) and
+live imaging (intravital or in vitro). It is a ground-up reimplementation of the original R/Shiny
 [cecelia](https://github.com/schienstockd/cecelia-legacy) in a Julia + Python + Vue stack.
 
 > **This software was written almost entirely by AI.** Cecelia Feijoa's code was written by
-> [Claude Code](https://claude.com/claude-code) under the maintainer's direction, and validated on real
-> intravital microscopy data. It has not yet been independently tested by other users. How the
+> [Claude Code](https://claude.com/claude-code) under the maintainer's direction. It has not yet been
+> independently tested by other users. How the
 > workflow works, per-subsystem validation, and sources:
 > [How this software was built](#how-this-software-was-built).
 
@@ -26,20 +26,29 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## What Cecelia does
 
-<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia overview in three panels. 1, Design first: groups A and B, one ring per replicate (the n) with its images inside, the question (does it differ between A and B?) and the expected answer, or the set declared exploratory. 2, Every step is recorded: images, segment, populations, analyse and claim check around one record of settings, version, who, when and design, which chains replay on new images. Each step carries a check that warns but never blocks, and the claim check is checked against the design. Kiwi and Claude Code are optional sidekicks that read the same record. 3, What you can ask: gate, cluster, track, lens, regions, per replicate." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia overview: a strip of recipes over three panels. Recipes for your data: few-marker tissue (confocal), multiplex tissue (IBEX, PhenoCycler), intravital timelapse (multiphoton), in vitro migration (cells in a dish); any Bio-Formats file is converted to OME-Zarr. Few-marker tissue is picked; the loop follows that recipe, which suggests the next step. 1, Design first: groups A and B, one ring per replicate (the n) with its images inside, the question (does it differ between A and B?) and the expected answer, or the set declared exploratory. 2, Every step is recorded: images, segment, populations, analyse and claim check around one record of settings, version, who, when and design. Each step carries a check that warns but never blocks, and the claim check is checked against the design. Kiwi and Claude Code are optional sidekicks that read the same record. 3, What the record gives you: trace any number back to its settings, replay the same steps on new images, flag results made from an older step (segment again, and the old clusters warn), and write it up as a Methods draft with the parameter table." width="100%"></p>
 
 Cecelia is a structured platform for image analysis: analysis you can hand off and check afterwards.
+It reads any Bio-Formats file (converted to OME-Zarr at import), and has **recipes** for few-marker
+tissue, multiplex tissue, intravital time-lapse and in vitro migration. A recipe suggests the next
+step for that kind of data; it never runs anything.
+
 Every set starts with a **design**: the question, the groups, and what counts as a replicate. Images
 are added into that design, or the set is declared exploratory. Plots, statistics and checks read the
 design and warn when the data drift from it.
+
 Every step runs through one scheduler that checks its params and logs the run, so the **record** says
 what was done, by whom, with which version, what it read and what it replaced. Raw files are
 fingerprinted at import, gates keep their history, and exported figures carry their provenance.
-**Checks** read that record: quality checks at each step, gating and statistics included, and claim
-checks that ask whether the images you compare were treated the same and the statistical unit is
-right. Checks warn; they never block. **Chains** re-run the steps on new images, or replay a past run
-with its exact settings. AI (Kiwi, Claude Code) is optional and reads the same record; everything works
-with it off. How the structure was audited, and the decisions still open, are in
+**Checks** read that record: quality checks at each step, and claim checks that ask whether the images
+you compare were treated the same and the statistical unit is right. Checks warn; they never block.
+
+The record is what lets you trace a number back to its settings, re-run the steps on new images with
+**chains** (or replay a past run with its exact settings), see which results a re-run made out of
+date, and write the analysis up as a **Methods** draft with its parameter table, for an exploratory set
+too. AI (Kiwi, Claude Code) is optional and reads the same record; everything works with it off.
+
+How the structure was audited, and the decisions still open, are in
 [`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md).
 How a claim from a plot is checked: [*Checking a claim*](user-docs/README.md#checking-a-claim).
 

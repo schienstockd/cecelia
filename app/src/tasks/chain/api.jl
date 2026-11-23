@@ -25,6 +25,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
                     Dict{String,Any}(string(k) => v for (k, v) in st_raw[:result]) : nothing,
                 !isnothing(get(st_raw, :params_hash, nothing)) ? string(st_raw[:params_hash]) : nothing,
                 !isnothing(get(st_raw, :reason,      nothing)) ? string(st_raw[:reason])      : nothing,
+                !isnothing(get(st_raw, :reused,      nothing)) ? string(st_raw[:reused])      : nothing,
             )
         end
     end
@@ -62,6 +63,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
         _node_dicts(get(raw, :overrides, nothing)),     # absent = unknown (`nothing`), not "none"
         _node_dicts(get(raw, :node_params, nothing)),
         string(something(get(raw, :from_run, nothing), "")),
+        get(raw, :reuse, false) === true,
     )
 end
 
@@ -122,6 +124,13 @@ the run record keeps its frozen copy as always, so resume and replay work the sa
     run_chain(proj, uids; template = ChainTemplate("Queue after", nodes, edges))
 
 Every execution records its `overrides` and each node's params (`node_params`) in run.json.
+
+## Reuse unchanged steps
+`reuse = true` marks an image-scope node `reused` instead of dispatching it when the image's run log
+holds an identical run whose output is still current (chain/reuse.jl, docs/SCHEDULER.md → *Reuse
+unchanged steps*). Off by default. A resume keeps what the run recorded unless `reuse` is given.
+
+    run_chain(proj, uids; chain="my-chain", reuse=true)
 """
 function run_chain(proj::CciaProject, image_uids::Vector{String};
                    chain::String                  = "",
@@ -134,7 +143,8 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                    on_log::Function               = line -> println(line),
                    on_cancel_check::Function      = _ -> false,
                    by::String                     = active_profile_name(),
-                   caller::AbstractDict           = Dict{String,Any}())::ChainRun
+                   caller::AbstractDict           = Dict{String,Any}(),
+                   reuse::Union{Bool,Nothing}     = nothing)::ChainRun
 
     isnothing(run_id) || isnothing(from_run) ||
         error("run_chain: `run_id` resumes a run and `from_run` starts a new one from it — pass one")
@@ -157,6 +167,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                    if all(s[n.id].status == NODE_DONE for s in values(run.image_states)))
         _validate_run_params(run.template_snapshot, overrides; skip = kept)
         run.resumed_by = by
+        isnothing(reuse) || (run.reuse = reuse)
         run.caller     = Dict{String,Any}(String(k) => v for (k, v) in caller)   # the resumer's, not persisted
         run.overrides  = _copy_overrides(overrides)
         # A step this resume will not re-run (:done on every image) keeps the params it RAN with: its
@@ -221,7 +232,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
             run_dir, ReentrantLock(),
             barriers, barriers_done, Dict{String,Any}(String(k) => v for (k, v) in caller),
             _copy_overrides(overrides), _record_node_params(template, overrides),
-            isnothing(from_run) ? "" : from_run,
+            isnothing(from_run) ? "" : from_run, something(reuse, false),
         )
         isnothing(src) || _log_replay_drift(src, run, on_log)
         _save_run!(run)

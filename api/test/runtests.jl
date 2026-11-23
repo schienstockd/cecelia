@@ -266,12 +266,14 @@ include(joinpath(@__DIR__, "suite", "storage_and_versions.jl"))
 # colour-by measure (COLOUR BY a third measure), boolean populations combine/update/block
 # orphan delete (Decision 16), gating undo/redo steps through the population tree.
 include(joinpath(@__DIR__, "suite", "gating_mutations.jl"))
+include(joinpath(@__DIR__, "suite", "gating_split.jl"))
 # ── Viewer overlays + label stores + meta + props testsets ────
 # Five testsets: viewer overlays (one request for the whole movie, in µm — P3 payload
 # contract), viewer label stores (P4 — masks through the same reader), viewer meta names
 # the versions and which one it resolved, viewer overlays on an image with no cell table,
 # viewer props round-trip (save then load).
 include(joinpath(@__DIR__, "suite", "viewer_overlays_and_meta.jl"))
+include(joinpath(@__DIR__, "suite", "viewer_overlays_zplane.jl"))   # RESULT-REVIEW result-4f7d8a2c
 
 # ── Viewer pick / overlay-legend / record-test / thumbnail guards + tracks pick-selection ─
 # Seven testsets: viewer pick-cell / overlay-legend / pick-clear / pick-set 404 guards +

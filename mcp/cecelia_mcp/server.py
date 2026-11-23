@@ -835,8 +835,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
       - `path`/`parent` give the tree (a pop's cells are its gate/filter/combination ∩ its parent).
       - `popType`: flow/track = gate-drawn; clust/trackclust/region = cluster pops; branch = filters on
         skeleton branches (e.g. `branch-type`).
-      - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
-        …geometry}` — the drawn gate on two channels. null for filter pops.
+      - `gate` (flow/track): `{kind: rectangle|polygon|slice|quadrant, x_channel, y_channel, x_transform,
+        y_transform, …geometry}` — the drawn gate on two channels. null for filter pops. slice / quadrant
+        are split gates: one divider (`vertices`, or `centre` + 4 `arms`), one pop per region (`side` ±1 /
+        `quadrant` 1–4), linked by `group`.
       - `filter` (clust/trackclust/region/branch, and flow filter pops): `{measure, fun, values, default_all}`
         plus `conditions: [{measure, fun, values}, …]` when several rules are AND-ed (then `measure`/`fun`/
         `values` repeat only the first) — e.g. a cluster pop is `{measure: "clusters.movement", fun: "in",
@@ -2359,7 +2361,7 @@ def get_plot_image(project_uid: str, plot_id: str, max_side: int = 1600) -> list
 @_gui_tool
 def set_plot_view(project_uid: str, plot_id: str, settings: dict) -> dict:
     """CHANGE how one of the user's open plots is drawn — what its own controls change: a UMAP's
-    colouring (`colourBy`, `colourPops`, `colourAttr`), facets, layout; a summary chart's `chartType`,
+    colouring (`colourBy`, `colourPops`, `colourAttr`, `colourFeature`), facets, layout; a summary chart's `chartType`,
     `measure`, `statUnit` … Each name and value must be one `get_plot_image`'s `settings` lists for
     this plot (take one first); a multi setting takes the full list, e.g.
     `{"colourBy": "population", "colourPops": ["trackclust::B/movement/fast", …]}`.

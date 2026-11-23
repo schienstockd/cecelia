@@ -79,10 +79,22 @@ end
 
 function set_gate!(m::PopulationTree, path::AbstractString, gate::Gate)
     has_pop(m, path) || error("set_gate!: not found: $path")
-    m.pops[String(path)].gate = gate
+    p = m.pops[String(path)]
+    p.gate = gate
+    # a split gate's regions move together: every sibling of its group takes the new divider and keeps
+    # its own region, so the regions still tile the plane (split_gates.jl)
+    grp = gate_group(gate)
+    if !isempty(grp)
+        for q in values(m.pops)
+            (q === p || q.parent != p.parent || q.gate === nothing || gate_group(q.gate) != grp) && continue
+            moved = with_divider(q.gate, gate)
+            moved === nothing || (q.gate = moved)
+        end
+    end
     _invalidate!(m)
     m
 end
+
 
 """
     set_boolean!(m, path; op, pops, nots)

@@ -162,7 +162,7 @@ set: what the data can and cannot support yet.
 |---|---|---|
 | Unassigned images; empty or unbalanced grid cells; planned vs actual n | import, attribute edit | no — new, from the grid |
 | Group in only one parent (confounded) | import, attribute edit | built in the grid (`confounded`): an outer parent or other attribute whose every value falls in one group; the innermost parent (the replicate) is nested by design and left out |
-| Paired / blocked design: every identity at a parent level holds every group (each mouse both conditions, each day every group) | design confirm | built in the grid (`paired`), info line: linked replicates need a paired test or a two-way ANOVA with the replicate as a factor; testing them as independent is too conservative (Lord et al. 2020, doi:10.1083/jcb.202001064; Zweifach 2024, doi:10.1083/jcb.202401074). The claim check's S2 already decides paired vs unpaired for populations sharing units (`app/src/claim_checks.jl`, `ev["design"]`), with a looser rule: any overlap is paired, n = the shared units. Step 3 makes the two one rule |
+| Paired / blocked design: every identity at a parent level holds every group (each mouse both conditions, each day every group) | design confirm | built in the grid (`paired`), info line: linked replicates need a paired test or a two-way ANOVA with the replicate as a factor; testing them as independent is too conservative (Lord et al. 2020, doi:10.1083/jcb.202001064; Zweifach 2024, doi:10.1083/jcb.202401074). S2 uses the same rule (`replicate_pairing`): paired only when every replicate holds every group; a partial overlap is "partly paired", tested on the replicates that hold every group, with an info line (`claim.partly_paired`) |
 | Too few units per group for a test; too few parents | import, then stats | partly — S2 `few_units` at claim time only |
 | Stats on cells or tracks as the n (below the unit) | plot / stats | partly — `statUnit` exists, defaults to `individual` |
 | Acquisition differs between groups | import | partly — acquisition check, but against inferred label designs, not the declared group |
@@ -235,15 +235,19 @@ Design check and the Acquisition check cover them. In order:
    panels with mice counted per panel; the replicate picker starts from the design; S1 names an
    attribute the groups can't be told apart from (the grid's `_design_confounded`); `S2.design` warns
    on an exploratory set or an unconfirmed design and notes a group or replicate other than the
-   design's. Not done: S2's paired rule and the grid's `paired` stay two rules (any shared unit vs
-   every parent holding every group).
+   design's. S2 and the grid's `paired` are one rule (`replicate_pairing`): a partial overlap is
+   "partly paired", tested on the replicates that hold every group, and said so.
 3. **Plot n + replicate dots**: the n drawn ("5 vs 3 mice") in the plot's footer — built
    (`unitCountLabel`), and the SuperPlot layer — built: with the replicate as the unit, the box and
    strip charts draw each replicate's mean over its cells, both in the replicate's colour
    (`plots/superplot.ts`, `_superplot!`).
 4. **Freeze and stale (T6)** (build step 5). Exported figures: built — the record names each set's
    design (version + hash, `board_designs`) and the record dialog flags one that changed or is gone
-   since the export. Still open: stats runs and the caption with the n of units and parents.
+   since the export. The caption: built — every export of a summary plot carries one line under the
+   chart, "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse
+   means" (`plotCaption`, `svgWithCaption`); the parents are in the record's design line. Stats runs:
+   nothing to build — the test is computed per render and never stored, so the figure record's design
+   version is the stats' too.
 
 Parked: the design-first planned grid (frame 2b; only for a design set up before imaging), a separate
 "place these images" step (frame 3b; the Design check counts them and opens the dialog), per-row marks
@@ -266,8 +270,7 @@ in the image table (T7), a notebook helper (T8).
    n). Overrides recorded.
 3. **Claim check reads the design (T3, T4's claim defaults).** Unit and group come from the design. New checks: group confounded
    with parent, too few parents, unconfirmed design, exploratory set used for a claim, override noted.
-   One rule each, shared with the grid: paired vs unpaired (S2's `ev["design"]` and the grid's
-   `paired` disagree on a partial overlap today), and confounded (S1's `claim.confounded` over record
+   One rule each, shared with the grid: paired vs unpaired (built: `replicate_pairing`), and confounded (S1's `claim.confounded` over record
    variables and the grid's `confounded` over design attributes — one finding code, two subjects).
 4. **Reservations as work progresses (T5).** No readiness view: the Checks row is it. The acquisition check compares against
    the declared group. Processing consistency (S1) runs after each task, not only at claim time.

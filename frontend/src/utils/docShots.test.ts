@@ -7,6 +7,7 @@ import { SHOT_SETS } from '../../../user-docs/shots/index.ts'
 import { checkShotSets, fillFacts, guideIds, imageFile, setImages, shotAnchors, shotPicked, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
 import { IN_APP_SHOTS } from '../../../user-docs/shots/in-app.ts'
 import { TIPS } from '../lib/tips'
+import { sketches } from 'feijoa'
 import { FEATURE_CARDS, featureFor } from '../lib/whatsNew'
 import { docShot } from '../lib/docShots'
 import { figureGeometry, labelBox, type ShotMeta } from '../../../user-docs/shots/figure.ts'
@@ -188,6 +189,15 @@ describe('doc shots: colour schemes', () => {
     const ids = new Set(IN_APP_SHOTS.shots.map(s => s.id))
     const named = [...TIPS.map(t => t.shot?.id), ...FEATURE_CARDS.map(f => f.shot.id)].filter((x): x is string => !!x)
     expect(named.filter(id => !ids.has(id))).toEqual([])
+  })
+})
+
+// A tip with no shot shows its feijoa sketch; an id feijoa's catalogue lacks (a sketch not yet pushed,
+// or package-lock still pinning an older feijoa) silently shows "Animation coming soon" instead.
+describe('tip sketches', () => {
+  it("every tip's sketch is in feijoa's catalogue", () => {
+    const ids = TIPS.map(t => t.sketchAnimation?.id).filter((x): x is string => !!x)
+    expect(ids.filter(id => !(id in sketches))).toEqual([])
   })
 })
 

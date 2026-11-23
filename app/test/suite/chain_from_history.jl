@@ -248,6 +248,14 @@ end
     @test all(r -> occursin("segmentationMissRate: ", r["conflicts"]) && occursin("0.1 (1)", r["conflicts"]) &&
                    occursin("0.2 (1)", r["conflicts"]), trk)
     @test all(r -> !occursin("segmentationMissRate", r["changedFromDefault"]), trk)
+
+    # `overwrite` (replace a label set of the same name) is not a method: never a spread or a change
+    for e in log
+        e["fun"] == "tracking.bayesian_track_measures" && (e["params"]["overwrite"] = true)
+    end
+    write(Cecelia.run_log_path(v._dir), JSON3.write(log))
+    trk = _hprow(history_params_table(proj, [uids["u"], uids["v"]]), "tracking.bayesian_track_measures")
+    @test all(r -> !occursin("overwrite", r["conflicts"]) && !occursin("overwrite", r["changedFromDefault"]), trk)
     rm(proj.root; recursive = true)
 
     proj, uids = _history_project("a" => "4kS67f_LUkCpP", "b" => "4kS67f_k3Tx90")

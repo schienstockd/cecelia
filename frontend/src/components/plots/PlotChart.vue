@@ -12,7 +12,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
-import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../../plots/export'
+import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays, svgWithCaption } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
 import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
@@ -318,7 +318,8 @@ const hostBg = computed(() => plotTheme(plotDark.value).ground)
 // overlays (not in the SVG), so both paths draw them in from the on-screen layout
 // (`collectOverlayItems` → `svgWithOverlays`) — without that a legend-dependent chart exported with no way
 // to tell its series apart, and a heatmap with no colour bar.
-async function toImageURL(type: 'png' | 'svg'): Promise<string | null> {
+// `caption`: one line drawn under the chart in the export only (`svgWithCaption`) — the n and the test.
+async function toImageURL(type: 'png' | 'svg', caption = ''): Promise<string | null> {
   // renders are coalesced to a frame, so `node` can be one frame behind the current props — an export
   // must never serialise the PREVIOUS chart (nor the previous chart's legend).
   await frame.flush()
@@ -337,7 +338,7 @@ async function toImageURL(type: 'png' | 'svg'): Promise<string | null> {
   // stated, so the ratchet holds and an export never inherits a ground nobody chose.
   applyPlotTheme(off, false)
   const svg = svgOf(off as unknown as Element)
-  return svgToImageURL(svg && svgWithOverlays(svg, overlays()), type)
+  return svgToImageURL(svg && svgWithCaption(svgWithOverlays(svg, overlays()), caption, plotTheme(false).ink), type)
 }
 // The rendered plot's AXIS RECT in client space — Observable Plot attaches `scale(name)` to the
 // returned node; `range` on `scale('x')/'y'` is the axis edge in SVG px. Returned as a `FrameRect`

@@ -33,6 +33,7 @@ import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, M
 import { isRunMatrixMode } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { visControlsFor } from '../../plots/plotControls'
+import { superplotOn } from '../../plots/superplot'
 import { statsNotice } from '../../plots/statsInfo'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
@@ -57,7 +58,7 @@ import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSel
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
-import { DEFAULT_STAT_UNIT, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
+import { DEFAULT_STAT_UNIT, plotCaption, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
 import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
@@ -90,7 +91,7 @@ const props = defineProps<{
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
                            readout: [PlotReadout] }>()
 const plotRef = useTemplateRef<{
-  toImageURL(t: 'png' | 'svg'): Promise<string | null>
+  toImageURL(t: 'png' | 'svg', caption?: string): Promise<string | null>
   axisRect(): FrameRect | null
 }>('plotRef')
 const settings = useSettingsStore()
@@ -226,6 +227,7 @@ const chartType = computed<ChartType>({ get: () => props.ui.chartType ?? props.s
 // only for free-floating panels (the module canvas) — the Analysis board's docked grid has fixed slots
 const canExplode = computed(() => !props.docked && chartType.value !== 'heatmap' && chartType.value !== 'count' && measureOpts.value.length > 1)
 const showExplode = ref(false)
+const explodeBtn = useTemplateRef<HTMLElement>('explodeBtn')
 const explodeSel = ref<string[]>([])
 // default-select every OTHER measure (the current one is already shown on this panel, so exploding it
 // would just duplicate the source — leave it unticked; the user can re-tick it if they want a copy)
@@ -259,6 +261,9 @@ const statUnit = computed<StatUnit>({
 const unitNoun = computed(() => statUnit.value === 'replicate' && replicate.value ? replicate.value : { one: 'image', many: 'images' })
 const nLabel = computed(() => !canStatUnit.value || statUnit.value === 'individual' ? ''
   : unitCountLabel((result.value?.series ?? []).map(s => s.n ?? s.points?.length ?? 0), unitNoun.value))
+// the line every export of this plot carries under it: n, what a point is, what the test ran on
+const exportCaption = computed(() => plotCaption({ nLabel: nLabel.value, statUnit: statUnit.value,
+  imageAgg: imageAgg.value, noun: unitNoun.value, test: result.value?.comparisons?.methodNote, cellsBeneath: cellsDrawn.value }))
 // what the request sends for the unit: the replicate needs its attributes
 const statUnitBody = () => !canStatUnit.value || statUnit.value === 'individual' ? {}
   : statUnit.value === 'replicate' ? { statUnit: 'replicate', replicateAttrs: replicateAttrs.value, imageAgg: imageAgg.value }
@@ -743,7 +748,11 @@ const overrideTip = computed(() =>
 // Stats options echo the name under the Test select, with the basis as its tooltip. One object, so a
 // host can't thread the name and forget the reason.
 // …and which shared settings this plot reacts to, so the rail offers only those (plots/plotControls.ts)
-const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value }))
+const hasCells = computed(() => superplotOn(result.value?.series ?? [], true))
+// the SuperPlot cell layer is on screen: this chart draws it (box/strip) and the toggle is on
+const cellsDrawn = computed(() => visControls.value.includes('superplot') && superplotOn(result.value?.series ?? [], vis.value.superplot))
+const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value,
+  ...(hasCells.value ? { superplot: vis.value.superplot === false ? 'off' as const : 'on' as const } : {}) }))
 const readout = computed<PlotReadout>(() =>
   readoutOf(result.value?.comparisons, autoOverrides.value, visControls.value,
     metricPicksPops.value ? (result.value?.pops ?? []) : null))
@@ -883,7 +892,7 @@ function exportAs(kind: string) {
     }).finally(() => { exporting.value = false })
   } else if (kind === 'png' || kind === 'svg') {
     exporting.value = true
-    plotRef.value?.toImageURL(kind).then(url => {
+    plotRef.value?.toImageURL(kind, exportCaption.value).then(url => {
       if (!url) return
       const a = document.createElement('a'); a.href = url; a.download = `${stem}.${kind}`; a.click()
     }).finally(() => { exporting.value = false })
@@ -977,11 +986,11 @@ function csvName(): string {
   return plotAxisSuffix(measure.value, applied ? groupBy.value : '', hasMeasure.value)
 }
 // a plot-only, LIGHT-theme PNG for the PDF export (no panel chrome; dark theme is on-screen only)
-async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png')) ?? null }
+async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', exportCaption.value)) ?? null }
 // full vector <svg> string for the board→SVG export (docs/ANALYSIS.md). PlotChart.toImageURL('svg')
 // returns an SVG DATA URL; decode its payload back to the raw markup so the board can nest it.
 async function exportSvg(): Promise<string | null> {
-  const url = await plotRef.value?.toImageURL('svg')
+  const url = await plotRef.value?.toImageURL('svg', exportCaption.value)
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
@@ -1506,12 +1515,15 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
         <i class="pi pi-copy" />
       </button>
       <!-- Show series: pick measures → one copy of this plot per measure, to see them all at once -->
-      <div v-if="canExplode" class="sp-explode-wrap">
-        <button class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="openExplode"
+      <template v-if="canExplode">
+        <button ref="explodeBtn" class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button"
+                :class="{ 'cc-btn-on': showExplode }" @click.stop="showExplode ? (showExplode = false) : openExplode()"
                 v-tooltip.top="'Show series: duplicate this plot for each selected measurement'">
           <i class="pi pi-chart-bar" />
         </button>
-        <div v-if="showExplode" class="sp-explode-pop" @click.stop>
+        <!-- teleported: the panel's overflow:hidden clipped an in-panel popup at the plot edge -->
+        <TeleportPopover v-model="showExplode" :anchor="explodeBtn" placement="bottom-end">
+        <div class="sp-explode-pop" @click.stop>
           <div class="sp-explode-hd cc-muted cc-fs-xs">Measurements to plot</div>
           <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.top="'Tick to give this measure its own plot'">
             <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ measureLabel(m) }}
@@ -1524,7 +1536,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
                     @click="applyExplode">Show {{ explodeSel.length }}</button>
           </div>
         </div>
-      </div>
+        </TeleportPopover>
+      </template>
       <!-- Notices about THIS render, in the chrome so they can't be clipped by the plot area:
            a setting the renderer had to substitute, and series the chosen measure has no values for.
            Icon-only, text on hover: a wrapped sentence here made the footer row grow. -->
@@ -1535,7 +1548,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
-      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="statUnit === 'replicate' ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
+      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="cellsDrawn ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
                   :measure="hasMeasure ? measure : ''" :group-attrs="crossImage ? (groupAttr ?? []) : []"
@@ -1616,12 +1629,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
    remaining height), never as an overlay — an absolute strip covered the rotated x-axis labels. */
 .sp-brush-strip { flex: none; align-self: flex-start; margin-top: 6px; max-width: 100%; padding: 2px 6px; }
 
-/* "show series" measure-picker popover (opens upward from the footer button) */
-.sp-explode-wrap { position: relative; display: inline-flex; }
-.sp-explode-pop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 30;
-  min-width: 13rem; max-height: 60vh; overflow-y: auto; padding: 8px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
-  box-shadow: 0 6px 18px var(--cc-shadow); font-size: var(--cc-fs-sm); }
+/* "show series" measure picker, anchored on the footer button (flips above when there's no room below) */
+/* inner layout only — TeleportPopover provides surface/border/shadow/position/padding/scroll */
+.sp-explode-pop { min-width: 13rem; font-size: var(--cc-fs-sm); }
 .sp-explode-hd { margin-bottom: 6px; }
 .sp-explode-warn { margin: 4px 0 2px; }
 .sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }
@@ -1633,8 +1643,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
    top/left are set inline on open (see the popStyle watcher). fixed here (not just inline) keeps it out
    of flow on the first render frame too, so it never inflates the anchor wrap. Only the box look + this
    positioning mode live here. New plot popovers should reuse this pattern (docs/PLOTS.md §0). */
-/* inner layout only — TeleportPopover provides surface/border/shadow/position */
-.sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position/padding */
+.sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; }
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sp-pop-row select { max-width: 7rem; }
 .sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }

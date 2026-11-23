@@ -195,7 +195,7 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
 
 <style scoped>
 .claim-btn { gap: 3px; }
-.claim-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px; width: 26rem; max-height: 70vh; overflow-y: auto; }
+.claim-pop { display: flex; flex-direction: column; gap: 6px; width: 26rem; max-height: 70vh; overflow-y: auto; }
 .claim-title { flex: 1; }
 .claim-text { width: 100%; }
 .claim-replicate { flex-wrap: wrap; }

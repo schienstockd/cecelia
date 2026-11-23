@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyStatUnitState, resolveStatUnitState, unitCountLabel, type StatUnitState } from './statUnitState'
+import { applyStatUnitState, resolveStatUnitState, unitCountLabel, plotCaption, type StatUnitState } from './statUnitState'
 
 describe('statUnitState', () => {
   it('fills BOTH fields when the level is settable, so nothing has to infer the default', () => {
@@ -59,5 +59,26 @@ describe('unitCountLabel — the n a plot draws', () => {
   it('nothing to count: empty', () => {
     expect(unitCountLabel([], mice)).toBe('')
     expect(unitCountLabel([0, NaN], mice)).toBe('')
+  })
+})
+
+describe('plotCaption — the line under an exported summary plot', () => {
+  const mice = { one: 'mouse', many: 'mice' }
+  it('states the n, what a point is and what the test ran on', () => {
+    expect(plotCaption({ nLabel: 'n = 5 vs 3 mice', statUnit: 'replicate', imageAgg: 'mean', noun: mice,
+                         test: 'Mann-Whitney U (two-sided)', cellsBeneath: true }))
+      .toBe('n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse means')
+  })
+  it('SuperPlot off (or a chart without the cell layer): the caption does not claim cells', () => {
+    expect(plotCaption({ nLabel: 'n = 5 vs 3 mice', statUnit: 'replicate', imageAgg: 'mean', noun: mice, cellsBeneath: false }))
+      .toBe('n = 5 vs 3 mice · mouse means')
+  })
+  it('a point per image, medians, no test drawn', () => {
+    expect(plotCaption({ nLabel: 'n = 4 images', statUnit: 'image', imageAgg: 'median',
+                         noun: { one: 'image', many: 'images' } }))
+      .toBe('n = 4 images · image medians')
+  })
+  it('nothing when each point is a cell or track', () => {
+    expect(plotCaption({ nLabel: '', statUnit: 'individual', imageAgg: 'mean', noun: mice, test: 'Welch t' })).toBe('')
   })
 })

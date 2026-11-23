@@ -130,7 +130,7 @@ export const RECIPES: RecipeDef[] = [
     // Fig 3a–b, missions "Human spleen IBEX naive" and "Human lymph node naive CODEX".
     id: 'multiplex-tissue',
     title: 'Multiplex tissue',
-    whenThisIsYou: 'Many markers on one section, e.g. IBEX or CODEX of a lymph node or spleen.',
+    whenThisIsYou: 'Many markers on one section, e.g. IBEX or PhenoCycler of a lymph node or spleen.',
     icon: 'pi-objects-column',
     steps: [
       { guide: 'import-images', why: 'One image per section; a cohort of sections becomes a set.' },

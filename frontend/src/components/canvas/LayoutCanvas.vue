@@ -16,6 +16,7 @@
   under this tab's `canvasKey`; the parent (TabbedCanvas) :keys us by it so a tab switch rebinds.
 -->
 <script setup lang="ts">
+import { scopeCopy, scopeSetter } from '../../utils/scopeSwitch'
 import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, watch, ref, provide, nextTick, useTemplateRef, onBeforeUnmount } from 'vue'
@@ -389,7 +390,7 @@ const clustG = provideGatingStore(clustPopType.value)
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, clusterRunAt: clustRunAt, validUids: clustValidUids,
         featureOptions: clustFeatureOptions, labelMap: clustNameMap, channelNames: clustChannelNames,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
-        clusterAxes: clustAxes } =
+        clusterAxes: clustAxes, allFeatures: clustAllFeatures } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
                       popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot, g: clustG })
 
@@ -432,6 +433,18 @@ const panelFlowModel = (c: SlotContent) =>
   scope.value === 'global' ? flowModel.value : ((st(c).model as string | undefined) ?? flowModel.value)
 const activeFlowModel = computed(() => scope.value === 'global' ? flowModel.value
   : (activeContent.value ? ((st(activeContent.value).model as string | undefined) ?? flowModel.value) : flowModel.value))
+// global → local keeps what's drawn: each slot's own copy starts from the global value it showed —
+// only the fields its rail reads (a self-contained view may own a same-named key for something else)
+const setScope = scopeSetter(scope, () => {
+  for (const c of entry.value.contents) {
+    if (!c) continue
+    const s = st(c), rail = railOf(c)
+    s.vis = scopeCopy(gVis.value)
+    if (rail === DEFAULT_RAIL || rail === 'pops') s.sel = scopeCopy(gSel.value)
+    if (rail === 'clusterPops') s.hl = scopeCopy(clustHl.value)
+    if (rail === 'flowModels') s.model = flowModel.value
+  }
+})
 function setFlowModel(v: string) {
   if (scope.value === 'global') flowModel.value = v
   else if (activeContent.value) st(activeContent.value).model = v
@@ -446,6 +459,7 @@ function ctxFor(c: SlotContent, i: number) {
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
     axes: clustAxes.value[clustSuffix.value] ?? null, nameMap: clustNameMap.value,
+    features: clustAllFeatures.value,   // what the run clustered on — the map can be coloured by one
   }
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
   if (railOf(c) === 'flowModels') return { ...base, model: panelFlowModel(c) }
@@ -914,13 +928,13 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         <div class="lc-rail" data-guide="board.rail">
           <ModelVault v-if="activeRail === 'flowModels'" :docked="true"
                       :selected="activeFlowModel" :scope="scope"
-                      @update:selected="setFlowModel" @update:scope="scope = $event" />
+                      @update:selected="setFlowModel" @update:scope="setScope" />
           <PopulationManager v-else-if="activeIsCluster" :docked="true" :readonly="true"
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
                              :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :readout="activeReadout" :reloadable="true"
-                             @update:scope="scope = $event" @update:vis="setVis"
+                             @update:scope="setScope" @update:vis="setVis"
                              @toggle-highlight="toggleClustHl" @reload="reload" />
           <SeriesPicker v-else :tracks="isTrackFamily(listedPopType)" :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
                         :single="activeSinglePop"
@@ -929,7 +943,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                         :manual-apply="manualApply" :has-staged="hasStaged"
                         :staged-change-count="stagedChangeCount" :reloadable="true"
                         @toggle="toggleTarget" @reorder="reorderTargets"
-                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="scope = $event" @update:vis="setVis"
+                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="setScope" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />

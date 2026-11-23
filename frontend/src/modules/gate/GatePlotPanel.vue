@@ -16,7 +16,8 @@
   the ramp's range comes from the whole dataset, so it doesn't re-map as you walk the tree.
 -->
 <script setup lang="ts">
-import { axisQ } from '../../plots/montage'
+import { axisQ, outlineToGate, type SrvGate } from '../../plots/montage'
+import { isSplitGate, sliceRegions, quadrantRegions } from '../../plots/splitGeometry'
 import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
@@ -87,12 +88,14 @@ const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'poi
 // displayed population is owned by GatingPlots (per-panel) so the manager can highlight it
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 // draw tool is transient interaction state (not persisted): reopening a plot shouldn't leave a tool armed
-const mode = ref<'off' | 'rectangle' | 'polygon'>('off')
+const mode = ref<'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant'>('off')
 // draw-tool selector: 'off' maps to the ChipSelect empty selection ('' via allowEmpty — re-clicking
 // the armed tool disarms it back to 'off', preserving the old per-button toggle behaviour).
 const DRAW_MODES: ChipOption[] = [
   { value: 'rectangle', label: '', icon: 'pi pi-stop',      tip: 'Rectangle gate' },
   { value: 'polygon',   label: '', icon: 'pi pi-share-alt', tip: 'Polygon gate (click vertices, double-click to close)' },
+  { value: 'slice',     label: '', icon: 'pi pi-chart-line', tip: 'Slice: draw a dividing line → + and − (double-click to end)' },
+  { value: 'quadrant',  label: '', icon: 'pi pi-th-large',   tip: 'Quadrant: click the centre → four populations' },
 ]
 // pop-colour overlay is driven by the populations checked for THIS panel in the manager
 const showPops = computed(() => (props.highlight?.length ?? 0) > 0)
@@ -192,14 +195,10 @@ const cofTip = (axis: 'x' | 'y') => props.ui[`${axis}cof`] ? 'asinh cofactor —
 // the server (plotmeta) — the client has no transform math, so it can't re-project a gate drawn under a
 // different transform onto these axes. Colour/path arrive with them; we attach the current channels +
 // effective transforms so a drag-edit round-trips (a moved gate is re-stored in the displayed transform).
-interface SrvGate { path: string; colour: string; kind: 'rectangle' | 'polygon'
-  x_min?: number; x_max?: number; y_min?: number; y_max?: number; vertices?: [number, number][] }
 const serverGates = ref<SrvGate[]>([])
 const currentGates = computed(() => serverGates.value.map(s => ({
   path: s.path, colour: s.colour,
-  gate: { kind: s.kind, x_channel: xChan.value, y_channel: yChan.value,
-          x_transform: effXs.value, y_transform: effYs.value,
-          x_min: s.x_min, x_max: s.x_max, y_min: s.y_min, y_max: s.y_max, vertices: s.vertices } as GateSpec })))
+  gate: outlineToGate(s, xChan.value, yChan.value, effXs.value, effYs.value) })))
 
 async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
@@ -343,19 +342,40 @@ function onDraw(geom: Partial<GateSpec>) {
   // gate under the cursor while armed (see its onDown/onMove); release Shift to keep drawing.
   newName.value = ''
 }
+// A split gate (slice / quadrant) adds one population per region: a slice's from the typed name
+// (`name+`, `name-`), a quadrant's from the two axis labels. plots/splitGeometry.ts names them.
+const pendingSplit = computed(() => isSplitGate(pending.value))
+const splitRegions = computed(() => {
+  const p = pending.value
+  if (p?.kind === 'slice') return sliceRegions(newName.value.trim(), p.vertices ?? [])
+  if (p?.kind === 'quadrant') return quadrantRegions(g.colLabel(xChan.value), g.colLabel(yChan.value))
+  return []
+})
 // reserved-prefix + same-list duplicate, live as the user types; a cross-pop-type collision (e.g. a
 // region already named this) is rejected by the server (pop_name_conflict) and surfaced as a toast.
 // Not checked while the add is in flight: the add response puts the new pop into `g.flat` before
 // `pending` clears, so the name would briefly "already exist" — against itself.
 const submitting = ref(false)
-const nameError = computed(() => submitting.value ? null : popNameError(newName.value, g.flat.map(p => p.name)))
+const nameError = computed(() => {
+  if (submitting.value) return null
+  const taken = g.flat.map(p => p.name)
+  if (pending.value?.kind === 'quadrant')
+    return splitRegions.value.map(r => popNameError(r.name, taken)).find(e => e) ?? null
+  if (pending.value?.kind === 'slice' && newName.value.trim())
+    return popNameError(newName.value, taken) ?? splitRegions.value.map(r => popNameError(r.name, taken)).find(e => e) ?? null
+  return popNameError(newName.value, taken)
+})
 async function confirmGate() {
   if (!pending.value || nameError.value || submitting.value) return
   const palette = POPULATION_PALETTE
   submitting.value = true
   let ok
   try {
-    ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
+    const n = g.flat.length
+    ok = pendingSplit.value
+      ? await g.addSplit(pending.value as GateSpec, parent.value,
+          splitRegions.value.map((r, i) => ({ ...r, colour: palette[(n + i) % palette.length] })))
+      : await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[n % palette.length])
   } finally { submitting.value = false }
   pending.value = null
   // await the outline so it's painted before we return; the childGateSig watcher fires too but
@@ -561,13 +581,16 @@ watch(() => props.reloadToken, fetchPlot)
       <div v-if="pending" class="panel-name" data-guide="gate.name">
         <div class="panel-name-row">
           <span class="panel-name-kind">new {{ pending.kind }}</span>
-          <input v-model="newName" placeholder="name…" autofocus v-tooltip.top="'Name for the new gate'"
+          <span v-if="pending.kind === 'quadrant'" class="cc-muted">{{ splitRegions.length }} populations</span>
+          <input v-else v-model="newName" placeholder="name…" autofocus
+                 v-tooltip.top="pending.kind === 'slice' ? 'Gives name+ and name-' : 'Name for the new gate'"
                  :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
                  @keyup.enter="confirmGate" @keyup.esc="pending = null" />
-          <button class="cc-btn cc-btn-primary" :disabled="!!nameError || submitting" @click="confirmGate">Add</button>
+          <button class="cc-btn cc-btn-primary" :disabled="!!nameError || submitting" @click="confirmGate"
+                  v-tooltip.top="pendingSplit && splitRegions.length ? splitRegions.map(r => r.name).join(' · ') : ''">Add</button>
           <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
         </div>
-        <span v-if="nameError && newName.trim()" class="name-hint">{{ nameError }}</span>
+        <span v-if="nameError && (newName.trim() || pending.kind === 'quadrant')" class="name-hint">{{ nameError }}</span>
       </div>
     </GateScatterCell>
   </CanvasPanel>
