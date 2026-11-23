@@ -191,8 +191,25 @@ end
     sleep(0.05); touch(joinpath(td, "labelProps", "A.h5ad"))   # re-track rewrites h5ad
     k2 = key()
     @test k1 != k2
-    sleep(0.05); touch(joinpath(td, "gating", "A.json"))        # gate edit rewrites map
-    @test key() != k2
+    write(joinpath(td, "gating", "A.json"), "{\"x\":1}")          # gate edit rewrites map
+    k3 = key()
+    @test k3 != k2
+    # the KEY is the request; the inputs live in the STAMP, so an edit replaces the slot
+    @test k1.key == k2.key == k3.key
+    # a borrowed sibling map and the calibration are inputs too
+    write(joinpath(td, "gating", "Other__clust.json"), "{}")
+    @test key().stamp != k3.stamp
+    # …and the image directory is part of the key: two images never share a slot
+    img2 = CciaImage(uid="Y", dir=mktempdir()); img2.label_props["A"] = "A.h5ad"
+    @test Cecelia._pop_df_cache_key(img2, "flow", "A", ["/qc"], nothing, false, true, true, false,
+                                    false, :cell, String[], String[]).key != k1.key
+    # a branch read also reads the per-branch table — a re-run of it is an input; a flow read is not
+    bkey() = Cecelia._pop_df_cache_key(img, "branch", "A", ["/qc"], nothing,
+                                       false, true, true, false, false, :cell, String[], String[])
+    kb = bkey(); kf = key()
+    write(Cecelia.img_branch_props_path(img, "A"), "branches")
+    @test bkey().stamp != kb.stamp
+    @test key().stamp == kf.stamp
 end
 
 # ── pop_df: integration on real KDIeEm (gate eval over real H5AD) ─────────
@@ -238,9 +255,30 @@ end
         ck = Cecelia._pop_df_cache_key(img, "flow", "B", ["/pos"], ["area"],
                                        false, true, true, false, false, :cell, String[], String[])
         cached = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area"])
-        @test haskey(img._pop_df_cache, ck)
+        @test haskey(Cecelia._POP_DF_CACHE, ck.key)
         fresh = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area"], flush_cache=true)
         @test nrow(cached) == truth && nrow(fresh) == truth
+        # the cache outlives the image OBJECT: every request builds a fresh `CciaImage`, and the old
+        # per-object cache never hit across them
+        img_b = CciaImage(uid="KDIeEm", dir=td)   # MAINT-EXEMPT: the same image as `img` above, a second object
+        img_b.label_props["B"] = "B.h5ad"; img_b.label_props["_active"] = "B"
+        merge!(img_b.im_channel_names, img.im_channel_names)
+        ck_b = Cecelia._pop_df_cache_key(img_b, "flow", "B", ["/pos"], ["area"],
+                                         false, true, true, false, false, :cell, String[], String[])
+        @test ck_b == ck
+        hit = Cecelia.cache_get(Cecelia._POP_DF_CACHE, ck_b.key, ck_b.stamp)
+        @test hit !== nothing && nrow(something(hit)) == truth
+        # a hit hands back a copy: mutating it leaves the cached frame intact
+        got = pop_df(img_b, "flow", ["/pos"]; value_name="B", pop_cols=["area"])
+        got.area .= -1
+        @test nrow(pop_df(img_b, "flow", ["/pos"]; value_name="B", pop_cols=["area"])) == truth
+        @test all(pop_df(img_b, "flow", ["/pos"]; value_name="B", pop_cols=["area"]).area .>= 0)
+        # a saved gate edit recomputes in place of the old slot
+        m2 = PopulationTree(pop_type="flow", value_name="B")
+        add_pop!(m2, "pos"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
+                                               -1e12, 1e12, -1e12, 1e12))
+        save_pop_tree!(m2, img_b)
+        @test nrow(pop_df(img_b, "flow", ["/pos"]; value_name="B", pop_cols=["area"])) == nrow(full)
     end
 end
 

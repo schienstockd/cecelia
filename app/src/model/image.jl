@@ -72,11 +72,6 @@ mutable struct CciaImage
     # carry `starred: true`, read as RATING_GOOD.
     rating::ImageRating
     _dir::String                      # {proj}/1/{uid}/ — runtime only
-    # runtime-only pop_df result cache (keyed by request hash; values are DataFrames).
-    # Mirrors R cciaImage `private$filteredPopDT`. Not serialised; cleared via
-    # `pop_df(...; flush_cache=true)`. Typed loosely because DataFrames is imported after
-    # this file in the module include order.
-    _pop_df_cache::Dict{String,Any}
 end
 
 function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, dir="")
@@ -88,8 +83,7 @@ function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, 
               Dict{String,Union{Vector{String},String}}(),   # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
               true, "", RATING_NONE,              # included (default), note, rating
-              dir,
-              Dict{String,Any}())                 # _pop_df_cache (runtime only)
+              dir)
 end
 
 """Image data directory — {proj}/0/{uid}/"""
@@ -1238,6 +1232,5 @@ function _load_image(dir::String)::CciaImage
         haskey(d, "rating") ? get(_IMAGE_RATING_PARSE, string(d["rating"]), RATING_NONE) :
             (get(d, "starred", false) === true ? RATING_GOOD : RATING_NONE),
         dir,
-        Dict{String,Any}(),                 # _pop_df_cache (runtime only)
     )
 end

@@ -517,7 +517,7 @@ derived_pop_paths(pop_type::PopTypeArg)::Vector{String} =
 # edit, a calibration edit or a re-tracked segmentation changes the stamp; anything else reuses the
 # answer. Worth caching because the picker asks on EVERY load and the answer costs a full
 # gate evaluation per tracked segmentation. Module-level, NOT on the image — `init_object` builds a
-# fresh `CciaImage` per request, so an object-held cache (`img._pop_df_cache`) never survives one.
+# fresh `CciaImage` per request, so an object-held cache never survives one.
 # Locked and bounded by `BoundedCache` (utils.jl).
 const _TRACKED_PARENTS_CACHE = BoundedCache(256)   # small Set{String} values; one slot per segmentation × pop type
 

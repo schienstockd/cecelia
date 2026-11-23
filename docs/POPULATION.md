@@ -608,14 +608,16 @@ now-deleted work branch — note that it needed the stamp for idempotency, becau
   `(uID, value_name, label, track_id)` — mirroring R popDT's merge cols — so `uID` (set-level
   pooling) and `track_id` participate only when those columns exist; `pop` is the value being
   collapsed, not part of the key. With `unique_labels=false` rows are kept per pop.
-- **Cache** keyed by the request signature (`hash` of pop_type/value_name/pops/pop_cols/flags)
-  **plus the on-disk mtimes of each involved value_name's `gating/{vn}.json` + `{vn}.h5ad`**,
-  stored on the image (`img._pop_df_cache`, runtime-only, not serialised). Because `pop_df`
-  reloads the map and reads the h5ad fresh every call, it always reflects the on-disk state — so
-  folding the mtimes into the key **auto-invalidates** the cache when a gate edit (rewrites the
-  map) or a re-track (rewrites the h5ad) lands. `flush_cache=true` is a manual override for
-  in-memory edits never written to disk. The accessor returns a copy, so callers can mutate the
-  result without corrupting the cache.
+- **Cache** — server-level (`_POP_DF_CACHE`, a `BoundedCache`): `init_object` builds a fresh image
+  per request, so a cache on the image never survived one. One slot per request (image dir +
+  pop_type/value_name/pops/pop_cols/flags) holding the frame and a **stamp** of what it was read from:
+  `_gating_inputs_stamp` per involved value_name (every gating map's SHA-256, the `{vn}*.json`
+  sidecars, the `{vn}.h5ad`'s mtime + size, the µm/px), the channel names, and the per-track /
+  per-branch tables when the read touches them. A gate edit or a re-track changes the stamp and the
+  slot is recomputed. Bounded to 64 frames and 1 GiB; a frame over the budget is returned, not kept.
+  `flush_cache=true` is a manual override for in-memory edits never written to disk; a `map_hook`
+  read bypasses the cache. The accessor returns a copy, so callers can mutate the result without
+  corrupting the cache.
 - **Set level** (later): pool across images, add a `uID` column — image results `vcat`. The
   dedup key picks up `uID` automatically once present.
 
@@ -679,8 +681,8 @@ only, because its labels are cell labels and mean nothing on the per-track table
 *consumers* (the napari Points overlay): one `(path, name, colour, show, is_track, labels)` per
 **non-transient, non-empty** stored population of one segmentation — where `pop_df` returns a pooled
 cell frame, this returns the populations themselves with their member IDs and display metadata. It
-recomputes membership from the on-disk map + cell table and **caches on `img._pop_df_cache` under the
-same mtime-folded key trick** (`(value_name, pop_type, gating-map mtime, h5ad mtime)`), so a caller
+recomputes membership from the on-disk map + cell table and **caches at server level**
+(`_RESOLVE_POPS_CACHE`, stamped by `_gating_inputs_stamp` like `pop_df`'s cache), so a caller
 iterating every segmentation for a napari refresh only recomputes the one whose gate/h5ad changed. The
 transient napari-selection pop is excluded (it's the selection *source*). Cell pop_types only
 (`flow`/`clust`); track pops go through the Tracks overlay.
@@ -901,8 +903,8 @@ per-pop CSV.
   - *show populations*: Julia resolves the in-scope segmentation(s) via `resolve_pops` (per-pop
     `value_name` + label IDs + colours); the viewer paints centroid points per (segmentation, pop).
     A blank scope shows ALL segmentations; a live gate edit scopes to the edited segmentation so it
-    stays cheap. `resolve_pops` is **cached** per `(value_name, pop_type, gating-map mtime, h5ad mtime)`
-    — same auto-invalidation trick as `pop_df` (`_pop_df_cache`), so an unchanged segmentation is free
+    stays cheap. `resolve_pops` is **cached** per `(image, value_name, pop_type)` under `_gating_inputs_stamp`
+    — same auto-invalidation as `pop_df` (`_POP_DF_CACHE`), so an unchanged segmentation is free
     even on a full refresh. The transient "Pick selection" pop is **excluded** here (it's the selection
     *source*; rendering it back would loop through the picker).
   - *cell selection (linked brushing)*: user picks a cell / draws a rectangle in the viewer →

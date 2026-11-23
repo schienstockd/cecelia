@@ -161,9 +161,8 @@ function _motif_class_card(df, class_indices::Vector{Int}, class_name::String, c
     # (t, x, y) for the medoid instance's cells, native pixels, sorted by t.
     trace_history = Tuple{Int,Float64,Float64}[]
     for r in inst_rows
-        tt = ts_col[r]; xx = xs_col[r]; yy = ys_col[r]
-        (tt isa Real && xx isa Real && yy isa Real) || continue
-        push!(trace_history, (Int(round(Float64(tt))), Float64(xx), Float64(yy)))
+        pt = trace_point(ts_col[r], xs_col[r], ys_col[r])
+        pt === nothing || push!(trace_history, pt)
     end
     sort!(trace_history; by = first)
     isempty(trace_history) &&

@@ -187,7 +187,9 @@ end
 function _labels_at_t(img, vn, t::Int)::Set{Int}
     df = as_df(label_props(img; value_name = vn) |> select_cols(["label", "centroid_t"]))
     "centroid_t" in names(df) || return Set{Int}(Int.(df.label))
-    Set{Int}(Int(l) for (l, ct) in zip(df.label, df.centroid_t) if round(Int, ct) == t)
+    # a cell with no finite `centroid_t` is on no frame (rounding a NaN throws)
+    Set{Int}(Int(l) for (l, ct) in zip(df.label, df.centroid_t)
+             if ct isa Real && isfinite(ct) && round(Int, ct) == t)
 end
 
 # ONE still of image `zp` at frame `t` in the saved viewer contrast — the cells view's and the example

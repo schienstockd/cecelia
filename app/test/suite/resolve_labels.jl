@@ -73,6 +73,23 @@
         @test Cecelia.cached!(() -> 7, bc, "k5"; stamp = "s2") == 7    # new stamp → recompute…
         @test length(bc) == 3                                          # …in the same slot
         @test Cecelia.cached!(() -> 8, bc, "k5"; stamp = "s2", flush = true) == 8
+        # a byte budget (`pop_df`'s frames): oldest out until the total fits; a value over the whole
+        # budget is returned but not kept, and the stale slot it would have replaced goes with it
+        bb = Cecelia.BoundedCache(10; max_bytes = 100, nbytes = v -> length(v))
+        for k in 1:3; Cecelia.cached!(() -> zeros(UInt8, 40), bb, "b$k"); end
+        @test length(bb) == 2 && !haskey(bb, "b1") && Cecelia.cache_bytes(bb) == 80
+        @test length(Cecelia.cached!(() -> zeros(UInt8, 101), bb, "b3"; stamp = "big")) == 101
+        @test !haskey(bb, "b3") && Cecelia.cache_bytes(bb) == 40
+        @test Cecelia.cache_get(bb, "b2", "") !== nothing && Cecelia.cache_get(bb, "b2", "x") === nothing
+        # `pop_df`'s sizer: inline columns exact, a String column a pointer per row + its bytes
+        szdf = Cecelia.DataFrames.DataFrame(x = zeros(Float32, 10), pop = fill("abcd", 10))
+        @test Cecelia._df_nbytes(szdf) == 4 * 10 + (8 + 4) * 10
+        # a Missing-or-Float64 column is stored inline: 8 bytes a value + 1 type-tag byte a row
+        @test Cecelia._df_nbytes(Cecelia.DataFrames.DataFrame(m = Union{Missing,Float64}[missing, 1.0])) == 2 * 8 + 2
+        # a cached `nothing` is a hit, not a miss
+        bn = Cecelia.BoundedCache(2); calls = Ref(0)
+        for _ in 1:2; Cecelia.cached!(() -> (calls[] += 1; nothing), bn, "n"); end
+        @test calls[] == 1
     end
 end
 
