@@ -11,10 +11,11 @@ import { COLOUR_SCHEMES, type ColourScheme } from '../../frontend/src/utils/colo
 
 /** The facts a page may cite, measured by doc-fixture on the copy (`<set>.facts.json` beside the
  *  captures): `{{<project>.<image>.name}}` (the name the copy shows), `.planes`, `.channels`,
- *  `.timepoints`, `.interval` (seconds per frame); per fixture gate `.<gate>.count` / `.<gate>.pct` (`gateKey`); per tracked segmentation
+ *  `.timepoints`, `.interval` (seconds per frame), `.citation` and `.doi` (where the data came from: the
+ *  image's data source, else its set's); per fixture gate `.<gate>.count` / `.<gate>.pct` (`gateKey`); per tracked segmentation
  *  `.<seg>.tracks`. A shot's `expect` may cite one, so the page's number is the one in the pixels. */
 export const FACT_TOKEN = /\{\{([\w-]+)\.([\w-]+)\.([\w-]+)(?:\.(count|pct|tracks))?\}\}/g
-const IMAGE_FACTS = ['name', 'planes', 'channels', 'timepoints', 'interval']
+const IMAGE_FACTS = ['name', 'planes', 'channels', 'timepoints', 'interval', 'citation', 'doi']
 
 /** A fixture gate's fact name: its name, prefixed by its segmentation when that is not `cells`
  *  (every population's segmentation has its own `qc`). */
@@ -77,8 +78,18 @@ export interface Shot {
              top?: 99 | 99.8 | 99.99
              /** Both boxes over the image (On the image, How it looks) folded: the picture clear. */
              folded?: boolean
+             /** The population dots' size (the Populations section's point size, kept per set). */
+             pointSize?: number
+             /** The cell clusters drawn (On the image → Cell clusters): what a lens's chip counts. */
+             clusters?: boolean
              /** The gated populations' cell-track ribbons (On the image → Cell-track ribbons). */
-             ribbons?: boolean }
+             ribbons?: boolean
+             /** The channel lens pinned at level-0 px `x`, `y`, radius `r` px, showing `channels` inside
+              *  it, none = a spotlight (2D only): the same lens MCP `set_viewer_view` pins. */
+             lens?: { x: number; y: number; r: number; channels: string[] }
+             /** The camera on level-0 px `x`, `y` at `zoom` (the viewer's own: 1 = the whole image), set
+              *  with the lens through the same route; `zoom` above is wheel steps instead. */
+             camera?: { x: number; y: number; zoom: number } }
   /** The shape its slot needs, width / height (a What's new card's picture is 2): the crop is trimmed
    *  about its centre to it. */
   aspect?: number
@@ -93,6 +104,9 @@ export interface Shot {
   /** Drawn to the right of shot `beside` of its set, into that shot's image: one figure under its
    *  caption (the app's page and the viewer window on the same image). `width`s are the two halves'. */
   beside?: string
+  /** In the README's top row beside the first shot, with its own caption (one figure per sample: a
+   *  multiplex section beside the intravital pair). Only the README reads it. */
+  heroRow?: boolean
   /** Window width in CSS px when narrower than the default 1440 (the viewer window beside the app). */
   windowWidth?: number
   /** Window height in CSS px when the target is taller than the default 900 (a gate plot). */
@@ -152,7 +166,7 @@ export interface Fixture {
  *  before it. Recreated, never copied as a file: a copy carries no one's authorship. */
 export type FixtureGate = { image: string; name: string; segmentation?: string; parent?: string } & (
   | { x: string; y: string; xRange: [number | null, number | null]; yRange: [number | null, number | null]; fromSource?: never }
-  | { fromSource: true; popType?: 'flow' | 'trackclust' }
+  | { fromSource: true; popType?: 'flow' | 'clust' | 'trackclust' }
 )
 
 /** The shots one page shows, and the fixture they run on. */
@@ -239,6 +253,8 @@ export function checkShotSets(sets: ShotSet[]): ShotIssue[] {
       if (x.beside && !set.shots.some(o => o.id === x.beside && o !== x && !o.beside))
         bad(`shot "${x.id}" sits beside "${x.beside}", which is not another shot of its set (or itself sits beside one)`)
       if (x.viewer?.volume && x.viewer.plane !== undefined) bad(`shot "${x.id}" is in 3D, which has no plane to pick`)
+      if (x.viewer?.volume && x.viewer.lens) bad(`shot "${x.id}" is in 3D, and the lens is 2D only`)
+      if (x.heroRow && (x.beside || set.shots[0] === x)) bad(`shot "${x.id}" is marked heroRow but is the first shot or sits beside one: the first shot is in the top row already`)
       if (x.profile && x.profile !== 'default' && !fx.profiles?.some(p => p.name === x.profile))
         bad(`shot "${x.id}" runs as profile "${x.profile}", which the fixture does not create`)
       if (x.project && !fx.projects?.[x.project]) bad(`shot "${x.id}" opens project "${x.project}", which the fixture does not copy`)

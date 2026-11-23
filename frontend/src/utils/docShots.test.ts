@@ -68,16 +68,16 @@ describe('doc shots', () => {
       { image: 'i', name: 'G', x: 'a', y: 'b', xRange: [null, null] as [null, null], yRange: [null, null] as [null, null] },
       { image: 'i', name: 'qc', segmentation: 'T', fromSource: true as const }] } } }
     const exp = (text: string) => set({ fixture, shots: [shot({ expect: [{ anchor: 'x.y', text }] })] })
-    expect(checkShotSets([exp('{{p.i.planes}} {{p.i.G.count}} {{p.i.T_qc.pct}} {{p.i.T.tracks}} {{p.i.interval}}')])).toEqual([])
+    expect(checkShotSets([exp('{{p.i.planes}} {{p.i.G.count}} {{p.i.T_qc.pct}} {{p.i.T.tracks}} {{p.i.interval}} {{p.i.citation}} {{p.i.doi}}')])).toEqual([])
     expect(checkShotSets([exp('{{p.j.planes}} {{p.i.H.count}} {{p.i.depth}} {{p.i.B.tracks}}')]).map(i => i.problem)).toEqual([
       '{{p.j.planes}}: the fixture copies no image "j" in project "p"',
-      'shot "s1": {{p.i.H.count}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
-      'shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
-      'shot "s1": {{p.i.B.tracks}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
+      'shot "s1": {{p.i.H.count}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, citation, doi, <gate>.count / .pct, or <segmentation>.tracks)',
+      'shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, citation, doi, <gate>.count / .pct, or <segmentation>.tracks)',
+      'shot "s1": {{p.i.B.tracks}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, citation, doi, <gate>.count / .pct, or <segmentation>.tracks)',
     ])
     // a caption is checked the same way
     expect(checkShotSets([set({ fixture, shots: [shot({ caption: '{{p.i.name}} {{p.i.depth}}' })] })]).map(i => i.problem))
-      .toEqual(['shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)'])
+      .toEqual(['shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, citation, doi, <gate>.count / .pct, or <segmentation>.tracks)'])
     expect(fillFacts('{{p.i.planes}} z-planes, {{p.i.G.pct}}%', { 'p.i.planes': 26 }))
       .toEqual({ text: '26 z-planes, ?%', missing: ['{{p.i.G.pct}}'] })
   })
@@ -157,6 +157,17 @@ describe('doc shots: colour schemes', () => {
     expect(problems([shot(), shot({ id: 's2', beside: 's1' })])).toEqual([])
     expect(problems([shot({ beside: 'nope' })])).toEqual(['shot "s1" sits beside "nope", which is not another shot of its set (or itself sits beside one)'])
     expect(problems([shot({ beside: 's1' })])).toEqual(['shot "s1" sits beside "s1", which is not another shot of its set (or itself sits beside one)'])
+  })
+
+  it('a heroRow shot is neither the first nor beside one; a lens is 2D only', () => {
+    const problems = (shots: Shot[]) => checkShotSets([set({ shots })]).map(i => i.problem)
+    expect(problems([shot(), shot({ id: 's2', heroRow: true })])).toEqual([])
+    const top = 'is marked heroRow but is the first shot or sits beside one: the first shot is in the top row already'
+    expect(problems([shot({ heroRow: true })])).toEqual([`shot "s1" ${top}`])
+    expect(problems([shot(), shot({ id: 's2', beside: 's1', heroRow: true })])).toEqual([`shot "s2" ${top}`])
+    const lens = { x: 1, y: 1, r: 5, channels: [] }
+    expect(problems([shot({ viewer: { lens } })])).toEqual([])
+    expect(problems([shot({ viewer: { volume: true, lens } })])).toEqual(['shot "s1" is in 3D, and the lens is 2D only'])
   })
 
   // The check that fails a set whose images disagree on scheme: every shot has an image in each of

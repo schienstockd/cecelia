@@ -97,6 +97,13 @@ function secondScreen() {
   } catch { return [] }
 }
 
+/** A partial view for the viewer window showing this image, through the route MCP `set_viewer_view`
+ *  uses (the window answers it); the reply is the view as it landed, with the lens. */
+const viewRequest = (page, projectUid, imageUid, view) => page.evaluate(async b => {
+  const res = await fetch('/api/viewer/view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })
+  return res.json().catch(() => ({}))
+}, { projectUid, imageUid, view })
+
 /** Open `image` in the pop-out viewer and bring it to a known state, by the recipe that worked: pause,
  *  a plane with cells, reset view, contrast reset then auto (retried: auto on not-yet-loaded zeros
  *  saturates white), 2 px outlines, Segmentation on. */
@@ -105,10 +112,16 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
   if (!(await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter()))))
     throw new Error('no WebGPU adapter: the viewer needs a headed Chromium on a display')
+  // no lens: the last shot's pin is saved with the image (restored once it is read), and its chip covers
+  // the controls; a shot that wants one pins it once the view is set
+  await page.locator('[aria-label="View mode"]').waitFor({ state: 'attached', timeout: 90000 })
+  await viewRequest(page, projectUid, imageUid, { lens: false })
   // the view, set: one z plane (2D), or the whole stack (3D, which has no plane to pick). Choosing a
   // segment is idempotent. The image is read before the controls exist ("Reading image…").
   await page.locator('[aria-label="View mode"]').getByText(v.volume ? '3D' : '2D', { exact: true }).click({ timeout: 90000 })
-  if (!v.volume) await page.locator('input[aria-label="z plane"]').waitFor({ state: 'attached', timeout: 90000 })
+  // the mode, as its switch shows it (a single-plane image has no z plane slider to wait for)
+  await page.locator('[aria-label="View mode"] .chip.on', { hasText: v.volume ? '3D' : '2D' }).waitFor({ state: 'attached', timeout: 90000 })
+  if (v.plane !== undefined) await page.locator('input[aria-label="z plane"]').waitFor({ state: 'attached', timeout: 90000 })
   // in THIS page: a setting written on the main page and navigated away from is not saved yet, and the
   // viewer would read the last shot's value
   await vue(page, (g, o) => {
@@ -119,7 +132,11 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
     if (o.top) s.viewerAutoContrastPercent = o.top
     // a track drawn in full, whichever planes it crosses (the default reach is a cell's few planes)
     if (o.tracks) s.viewerTrackZTol = 1000
-  }, { contour: v.outlines === false ? 0 : 2, tail: v.tail, tracks: !!v.tracks?.length, top: v.top })
+    // the dots' size is kept per set: the image's set, as the project lists it
+    if (o.pointSize && o.setUid) s.setPointSize(o.setUid, o.pointSize)
+  }, { contour: v.outlines === false ? 0 : 2, tail: v.tail, tracks: !!v.tracks?.length, top: v.top, pointSize: v.pointSize,
+       setUid: v.pointSize ? (await page.evaluate(async q => (await (await fetch(`/api/images?projectUid=${q.p}`)).json())
+         .images?.find(i => i.uid === q.i)?.setUid, { p: projectUid, i: imageUid })) : null })
   await page.waitForTimeout(1500)
   const pause = page.locator('[aria-label="Pause"]')
   if (await pause.count()) await pause.first().click()
@@ -142,12 +159,20 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   if (refold) await lookFolded.first().click()
   const onImageShow = page.locator('[aria-label="Show what is on the image"]')
   if (await onImageShow.count()) await onImageShow.first().click()
-  // the channel cards expanded: Auto is judged by their range readouts, and the lift moves their sliders
-  const expand = page.locator('[aria-label="Expand every channel"]')
-  const recompact = (await expand.count()) > 0
-  if (recompact) { await expand.first().click(); await page.waitForTimeout(300) }
   if (!(await page.locator('[aria-label="Auto contrast every channel"]').isVisible()))
     await page.getByText('Channels', { exact: true }).first().click()
+  // the Channels section's ⋯ menu holds reset and expand / compact; an item reads what it will do
+  const channelMenu = async item => {
+    await page.locator('[aria-label="More channel actions"]').click()
+    const it = page.locator('.cc-actions-menu [role="menuitem"]', { hasText: item })
+    const there = (await it.count()) > 0
+    if (there) await it.first().click()
+    else await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+    return there
+  }
+  // the channel cards expanded: Auto is judged by their range readouts, and the lift moves their sliders
+  const recompact = await channelMenu('Expand every channel')
   if (v.channels) {
     // exactly these channels on: the rest switched off (AF over everything washes the picture out)
     // only the Channels section's switches: the Segmentation section has "Show <label set>" ones too
@@ -166,7 +191,7 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
     }
   }
   // Reset first: the last shot's contrast persists, and Auto is judged against the full range
-  await page.locator('[aria-label="Reset every channel contrast"]').click()
+  if (!(await channelMenu('Reset contrast to full range'))) problems.push('viewer: no "Reset contrast to full range" in the channel menu')
   await page.waitForTimeout(1000)
   // Auto has taken when the channels' range readouts ("0–65.5k") are no longer all the full bit range;
   // pressed before the plane's data is in, it does nothing (dark) or works on zeros (white).
@@ -216,6 +241,9 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   for (const t of v.tracks ?? []) await onImage(`Tracks of ${t}`, true)
   const gated = page.locator('label', { hasText: /^\s*Gated\s*$/ }).locator('input').first()
   if (await gated.count() && (await gated.isChecked()) !== !!v.gated) await gated.evaluate(el => el.click())
+  const clusters = page.locator('label', { hasText: /^\s*Cell clusters\s*$/ }).locator('input').first()
+  if (v.clusters && !(await clusters.count())) throw new Error('viewer: no "Cell clusters" on the image')
+  if (await clusters.count() && (await clusters.isChecked()) !== !!v.clusters) await clusters.evaluate(el => el.click())
   const ribbons = page.locator('label', { hasText: /^\s*Cell-track ribbons\s*$/ }).locator('input').first()
   if (v.ribbons && !(await ribbons.count())) throw new Error('viewer: no "Cell-track ribbons" on the image')
   if (await ribbons.count() && (await ribbons.isChecked()) !== !!v.ribbons) await ribbons.evaluate(el => el.click())
@@ -245,7 +273,9 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
     const sec = document.querySelector('[aria-label="Auto contrast every channel"]')?.closest('.collapsible-section')
     const gated = [...document.querySelectorAll('label')].find(l => /^\s*Gated\s*$/.test(l.textContent))?.querySelector('input')
     const ribbons = [...document.querySelectorAll('label')].find(l => /^\s*Cell-track ribbons\s*$/.test(l.textContent))?.querySelector('input')
+    const clusters = [...document.querySelectorAll('label')].find(l => /^\s*Cell clusters\s*$/.test(l.textContent))?.querySelector('input')
     return {
+      clusters: clusters ? clusters.checked : null,
       plane: Number(document.querySelector('input[aria-label="z plane"]')?.value),
       channels: [...(sec?.querySelectorAll('input[aria-label^="Show "]') ?? [])].filter(e => e.checked).map(e => e.getAttribute('aria-label').slice(5)),
       mask: document.querySelector(`[aria-label="Mask of ${seg}"]`)?.getAttribute('aria-pressed') === 'true',
@@ -253,7 +283,7 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
       time: Number(document.querySelector('input[aria-label="Timepoint"]')?.value),
       gated: gated ? gated.checked : null,
       ribbons: ribbons ? ribbons.checked : null,
-      volume: !document.querySelector('input[aria-label="z plane"]'),
+      volume: document.querySelector('[aria-label="View mode"] .chip.on')?.textContent.trim() === '3D',
       text: document.body.innerText,
     }
   }, [seg, v.tracks ?? []])
@@ -264,14 +294,29 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   if (v.time !== undefined && got.time !== v.time) problems.push(`viewer: at timepoint ${got.time}, not ${v.time}`)
   if (got.mask !== (v.outlines !== false)) problems.push(`viewer: outlines ${got.mask ? 'on' : 'off'}, asked ${v.outlines !== false ? 'on' : 'off'}`)
   if (got.gated === null ? !!v.gated : got.gated !== !!v.gated) problems.push(`viewer: gated populations ${got.gated ? 'shown' : 'hidden'}, asked ${v.gated ? 'shown' : 'hidden'}`)
+  if (!!got.clusters !== !!v.clusters) problems.push(`viewer: cell clusters ${got.clusters ? 'shown' : 'hidden'}, asked ${v.clusters ? 'shown' : 'hidden'}`)
   if (!!got.ribbons !== !!v.ribbons) problems.push(`viewer: cell-track ribbons ${got.ribbons ? 'shown' : 'hidden'}, asked ${v.ribbons ? 'shown' : 'hidden'}`)
   if (got.volume !== !!v.volume) problems.push(`viewer: in ${got.volume ? '3D' : '2D'}, asked ${v.volume ? '3D' : '2D'}`)
   if (v.name && !got.text.includes(v.name)) problems.push(`viewer: does not show image "${v.name}"`)
-  if (recompact) await page.locator('[aria-label="Compact every channel"]').first().click()
+  if (recompact) await channelMenu('Compact every channel')
   // folded last: a folded box's switches are not on the page, so the state is read back before
   if (refold || v.folded) await page.locator('[aria-label="Fold how the image looks"]').first().click()
   const onImageFold = page.locator('[aria-label="Fold what is on the image"]')
   if (v.folded && await onImageFold.count()) await onImageFold.first().click()
+  await page.waitForTimeout(1500)
+  if (v.lens || v.camera) {
+    // last, once every control has been clicked (the lens's chip sits over the side panel); set through
+    // the route MCP set_viewer_view uses, so a shot and an agent place them the same way. The reply
+    // is the lens as drawn.
+    const view = { ...(v.camera ? { camera: { center: [0, v.camera.y, v.camera.x], zoom: v.camera.zoom } } : {}),
+                   ...(v.lens ? { lens: v.lens } : {}) }
+    const r = await viewRequest(page, projectUid, imageUid, view)
+    if (r?.error || r?.reason) problems.push(`viewer: view not set (${r.error ?? r.reason})`)
+    else if (v.lens && !r.lens) problems.push('viewer: no lens pinned')
+    else if (v.lens && [...r.lens.channels].sort().join() !== [...v.lens.channels].sort().join())
+      problems.push(`viewer: lens shows ${r.lens.channels.join(', ') || 'no channel'}, not ${v.lens.channels.join(', ') || 'none (a spotlight)'}`)
+    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+  }
   await page.waitForTimeout(1500)
 }
 
