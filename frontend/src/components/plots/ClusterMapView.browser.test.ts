@@ -4,11 +4,12 @@
 // HTML cluster labels must NOT wait for the settle: they follow the box on every step, so they stay on
 // the (stretched) dots.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, provide, reactive } from 'vue'
+import { defineComponent, h, nextTick, provide, reactive } from 'vue'
 import { routeLocationKey } from 'vue-router'
 import ClusterMapView from './ClusterMapView.vue'
 import { frames, mountInto } from '../../test/browser/mount'
 import { RESIZE_SETTLE_MS } from '../../utils/resizePaint'
+import { activePlotLoads } from '../../utils/plotReady'
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -63,5 +64,36 @@ describe('ClusterMapView resize', () => {
     const dpr = window.devicePixelRatio || 1
     expect(canvas.width).toBe(Math.max(1, canvas.clientWidth * dpr))  // one crisp paint at the final size
     expect(canvas.width).toBeGreaterThan(before)
+  })
+})
+
+// Ticking several populations in a row (colour by population) is ONE map fetch of the last pick, not
+// one fetch + redraw per tick — each fetch is the whole map per image.
+describe('ClusterMapView colour by population', () => {
+  it('a burst of population picks fetches the map once, with the final selection', async () => {
+    const mapCalls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.startsWith('/api/plots/cluster-map')) {
+        mapCalls.push(new URL(u, location.origin).searchParams.get('colourPops') ?? '')
+        return new Response(new Float32Array([0, 0, 0, 0, 1, 1, 1, 1, 1, 2]).buffer)
+      }
+      return new Response('[]', { headers: { 'Content-Type': 'application/json' } })
+    }))
+    const state = reactive({ colourBy: 'population' as const, colourPops: [] as string[] })
+    mountInto(() => h(WithRoute, null, () => h('div', { style: 'width:500px;height:500px' }, [h(ClusterMapView, {
+      projectUid: 'p', imageUids: ['A'], setUid: null, popType: 'clust', suffix: 'default', state })])))
+    await wait(400); await frames(2)
+    mapCalls.length = 0
+    for (const p of ['a', 'b', 'c', 'd', 'e']) {
+      state.colourPops = [...state.colourPops, `clust::default/${p}`]
+      await nextTick(); await wait(30)
+      // a queued refetch already counts as a load, so an export can't capture the old colouring
+      expect(activePlotLoads.value).toBeGreaterThan(0)
+    }
+    await wait(500)
+    expect(activePlotLoads.value).toBe(0)
+    expect(mapCalls).toHaveLength(1)
+    expect(mapCalls[0]!.split(',')).toHaveLength(5)
   })
 })
