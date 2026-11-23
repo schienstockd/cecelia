@@ -118,6 +118,8 @@ const has = (s: OptionSection) => props.sections.includes(s) && SECTION_ROWS[s].
     <CollapsibleSection v-if="has('points')" label="Points" max-height="none"
                         accordion="plotOptions.openSection" section="points">
       <div class="po-body">
+        <div v-if="can('superplot')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Each replicate\'s cells under its mean'"><span>SuperPlot</span>
+          <CcToggle aria-label="SuperPlot" :model-value="vis.superplot !== false" @update:model-value="set({ superplot: $event })" /></div>
         <label v-if="can('jitter')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Data offset (beeswarm / random / none)'"><span>Offset</span>
           <select class="po-sel" :value="vis.jitter" @change="set({ jitter: ($event.target as HTMLSelectElement).value as VisProps['jitter'] })">
             <option value="beeswarm">beeswarm</option><option value="random">random</option><option value="none">none</option>

@@ -33,6 +33,7 @@ import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, M
 import { isRunMatrixMode } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { visControlsFor } from '../../plots/plotControls'
+import { superplotOn } from '../../plots/superplot'
 import { statsNotice } from '../../plots/statsInfo'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
@@ -262,7 +263,7 @@ const nLabel = computed(() => !canStatUnit.value || statUnit.value === 'individu
   : unitCountLabel((result.value?.series ?? []).map(s => s.n ?? s.points?.length ?? 0), unitNoun.value))
 // the line every export of this plot carries under it: n, what a point is, what the test ran on
 const exportCaption = computed(() => plotCaption({ nLabel: nLabel.value, statUnit: statUnit.value,
-  imageAgg: imageAgg.value, noun: unitNoun.value, test: result.value?.comparisons?.methodNote }))
+  imageAgg: imageAgg.value, noun: unitNoun.value, test: result.value?.comparisons?.methodNote, cellsBeneath: cellsDrawn.value }))
 // what the request sends for the unit: the replicate needs its attributes
 const statUnitBody = () => !canStatUnit.value || statUnit.value === 'individual' ? {}
   : statUnit.value === 'replicate' ? { statUnit: 'replicate', replicateAttrs: replicateAttrs.value, imageAgg: imageAgg.value }
@@ -747,7 +748,11 @@ const overrideTip = computed(() =>
 // Stats options echo the name under the Test select, with the basis as its tooltip. One object, so a
 // host can't thread the name and forget the reason.
 // …and which shared settings this plot reacts to, so the rail offers only those (plots/plotControls.ts)
-const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value }))
+const hasCells = computed(() => superplotOn(result.value?.series ?? [], true))
+// the SuperPlot cell layer is on screen: this chart draws it (box/strip) and the toggle is on
+const cellsDrawn = computed(() => visControls.value.includes('superplot') && superplotOn(result.value?.series ?? [], vis.value.superplot))
+const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value,
+  ...(hasCells.value ? { superplot: vis.value.superplot === false ? 'off' as const : 'on' as const } : {}) }))
 const readout = computed<PlotReadout>(() =>
   readoutOf(result.value?.comparisons, autoOverrides.value, visControls.value,
     metricPicksPops.value ? (result.value?.pops ?? []) : null))
@@ -1543,7 +1548,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
-      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="statUnit === 'replicate' ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
+      <span v-if="nLabel" class="sp-n cc-muted cc-fs-xs" v-tooltip.top="cellsDrawn ? `One point per ${unitNoun.one}, its cells beneath in its colour; n per group` : `One point per ${unitNoun.one}; n per group`">{{ nLabel }}</span>
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
                   :measure="hasMeasure ? measure : ''" :group-attrs="crossImage ? (groupAttr ?? []) : []"
