@@ -165,6 +165,11 @@ async function measure(api, fixture, rec) {
       if (!g.ok) throw new Error(`geometry of ${key}/${src}: ${g.body.error ?? 'failed'}`)
       Object.assign(facts, { [`${key}.${src}.planes`]: g.body.sizeZ, [`${key}.${src}.channels`]: g.body.sizeC,
                              [`${key}.${src}.timepoints`]: g.body.sizeT })
+      // where the data came from (the image's source, else its set's): a caption cites it, never types it
+      const m = await api(`/api/images/meta?projectUid=${copy.uid}&imageUid=${copy.images[src]}`)
+      const ds = m.ok ? m.body.image?.dataSource : null
+      if (ds?.citation) facts[`${key}.${src}.citation`] = ds.citation
+      if (ds?.doi) facts[`${key}.${src}.doi`] = ds.doi
     }
     const tracked = new Set()
     for (const gate of spec.gates ?? []) {

@@ -309,7 +309,7 @@ end
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
-        "/api/qc/cohort", "/api/qc/cohort/runs", "/api/qc/cohort/state", "/api/claim/checks", "/api/claim/open", "/api/acqcheck", "/api/sets/experiment-design",
+        "/api/qc/cohort", "/api/qc/cohort/runs", "/api/qc/cohort/state", "/api/claim/checks", "/api/claim/open", "/api/acqcheck", "/api/sets/experiment-design", "/api/data-source",
         "/api/repl/api", "/api/setup/defaults",
         "/api/setup/validate", "/api/config/tls", "/api/config/threads",
         "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
@@ -441,7 +441,7 @@ end
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/claim/state", "/api/claim/check", "/api/claim/review", "/api/acqcheck/plan", "/api/acqcheck/review", "/api/repl",
         "/api/repl/config", "/api/sets/create",
-        "/api/sets/rename", "/api/sets/recipe", "/api/sets/experiment-design", "/api/sets/experiment-design/preview", "/api/sets/delete", "/api/setup/init",
+        "/api/sets/rename", "/api/sets/recipe", "/api/sets/experiment-design", "/api/sets/experiment-design/preview", "/api/data-source", "/api/sets/delete", "/api/setup/init",
         "/api/config/tls/set", "/api/config/threads/set",
         "/api/storage/compressor/set", "/api/storage/layout/set",
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim", "/api/viewer/chunk-cache/set",
@@ -512,7 +512,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 133 && length(POST_ROUTES) == 205
+    @test length(GET_ROUTES) == 134 && length(POST_ROUTES) == 206
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

@@ -68,6 +68,9 @@ end
                 (e["author"] = Cecelia.run_author("default", Dict("via" => "claude", "model" => model)))
         end
         write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+        # the image is someone else's data: the crate cites its source (data_source.jl)
+        set_image_data_source!(img, data_source_from(Dict("citation" => "HuBMAP HBM666.MCZF.973",
+                                                          "doi" => "10.35079/HBM666.MCZF.973")))
 
         day = Date(2026, 11, 22)
         zip = joinpath(td, "crate.zip")
@@ -98,6 +101,10 @@ end
         graph = Dict(String(e[:id_]) => e for e in [merge(Dict(:id_ => x[Symbol("@id")]), x) for x in doc[Symbol("@graph")]])
         ids(v) = v === nothing ? String[] : v isa AbstractVector ? [String(x[Symbol("@id")]) for x in v] : [String(v[Symbol("@id")])]
         types(e) = (t = e[Symbol("@type")]; t isa AbstractString ? [String(t)] : String.(t))
+        # the root is based on the image's data source, cited under its DOI (not contained: no hasPart)
+        src = "https://doi.org/10.35079/HBM666.MCZF.973"
+        @test ids(get(graph["./"], :isBasedOn, nothing)) == [src]
+        @test types(graph[src]) == ["CreativeWork"] && graph[src][:name] == "HuBMAP HBM666.MCZF.973"
         prop(e, k) = get(e, Symbol(k), nothing)
 
         # RO-Crate 1.1: the context and the metadata descriptor

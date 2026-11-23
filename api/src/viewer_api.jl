@@ -319,8 +319,8 @@ function api_viewer_meta(req::HTTP.Request)
         # sets, but the URL only ever carried one and the client picks the first one it sees.
         set_uid = try
             proj = load_project(pu)
-            s = findfirst(s -> iu in s.image_uids, sets(proj))
-            s === nothing ? "" : sets(proj)[s].uid
+            s = image_set(proj, iu)
+            s === nothing ? "" : s.uid
         catch
             ""
         end
