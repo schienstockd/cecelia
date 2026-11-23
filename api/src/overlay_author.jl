@@ -315,8 +315,23 @@ end
 
 # The rows whose every `cols` value is a finite number — the cells the viewer can draw (its overlays
 # payload sends only those) when `cols` are the centroid columns.
-_finite_rows(df, cols) = BitVector([all(c -> (v = df[i, c]; v isa Real && isfinite(Float64(v))), cols)
-                                    for i in 1:size(df, 1)])
+#
+# COLUMN AT A TIME, never `df[i, c]` in a loop. Per-cell `df[i, name]` looks the column up by name and
+# returns an untyped value on every call — over a whole cell table that dominates the overlays route.
+# The `_col_*` helpers below are the function barrier: each receives one concrete column vector, so the
+# loop inside is type-stable.
+function _finite_rows(df, cols)
+    keep = trues(size(df, 1))
+    for c in cols
+        keep .&= _finite_mask(getproperty(df, Symbol(c)))
+    end
+    keep
+end
+_finite_mask(v::AbstractVector) = BitVector(map(x -> x isa Real && isfinite(Float64(x)), v))
+# `idx` picks rows (already finite where the column is a centroid); one typed output vector per column.
+_col_f64(v::AbstractVector, idx) = Float64[Float64(v[i]) for i in idx]
+_col_f32(v::AbstractVector, idx) = Float32[Float32(v[i]) for i in idx]
+_col_int(v::AbstractVector, idx) = Int[Int(v[i]) for i in idx]
 
 """
     _cb_scale(img, value_names, colour_by) -> scale | nothing

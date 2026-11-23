@@ -284,3 +284,19 @@ end
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end
 end
+
+@testset "API: _finite_rows keeps only cells with a finite number in every column" begin
+    # The overlay and the movie's colour-by scale both drop undrawable cells through this. It reads
+    # column at a time now; the rule must not move with it:
+    # missing, NaN, ±Inf and non-numbers all drop, and a row needs EVERY listed column finite.
+    df = Cecelia.DataFrames.DataFrame(
+        centroid_x = Union{Missing,Float64}[1.0, missing, 3.0, NaN, 5.0, 6.0],
+        centroid_y = Union{Missing,Float32}[1f0, 2f0, Inf32, 4f0, 5f0, -Inf32],
+        name       = ["a", "b", "c", "d", "e", "f"])
+    @test _finite_rows(df, ["centroid_x", "centroid_y"]) == BitVector([1, 0, 0, 0, 1, 0])
+    @test _finite_rows(df, ["centroid_x"]) == BitVector([1, 0, 1, 0, 1, 1])
+    @test _finite_rows(df, ["name"]) == falses(6)                 # not a number → not drawable
+    @test _finite_rows(df, String[]) == trues(6)                  # no constraint → every row
+    @test _col_f32(df.centroid_y, [1, 2]) == Float32[1, 2]
+    @test _col_int(Cecelia.DataFrames.DataFrame(label = [7.0, 8.0]).label, [2]) == [8]
+end

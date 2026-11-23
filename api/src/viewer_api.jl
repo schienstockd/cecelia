@@ -1154,26 +1154,25 @@ function api_viewer_overlays(req::HTTP.Request)
         fin(v) = !ismissing(v) && isfinite(Float64(v))
         need = vcat(String["centroid_$a" for a in axes], has("centroid_t") ? ["centroid_t"] : String[])
         idx = findall(_finite_rows(df, need))
-        col(name) = has(name) ? Float64[Float64(df[i, name]) for i in idx] : Float64[]
-        ucol(name) = Float32.(col(name))       # µm axes only — see the Float32 note above `OVERLAY_MAX_CELLS`
+        # Column at a time through the `_col_*` barriers (overlay_author.jl, by `_finite_rows`) — never
+        # per-cell `df[i, name]`, which is untyped and looks the column up on every call.
+        C(name) = getproperty(df, Symbol(name))
+        col(name) = has(name) ? _col_f64(C(name), idx) : Float64[]
+        ucol(name) = has(name) ? _col_f32(C(name), idx) : Float32[]   # µm axes only — see the Float32 note above `OVERLAY_MAX_CELLS`
         # "" rather than null for "no track source": one sentinel the client tests, and it stays a
         # String[] so JSON3 serialises it without missings. Both "no track_id column" AND "column
         # present but this cell wasn't authored (missing/NaN/empty)" collapse to "" — the reader rule
         # is the same in both cases (see `filterPayloadByTrackSource`: an empty source is treated as
         # legacy/everyone's, matching Julia's `_pop_has_authored_tracks`).
-        ts_val(i) = begin
-            v = df[i, :track_source]
-            (ismissing(v) || v === nothing) ? "" : String(v)
-        end
-        cells = (; label = Int[Int(df[i, :label]) for i in idx],
+        ts_col(v::AbstractVector) = String[(x = v[i]; (ismissing(x) || x === nothing) ? "" : String(x)) for i in idx]
+        trk_col(v::AbstractVector) = Int[(x = v[i]; (!fin(x) || Float64(x) <= 0) ? -1 : Int(x)) for i in idx]
+        cells = (; label = _col_int(C("label"), idx),
                    t     = col("centroid_t"),
                    x     = ucol("centroid_x"), y = ucol("centroid_y"), z = ucol("centroid_z"),
                    # -1 rather than 0/NaN for "not tracked": one sentinel the client tests, and it stays
                    # an integer, so it survives JSON without a float's rounding question.
-                   track = has("track_id") ?
-                           Int[(!fin(df[i, :track_id]) || Float64(df[i, :track_id]) <= 0) ?
-                               -1 : Int(df[i, :track_id]) for i in idx] : Int[],
-                   trackSource = has("track_source") ? String[ts_val(i) for i in idx] : String[])
+                   track = has("track_id") ? trk_col(C("track_id")) : Int[],
+                   trackSource = has("track_source") ? ts_col(C("track_source")) : String[])
 
         # Populations, from the cached resolver. An image with no gating map answers an empty list
         # rather than an error — an unsegmented or ungated image is a normal state, not a failure.
@@ -1202,9 +1201,9 @@ function api_viewer_overlays(req::HTTP.Request)
         # view naming a column that has since gone must come back as "no colour-by" rather than as a
         # colour-by with no values — the client cannot tell those apart from the request.
         used = (!isempty(cby) && has(cby)) ? String(cby) : nothing
-        vals = used === nothing ? nothing :
-               Any[(v = df[i, used]; (ismissing(v) || (v isa Real && !isfinite(Float64(v)))) ?
-                    nothing : v) for i in idx]
+        val_col(v::AbstractVector) = Any[(x = v[i]; (ismissing(x) || (x isa Real && !isfinite(Float64(x)))) ?
+                                          nothing : x) for i in idx]
+        vals = used === nothing ? nothing : val_col(C(used))
 
         # WHICH KIND OF COLUMN decides how the client colours it — a palette per level, or a ramp over a
         # range — and that question is already answered ONCE, by `_is_categorical_col`. It is not a
