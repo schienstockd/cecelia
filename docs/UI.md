@@ -1794,6 +1794,16 @@ is the header.
   inner spacing (`Liver` / `liver`, `day 3` / `day  3`) are **reported, not merged** — the server merges
   only leading/trailing whitespace — across the table and the set's current values; so is a new column
   whose name differs only by case from an existing one.
+- **Before a table: the layout guide.** The empty dialog shows how to lay the table out — an example built
+  from the set's first three images (its own attributes as columns, or illustrative *Mouse* / *Treatment*
+  when it has none), with the role of each column marked, and four one-line rules. *Copy template* puts the
+  whole set on the clipboard tab-separated (a `Name` column + one column per existing attribute, current
+  values filled in — `templateTable` / `toDelimited`), ready to paste into a spreadsheet, fill and paste
+  back; *Download* gives the same as CSV. Pasted back unchanged it is a no-op.
+- **Read as.** Once parsed, the raw table's first four rows with each column's role over its header
+  (`columnRoles`): *Image · Name* for the key, the attribute it writes (*· new* when created), or *Not
+  used · reason* (struck through), plus the delimiter and row/column counts — Prism's import preview.
+  Clicking a column header makes it the image column (the *Match by* select does the same).
 - **Preview, then Apply.** A compact table of the matched rows (overwrites amber, the old value on hover)
   and one line each for: rows matching no image, images with no row, overwrites, case variants, new
   columns, unused columns. Apply creates the new columns on every image of the set (`attr/create`) and then
