@@ -359,7 +359,7 @@ function pick(c: RefCandidate) {
 .kiwi-grow { flex: 1; min-width: 0; }
 .kiwi-att { display: flex; flex-direction: column; min-width: 0; }
 .kiwi-att-label, .kiwi-att-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kiwi-search { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.35rem; min-width: 14rem; }
+.kiwi-search { display: flex; flex-direction: column; gap: 0.3rem; min-width: 14rem; }
 .kiwi-search-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kiwi-turn { display: flex; flex-direction: column; gap: 0.3rem; padding-top: 0.4rem;
              border-top: 1px solid var(--cc-border); }

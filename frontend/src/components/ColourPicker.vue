@@ -78,7 +78,7 @@ function pick(c: string, close = true) {
 }
 .cp-swatch:disabled { cursor: default; opacity: 0.7; }
 /* TeleportPopover supplies the surface and border; this is only the contents. */
-.cp-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.cp-body { display: flex; flex-direction: column; gap: 8px; }
 .cp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
 .cp-chip {
   width: 22px; height: 22px; border: 1px solid var(--cc-border);

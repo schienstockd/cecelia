@@ -87,7 +87,7 @@ function setCols(v: number) { emit('update:cols', v) }
 /* Columns popover — the popover itself owns surface/border/shadow/position (TeleportPopover); we only
    lay out the header + the row of chips inside. The row uses `.cc-row.cc-row-tight`; only the
    per-column min-width is scoped here so the seven column buttons line up as a chip strip. */
-.cab-opts { min-width: 12rem; display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.cab-opts { min-width: 12rem; display: flex; flex-direction: column; gap: 6px; }
 .cab-opts-hd { padding: 0 2px; }
 .cab-opts-row .cc-btn { min-width: 2rem; }
 </style>
