@@ -1,4 +1,11 @@
-import { ref, watch, onBeforeUnmount, type Ref } from 'vue'
+import { ref, watch, onBeforeUnmount, inject, type InjectionKey, type Ref } from 'vue'
+import { snapPosition } from '../utils/panelSnap'
+import type { Rect } from '../utils/panelBounds'
+
+/** The canvas's Snap toggle, provided by `useFloatingCanvas` from its persisted `shared` bag. */
+export const CANVAS_SNAP_KEY: InjectionKey<() => boolean> = Symbol('canvasSnap')
+/** Marks a floating panel's root, so a dragged panel can find the others to snap to. */
+export const SNAP_PANEL_ATTR = 'data-snap-panel'
 
 /**
  * Tile/Cascade command from the workspace; `seq` bumps to force a re-apply.
@@ -42,6 +49,17 @@ export function useFloatingPanel(
 ) {
   const margin = opts.margin ?? 24
   const pos = ref({ x: opts.initial?.x ?? 16, y: opts.initial?.y ?? 16 })
+  // Snap (the canvas toggle): edges to the other panels' and the canvas's while dragging (utils/panelSnap)
+  const snapOn = inject(CANVAS_SNAP_KEY, () => false)
+  function snapped(x: number, y: number) {
+    const node = el.value, par = node?.offsetParent as HTMLElement | null
+    if (!node || !par || !snapOn()) return { x, y }
+    const others: Rect[] = []
+    for (const o of par.querySelectorAll<HTMLElement>(`[${SNAP_PANEL_ATTR}]`))
+      if (o !== node && o.offsetParent === par)
+        others.push({ x: o.offsetLeft, y: o.offsetTop, w: o.offsetWidth, h: o.offsetHeight })
+    return snapPosition({ x, y, w: node.offsetWidth, h: node.offsetHeight }, others)
+  }
   // drag tracked from the START mouse+pos so we can divide the screen-space delta by the zoom
   let dragging = false, sx = 0, sy = 0, spx = 0, spy = 0
 
@@ -57,7 +75,8 @@ export function useFloatingPanel(
   function onMove(e: MouseEvent) {
     if (!dragging) return
     const z = opts.zoom?.() ?? 1
-    pos.value = clamp(spx + (e.clientX - sx) / z, spy + (e.clientY - sy) / z)
+    const c = clamp(spx + (e.clientX - sx) / z, spy + (e.clientY - sy) / z)
+    pos.value = snapped(c.x, c.y)
   }
   function endDrag() {
     dragging = false

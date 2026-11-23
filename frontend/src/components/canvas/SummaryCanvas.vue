@@ -105,7 +105,7 @@ interface PanelState {
 // sample from the logical canvas via CANVAS_ZOOM_KEY-injected 1/zoom).
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PanelState>(
@@ -525,8 +525,8 @@ watch(segPops, () => {
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAllPanels" />
         <div class="cc-btn-group">

@@ -56,7 +56,7 @@ const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
 // gating and summary canvases (useFloatingCanvas + FloatingCanvasHost).
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, shared, add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
+  panels, activeId, shared, snap, add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<FlowPanelState>(ckey, () => ({ kind: 'flowMetrics' }))
 
@@ -125,8 +125,8 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
     <template v-else>
       <div class="cc-row cc-row-loose fp-bar">
         <PlotPicker :options="plotTypes" @pick="addKind" />
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">

@@ -139,7 +139,7 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // (GatePlotPanel / GatePairsPanel), so Tile hands out square cells.
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PlotState>(
@@ -608,8 +608,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                 v-tooltip.bottom="`Clear Claude's highlighted ${isTrack ? 'tracks' : 'cells'} (Esc)`">
           Clear marks · {{ assistantMarkCount }}
         </button>
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
