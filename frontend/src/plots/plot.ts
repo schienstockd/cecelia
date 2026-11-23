@@ -23,7 +23,7 @@ import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElb
 import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
-import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
+import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER, AXIS_TITLE_STYLE, TICK_PAD_PX, yTitleRoomPx } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
 import { trackLabelPath } from '../utils/popName'
@@ -147,6 +147,10 @@ export interface VisProps {
   // the node and re-renders once with the real number; until then `legendTopPad` falls back to an
   // estimate. See legendTopPad.
   legendHeight?: number
+  // MEASURED width of the widest y tick label, in px (`yTickLabelPx`, plots/overlays.ts) — the y title
+  // sits left of the tick labels, so the left margin is sized from it. Same two-pass policy as
+  // `legendHeight`; absent → the chart's own margin is taken as the tick labels' room. See fitAxisTitles.
+  yTickPx?: number
   // layout / scale
   logScale: boolean                          // log measure axis (R scaleLog10)
   grid: boolean                              // show gridlines (R noGrid inverted; default off = classic)
@@ -462,6 +466,28 @@ export function fitCellTitles<T extends { t: string }>(rows: readonly T[], inner
 const facetLabels = (r: PlotDataResponse, o: BuildOpts, keyOf: (s: PlotSeries) => string) =>
   [...new Set(r.series.map(s => facetKeyOf(o, s, keyOf(s))))]
 
+/**
+ * Axis titles in Prism's layout (`AXIS_TITLE_STYLE`): the y title rotated, centred on the frame, LEFT
+ * of the tick labels; the x title centred under the axis; no direction arrows. Plot's default put the
+ * y title horizontally in the top margin ("↑ speed"), where wide tick labels ran into it and the legend
+ * overlay sits, and it read differently from the x title.
+ *
+ * The left margin is the tick labels + their tick and padding + the title's room. The tick labels'
+ * width is measured on the previous render (`o.yTickPx`); on the first pass the chart's own margin —
+ * sized for its tick labels alone — stands in for it.
+ */
+export function fitAxisTitles<T extends Record<string, unknown> | null>(opts: T, o: { fontSize?: number; yTickPx?: number }): T {
+  if (!opts) return opts
+  const o2 = opts as Record<string, unknown>
+  for (const k of ['x', 'y'] as const) o2[k] = { ...(o2[k] ?? {}) as object, ...AXIS_TITLE_STYLE }
+  const y = o2.y as Record<string, unknown>
+  if (y.axis === null || y.label === null || y.label === '') return opts
+  const base = Number(o2.marginLeft ?? THEME.marginLeft)
+  const tickRoom = o.yTickPx != null && o.yTickPx > 0 ? 3 + o.yTickPx + TICK_PAD_PX : base
+  o2.marginLeft = Math.max(base, tickRoom + yTitleRoomPx(o.fontSize || 11))
+  return opts
+}
+
 const THEME = {
   style: { background: PAPER, color: PAPER_INK, fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
@@ -590,12 +616,12 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   if (!r) return null
   // matrix/heatmap is a pooled grid (cells, not series) — its own builder + theme, returned early so
   // none of the per-series colour-scale / measure-axis post-processing below applies.
-  if (o.chartType === 'heatmap') return buildHeatmap(Plot, r, o)
+  if (o.chartType === 'heatmap') return fitAxisTitles(buildHeatmap(Plot, r, o), o)
   // the HMM state-count comparison: curves of fit against K from the runs' fit records, no series
-  if (o.chartType === 'elbow') return buildHmmElbow(Plot, r, o)
+  if (o.chartType === 'elbow') return fitAxisTitles(buildHmmElbow(Plot, r, o), o)
   // time series (measure/count over an ordered column, e.g. t) → a geom_smooth line, not thousands
   // of bars/boxes.
-  if (o.trend && r.groupBy) return buildTrendLine(Plot, r, o)
+  if (o.trend && r.groupBy) return fitAxisTitles(buildTrendLine(Plot, r, o), o)
   if (!r.series.length) return null
   // Faceting BY IMAGE moves the image out of the series key and onto the panel header, so what is
   // left — segmentation / population / group — becomes the colour and position INSIDE each panel.
@@ -735,6 +761,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // carries the axes/box/median/mean/whiskers; box fills come from the (palette) colour scale.
   const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   opts.style = { ...(opts.style as object ?? {}), fontSize: `${o.fontSize || 11}px`, color: fg, background: bg }
+
+  // the y title's room on the left — before anything below reads the margins (facet headers, stats band)
+  fitAxisTitles(opts, o)
 
   // legend reflects the DISTINCT colours drawn (deduped) — PlotChart reads `_legend` for the overlay.
   // A stacked chart's fill is the CATEGORY, so its legend is the category scale the builder set.

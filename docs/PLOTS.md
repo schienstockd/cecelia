@@ -446,6 +446,23 @@ wrong is what made legends look arbitrary. Two rules, both in one place:
    has the browser's own wrap and spacing and stays editable. The light export is built with the same
    `plotWidth` + measured `legendHeight` as the screen, so the overlay lands in the band reserved for it.
 
+**Axis titles — Prism's layout.** `fitAxisTitles` (`plots/plot.ts`), applied to every builder's
+output: the y title is rotated and centred on the frame, left of the tick labels; the x title is centred
+under the axis; no direction arrows. Plot's default put the y title horizontally in the top margin
+("↑ speed"), where wide tick labels ran into it and the legend overlay sits, and it read differently
+from the x title. The left margin is the title line + a gap + the tick labels' width + Plot's tick
+gutter. Plot picks the ticks at render, so their width is **measured** (`yTickLabelPx`,
+`plots/overlays.ts`) and folded into the same one corrective pass as the legend (`yTickPx`); the first
+pass takes the chart's own margin as the tick labels' room. Pinned in Chromium by
+`plots/axisTitle.browser.test.ts`.
+
+The panels that call `Plot.plot` themselves take the same layout: FlowTraining and the HMM states /
+transitions panels route their options through `fitAxisTitles` (first pass only, no measurement); the
+track paths / diagnostics views size a facet grid from their margins, so they spread
+`AXIS_TITLE_STYLE` into the axes and add `yTitleRoomPx` to their left-margin constant
+(`plots/axisLabelFit.ts`). `plots/axisTitleCoverage.test.ts` fails a new `Plot.plot` caller that uses
+neither.
+
 **When colour is the only identity.** Grouped frequency bars (x axis hidden inside each facet), the
 histogram and the stacked charts have no per-series position label, so colour + legend is the only way to
 tell series apart (`COLOUR_IS_IDENTITY`, `plots/plot.ts`). Under the `standard` palette two series of one
