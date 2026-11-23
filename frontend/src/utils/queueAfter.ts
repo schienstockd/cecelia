@@ -17,8 +17,8 @@ export interface LiveGroup {
 }
 
 /**
- * The functions queued or running on any of `selected`, in this project — one group per function,
- * oldest first. History rows are a record of a run, not a run, so they never count. A row of a chain's
+ * The functions queued or running on any of `selected`, in this project — one group per function, in
+ * the task list's order (newest first, mostly: rows adopted after a reload come in snapshot order). History rows are a record of a run, not a run, so they never count. A row of a chain's
  * own node counts like any other: the backend waits for whatever run of the function is live there.
  */
 export function liveGroups(tasks: readonly TaskEntry[], selected: readonly string[],
@@ -41,6 +41,16 @@ export function liveGroups(tasks: readonly TaskEntry[], selected: readonly strin
     out.set(t.funName, g)
   }
   return [...out.values()]
+}
+
+/**
+ * Which live function the ONE "Queue after" control queues behind. With one live, that one. With
+ * several, only an explicit pick that is still live — never a guess: the list's order is not a
+ * reliable dispatch order, and waiting for the wrong run starts the follow-up on missing outputs.
+ */
+export function queueAfterTarget(groups: readonly LiveGroup[], picked: string | null): LiveGroup | null {
+  if (groups.length === 1) return groups[0]!
+  return groups.find(g => g.funName === picked) ?? null
 }
 
 /** The follow-up as the runner would run it. */
