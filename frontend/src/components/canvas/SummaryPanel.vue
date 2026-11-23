@@ -226,6 +226,7 @@ const chartType = computed<ChartType>({ get: () => props.ui.chartType ?? props.s
 // only for free-floating panels (the module canvas) — the Analysis board's docked grid has fixed slots
 const canExplode = computed(() => !props.docked && chartType.value !== 'heatmap' && chartType.value !== 'count' && measureOpts.value.length > 1)
 const showExplode = ref(false)
+const explodeBtn = useTemplateRef<HTMLElement>('explodeBtn')
 const explodeSel = ref<string[]>([])
 // default-select every OTHER measure (the current one is already shown on this panel, so exploding it
 // would just duplicate the source — leave it unticked; the user can re-tick it if they want a copy)
@@ -1509,12 +1510,15 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
         <i class="pi pi-copy" />
       </button>
       <!-- Show series: pick measures → one copy of this plot per measure, to see them all at once -->
-      <div v-if="canExplode" class="sp-explode-wrap">
-        <button class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="openExplode"
+      <template v-if="canExplode">
+        <button ref="explodeBtn" class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button"
+                :class="{ 'cc-btn-on': showExplode }" @click.stop="showExplode ? (showExplode = false) : openExplode()"
                 v-tooltip.top="'Show series: duplicate this plot for each selected measurement'">
           <i class="pi pi-chart-bar" />
         </button>
-        <div v-if="showExplode" class="sp-explode-pop" @click.stop>
+        <!-- teleported: the panel's overflow:hidden clipped an in-panel popup at the plot edge -->
+        <TeleportPopover v-model="showExplode" :anchor="explodeBtn" placement="bottom-end">
+        <div class="sp-explode-pop" @click.stop>
           <div class="sp-explode-hd cc-muted cc-fs-xs">Measurements to plot</div>
           <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.top="'Tick to give this measure its own plot'">
             <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ measureLabel(m) }}
@@ -1527,7 +1531,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
                     @click="applyExplode">Show {{ explodeSel.length }}</button>
           </div>
         </div>
-      </div>
+        </TeleportPopover>
+      </template>
       <!-- Notices about THIS render, in the chrome so they can't be clipped by the plot area:
            a setting the renderer had to substitute, and series the chosen measure has no values for.
            Icon-only, text on hover: a wrapped sentence here made the footer row grow. -->
@@ -1619,12 +1624,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
    remaining height), never as an overlay — an absolute strip covered the rotated x-axis labels. */
 .sp-brush-strip { flex: none; align-self: flex-start; margin-top: 6px; max-width: 100%; padding: 2px 6px; }
 
-/* "show series" measure-picker popover (opens upward from the footer button) */
-.sp-explode-wrap { position: relative; display: inline-flex; }
-.sp-explode-pop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 30;
-  min-width: 13rem; max-height: 60vh; overflow-y: auto; padding: 8px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
-  box-shadow: 0 6px 18px var(--cc-shadow); font-size: var(--cc-fs-sm); }
+/* "show series" measure picker, anchored on the footer button (flips above when there's no room below) */
+/* inner layout only — TeleportPopover provides surface/border/shadow/position/padding/scroll */
+.sp-explode-pop { min-width: 13rem; font-size: var(--cc-fs-sm); }
 .sp-explode-hd { margin-bottom: 6px; }
 .sp-explode-warn { margin: 4px 0 2px; }
 .sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }
@@ -1636,8 +1638,8 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
    top/left are set inline on open (see the popStyle watcher). fixed here (not just inline) keeps it out
    of flow on the first render frame too, so it never inflates the anchor wrap. Only the box look + this
    positioning mode live here. New plot popovers should reuse this pattern (docs/PLOTS.md §0). */
-/* inner layout only — TeleportPopover provides surface/border/shadow/position */
-.sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position/padding */
+.sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; }
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sp-pop-row select { max-width: 7rem; }
 .sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }
