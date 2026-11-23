@@ -1,6 +1,8 @@
 # Cluster UMAP — colour-by & facet-by (populations / image attributes)
 
 Status: **all phases built.** Phase 1+2 (colour-by cluster / population / attribute) merged in #127.
+Colour by **feature** (a column the run clustered on — speed, a marker, an HMM frequency — on the value
+ramp with a colour bar; `colourFeature` on `/api/plots/cluster-map`, `plots/valueBins.ts`) added 2026-11-23.
 Phase 3 (facet small-multiples) on branch `feat/umap-facet`. Works for BOTH `clust` (static/cell) and
 `trackclust` (track) embeddings — grain-matched via `pop_df`. Promote the durable bits to a permanent
 doc (PLOTS.md / ANALYSIS.md) and delete this plan once Phase 3 merges.
