@@ -139,7 +139,7 @@ export function isPopoutWindow(
 // ── Side by side: the viewer on the right half of the screen ────────────────────────────────────────
 // A page may move and resize a window that `window.open` made (one tab, no toolbar), never a tab — so
 // the viewer popout can place ITSELF on the right half, and the main window is snapped by the user
-// (Super+← / Win+←); below 1100 px it folds its menu and panel to fit (utils/narrowLayout.ts).
+// (`snapKeys`); below 1100 px it folds its menu and panel to fit (utils/narrowLayout.ts).
 // docs/todo/GUI_LAYOUT_PLAN.md → *Narrow windows*.
 //
 // Order matters, measured on GNOME under XWayland: the window manager clamps a move that would push
@@ -155,6 +155,13 @@ export function isPopoutWindow(
 // the half. `isSideBySide` = a placement is saved AND the window still sits on the right half
 // (within the title bar's offset — GNOME reports the content 37 px below the target, that much
 // shorter).
+//
+// A native Wayland browser (Firefox, and Chromium/Brave since they default to Wayland) can resize its
+// popup but never move it — the protocol has no client positioning — and reports its position as
+// (0, 0). There, "side by side" can only be read from the SIZE, and the move is the user's: after the
+// settle pass `toggleSideBySide` reports whether the window landed, so the header can name the
+// system's own shortcut instead of failing silently. Any other refusal (a maximised or full-screen
+// window, a window manager that ignores the request) reports the same way.
 
 export interface WinRect { x: number; y: number; w: number; h: number }
 /** `screen`, with Chrome's non-standard origin of the available area (the dock / top bar). */
@@ -194,10 +201,21 @@ export function savedPlacement(store: KeyStore | null = safeStore()): WinRect | 
  *  shorter, a little sideways for a frame — a hand drag moves it further. */
 export const PLACEMENT_SLACK = { x: 40, y: 80 } as const
 
+/** Is `win` the size of `to`, give or take the window frame? */
+function hasSize(win: PlaceableWindow, to: WinRect): boolean {
+  return Math.abs(win.outerWidth - to.w) <= PLACEMENT_SLACK.x && Math.abs(win.outerHeight - to.h) <= PLACEMENT_SLACK.y
+}
+
 /** Is `win` on `to`, give or take the window frame? */
 export function isAtPlacement(win: PlaceableWindow, to: WinRect): boolean {
-  return Math.abs(win.screenX - to.x) <= PLACEMENT_SLACK.x && Math.abs(win.outerWidth - to.w) <= PLACEMENT_SLACK.x
-    && Math.abs(win.screenY - to.y) <= PLACEMENT_SLACK.y && Math.abs(win.outerHeight - to.h) <= PLACEMENT_SLACK.y
+  return hasSize(win, to)
+    && Math.abs(win.screenX - to.x) <= PLACEMENT_SLACK.x && Math.abs(win.screenY - to.y) <= PLACEMENT_SLACK.y
+}
+
+/** The page cannot see where its window is: native Wayland reports (0, 0) whatever the place. A window
+ *  really at the corner reads the same — it is not on the right half either way. */
+export function positionHidden(win: Pick<Window, 'screenX' | 'screenY'>): boolean {
+  return win.screenX === 0 && win.screenY === 0
 }
 
 /** Side by side right now: a way back is saved AND the window is still on the right half. Moved or
@@ -206,7 +224,19 @@ export function isSideBySide(
   win: PlaceableWindow = window, area: ScreenArea = screen as ScreenArea,
   store: KeyStore | null = safeStore(),
 ): boolean {
-  return savedPlacement(store) !== null && isAtPlacement(win, rightHalf(area))
+  const half = rightHalf(area)
+  return savedPlacement(store) !== null && (positionHidden(win) ? hasSize(win, half) : isAtPlacement(win, half))
+}
+
+/** How a placement ended: on the target; the right size but not moved there (native Wayland — the page
+ *  cannot move its window); or not changed at all (maximised, full screen, a refusing window manager). */
+export type PlaceOutcome = 'placed' | 'sized' | 'refused'
+
+/** When `toggleSideBySide` reports how the placement ended — after the settle pass and its move. */
+export const PLACE_VERDICT_MS = PLACE_SETTLE_MS + 2 * PLACE_MOVE_DELAY_MS
+
+function outcome(win: PlaceableWindow, to: WinRect): PlaceOutcome {
+  return isAtPlacement(win, to) ? 'placed' : hasSize(win, to) ? 'sized' : 'refused'
 }
 
 /** Size first, then move (never clamped: the size fits), then one settle pass. */
@@ -220,22 +250,30 @@ function place(win: PlaceableWindow, to: WinRect): void {
 }
 
 /** Put the window on the right half, or back where it was. Returns the new state (true = side by
- *  side). Call it from a click; a window the browser will not move just stays put. A window moved
- *  away by hand goes to the half again, and where it was moved to becomes the way back. */
+ *  side). Call it from a click. A window moved away by hand goes to the half again, and where it was
+ *  moved to becomes the way back. `onLanded` gets how the placement ended (`PLACE_VERDICT_MS` later);
+ *  a hidden position (native Wayland) can only be judged by size, so it is never `placed`. */
 export function toggleSideBySide(
   win: PlaceableWindow = window, area: ScreenArea = screen as ScreenArea,
-  store: KeyStore | null = safeStore(),
+  store: KeyStore | null = safeStore(), onLanded?: (o: PlaceOutcome) => void,
 ): boolean {
   const back = isSideBySide(win, area, store) ? savedPlacement(store) : null
+  const to = back ?? rightHalf(area)
   if (back) {
     try { store?.removeItem(SIDE_BY_SIDE_KEY) } catch { /* the window still goes back */ }
-    place(win, back)
-    return false
+  } else {
+    const was: WinRect = { x: win.screenX, y: win.screenY, w: win.outerWidth, h: win.outerHeight }
+    try { store?.setItem(SIDE_BY_SIDE_KEY, JSON.stringify(was)) } catch { /* no way back, still placed */ }
   }
-  const was: WinRect = { x: win.screenX, y: win.screenY, w: win.outerWidth, h: win.outerHeight }
-  try { store?.setItem(SIDE_BY_SIDE_KEY, JSON.stringify(was)) } catch { /* no way back, still placed */ }
-  place(win, rightHalf(area))
-  return true
+  place(win, to)
+  if (onLanded) setTimeout(() => onLanded(outcome(win, to)), PLACE_VERDICT_MS)
+  return !back
+}
+
+/** The system's own keys to tile a window to one half (macOS 15+ tiling; GNOME / KDE; Windows). */
+export function snapKeys(side: 'left' | 'right', platform: string = navigator.platform): string {
+  const arrow = side === 'left' ? '←' : '→'
+  return /mac/i.test(platform) ? `Fn+Control+${arrow}` : /win/i.test(platform) ? `Win+${arrow}` : `Super+${arrow}`
 }
 
 /** Open a task's form on its page in the MAIN window, from a popout — the task selected, never started.

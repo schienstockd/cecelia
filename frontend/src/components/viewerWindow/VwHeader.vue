@@ -22,7 +22,8 @@ import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
 import type { KiwiRef } from '../../utils/kiwiRef'
 import { NAV_GROUPS, navItemFor } from '../../lib/navGroups'
-import { focusMainWindow, isSideBySide, toggleSideBySide, PLACE_MOVE_DELAY_MS, PLACE_SETTLE_MS } from '../../lib/popout'
+import { focusMainWindow, isSideBySide, snapKeys, toggleSideBySide, PLACE_VERDICT_MS, type PlaceOutcome } from '../../lib/popout'
+import { useToast } from '../../composables/useToast'
 import { useWindowListener } from '../../composables/useKeepAlive'
 
 const props = defineProps<{
@@ -93,11 +94,19 @@ const placeable = (() => { try { return !!window.opener } catch { return false }
 const sideBySide = ref(placeable && isSideBySide())
 let placingUntil = 0
 function readSide() { if (placeable && Date.now() >= placingUntil) sideBySide.value = isSideBySide() }
+// The page could not put it there (native Wayland can't move a window; a maximised one won't resize):
+// name the system's own keys rather than fail silently.
+const toast = useToast()
+function landed(o: PlaceOutcome, toHalf: boolean) {
+  placingUntil = 0
+  readSide()
+  if (toHalf && o !== 'placed')
+    toast.add({ severity: 'info', summary: `Press ${snapKeys('right')} to put the viewer on the right`, life: 6000 })
+}
 function toggleSide() {
-  sideBySide.value = toggleSideBySide()
-  const settled = PLACE_SETTLE_MS + 2 * PLACE_MOVE_DELAY_MS
-  placingUntil = Date.now() + settled
-  setTimeout(readSide, settled)
+  const toHalf = toggleSideBySide(undefined, undefined, undefined, o => landed(o, toHalf))
+  sideBySide.value = toHalf
+  placingUntil = Date.now() + PLACE_VERDICT_MS
 }
 useWindowListener('focus', readSide)
 useWindowListener('resize', readSide)
@@ -118,7 +127,7 @@ const prov = computed(() => [
             :class="{ 'cc-btn-on cc-btn-on-tint': sideBySide }" :aria-pressed="sideBySide"
             :aria-label="sideBySide ? 'Put the viewer back where it was' : 'Viewer on the right half of the screen'"
             v-tooltip.bottom="sideBySide ? 'Put the viewer back where it was'
-              : 'Right half of the screen — snap the main window left (Super+←)'"
+              : `Right half of the screen — snap the main window left (${snapKeys('left')})`"
             @pointerenter="readSide" @click="toggleSide">
       <i class="pi pi-side-by-side" />
     </button>
