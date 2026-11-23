@@ -53,7 +53,14 @@ image (a gap in the page's colour between), one figure under the first one's cap
 wrapped under each other on a narrow page, one image scales as one: the README's hero is the Gate page (`windowWidth` 1440) beside the
 viewer window (980) on the same image, each shown at the same scale. `overview` marks a whole window
 shown small, whose text is not meant to be read, so compose does not refuse it as too wide and writes it
-as JPEG (`<id>.jpg`, `<id>.dark.jpg`).
+as JPEG (`<id>.jpg`, `<id>.dark.jpg`). A `heroRow` shot sits in the README's top row beside the
+first, with its own caption: the README shows a multiplex section under the channel lens beside the
+intravital pair, each citing its own sample.
+
+**Viewer state.** A viewer shot names what the window shows: channels, outlines, gated populations
+or cell clusters, the dots' `pointSize`, and a `camera` (level-0 px and zoom) and channel `lens`, the
+last two set through the route MCP `set_viewer_view` uses, after every control has been clicked (the
+lens's chip covers the side panel). A lens pinned by an earlier shot is cleared first.
 
 **Limits.** `test_repo_images_convention.py` fails an image in `user-docs/images/` over 350 kB, the folder
 over 2 MB, and an image committed anywhere else (review captures stay on your machine); `docShots.test.ts`

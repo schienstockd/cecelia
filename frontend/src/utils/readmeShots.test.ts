@@ -17,8 +17,21 @@ describe('README.md screenshots', () => {
 
   it('captions carry the fixture numbers, and a missing one fails', () => {
     const block = renderReadmeShots(facts, widths)
-    expect(block).toContain(`its ${facts['tcells.TKufLV.Tcells.tracks']} tracks drawn in 3D.`)
+    expect(block).toContain(`its ${facts['tcells.TKufLV.Tcells.tracks']} tracks drawn as ribbons.`)
+    // the public section cites the data source the fixture read off its record
+    expect(block).toContain(`Data: ${facts['hubmap.2dR91B.citation']}, doi:${facts['hubmap.2dR91B.doi']}.`)
     expect(() => renderReadmeShots({}, widths)).toThrow(/no measured/)
+  })
+
+  it('the first shot and a heroRow shot share the top row, each with its own caption', () => {
+    const top = renderReadmeShots(facts, widths).split('\n')[1]
+    expect(top.startsWith('<table width="100%"><tr>')).toBe(true)
+    expect(top.match(/<td /g)?.length).toBe(2)
+    // equal columns, whatever each caption's length
+    expect(top.match(/<td valign="top" width="50%">/g)?.length).toBe(2)
+    // each figure fills its column, so the row fills the page
+    expect(top.match(/<img [^>]*width="100%"/g)?.length).toBe(2)
+    expect(top.indexOf('readme-lens')).toBeLessThan(top.indexOf('readme-viewer'))
   })
 
   it('splices only between the markers', () => {

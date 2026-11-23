@@ -68,7 +68,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
 
     # the task is handed only the image — recover the set that owns it so we can register a new image
     proj    = load_project(proj_uid)
-    set_idx = isempty(p.toSetUid) ? findfirst(s -> img.uid in s.image_uids, proj._sets) :
+    set_idx = isempty(p.toSetUid) ? image_set_index(proj, img) :
                                     findfirst(s -> s.uid == p.toSetUid, proj._sets)
     if isnothing(set_idx)
         on_log(isempty(p.toSetUid) ? "[ERROR] Could not find the set containing image $(img.uid)" :
@@ -97,6 +97,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     # — images imported before source-path tracking have none, so the crop's dialog still reads "not
     # recorded" (it inherits the source's gap rather than inventing one).
     copy_source_meta!(crop_meta, src_meta)
+    inherit_data_source!(crop_meta, proj, img, s)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
     new_img = add_image!(s; name = derived_image_name(proj, img.name, crop_name_suffix(p.nameSuffix)),

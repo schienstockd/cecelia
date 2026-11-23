@@ -1058,9 +1058,12 @@ function run_scale_defaults(img::CciaImage, need::Set{Symbol})::Dict{String,Any}
 end
 
 """The `meta` keys that say which raw file an image came from: `ori_path` and its `oriFingerprint`
-(`source_fingerprint`, banked at import). A derived image (crop, bin, projection, copy, registration)
-comes from the same acquisition, so it carries both — `copy_source_meta!` is the one place that does."""
-const SOURCE_META_KEYS = ("ori_path", "oriFingerprint")
+(`source_fingerprint`, banked at import), and the image's own `data_source` (who published the data,
+`data_source.jl`). A derived image (crop, bin, projection, copy, registration) comes from the same
+acquisition, so it carries them — `copy_source_meta!` is the one place that does. A source recorded
+on the SET reaches a derived image through `inherit_data_source!`, since the derived image may land
+in another set."""
+const SOURCE_META_KEYS = ("ori_path", "oriFingerprint", "data_source")
 
 """The `meta` keys that make up an image's frame interval: the value, its unit, and where it came
 from when it was declared rather than read (`TimeIncrementDeclared`, Immunemap). A derived image that

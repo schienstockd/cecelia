@@ -1,6 +1,6 @@
 # Data source — plan
 
-**Status:** planning (2026-11-23). Nothing built.
+**Status:** P1–P3 built (2026-11-23) on `feat/data-source`; P4 (Fetch details) not built.
 
 ## Why
 
@@ -57,14 +57,17 @@ Today that citation is typed by hand, if it is remembered at all.
    one place that carries `ori_path` and `oriFingerprint` to it. Crop, splitTissues, zProject,
    tProject, resampleZ, bin and register call it, and copyImage splats the keys. `data_source` joins
    `SOURCE_META_KEYS`; no per-task helper names it. One difference: a derived image often lands in
-   another set (a crop set), so it gets the source's *resolved* `data_source` (the image's own, else
-   its set's) written on the image, not only the image's own key. That resolve happens once, in a new
-   method `copy_source_meta!(dst, proj, src::CciaImage)` beside the dict one, which copies the other source
-   keys and the resolved source. P2 moves the seven callers and copyImage (which today splats
-   `SOURCE_META_KEYS` into its own key list) onto it, so no call site resolves by hand.
+   another set (a crop set), so it also gets its set's source: `inherit_data_source!(dst_meta, proj,
+   src_img, dest_set)` writes the source set's source when the derived image lands in a DIFFERENT set
+   and has none. One staying in its source's set gets no frozen copy, so a later correction of the
+   set's source reaches it. Each of the eight derived-image tasks calls it once beside
+   `copy_source_meta!`. A MOVED image (`move_image!`) is different: it is the same image placed in
+   another set, so it takes the new set's source unless it has its own. Writing the old set's onto it
+   would go stale on a move back, and is wrong when the move corrects a mis-filed image.
 
-7. **Warn, never block.** Nothing refuses to run or export without a source. The Methods draft says
-   "Data source not recorded" when an image has none and its path or set suggests outside data.
+7. **Warn, never block.** Nothing refuses to run or export without a source. When some images in a
+   Methods draft's scope have a source and others don't, it counts those with "data source not
+   recorded"; when none do (the lab's own data), it has no Data section.
 
 ## Readers
 

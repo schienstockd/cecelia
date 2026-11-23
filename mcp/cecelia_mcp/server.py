@@ -261,7 +261,10 @@ def get_image_info(project_uid: str, image_uid: str) -> dict:
     per channel exposureMs, gain, filterCube, illuminationIntensity; and when it was acquired. `cleanupFacts` is
     what was measured in the file at import, per channel: zero / clipped %, and where measured a
     `profile` of per-depth (`byZ`) and per-frame (`byT`) p50, p99, zero fraction and clipped count.
-    Read both against get_acquisition_knowledge. The user's note is not here: get_image_notes reads it
+    Read both against get_acquisition_knowledge. `dataSource` is where the data came from (citation,
+    doi, url, licence; `from` "image" or "set"; `confirmed` false = a suggestion import made from a
+    repository ID) or null when unknown: cite it for someone else's images, and never guess one when
+    it is null. The user's note is not here: get_image_notes reads it
     (one tool, so a turn that must not see the analyst's notes withholds just that one)."""
     img = _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
     return {k: v for k, v in img.items() if k != "note"} if isinstance(img, dict) else img

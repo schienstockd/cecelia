@@ -165,6 +165,11 @@ async function measure(api, fixture, rec) {
       if (!g.ok) throw new Error(`geometry of ${key}/${src}: ${g.body.error ?? 'failed'}`)
       Object.assign(facts, { [`${key}.${src}.planes`]: g.body.sizeZ, [`${key}.${src}.channels`]: g.body.sizeC,
                              [`${key}.${src}.timepoints`]: g.body.sizeT })
+      // where the data came from (the image's source, else its set's): a caption cites it, never types it
+      const m = await api(`/api/images/meta?projectUid=${copy.uid}&imageUid=${copy.images[src]}`)
+      const ds = m.ok ? m.body.image?.dataSource : null
+      if (ds?.citation) facts[`${key}.${src}.citation`] = ds.citation
+      if (ds?.doi) facts[`${key}.${src}.doi`] = ds.doi
     }
     const tracked = new Set()
     for (const gate of spec.gates ?? []) {
@@ -271,6 +276,16 @@ async function main() {
           const srcDir = join(resolve(a.sourceProjects), spec.source, '1', g.image)
           const made = await addGate(api, copy.uid, copy.images[g.image], g, srcDir)
           console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.segmentation ?? 'cells'}${gatePath(g)}${made ? '' : ' already there'}`)
+        }
+        // the rebuilt gates take over their source gates' tracks, so their cell-track ribbons draw (a
+        // cell is tracked by a person's gate: the flow sidecar)
+        const tracked = new Set((spec.gates ?? []).filter(g => g.fromSource && (g.popType ?? 'flow') === 'flow').map(g => `${g.image}\t${g.segmentation ?? 'cells'}`))
+        for (const k of tracked) {
+          const [img, vn] = k.split('\t')
+          const n = execFileSync('python', [join(repo, 'scripts', 'docshots', 'adopt_tracks.py'),
+            '--source', join(resolve(a.sourceProjects), spec.source, '1', img), '--copy', join(into, copy.uid, '1', copy.images[img]),
+            '--value-name', vn], { encoding: 'utf-8' }).trim().split('\n').pop()
+          if (Number(n)) console.log(`✓ ${b.id}: project ${key}: ${n} tracked cells of ${vn} moved to the rebuilt gates`)
         }
       }
       rec.facts = await measure(api, b.fixture, rec)

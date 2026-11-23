@@ -19,9 +19,12 @@
 import { designRoles, type DesignMode, type DesignStatus } from './experimentDesign'
 import { boardScopeQuery, type BoardParamsScope, type HistoryParamsRow } from './chainFromHistory'
 import { rowsToCsv } from '../plots/export'
+import type { ImageSource } from './dataSource'
 import { paramTree, paramLeaves, splitParams, insertParam, type ParamNode } from './paramTree'
 
 export const PROVENANCE_SCHEMA = 'cecelia.board-provenance/1'
+/** An image a figure shows; `dataSource` = where its data came from, when recorded (the image's own, else its set's). */
+export interface ProvenanceImage { uid: string; name: string; dataSource?: ImageSource & { from: 'image' | 'set' } }
 /** The PDF document-info key the record is stored under (a custom Info entry, JSON text). */
 export const PDF_PROVENANCE_KEY = 'CeceliaProvenance'
 
@@ -123,7 +126,7 @@ export interface BoardProvenanceResponse {
   /** git commit of a checkout or dev install (`cecelia_commit`); '' or absent for a release */
   ceceliaCommit?: string
   project: { uid: string; name: string }
-  images: { uid: string; name: string }[]
+  images: ProvenanceImage[]
   populations: { key: string; popType: string; valueName: string; pop: string; gateFiles: string[] }[]
   runs: HistoryParamsRow[]
   author: Record<string, string>
@@ -189,7 +192,7 @@ export interface ProvenanceRecord {
   ceceliaCommit?: string
   author: Record<string, string>
   project: { uid: string; name: string }
-  images: { uid: string; name: string }[]
+  images: ProvenanceImage[]
   boards: ProvenanceBoard[]
   designs?: RecordDesign[]          // the sets' experiment designs at export; absent in older records
 }
@@ -204,7 +207,7 @@ export interface ProvenanceRecord {
 export function buildProvenanceRecord(boards: readonly ProvenanceBoardIn[], exportedAt: string): ProvenanceRecord | null {
   if (!boards.length) return null
   const first = boards[0].server
-  const images = new Map<string, { uid: string; name: string }>()
+  const images = new Map<string, ProvenanceImage>()
   for (const b of boards) for (const im of b.server.images) if (!images.has(im.uid)) images.set(im.uid, im)
   const designs = new Map<string, RecordDesign>()
   for (const b of boards) for (const d of b.server.designs ?? []) if (!designs.has(d.setUid)) designs.set(d.setUid, d)

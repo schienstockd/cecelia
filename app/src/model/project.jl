@@ -167,6 +167,8 @@ function move_image!(proj::CciaProject, image_uid::String,
     # a double-click or a stale from_set_uid from the UI). Only then require it to be in the source.
     (image_uid in to.image_uids)   && return proj
     (image_uid in from.image_uids) || error("Image $image_uid not in set $from_set_uid")
+    # a moved image takes the new set's source unless it has its own (data_source.jl): the set's source
+    # describes the set, and an image placed in the wrong set is corrected by the move
     img_idx = findfirst(i -> i.uid == image_uid, from._images)
     img     = isnothing(img_idx) ? nothing : from._images[img_idx]
     # detach from source

@@ -28,6 +28,8 @@ from cecelia.utils.atomic_io import write_json_atomic
 _ALPHABET = string.ascii_letters + string.digits
 # the run's own provenance, not the source's: re-derived by whatever the agent runs
 _DROP_META = ("funParams", "funParamsByName")
+# where the images came from (app/src/data_source.jl): an image's own, else its set's
+_DATA_SOURCE = "data_source"
 
 
 def new_uid(taken) -> str:
@@ -47,6 +49,28 @@ def raw_ccid(src: dict, uid: str, filename: str) -> dict:
             "imChannelNames": {"default": list(names or []), "_active": "default"},
             "meta": {k: v for k, v in (src.get("meta") or {}).items() if k not in _DROP_META},
             "filepath": {"default": filename, "_active": "default"}, "labels": {}, "label_props": {}}
+
+
+def set_data_sources(src_root: pathlib.Path) -> dict:
+    """image uid → its set's data source, for the source project's sets that record one. The copy lands
+    in a new set, so each image takes its old set's source as its own, as a crop into another set does
+    (`inherit_data_source!`): a figure made from the copy still cites the data."""
+    out = {}
+    try:
+        with open(src_root / "project.json", encoding="utf-8") as f:
+            set_uids = json.load(f).get("set_uids") or []
+    except FileNotFoundError:
+        return out
+    for set_uid in set_uids:
+        try:
+            with open(src_root / "1" / set_uid / "ccid.json", encoding="utf-8") as f:
+                s = json.load(f)
+        except FileNotFoundError:
+            continue
+        ds = (s.get("meta") or {}).get(_DATA_SOURCE)
+        if isinstance(ds, dict):
+            out.update({uid: ds for uid in s.get("image_uids") or []})
+    return out
 
 
 def knowledge_entries(src_root: pathlib.Path) -> list[tuple[pathlib.Path, dict]]:
@@ -129,12 +153,15 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
     taken.add(set_uid)
     root = into / proj_uid
     images = []
+    set_sources = set_data_sources(src_root)
     for image_uid, src, filename in srcs:
         img_uid = new_uid(taken)
         taken.add(img_uid)
         shutil.copytree(src_root / "0" / image_uid / filename, root / "0" / img_uid / filename)
         (root / "1" / img_uid).mkdir(parents=True)
         ccid = raw_ccid(src, img_uid, filename)
+        if _DATA_SOURCE not in ccid["meta"] and image_uid in set_sources:
+            ccid["meta"][_DATA_SOURCE] = set_sources[image_uid]
         if results:
             # the labels were made on the source's active version (a drift-corrected one has another
             # canvas): bring that store too and keep it active, or every outline and track is drawn

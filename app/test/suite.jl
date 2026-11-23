@@ -391,6 +391,8 @@ include(joinpath(@__DIR__, "suite", "acq_camera_unlisted.jl"))   # RESULT-REVIEW
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 # the experiment design record + grid (experiment_design.jl): one design per set, history, placement
 include(joinpath(@__DIR__, "suite", "experiment_design.jl"))
+# where a set's images came from (data_source.jl): record, precedence, import suggestions, derived images
+include(joinpath(@__DIR__, "suite", "data_source.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))

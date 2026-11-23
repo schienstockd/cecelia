@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useLogStore } from '../../stores/log'
@@ -10,6 +10,9 @@ import { parseChannelNameList, channelNamesAsText, referenceCandidates,
          splitByChannelCount, skippedChannelCountMsg } from '../../utils/channelNames'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import AttrTableDialog from '../../components/AttrTableDialog.vue'
+import DataSourceDialog from '../../components/DataSourceDialog.vue'
+import { sourceSummary, type SourceReply } from '../../utils/dataSource'
+import { fetchDataSource } from '../../utils/dataSourceApi'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SuggestInput from '../../components/SuggestInput.vue'
 import { createImageAttr, deleteImageAttr, renameImageAttr, setImageAttr } from '../../utils/imageAttrApi'
@@ -28,6 +31,17 @@ const props = defineProps<{
 
 const project     = useProjectStore()
 const projectMeta = useProjectMetaStore()
+
+// ── Source: where the set's images came from (utils/dataSource.ts) ──
+const showSourceDialog = ref(false)
+const sourceReply = ref<SourceReply | null>(null)
+async function loadSource() {
+  const pu = projectMeta.current?.uid
+  sourceReply.value = null
+  if (!pu || !props.setUid) return
+  try { sourceReply.value = await fetchDataSource(pu, props.setUid) } catch { /* summary stays blank */ }
+}
+watch(() => [projectMeta.current?.uid, props.setUid], loadSource, { immediate: true })
 const log         = useLogStore()
 
 // ── Computed helpers ───────────────────────────────────────────────────────────
@@ -309,6 +323,19 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <PhysicalSizeDialog v-if="showPhysDialog && setUid && physFocusUid"
       :set-uid="setUid" :focus-uid="physFocusUid" :selected-uids="selectedUids"
       @close="showPhysDialog = false" />
+
+    <!-- ── Source ───────────────────────────────────────────────── -->
+    <section class="cc-panel-section md-section" data-guide="metadata.source">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Source</h3>
+      <p v-if="sourceReply" class="section-hint cc-muted">{{ sourceSummary(sourceReply) }}</p>
+      <button class="cc-btn cc-btn-ghost" :disabled="!setUid" @click="showSourceDialog = true"
+        v-tooltip.bottom="'Where these images came from, to cite'">
+        <i class="pi pi-book" /> Open editor
+      </button>
+    </section>
+    <DataSourceDialog v-if="showSourceDialog && setUid && projectMeta.current"
+      :project-uid="projectMeta.current.uid" :set-uid="setUid" :selected-uids="selectedUids"
+      @close="showSourceDialog = false" @saved="loadSource" />
 
     <!-- ── Attribute management ─────────────────────────────────── -->
     <section class="cc-panel-section md-section" data-guide="metadata.attributes">
