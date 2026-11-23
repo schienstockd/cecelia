@@ -338,6 +338,49 @@ function label_track_sources(img::CciaImage, value_name::AbstractString)::Dict{I
     label_to_source
 end
 
+# MODULE-LEVEL, NOT ON THE IMAGE: `init_object` builds a fresh `CciaImage` per request, so the
+# `img._pop_df_cache` this used to live in never survived one — every viewer overlay, landscape and
+# mask-colour request re-ran the gate evaluation (the same trap `_TRACKED_PARENTS_CACHE` documents).
+# ONE SLOT per (image dir, value_name, pop_type) holding (stamp, result): a gate edit replaces the
+# slot rather than adding a key, so the cache holds at most one membership set per segmentation × pop
+# type. Computed OUTSIDE the lock — a slow evaluation on one image must not stall another's request;
+# two concurrent misses on the same slot both compute and the later write wins, same answer.
+# BOUNDED (`BoundedCache`, utils.jl): a slot's labels are ~5 MB on a 600k-cell table, and a session
+# that opens many images would otherwise keep every one.
+const _RESOLVE_POPS_CACHE = BoundedCache(32)
+
+# Everything a segmentation's gate evaluation depends on, for a cache that outlives a request
+# (`_RESOLVE_POPS_CACHE`, `_TRACKED_PARENTS_CACHE`). A gating-map mtime alone was enough for a cache
+# that died with the request; across requests it misses three things, so the stamp is:
+#   • the SHA-256 of every gating map of the image — a cluster pop type with no map of its own borrows
+#     a sibling segmentation's (`_borrow_cluster_pop_tree`), and a second save inside one mtime tick
+#     (1 s on HFS+/FAT/some network mounts) leaves the mtime unchanged. A real digest, not `hash`: Julia
+#     samples only some elements of an array of 8192+ bytes, so a same-length edit to a large map (a
+#     cluster id 17→18) could leave `hash` unchanged. The maps are small; `_file_sha256` is the helper.
+#   • this segmentation's `labelProps/{vn}*.json` sidecars (the cluster-feature suffixes a borrow
+#     checks), digested the same way, and the h5ad by mtime + size (too big to digest per request).
+#   • the image's µm/px — `load_pop_tree` scales spatial gates by it, and a calibration edit touches
+#     only ccid.json.
+function _gating_inputs_stamp(img::CciaImage, vn::AbstractString)::String
+    io = IOBuffer()
+    print(io, img_is_calibrated(img) ? first(img_physical_sizes(img)) : "uncal")
+    gd = gating_dir(img._dir)
+    if isdir(gd)
+        for f in sort(readdir(gd))
+            endswith(f, ".json") && print(io, "|", f, "=", _file_sha256(joinpath(gd, f)))
+        end
+    end
+    lpp = img_label_props_path(img, vn)
+    ld = dirname(lpp)
+    if isdir(ld)
+        for f in sort(readdir(ld))
+            (startswith(f, vn) && endswith(f, ".json")) && print(io, "|", f, "=", _file_sha256(joinpath(ld, f)))
+        end
+    end
+    print(io, "|h5ad=", _pop_df_mtime(lpp), "/", isfile(lpp) ? filesize(lpp) : "none")
+    String(take!(io))
+end
+
 """
     resolve_pops(img, pop_type; value_name) -> Vector{NamedTuple}
 
@@ -345,11 +388,12 @@ Resolve a segmentation's stored populations to display-ready, membership-resolve
 **non-transient, non-empty** population of `value_name` under `pop_type`, as
 `(path, name, colour, show, is_track, labels)` where `labels` is the pop's member cell IDs (raw label
 IDs for cell pop_types). Membership is recomputed from the on-disk gating map + cell table, then
-**cached on the image** (`_pop_df_cache`, `Dict{String,Any}`) under a key folding the gating-map and
-h5ad mtimes — the SAME auto-invalidation trick `pop_df` uses (`_pop_df_mtime`). So an unchanged
+**cached at module level** (`_RESOLVE_POPS_CACHE`) under `_gating_inputs_stamp` — every gating map's
+digest, the segmentation's sidecars, the h5ad's mtime + size and the image's µm/px. So an unchanged
 segmentation returns instantly, and a saved gate edit on ONE segmentation invalidates only its entry
-(a caller iterating every segmentation — e.g. a napari overlay refresh — then only recomputes the one
-that changed). Complements `cells_in_pop` (one pop, live map): this is the whole set, cached.
+(a caller iterating every segmentation then only recomputes the one that changed). Complements
+`cells_in_pop` (one pop, live map): this is the whole set, cached. The returned vector and its
+`labels` are SHARED with the cache — read them, never mutate them.
 
 The transient napari-selection pop is intentionally excluded (it's the selection *source*; rendering
 it back would steal the legacy viewer's active layer). Cell pop_types only (`flow`/`clust`) — track pops go
@@ -371,11 +415,14 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
     if is_track_grained(pt)
         return _resolve_track_family_pops(img, pt, String(value_name))
     end
-    ckey = string("poplayers:", value_name, ":", pt, "@",
-                  _pop_df_mtime(gating_path(img._dir, value_name; pop_type = pt)),
-                  "/", _pop_df_mtime(img_label_props_path(img, value_name)))
-    cached = get(img._pop_df_cache, ckey, nothing)
-    cached === nothing || return cached::Vector{NamedTuple}
+    slot  = string(img._dir, "|", value_name, "|", pt)
+    stamp = _gating_inputs_stamp(img, value_name)
+    cached!(_RESOLVE_POPS_CACHE, slot; stamp) do
+        _resolve_pops_compute(img, pt, String(value_name))
+    end::Vector{NamedTuple}
+end
+
+function _resolve_pops_compute(img::CciaImage, pt::String, value_name::String)::Vector{NamedTuple}
     m = load_pop_tree(img; value_name = value_name, pop_type = pt)
     # `labels` are CELL labels, so membership is evaluated over the cell table — the shared source's
     # cell branch, whatever `pt` is (a `branch` map's ids are not cells). Raw column names. No transient
@@ -389,7 +436,7 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
     # without any change to `is_track` (which stays "was this pop TYPED as a track pop"). See
     # docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2 (`has_tracks` flag) and
     # docs/todo/MULTI_POP_TRACKING_ORPHANS_PLAN.md Decision 1 (attribution guard). One label-props
-    # read, cached on the image with the rest of `resolve_pops`'s output (mtime-keyed), so the whole
+    # read, cached with the rest of `resolve_pops`'s output (`_RESOLVE_POPS_CACHE`, `_gating_inputs_stamp`-keyed), so the whole
     # membership + tracks lookup pays its cost once per (segmentation × edit).
     #
     # Legacy row (no `track_source` column, or NaN in it) → treated as whole-seg-equivalent
@@ -412,7 +459,6 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
                     show = p.show, is_track = is_track_pop(pt, p.path), has_tracks = has_tracks,
                     labels = labs))
     end
-    img._pop_df_cache[ckey] = out
     out
 end
 

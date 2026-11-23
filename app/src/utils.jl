@@ -360,6 +360,49 @@ security says nothing about.
 """
 _file_sha256(path::AbstractString)::String = open(io -> bytes2hex(SHA.sha256(io)), path)
 
+# ── Server-lifetime caches ────────────────────────────────────────────────────────────────────────
+
+"""
+    BoundedCache(max) ; cached!(produce, cache, key; stamp = "", flush = false)
+
+THE server-lifetime in-memory cache: locked (handlers run on several threads), bounded to `max`
+entries with the oldest-written evicted first. `key` names the slot; `stamp` is what the value was
+computed from — a hit needs the same stamp, and a new stamp REPLACES the slot instead of adding one, so
+a cache whose input keeps changing (a gate edit) still holds one entry per slot. A caller with
+everything in the key passes no stamp. `produce` runs OUTSIDE the lock: a slow computation on one key
+does not stall another; two threads missing on one key both compute and the later write wins. `flush`
+recomputes regardless — for an in-memory edit nothing on disk records. Values are shared, never copied:
+callers read them, never mutate them.
+
+Why it exists at all: `init_object` builds a fresh `CciaImage` per request, so a cache held on the
+image object never survives one.
+"""
+struct BoundedCache
+    data::Dict{String,Tuple{String,Any}}
+    order::Vector{String}
+    max::Int
+    lock::ReentrantLock
+end
+BoundedCache(max::Int) = BoundedCache(Dict{String,Tuple{String,Any}}(), String[], max, ReentrantLock())
+Base.length(c::BoundedCache) = lock(() -> length(c.data), c.lock)
+Base.haskey(c::BoundedCache, key::AbstractString) = lock(() -> haskey(c.data, key), c.lock)
+function cached!(produce, c::BoundedCache, key::String; stamp::String = "", flush::Bool = false)
+    if !flush
+        hit = lock(() -> get(c.data, key, nothing), c.lock)
+        (hit !== nothing && hit[1] == stamp) && return hit[2]
+    end
+    v = produce()
+    lock(c.lock) do
+        haskey(c.data, key) && filter!(!=(key), c.order)
+        push!(c.order, key)
+        c.data[key] = (stamp, v)
+        while length(c.order) > c.max
+            delete!(c.data, popfirst!(c.order))
+        end
+    end
+    v
+end
+
 const SOURCE_FINGERPRINT_SAMPLE = 1 << 20   # bytes hashed from each end of the file
 
 """

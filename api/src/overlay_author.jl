@@ -332,6 +332,23 @@ _finite_mask(v::AbstractVector) = BitVector(map(x -> x isa Real && isfinite(Floa
 _col_f64(v::AbstractVector, idx) = Float64[Float64(v[i]) for i in idx]
 _col_f32(v::AbstractVector, idx) = Float32[Float32(v[i]) for i in idx]
 _col_int(v::AbstractVector, idx) = Int[Int(v[i]) for i in idx]
+# Whole column, a non-number (missing/nothing/string) replaced by `d` — NaN where the caller then
+# tests `isfinite`, 0.0 where a missing value has a meaning (a missing z draws on the flat plane).
+_col_or(v::AbstractVector, d::Float64) = Float64[x isa Real ? Float64(x) : d for x in v]
+# The columns `_build_overlay_state`'s loops read, typed ONCE per frame — every branch indexes these
+# instead of `df[i, name]`. A non-number or NaN x/y/t/track reads as NaN and the loops skip it; `z`
+# keeps the flat-plane 0.0 for a missing value. An absent column is an empty vector — the loops test
+# presence first.
+const _OverlayCols = NamedTuple{(:x, :y, :t, :z, :k, :ts, :pop),
+    Tuple{Vector{Float64},Vector{Float64},Vector{Float64},Vector{Float64},Vector{Float64},Vector{String},Vector{String}}}
+function _overlay_cols(df)::_OverlayCols
+    has(c) = hasproperty(df, Symbol(c))
+    C(c) = getproperty(df, Symbol(c))
+    f(c, d) = has(c) ? _col_or(C(c), d) : Float64[]
+    s(c) = has(c) ? String[x isa AbstractString ? String(x) : "" for x in C(c)] : String[]
+    (; x = f("centroid_x", NaN), y = f("centroid_y", NaN), t = f("centroid_t", NaN),
+       z = f("centroid_z", 0.0), k = f("track_id", NaN), ts = s("track_source"), pop = s("pop"))
+end
 
 """
     _cb_scale(img, value_names, colour_by) -> scale | nothing
@@ -523,8 +540,6 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
         hist = get!(track_hist, (kid, String(group)), Tuple{Int,Float64,Float64,Float64,RGB{N0f8}}[])
         push!(hist, (t, xyz[1], xyz[2], xyz[3], colour))
     end
-    _z_of(df, i, has_z) = has_z ?
-        (df[i, :centroid_z] isa Real ? Float64(df[i, :centroid_z]) : 0.0) : 0.0
 
     if all_tracks
         if !hasK
@@ -537,21 +552,22 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             has_z = "centroid_z" in names(df)
             default_col = hex_to_rgb(String(all_tracks_colour))
             cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
+            c = _overlay_cols(df)
             @inbounds for i in 1:size(df, 1)
-                px = df[i, :centroid_x]; py = df[i, :centroid_y]
-                (px isa Real && py isa Real) || continue
-                t = hasT ? df[i, :centroid_t] : 0
-                (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
-                pz = _z_of(df, i, has_z)
-                ti = hasT ? Int(round(Float64(t))) : 0
+                px = c.x[i]; py = c.y[i]
+                (isnan(px) || isnan(py)) && continue
+                t = hasT ? c.t[i] : 0.0
+                (hasT && !isfinite(t)) && continue
+                pz = has_z ? c.z[i] : 0.0
+                ti = hasT ? Int(round(t)) : 0
                 colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
-                _push_point!(ti, (Float64(px), Float64(py), pz), colour)
+                _push_point!(ti, (px, py, pz), colour)
                 if include_tracks
-                    traw = df[i, :track_id]
-                    (traw isa Real && isfinite(Float64(traw))) || continue
-                    kid = Int(round(Float64(traw)))
+                    traw = c.k[i]
+                    isfinite(traw) || continue
+                    kid = Int(round(traw))
                     kid > 0 || continue
-                    _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz))
+                    _push_track!(kid, colour, ti, (px, py, pz))
                 end
             end
         end
@@ -576,9 +592,14 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
         df = as_df(lp)
         has_z = "centroid_z" in names(df)
         n = size(df, 1)
+        # Typed columns ONCE (`_overlay_cols`), then index them per label — never `df[i, name]`.
+        c = _overlay_cols(df)
+        cx, cy, ct, cz, ck, cts = c.x, c.y, c.t, c.z, c.k, c.ts
+        clab = _col_int(getproperty(df, :label), 1:n)::Vector{Int}
         row_of = Dict{Int,Int}()
+        sizehint!(row_of, n)
         @inbounds for i in 1:n
-            row_of[Int(df[i, :label])] = i
+            row_of[clab[i]] = i
         end
         cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
         for p in pops
@@ -597,25 +618,24 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             for L in p.labels
                 i = get(row_of, Int(L), 0)
                 i == 0 && continue
-                px = df[i, :centroid_x]; py = df[i, :centroid_y]
-                (px isa Real && py isa Real) || continue
-                t = hasT ? df[i, :centroid_t] : 0
-                (hasT && !(t isa Real && isfinite(Float64(t)))) && continue
-                pz = _z_of(df, i, has_z)
-                ti = hasT ? Int(round(Float64(t))) : 0
+                px = cx[i]; py = cy[i]
+                (isnan(px) || isnan(py)) && continue
+                t = hasT ? ct[i] : 0.0
+                (hasT && !isfinite(t)) && continue
+                pz = has_z ? cz[i] : 0.0
+                ti = hasT ? Int(round(t)) : 0
                 colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
-                pon && _push_point!(ti, (Float64(px), Float64(py), pz), colour)
+                pon && _push_point!(ti, (px, py, pz), colour)
                 if ton
-                    traw = df[i, :track_id]
-                    (traw isa Real && isfinite(Float64(traw))) || continue
-                    kid = Int(round(Float64(traw)))
+                    traw = ck[i]
+                    isfinite(traw) || continue
+                    kid = Int(round(traw))
                     kid > 0 || continue
                     if hasTS && !isempty(uid)
-                        ts = df[i, :track_source]
-                        tsv = ts isa AbstractString ? String(ts) : ""
+                        tsv = cts[i]
                         (isempty(tsv) || tsv == Cecelia.WHOLE_SEG_TRACK_SOURCE || tsv == uid) || continue
                     end
-                    _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz), String(p.path))
+                    _push_track!(kid, colour, ti, (px, py, pz), String(p.path))
                 end
             end
         end
@@ -662,26 +682,31 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                 # `pop_df(include_obs=true)` already surfaced every obs column — colour_by is
                 # already present in the df, no extra select_cols round-trip needed.
                 cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
+                c = _overlay_cols(df)
+                # presence tested ONCE, not `names(df)` per row per column
+                hx = col_exists("centroid_x") && col_exists("centroid_y")
+                ht = col_exists("centroid_t"); hp = col_exists("pop"); hk = col_exists("track_id")
+                fallback_path = first(want_paths)
                 @inbounds for i in 1:size(df, 1)
-                    (col_exists("centroid_x") && col_exists("centroid_y")) || break
-                    px = df[i, :centroid_x]; py = df[i, :centroid_y]
-                    (px isa Real && py isa Real) || continue
-                    t = col_exists("centroid_t") ? df[i, :centroid_t] : 0
-                    (col_exists("centroid_t") && !(t isa Real && isfinite(Float64(t)))) && continue
-                    pz = _z_of(df, i, has_z)
-                    ti = col_exists("centroid_t") ? Int(round(Float64(t))) : 0
-                    pop_path = col_exists("pop") ? String(df[i, :pop]) : first(want_paths)
+                    hx || break
+                    px = c.x[i]; py = c.y[i]
+                    (isnan(px) || isnan(py)) && continue
+                    t = ht ? c.t[i] : 0.0
+                    (ht && !isfinite(t)) && continue
+                    pz = has_z ? c.z[i] : 0.0
+                    ti = ht ? Int(round(t)) : 0
+                    pop_path = hp ? c.pop[i] : fallback_path
                     meta = get(pop_meta, pop_path, nothing)
                     meta === nothing && continue
                     default_col = meta.colour
                     colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
-                    meta.pon && _push_point!(ti, (Float64(px), Float64(py), pz), colour)
-                    if meta.ton && col_exists("track_id")
-                        traw = df[i, :track_id]
-                        (traw isa Real && isfinite(Float64(traw))) || continue
-                        kid = Int(round(Float64(traw)))
+                    meta.pon && _push_point!(ti, (px, py, pz), colour)
+                    if meta.ton && hk
+                        traw = c.k[i]
+                        isfinite(traw) || continue
+                        kid = Int(round(traw))
                         kid > 0 || continue
-                        _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz), pop_path)
+                        _push_track!(kid, colour, ti, (px, py, pz), pop_path)
                     end
                 end
             end
