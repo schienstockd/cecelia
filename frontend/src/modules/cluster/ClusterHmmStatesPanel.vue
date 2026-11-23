@@ -19,7 +19,7 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
-import { DEFAULT_VIS, paletteRange, type VisProps } from '../../plots/plot'
+import { DEFAULT_VIS, fitAxisTitles, paletteRange, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import { usePlotDark } from '../../composables/usePlotDark'
@@ -136,7 +136,7 @@ async function render() {
   // no layout height, and may be measured before layout). Swatches are a single short row → ~28.
   const topPad = Math.max(o.legend && domain.length > 1 ? 28 : 0, o.title ? 24 : 0, 12)
   if (o.legend && domain.length > 1) { legendNode = legendOverlay(Plot, colorScale, fg); if (legendNode) host.value.append(legendNode) }
-  node = Plot.plot({
+  node = Plot.plot(fitAxisTitles({
     width: w, height: h, marginLeft: 90, marginRight: 12, marginTop: topPad,
     style: { background: bg, color: fg, fontSize: `${o.fontSize || 11}px` },
     x: { label: o.labX || 'HMM proportion', domain: [0, 1], grid: o.grid },
@@ -146,7 +146,7 @@ async function render() {
       Plot.barX(rows.value, { y: 'group', x: 'freq', fill: 'state', order: 'state', tip: true }),
       Plot.ruleX([0, 1], { stroke: 'currentColor' }),
     ],
-  }) as SVGElement
+  }, o)) as SVGElement
   // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
   // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
   applyPlotTheme(node, effDark.value)

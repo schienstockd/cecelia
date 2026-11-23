@@ -67,6 +67,7 @@ import {
 import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 import type { SeriesTarget } from '../../plots/types'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import { AXIS_TITLE_STYLE, yTitleRoomPx } from '../../plots/axisLabelFit'
 import { usePlotDark } from '../../composables/usePlotDark'
 import { tokenColour } from '../../utils/colour'
 import { NEUTRAL } from '../../plots/fixedColours'
@@ -305,7 +306,8 @@ async function render() {
   const { ink: fg, ground: bg } = plotTheme(dark)
   const facet = split.value
   const grid = facetGrid(facet ? groups.value.length : 1)
-  const ML = 44, MB = 34, MT = 12, MR = 12
+  // the rotated y title's room is part of ML: the square cells are sized from the margins
+  const ML = 44 + yTitleRoomPx(11), MB = 34, MT = 12, MR = 12
   const avail = Math.max(160, Math.min(host.value.clientWidth || 320, host.value.clientHeight || 320))
   const box = facetBox({ cols: grid.cols, rows: grid.rows, w: host.value.clientWidth || avail,
                          h: host.value.clientHeight || avail, mx: ML + MR, my: MB + MT })
@@ -391,11 +393,11 @@ async function render() {
     style: { background: bg, color: fg, fontSize: '11px' },
     // µm on both axes, same span — see the header: a stretched track plot is a wrong track plot, and
     // facets share ONE domain so the small multiple is a comparison
-    x: { domain: domain?.x, label: 'x (µm)', grid: true },
+    x: { domain: domain?.x, label: 'x (µm)', grid: true, ...AXIS_TITLE_STYLE },
     // Y GROWS DOWNWARD. `centroid_y` is an IMAGE row index — row 0 is the top of the frame, which is
     // what viewer draws. A chart's upward y axis is a MIRROR of the image: a cell drifting down-screen
     // appears to drift up. See docs/PLOTS.md → *Y grows downward*.
-    y: { domain: domain?.y, label: 'y (µm)', grid: true, reverse: true },
+    y: { domain: domain?.y, label: 'y (µm)', grid: true, reverse: true, ...AXIS_TITLE_STYLE },
     color: colourScale,
     ...(facet ? { fx: { axis: null }, fy: { axis: null } } : {}),
     marks,

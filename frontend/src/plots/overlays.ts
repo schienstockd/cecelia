@@ -108,3 +108,16 @@ export function titleShortenedTicks(svg: Element,
     })
   }
 }
+
+/**
+ * Width of the widest y tick label as drawn, for the builder's next pass (`BuildOpts.yTickPx`): the y
+ * title sits left of the tick labels, so the left margin is their width plus the title's line. Plot
+ * picks the ticks and their format at render, so they are measured, not predicted. 0 = no y ticks.
+ */
+export function yTickLabelPx(svg: Element): number {
+  let w = 0
+  svg.querySelectorAll('g[aria-label="y-axis tick label"] text').forEach(t => {
+    w = Math.max(w, (t as SVGGraphicsElement).getBBox().width)
+  })
+  return Math.ceil(w)
+}

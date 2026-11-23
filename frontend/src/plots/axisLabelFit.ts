@@ -8,6 +8,12 @@ import { fitLabel } from './valueColour'
 
 /** Tick mark + gap between the axis line and the label, px. */
 export const TICK_PAD_PX = 10
+/** Axis titles in Prism's layout — centred, no direction arrow; spread into a Plot axis's options.
+ *  Every Plot chart uses it (docs/PLOTS.md → *Axis titles*). */
+export const AXIS_TITLE_STYLE = { labelAnchor: 'center', labelArrow: 'none' } as const
+/** Room the ROTATED y title takes left of the tick labels: one line of text + a gap. Plot draws it
+ *  3 px in from the svg's left edge, which the caller's tick room covers. */
+export const yTitleRoomPx = (fontPx: number): number => Math.ceil(fontPx * 1.2 + 6)
 /** Room for the axis title under rotated labels, when there is one. */
 export const AXIS_TITLE_PX = 16
 /** Caps: the labels may take at most this share of the panel height (bottom) / width (left). */

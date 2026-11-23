@@ -19,7 +19,7 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
-import { DEFAULT_VIS, fitFacetHeaders, type VisProps } from '../../plots/plot'
+import { DEFAULT_VIS, fitAxisTitles, fitFacetHeaders, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { applyPlotTheme, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
 import { usePlotDark } from '../../composables/usePlotDark'
@@ -151,6 +151,8 @@ async function render() {
       Plot.dot(rows.value, { fx: 'group', x: 'to', y: 'from', r: 'freq', fill: 'freq', stroke: fg, strokeWidth: 0.4, tip: true }),
     ],
   }
+  // the y title's room, before the facet headers read the margins
+  fitAxisTitles(opts, o)
   // long population names as facet headers: shortened to their panel, full name on hover (#1770)
   fitFacetHeaders(opts, [...new Set(rows.value.map(r => r.group))], { plotWidth: w, fontSize: o.fontSize })
   node = Plot.plot(opts) as SVGElement

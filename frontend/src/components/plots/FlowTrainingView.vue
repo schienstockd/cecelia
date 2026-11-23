@@ -68,7 +68,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplate
 import { usePlotResize } from '../../composables/usePlotResize'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, figureToSvg } from '../../plots/export'
-import { categoricalColours } from '../../plots/plot'
+import { categoricalColours, fitAxisTitles } from '../../plots/plot'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
 import { useVaultModel } from '../../composables/useVaultModel'
@@ -334,20 +334,20 @@ async function render() {
         marks.push(Plot.ruleX([c.convergedAt], { stroke: col, strokeDasharray: '4,3', opacity: 0.7 }))
       }
     }
-    node = Plot.plot({
+    node = Plot.plot(fitAxisTitles({
       width: w, height: h, marginLeft: 58, marginRight: 12, marginTop: 12,
       style: { background: bg, color: fg, fontSize: '11px' },
       x: { label: 'gradient step (log)', type: 'log', grid: true },
       y: { label: 'loss', grid: true, type: 'linear', zero: true },
       color: { domain, range: colors, legend: false },
       marks,
-    }) as SVGElement
+    }, {})) as SVGElement
     applyPlotTheme(node, dark)
     host.value.append(node)
     return
   }
 
-  node = Plot.plot({
+  node = Plot.plot(fitAxisTitles({
     width: w, height: h, marginLeft: 58, marginRight: 12, marginTop: 12,
     style: { background: bg, color: fg, fontSize: '11px' },
     x: { label: 'epoch', grid: true },
@@ -369,7 +369,7 @@ async function render() {
       Plot.line(valRows.value, { x: 'epoch', y: 'loss', stroke: 'term', strokeWidth: 1.5,
                                  strokeDasharray: '3,3' }),
     ],
-  }) as SVGElement
+  }, {})) as SVGElement
   // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
   // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
   applyPlotTheme(node, dark)
