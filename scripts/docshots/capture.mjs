@@ -127,6 +127,8 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   await vue(page, (g, o) => {
     const s = g.$pinia._s.get('settings')
     s.viewerLabelContour = o.contour
+    // the mask's colour, set every shot (kept in the browser: the last shot's choice would carry)
+    s.viewerMaskColour = o.maskColour
     if (o.tail) s.viewerTailLength = o.tail
     // Auto's top percentile (kept in the browser, which each shot starts fresh)
     if (o.top) s.viewerAutoContrastPercent = o.top
@@ -134,8 +136,10 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
     if (o.tracks) s.viewerTrackZTol = 1000
     // the dots' size is kept per set: the image's set, as the project lists it
     if (o.pointSize && o.setUid) s.setPointSize(o.setUid, o.pointSize)
-  }, { contour: v.outlines === false ? 0 : 2, tail: v.tail, tracks: !!v.tracks?.length, top: v.top, pointSize: v.pointSize,
-       setUid: v.pointSize ? (await page.evaluate(async q => (await (await fetch(`/api/images?projectUid=${q.p}`)).json())
+    // the tracks' colour is kept per set too
+    if (o.trackColour && o.setUid) s.setTrackColorMode(o.setUid, o.trackColour)
+  }, { contour: v.outlines === false ? 0 : 2, maskColour: v.maskColour ?? 'id', tail: v.tail, tracks: !!v.tracks?.length, top: v.top, pointSize: v.pointSize, trackColour: v.trackColour,
+       setUid: v.pointSize || v.trackColour ? (await page.evaluate(async q => (await (await fetch(`/api/images?projectUid=${q.p}`)).json())
          .images?.find(i => i.uid === q.i)?.setUid, { p: projectUid, i: imageUid })) : null })
   await page.waitForTimeout(1500)
   const pause = page.locator('[aria-label="Pause"]')
@@ -304,14 +308,16 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   const onImageFold = page.locator('[aria-label="Fold what is on the image"]')
   if (v.folded && await onImageFold.count()) await onImageFold.first().click()
   await page.waitForTimeout(1500)
-  if (v.lens || v.camera) {
+  if (v.lens || v.camera || v.contrast) {
     // last, once every control has been clicked (the lens's chip sits over the side panel); set through
     // the route MCP set_viewer_view uses, so a shot and an agent place them the same way. The reply
     // is the lens as drawn.
-    const view = { ...(v.camera ? { camera: { center: [0, v.camera.y, v.camera.x], zoom: v.camera.zoom } } : {}),
+    const view = { ...(v.camera ? { camera: { ...(v.camera.x !== undefined ? { center: [0, v.camera.y, v.camera.x] } : {}), zoom: v.camera.zoom } } : {}),
+                   ...(v.contrast ? { layers: Object.fromEntries(Object.entries(v.contrast).map(([ch, cl]) => [ch, { contrast_limits: cl }])) } : {}),
                    ...(v.lens ? { lens: v.lens } : {}) }
     const r = await viewRequest(page, projectUid, imageUid, view)
     if (r?.error || r?.reason) problems.push(`viewer: view not set (${r.error ?? r.reason})`)
+    else if (r?.unknown?.length) problems.push(`viewer: no channel ${r.unknown.join(', ')} to set the contrast of`)
     else if (v.lens && !r.lens) problems.push('viewer: no lens pinned')
     else if (v.lens && [...r.lens.channels].sort().join() !== [...v.lens.channels].sort().join())
       problems.push(`viewer: lens shows ${r.lens.channels.join(', ') || 'no channel'}, not ${v.lens.channels.join(', ') || 'none (a spotlight)'}`)

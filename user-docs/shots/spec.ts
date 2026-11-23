@@ -8,6 +8,8 @@
 
 import type { Side } from '../../frontend/src/utils/anchorPosition.ts'
 import { COLOUR_SCHEMES, type ColourScheme } from '../../frontend/src/utils/colourScheme.ts'
+import type { MaskColour } from '../../frontend/src/utils/maskPopTable.ts'
+import type { TrackColorMode } from '../../frontend/src/utils/viewerOverlays.ts'
 
 /** The facts a page may cite, measured by doc-fixture on the copy (`<set>.facts.json` beside the
  *  captures): `{{<project>.<image>.name}}` (the name the copy shows), `.planes`, `.channels`,
@@ -80,16 +82,26 @@ export interface Shot {
              folded?: boolean
              /** The population dots' size (the Populations section's point size, kept per set). */
              pointSize?: number
+             /** What the tracks are coloured by (the Tracks section's colour, kept per set): `pop` = each
+              *  track in its population's colour. */
+             trackColour?: TrackColorMode
              /** The cell clusters drawn (On the image → Cell clusters): what a lens's chip counts. */
              clusters?: boolean
+             /** What the mask is coloured by (Segmentation → Colour): `pops` = each cell by its deepest
+              *  shown population. Default `id`, a colour per cell. */
+             maskColour?: MaskColour
              /** The gated populations' cell-track ribbons (On the image → Cell-track ribbons). */
              ribbons?: boolean
              /** The channel lens pinned at level-0 px `x`, `y`, radius `r` px, showing `channels` inside
               *  it, none = a spotlight (2D only): the same lens MCP `set_viewer_view` pins. */
              lens?: { x: number; y: number; r: number; channels: string[] }
-             /** The camera on level-0 px `x`, `y` at `zoom` (the viewer's own: 1 = the whole image), set
-              *  with the lens through the same route; `zoom` above is wheel steps instead. */
-             camera?: { x: number; y: number; zoom: number } }
+             /** The camera on level-0 px `x`, `y` at `zoom`, set
+              *  with the lens through the same route; `zoom` above is wheel steps instead. `zoom` is canvas
+              *  px per level-0 px (not the minimap's fit-relative ×). No `x`, `y`: about the view's centre. */
+             camera?: { x?: number; y?: number; zoom: number }
+             /** Each named channel's contrast limits `[lo, hi]`, set last over Auto: a look tuned by hand
+              *  on the source image (its saved view), so the picture matches it. */
+             contrast?: Record<string, [number, number]> }
   /** The shape its slot needs, width / height (a What's new card's picture is 2): the crop is trimmed
    *  about its centre to it. */
   aspect?: number

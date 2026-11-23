@@ -17,7 +17,7 @@ describe('README.md screenshots', () => {
 
   it('captions carry the fixture numbers, and a missing one fails', () => {
     const block = renderReadmeShots(facts, widths)
-    expect(block).toContain(`its ${facts['tcells.TKufLV.Tcells.tracks']} tracks drawn in 3D.`)
+    expect(block).toContain(`its ${facts['tcells.TKufLV.Tcells.tracks']} tracks drawn as ribbons.`)
     // the public section cites the data source the fixture read off its record
     expect(block).toContain(`Data: ${facts['hubmap.2dR91B.citation']}, doi:${facts['hubmap.2dR91B.doi']}.`)
     expect(() => renderReadmeShots({}, widths)).toThrow(/no measured/)
@@ -27,7 +27,7 @@ describe('README.md screenshots', () => {
     const top = renderReadmeShots(facts, widths).split('\n')[1]
     expect(top.startsWith('<table align="center"><tr>')).toBe(true)
     expect(top.match(/<td /g)?.length).toBe(2)
-    expect(top.indexOf('readme-lens')).toBeLessThan(top.indexOf('readme-gate'))
+    expect(top.indexOf('readme-lens')).toBeLessThan(top.indexOf('readme-viewer'))
   })
 
   it('splices only between the markers', () => {

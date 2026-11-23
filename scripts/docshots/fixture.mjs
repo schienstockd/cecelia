@@ -277,6 +277,16 @@ async function main() {
           const made = await addGate(api, copy.uid, copy.images[g.image], g, srcDir)
           console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.segmentation ?? 'cells'}${gatePath(g)}${made ? '' : ' already there'}`)
         }
+        // the rebuilt gates take over their source gates' tracks, so their cell-track ribbons draw (a
+        // cell is tracked by a person's gate: the flow sidecar)
+        const tracked = new Set((spec.gates ?? []).filter(g => g.fromSource && (g.popType ?? 'flow') === 'flow').map(g => `${g.image}\t${g.segmentation ?? 'cells'}`))
+        for (const k of tracked) {
+          const [img, vn] = k.split('\t')
+          const n = execFileSync('python', [join(repo, 'scripts', 'docshots', 'adopt_tracks.py'),
+            '--source', join(resolve(a.sourceProjects), spec.source, '1', img), '--copy', join(into, copy.uid, '1', copy.images[img]),
+            '--value-name', vn], { encoding: 'utf-8' }).trim().split('\n').pop()
+          if (Number(n)) console.log(`✓ ${b.id}: project ${key}: ${n} tracked cells of ${vn} moved to the rebuilt gates`)
+        }
       }
       rec.facts = await measure(api, b.fixture, rec)
       console.log(`✓ ${b.id}: facts ${Object.entries(rec.facts).map(([k, v]) => `${k}=${v}`).join(', ')}`)
