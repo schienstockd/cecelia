@@ -2463,6 +2463,12 @@ differs, so only this group is shared. A host that drives `useCanvasPanels` but 
 arrange buttons fails the *every canvas host offers Close all* testset — the point being that a bulk
 close a user asks for on one page has to appear on all of them.
 
+**Snap** (the magnet, beside Cascade) — while it is on, a dragged panel's edges snap to the other
+panels' (touching or lined up, only with a neighbour that overlaps on the other axis) and to the
+canvas's left/top edges, within `SNAP_PX` (`utils/panelSnap.ts::snapPosition`). Per canvas, persisted in
+its `shared` bag by `useFloatingCanvas`, which provides it to every `CanvasPanel` (`CANVAS_SNAP_KEY`;
+the drag reads the other `[data-snap-panel]` roots). Moves only — a resize does not snap.
+
 **Tile has two modes, because panels differ in whether they accept the size they are given**
 (`utils/tileGrid.ts`). Free-form panels (summary, cluster, flow) get `fill`: a near-square grid whose
 cells divide the workspace exactly. The GATING pages get `square` (`useCanvasPanels(..., {
