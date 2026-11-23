@@ -375,7 +375,8 @@ recomputes regardless — for an in-memory edit nothing on disk records. Values 
 callers read them, never mutate them.
 
 Why it exists at all: `init_object` builds a fresh `CciaImage` per request, so a cache held on the
-image object never survives one.
+image object never survives one. The one exception is the standalone renderer
+(`api/src/image_render.jl`, `cached_render!`): it loads without `Cecelia`, so it keeps its own copy.
 """
 struct BoundedCache
     data::Dict{String,Tuple{String,Any}}

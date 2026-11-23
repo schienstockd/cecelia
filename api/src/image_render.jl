@@ -368,9 +368,23 @@ end
 
 # Small bounded in-memory render cache (server-lifetime): rendered PNG bytes, or a projected block
 # (`thumbnails_api.jl`). The caller's key carries whatever invalidates the value (a props-file or store
-# mtime), so no stamp. Locking, FIFO eviction and compute-outside-the-lock are `BoundedCache`'s.
-const _RENDER_CACHE = BoundedCache(256)
-cached_render!(key::String, produce) = cached!(produce, _RENDER_CACHE, key)
+# mtime). FIFO eviction. Locked: handlers run on several threads (`-t auto`); `produce` runs outside the
+# lock, so two threads missing on one key may both compute it — the second store wins, harmlessly.
+const _RENDER_CACHE       = Dict{String,Any}()
+const _RENDER_CACHE_ORDER = String[]
+const _RENDER_CACHE_MAX   = 256
+const _RENDER_CACHE_LOCK  = ReentrantLock()
+function cached_render!(key::String, produce)
+    hit = lock(() -> get(_RENDER_CACHE, key, nothing), _RENDER_CACHE_LOCK)
+    hit === nothing || return hit
+    v = produce()
+    lock(_RENDER_CACHE_LOCK) do
+        haskey(_RENDER_CACHE, key) || push!(_RENDER_CACHE_ORDER, key)
+        _RENDER_CACHE[key] = v
+        length(_RENDER_CACHE_ORDER) > _RENDER_CACHE_MAX && delete!(_RENDER_CACHE, popfirst!(_RENDER_CACHE_ORDER))
+    end
+    v
+end
 cached_render!(produce, key::String) = cached_render!(key, produce)   # `cached_render!(key) do … end`
 
 # The decoded-chunk cache `read_native` reads through. Here, with `using Zarr`, because it is the other
