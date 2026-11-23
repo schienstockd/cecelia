@@ -231,29 +231,45 @@ function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
     for g in gates
         hex = lowercase(string(get(g, "colour", "")))
         colour = hex in ("", "white", "#fff", "#ffffff", "#fafafa") ? _PLOT_TEXT : hex_to_rgb(hex)
-        pts = if get(g, "kind", "") == "rectangle"
-            [(g["x_min"], g["y_min"]), (g["x_max"], g["y_min"]), (g["x_max"], g["y_max"]), (g["x_min"], g["y_max"])]
+        kind = get(g, "kind", "")
+        # a split gate strokes its divider and names its REGION (the slice side / quadrant sector)
+        dividers, pts = if kind in ("slice", "quadrant")
+            Cecelia.split_outline(g, (xlo, xhi, ylo, yhi))
+        elseif kind == "rectangle"
+            nothing, [(g["x_min"], g["y_min"]), (g["x_max"], g["y_min"]), (g["x_max"], g["y_max"]), (g["x_min"], g["y_max"])]
         else
-            [(v[1], v[2]) for v in get(g, "vertices", ())]
+            nothing, [(v[1], v[2]) for v in get(g, "vertices", ())]
         end
         length(pts) >= 2 || continue
-        segs = Tuple{Float64,Float64,Float64,Float64}[]
-        for i in eachindex(pts)
-            a = pts[i]; b = pts[mod1(i + 1, length(pts))]
-            seg = _clip_segment(float(a[1]), float(a[2]), float(b[1]), float(b[2]), xlo, xhi, ylo, yhi)
-            seg === nothing || push!(segs, (col(seg[1]), row(seg[2]), col(seg[3]), row(seg[4])))
+        clipped(pairs) = begin
+            out = Tuple{Float64,Float64,Float64,Float64}[]
+            for (a, b) in pairs
+                seg = _clip_segment(float(a[1]), float(a[2]), float(b[1]), float(b[2]), xlo, xhi, ylo, yhi)
+                seg === nothing || push!(out, (col(seg[1]), row(seg[2]), col(seg[3]), row(seg[4])))
+            end
+            out
         end
+        segs = clipped([(pts[i], pts[mod1(i + 1, length(pts))]) for i in eachindex(pts)])
         isempty(segs) && continue
-        _stroke!(img, segs, colour, _GATE_WIDTH * s)
+        _stroke!(img, dividers === nothing ? segs : clipped(dividers), colour, _GATE_WIDTH * s)
         parts = split(string(get(g, "path", "")), '/'; keepempty = false)
         name = isempty(parts) ? "" : String(last(parts))
         isempty(name) && continue
         m = _text_mask("label", name)
-        cs = [c for sg in segs for c in (sg[1], sg[3])]; rs = [r for sg in segs for r in (sg[2], sg[4])]
-        top, bot = minimum(rs) - T, maximum(rs) - T            # gate bbox, plot-area rows
         half = size(m, 2) / 2 + 3s
-        cx = clamp((minimum(cs) + maximum(cs)) / 2 - L, half, P - half)
-        rtop = top - 4s >= 15s ? top - 4s - size(m, 1) : bot + 19s <= P ? bot + 4s : top + 4s
+        if dividers !== nothing
+            # a split region's outline is the divider + the plot border, so the above/below-the-box rule
+            # would put each name in the NEIGHBOURING region — centre it in its own region instead
+            at = Cecelia.split_label_point(g, (xlo, xhi, ylo, yhi))
+            at === nothing && continue
+            cx = clamp(col(at[1]) - L, half, P - half)
+            rtop = clamp(row(at[2]) - T - size(m, 1) / 2, 0, P - size(m, 1))
+        else
+            cs = [c for sg in segs for c in (sg[1], sg[3])]; rs = [r for sg in segs for r in (sg[2], sg[4])]
+            top, bot = minimum(rs) - T, maximum(rs) - T            # gate bbox, plot-area rows
+            cx = clamp((minimum(cs) + maximum(cs)) / 2 - L, half, P - half)
+            rtop = top - 4s >= 15s ? top - 4s - size(m, 1) : bot + 19s <= P ? bot + 4s : top + 4s
+        end
         rr, cc = round(Int, T + rtop), round(Int, L + cx - size(m, 2) / 2)
         _blit!(img, _halo(m, round(Int, 1.5s)), rr - round(Int, 1.5s), cc - round(Int, 1.5s), RGB{N0f8}(0, 0, 0); alpha = 0.7)
         _blit!(img, m, rr, cc, colour)

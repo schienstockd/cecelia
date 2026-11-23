@@ -832,8 +832,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
       - `path`/`parent` give the tree (a pop's cells are its gate/filter/combination ∩ its parent).
       - `popType`: flow/track = gate-drawn; clust/trackclust/region = cluster pops; branch = filters on
         skeleton branches (e.g. `branch-type`).
-      - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
-        …geometry}` — the drawn gate on two channels. null for filter pops.
+      - `gate` (flow/track): `{kind: rectangle|polygon|slice|quadrant, x_channel, y_channel, x_transform,
+        y_transform, …geometry}` — the drawn gate on two channels. null for filter pops. slice / quadrant
+        are split gates: one divider (`vertices`, or `centre` + 4 `arms`), one pop per region (`side` ±1 /
+        `quadrant` 1–4), linked by `group`.
       - `filter` (clust/trackclust/region/branch, and flow filter pops): `{measure, fun, values, default_all}`
         plus `conditions: [{measure, fun, values}, …]` when several rules are AND-ed (then `measure`/`fun`/
         `values` repeat only the first) — e.g. a cluster pop is `{measure: "clusters.movement", fun: "in",

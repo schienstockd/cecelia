@@ -88,6 +88,10 @@ _rename_gate(g::RectangleGate, f) = RectangleGate(f(g.x_channel), f(g.y_channel)
                                                   g.x_min, g.x_max, g.y_min, g.y_max)
 _rename_gate(g::PolygonGate, f)   = PolygonGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
                                                 g.vertices)
+_rename_gate(g::SliceGate, f)     = SliceGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
+                                              g.vertices, g.side, g.group)
+_rename_gate(g::QuadrantGate, f)  = QuadrantGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
+                                                 g.centre, g.arms, g.quadrant, g.group)
 
 """
     rename_pop_columns(m, rename::AbstractDict) -> PopulationTree

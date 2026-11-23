@@ -889,12 +889,16 @@ function _display_extent((lo, hi)::Tuple, edges; pad::Float64 = AXIS_PAD)
 end
 
 # Every edge coordinate of a plotmeta `gates` list (projected child-gate outlines), per axis:
-# rectangles give x_min/x_max/y_min/y_max, polygons their vertices. Display coordinates.
+# rectangles give x_min/x_max/y_min/y_max, polygons and slices their vertices, a quadrant its centre.
+# Display coordinates.
 function _gate_edges(gates)
     xs = Float64[]; ys = Float64[]
     for pj in gates
         if get(pj, "kind", "") == "rectangle"
             push!(xs, pj["x_min"], pj["x_max"]); push!(ys, pj["y_min"], pj["y_max"])
+        elseif get(pj, "kind", "") == "quadrant"
+            # the centre only: an arm's stored point just gives its direction, it is not an edge
+            push!(xs, pj["centre"][1]); push!(ys, pj["centre"][2])
         else
             for v in get(pj, "vertices", ())
                 push!(xs, v[1]); push!(ys, v[2])
@@ -1372,6 +1376,53 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         # a cluster population: its ids are one run's, held by no other population of it (unsaved on refusal)
         taken = _cluster_ids_taken(m, path, m.pops[path].filter_values); taken === nothing || return taken
         stamp_cluster_run!(m.pops[path], img, vn)
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
+    end
+end
+
+# ── POST /api/gating/pop/add-split — every region of a split gate, as one change ───────────────────
+# { projectUid, imageUid, valueName, popType, parent?, gate:{kind: slice|quadrant, x_channel, y_channel,
+#   x_transform, y_transform, vertices | centre + arms}, pops:[{name, colour, region}, …] }
+# → the pop tree, like /pop/add. `region` is the side (1 left of the line's direction, -1 right) or the
+# quadrant (1–4). Every region is required exactly once, so the populations tile the plane; they share a
+# fresh `group` id, which `set_gate!` follows to move them together (app/src/gating/split_gates.jl). One
+# request = one undo step; any refusal (a taken name, a bad gate) writes nothing.
+function api_gating_pop_add_split(body_bytes::Vector{UInt8})
+    img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    spec = get(body, "gate", nothing); pops = get(body, "pops", nothing)
+    (spec isa AbstractDict && pops isa AbstractVector) || return _gerr(400, "gate and pops required")
+    kind = lowercase(string(get(spec, "kind", "")))
+    regions = kind == "slice" ? [1, -1] : kind == "quadrant" ? [1, 2, 3, 4] :
+              return _gerr(400, "gate.kind must be \"slice\" or \"quadrant\"")
+    got = Int[]
+    for p in pops
+        (p isa AbstractDict && haskey(p, "name") && get(p, "region", nothing) isa Integer) ||
+            return _gerr(400, "each pop needs a name and an integer region")
+        push!(got, Int(p["region"]))
+    end
+    sort(got) == sort(regions) || return _gerr(400, "a $kind needs one population per region: $(join(regions, ", "))")
+    parent = _wstr(body, "parent", ROOT)
+    for p in pops
+        name = String(p["name"])
+        conflict = pop_name_conflict(img, vn, pop_path(is_root(parent) ? ROOT : parent, name); pop_type = pt)
+        conflict === nothing || return _gerr(400,
+            "A $conflict population named \"$name\" already exists in this segmentation — choose another name.")
+    end
+    group = gen_uid()
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
+        try
+            base = _gate_spec_auto(spec, img, vn, pt)
+            for p in pops
+                d = Dict{String,Any}(String(k) => v for (k, v) in base)
+                d["group"] = group
+                d[kind == "slice" ? "side" : "quadrant"] = Int(p["region"])
+                add_pop!(m, String(p["name"]); parent = parent, gate = gate_from_spec(d),
+                         colour = _wstr(p, "colour", "#ffffff"), show = true)
+            end
+        catch e
+            return _gerr(400, sprint(showerror, e))      # nothing persisted: `m` is discarded
+        end
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
