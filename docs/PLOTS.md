@@ -49,7 +49,8 @@ button) the picker lists the kinds of plot (categories) in a column on the left,
 shape (`PlotKindSketch.vue`) — every Compare-groups plot opens as a box plot, so the shape is drawn
 once, there, not on every card. Beside the column are the picked kind's plots (the first kind until one is hovered — after a short rest, so crossing the column doesn't flip
 it — or clicked), a card each with a sketch of what the plot is ABOUT (`PlotSketch.vue`: a cell, a track,
-two images, a track coloured by state) plus its `answers` line. Typing in the search shows every match
+two images, a track coloured by state) plus its `answers` line. The kind's blurb heads its cards, and
+neither a kind nor a card has a hover tip — a tip there covered the cards the pointer was heading for. Cards sit in one column and a question line fits two lines (≤ ~46 characters — `PlotPicker.browser.test.ts` checks every real plot at a wide and a narrow window); a word cut from a question to fit stays searchable through `SYNONYMS` in `plots/plotPicker.ts`. Typing in the search shows every match
 beside the column, grouped by kind, and the hovered card's kind lights up in the column; a host offering one kind only has no column.
 
 The card sketches come from `plots/plotSketchArt.ts`: a few shared subjects (cell, track, population

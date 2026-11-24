@@ -3,7 +3,7 @@
   "label": "HMM state frequency",
   "category": "makeup",
   "sketch": "states",
-  "answers": "What fraction of each population's cells is in each HMM state?",
+  "answers": "How do populations split across HMM states?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["frequency", "stacked", "stacked100"],

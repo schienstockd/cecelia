@@ -62,7 +62,7 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   },
   hmmTransitions: {
     label: 'HMM transitions',
-    answers: 'How do HMM state transitions differ between track clusters?',
+    answers: 'How do HMM transitions differ per cluster?',
     component: ClusterHmmTransitionsPanel, category: 'profiles', sketch: 'transitions', trackOnly: true, needsCols: 'hmmTransition',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmTransitionCols }),
     visControls: ['legend', 'grid', 'title', 'labX', 'labY', 'fontSize'],
@@ -72,7 +72,7 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   // of the pop's median motility measures. Needs no per-panel `ClusterCtx` beyond the shared bag.
   cellCards: {
     label: 'Cell cards',
-    answers: 'What does a typical track of each track cluster look like?',
+    answers: 'What does a typical track of each cluster look like?',
     component: CellCardsView, category: 'look', sketch: 'trackCard', trackOnly: true,
     analysisBoard: true, rail: CLUSTER_RAIL,
   },

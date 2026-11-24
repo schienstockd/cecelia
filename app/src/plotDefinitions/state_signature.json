@@ -3,7 +3,7 @@
   "label": "State signature",
   "category": "profiles",
   "sketch": "stateSignature",
-  "answers": "What are the mean cell measures of each HMM state?",
+  "answers": "What defines each HMM state?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["heatmap"],

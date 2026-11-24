@@ -3,7 +3,7 @@
   "label": "Track measures",
   "category": "compare",
   "sketch": "track",
-  "answers": "How do track speed, displacement, straightness or duration differ between groups?",
+  "answers": "How do track speed or straightness differ by group?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "defaultOn": ["behaviourAnalysis"],
