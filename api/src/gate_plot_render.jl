@@ -188,6 +188,42 @@ end
 
 # ── the plot ─────────────────────────────────────────────────────────────────────
 """
+    _place_chips(chips, W, H; gap = 2) -> Vector{NamedTuple{(:x, :y)}}
+
+Label boxes (`x`, `y` centre, `w`, `h`) placed whole inside a `W`×`H` box and clear of each other: each
+starts on its anchor, clamped in, then overlapping pairs are pushed apart along the axis of least
+overlap (the other one when the box has no room that way) and re-clamped, up to 60 rounds. The port of
+`frontend/src/plots/chipPlacement.ts` `placeChips` (no inset) — keep the two in step.
+"""
+function _place_chips(chips, W::Real, H::Real; gap::Real = 2)
+    cx(x, w) = W <= w ? W / 2 : clamp(x, w / 2, W - w / 2)
+    cy(y, h) = H <= h ? H / 2 : clamp(y, h / 2, H - h / 2)
+    px = [cx(float(c.x), c.w) for c in chips]; py = [cy(float(c.y), c.h) for c in chips]
+    n = length(chips)
+    for _ in 1:60
+        moved = false
+        for i in 1:n, j in i+1:n
+            a, b = chips[i], chips[j]
+            ox = (a.w + b.w) / 2 + gap - abs(px[i] - px[j])
+            oy = (a.h + b.h) / 2 + gap - abs(py[i] - py[j])
+            (ox <= 0 || oy <= 0) && continue
+            moved = true
+            roomx = W - (a.w + b.w) / 2 >= (a.w + b.w) / 2 + gap
+            roomy = H - (a.h + b.h) / 2 >= (a.h + b.h) / 2 + gap
+            if (oy <= ox && roomy) || !roomx
+                s = (py[i] < py[j] || (py[i] == py[j] && i < j)) ? -1 : 1
+                py[i] = cy(py[i] + s * oy / 2, a.h); py[j] = cy(py[j] - s * oy / 2, b.h)
+            else
+                s = (px[i] < px[j] || (px[i] == px[j] && i < j)) ? -1 : 1
+                px[i] = cx(px[i] + s * ox / 2, a.w); px[j] = cx(px[j] - s * ox / 2, b.w)
+            end
+        end
+        moved || break
+    end
+    [(x = px[k], y = py[k]) for k in 1:n]
+end
+
+"""
     render_gate_plot(xv, yv, xext, yext, xticks, yticks, gates; xtitle = "", ytitle = "") -> Matrix{RGB{N0f8}}
 
 The Gate page's scatter at 2×: dots (TRANSFORMED values) coloured by local density, painted in 64
@@ -227,7 +263,8 @@ function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
         end
     end
 
-    # gates, clipped, then their names
+    # gates, clipped; their names are collected, placed clear of each other, then drawn on top
+    labels = []                     # (mask, colour, centre col, top row), plot-area px
     for g in gates
         hex = lowercase(string(get(g, "colour", "")))
         colour = hex in ("", "white", "#fff", "#ffffff", "#fafafa") ? _PLOT_TEXT : hex_to_rgb(hex)
@@ -277,7 +314,15 @@ function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
             cx = clamp((minimum(cs) + maximum(cs)) / 2 - L, half, P - half)
             rtop = top - 4s >= 15s ? top - 4s - size(m, 1) : bot + 19s <= P ? bot + 4s : top + 4s
         end
-        rr, cc = round(Int, T + rtop), round(Int, L + cx - size(m, 2) / 2)
+        push!(labels, (m, colour, cx, rtop))
+    end
+    # long names side by side (a quadrant's) would print over each other — `GateOverlay` dodges them
+    # with `placeChips` (plots/chipPlacement.ts); `_place_chips` is its port, so the agent's picture
+    # places them the same way
+    placed = _place_chips([(x = cx, y = rtop + size(m, 1) / 2, w = size(m, 2) + 6s, h = size(m, 1))
+                           for (m, _, cx, rtop) in labels], P, P; gap = 2s)
+    for ((m, colour, _, _), at) in zip(labels, placed)
+        rr, cc = round(Int, T + at.y - size(m, 1) / 2), round(Int, L + at.x - size(m, 2) / 2)
         _blit!(img, _halo(m, round(Int, 1.5s)), rr - round(Int, 1.5s), cc - round(Int, 1.5s), RGB{N0f8}(0, 0, 0); alpha = 0.7)
         _blit!(img, m, rr, cc, colour)
     end

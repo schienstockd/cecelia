@@ -32,6 +32,15 @@ describe('placeChips', () => {
     const [a, b] = placeChips([c, c], 200, 100)
     expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(10)
   })
+  it('parts two side-by-side labels too wide to sit apart horizontally by stacking them', () => {
+    // a quadrant gate's two top names, each a bit over half the plot wide: a small sideways overlap,
+    // but no room in the box to resolve it sideways
+    const chips: Chip[] = [{ x: 50, y: 50, w: 105, h: 15 }, { x: 150, y: 50, w: 105, h: 15 }]
+    const pos = placeChips(chips, 200, 200)
+    const placed = chips.map((c, i) => ({ ...c, ...pos[i] }))
+    expect(overlap(placed[0], placed[1])).toBe(false)
+    for (const c of placed) expect(inside(c, 200, 200)).toBe(true)
+  })
   it('centres a chip wider than the box', () => {
     expect(placeChips([{ x: 0, y: 0, w: 300, h: 10 }], 200, 100)[0]).toEqual({ x: 100, y: 5 })
   })

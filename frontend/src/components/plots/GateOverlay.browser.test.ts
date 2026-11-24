@@ -142,3 +142,100 @@ describe('1D tools (on a histogram)', () => {
     expect(Math.abs(o.edits[0].gate.rule!.hi - 90) < 0.6).toBe(true)
   })
 })
+
+// ── a drawn gate waiting for its name (GatePlotPanel's naming bar) ──────────────────────────────────
+// The host holds the drawn geometry as `pending` until it is named or dropped. Until then the gate
+// stays painted where it was drawn and the armed tool must not follow the cursor or draw again —
+// a crosshair still tracking the mouse read as "the gate I drew is gone".
+describe('a gate waiting for its name', () => {
+  function namingOverlay(mode: Mode) {
+    const pending = ref<Partial<GateSpec> | null>(null)
+    const draws: Partial<GateSpec>[] = []
+    let cancels = 0
+    const host = mountInto({
+      render: () => h('div', { style: `position:relative;width:${SIZE}px;height:${SIZE}px` }, [
+        h(GateOverlay, { mode, pending: pending.value, extents: { xMin: 0, xMax: 100, yMin: 0, yMax: 100 },
+          onDraw: (g: Partial<GateSpec>) => { draws.push(g); pending.value = g },     // as the panel does
+          onCancel: () => { cancels++; pending.value = null } })]),
+    })
+    const canvas = host.querySelector('canvas')!
+    const fire = (type: string, x: number, y: number, target: EventTarget = canvas, init: KeyboardEventInit = {}) => {
+      const r = canvas.getBoundingClientRect()
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, ...init,
+        clientX: r.left + x / 100 * SIZE, clientY: r.top + (1 - y / 100) * SIZE }))
+    }
+    const click = (x: number, y: number) => { fire('mousedown', x, y); fire('mouseup', x, y); fire('click', x, y) }
+    // is anything painted in the vertical run at data x, between data y0 and y1?
+    const inkOnColumn = (x: number, y0: number, y1: number) => {
+      const dpr = canvas.width / canvas.clientWidth
+      const px = Math.round(x / 100 * SIZE * dpr), top = Math.round((1 - y1 / 100) * SIZE * dpr)
+      const hgt = Math.round((y1 - y0) / 100 * SIZE * dpr)
+      const d = canvas.getContext('2d')!.getImageData(px - 1, top, 3, hgt).data
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true
+      return false
+    }
+    return { pending, draws, cancels: () => cancels, fire, click, inkOnColumn }
+  }
+
+  it('a quadrant holds where it was clicked while the cursor moves on', async () => {
+    const o = namingOverlay('quadrant'); await frames()
+    o.fire('mousemove', 50, 50); o.click(50, 50); await frames()
+    expect(o.draws).toHaveLength(1)
+    o.fire('mousemove', 20, 30); await frames()
+    expect(o.inkOnColumn(50, 70, 95)).toBe(true)      // the placed gate's upper arm
+    expect(o.inkOnColumn(20, 70, 95)).toBe(false)     // no crosshair following the cursor
+  })
+
+  it('the paused tool draws nothing new; Esc drops the gate and drawing resumes', async () => {
+    const o = namingOverlay('quadrant'); await frames()
+    o.click(50, 50); await frames()                   // the host re-renders with `pending` set
+    o.click(20, 30)
+    expect(o.draws).toHaveLength(1)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(o.cancels()).toBe(1)
+    expect(o.pending.value).toBeNull()
+    await frames()
+    o.click(20, 30)
+    expect(o.draws).toHaveLength(2)
+  })
+
+  it('a drawn rectangle stays on screen while it is named', async () => {
+    const o = namingOverlay('rectangle'); await frames()
+    o.fire('mousedown', 30, 30); o.fire('mousemove', 70, 70, window); o.fire('mouseup', 70, 70, window)
+    await frames()
+    expect(o.draws).toHaveLength(1)
+    expect(o.inkOnColumn(30, 35, 65)).toBe(true)      // its left edge
+    // a press on the plot does not start another rectangle
+    o.fire('mousedown', 10, 10); o.fire('mousemove', 20, 20, window); o.fire('mouseup', 20, 20, window)
+    expect(o.draws).toHaveLength(1)
+  })
+})
+
+// ── gate names dodge each other ─────────────────────────────────────────────────────────────────────
+// A quadrant's names sit on its regions' centres; long ones side by side used to print over each other.
+// Read from the SVG export, which takes its labels from the same placement as the canvas and the PNG.
+describe('gate labels', () => {
+  it("a quadrant's long names never overlap, and stay on the plot", async () => {
+    const arms: [number, number][] = [[100, 50], [50, 100], [0, 50], [50, 0]]
+    const names = ['CD45RA-Kat+ CD62L-hi+', 'CD45RA-Kat- CD62L-hi+', 'CD45RA-Kat- CD62L-hi-', 'CD45RA-Kat+ CD62L-hi-']
+    const gates: Entry[] = names.map((n, i) => ({ path: `/${n}`, colour: '#e11d48',
+      gate: { ...base, kind: 'quadrant', centre: [50, 50], arms, quadrant: i + 1, group: 'g' } }))
+    const ov = ref<{ exportSvgContent(): string } | null>(null)
+    mountInto({ setup: () => () => h('div', { style: `position:relative;width:${SIZE}px;height:${SIZE}px` }, [
+      h(GateOverlay, { ref: ov, mode: 'off', gates, showLabels: true, extents: { xMin: 0, xMax: 100, yMin: 0, yMax: 100 } })]) })
+    await frames()
+    const doc = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${ov.value!.exportSvgContent()}</svg>`, 'image/svg+xml')
+    const texts = [...doc.querySelectorAll('text')]
+    expect(texts).toHaveLength(4)
+    const c = document.createElement('canvas').getContext('2d')!; c.font = 'bold 12px system-ui, sans-serif'
+    // each name's box: centred on x, a 12-px glyph above its baseline y
+    const boxes = texts.map(t => { const w = c.measureText(t.textContent!).width, x = +t.getAttribute('x')!, y = +t.getAttribute('y')!
+      return { l: x - w / 2, r: x + w / 2, t: y - 12, b: y } })
+    expect(boxes[0].r - boxes[0].l).toBeGreaterThan(SIZE / 2)     // the case: each wider than its half
+    for (const b of boxes) expect(b.l >= 0 && b.r <= SIZE && b.t >= 0 && b.b <= SIZE).toBe(true)
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+      const a = boxes[i], z = boxes[j]
+      expect(a.l < z.r && z.l < a.r && a.t < z.b && z.t < a.b, `${texts[i].textContent} × ${texts[j].textContent}`).toBe(false)
+    }
+  })
+})

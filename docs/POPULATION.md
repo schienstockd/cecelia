@@ -1202,6 +1202,20 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   so a gate drawn to it encloses the edge cells and does not make the axes regrow. Nothing rescales
   while drawing — the alternative (grow the axes as the cursor nears the edge) moves the dots under
   the cursor mid-gesture.
+- **Naming a drawn gate.** A finished shape goes to the panel as `pending` and the naming bar
+  (`modules/gate/GateNameBar.vue`) opens over the plot's top-left. While it is open the gate stays
+  painted where it was drawn (in the drawing accent, via `GateOverlay`'s `pending` prop) and the armed
+  tool is **paused**: no cursor-following preview, no new shape from a click — a crosshair still tracking
+  the mouse read as "the gate I drew is gone". Add, × or Esc ends it; × and Esc leave the tool armed
+  (Esc only disarms when nothing is pending). Shift-adjusting existing gates still works meanwhile. The
+  bar is one row that never wraps — the tool's icon stands for the kind, a quadrant shows "4 pops" —
+  and the name box shrinks first, so it fits a ~200 px plot (`GateNameBar.browser.test.ts`).
+- **Gate names dodge each other.** Every label on a plot is placed together: each starts where
+  `utils/gateLabel.ts` / the split / 1D rule puts it, then `plots/chipPlacement.ts` `placeChips` pushes
+  overlapping ones apart (vertically, when two wide names side by side have no room sideways — a
+  quadrant's long `X+ Y+` names). The canvas, the PNG export and the SVG export all read the one
+  placement (`GateOverlay` `placedLabels`), and the server raster (`api/src/gate_plot_render.jl`, the
+  MCP plot picture) runs the Julia port `_place_chips`.
 - **Displayed parent is owned by `GatingPlots` (per panel), not the panel.** So the manager can
   highlight the active plot's parent row and switch the highlight when you change active plots.
   Clicking a population row sets it as the active plot's parent; clicking it **again resets to
