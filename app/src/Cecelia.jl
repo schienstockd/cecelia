@@ -123,7 +123,8 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
 export apply_transform, invert_transform, transform_spec, transform_from_spec
 export transform_kind, transform_collapses, effective_transform
-export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group
+export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
+       RangeGate, BisectorGate, ValleyRule, valley_cut
 export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
@@ -331,6 +332,7 @@ include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")
 include("gating/split_gates.jl")
+include("gating/hist_gates.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")

@@ -24,7 +24,7 @@
             xc, yc = sort(cols; by = c -> -length(unique(all_df[!, c])))[1:2]
             base = Dict{String,Any}("projectUid" => puid, "imageUid" => uid, "valueName" => vn, "popType" => "flow")
             post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
-            count(pop) = JSON3.read(api_gating_stats(HTTP.Request("GET", "/api/gating/stats?$q&pop=$pop"))[2]).count
+            count(pop) = JSON3.read(api_gating_stats(HTTP.Request("GET", "/api/gating/stats?$q&pop=$(HTTP.escapeuri(pop))"))[2]).count
             img() = _gating_image(puid, uid)[1]
             tree() = load_pop_tree(img(); value_name = vn, pop_type = "flow")
             spec(kind; kw...) = Dict{String,Any}("kind" => kind, "x_channel" => xc, "y_channel" => yc,
@@ -73,6 +73,37 @@
                 "pops" => [Dict("name" => n, "region" => q) for (q, n) in enumerate(["pp", "mp", "mm", "pm"])]))
             @test st == 200
             @test sum(count("/$n") for n in ("pp", "mp", "mm", "pm")) == count("root")
+
+            # ── 1D gates on xc's histogram (x = y = xc) ──
+            # a bisector following the valley in the whole range: its halves still tile the parent, and
+            # the plot draws the cut where the rule puts it on the parent's cells — valley_cut on them
+            lo, hi = extrema(filter(isfinite, Float64.(pts[!, xc])))
+            hspec(kind; kw...) = Dict{String,Any}("kind" => kind, "x_channel" => xc, "y_channel" => xc,
+                                                  "x_transform" => Dict("kind" => "linear"),
+                                                  "y_transform" => Dict("kind" => "linear"),
+                                                  (String(k) => v for (k, v) in kw)...)
+            st, _ = post(api_gating_pop_add_split, Dict{String,Any}(
+                "gate" => hspec("bisector"; cut = mx, rule = Dict("kind" => "valley", "lo" => lo, "hi" => hi)),
+                "pops" => [Dict("name" => "v+", "region" => 1), Dict("name" => "v-", "region" => -1)]))
+            @test st == 200
+            @test count("/v+") + count("/v-") == count("root")
+            pm = JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?$q&x=$xc&y=$xc&pop=root"))[2])
+            out = [o for o in pm.gates if o.path in ("/v+", "/v-")]
+            @test length(out) == 2 && all(o -> o.kind == "bisector", out)
+            want = valley_cut(Float64.(pts[!, xc]), lo, hi)
+            if want === nothing                   # no valley in this table: the stored cut stands, flagged
+                @test all(o -> o.rule_ok == false && o.cut ≈ mx, out)
+                @test count("/v+") == Base.count(>(mx), filter(isfinite, pts[!, xc]))
+            else
+                @test all(o -> o.rule_ok == true && o.cut ≈ want, out)
+                @test count("/v+") == Base.count(>(want), filter(isfinite, pts[!, xc]))
+            end
+            # a range: one population, the cells in [lo, mx]
+            st, _ = post(api_gating_pop_add, Dict{String,Any}("name" => "r", "gate" => hspec("range"; lo = lo, hi = mx)))
+            @test st == 200 && count("/r") == Base.count(v -> lo <= v <= mx, filter(isfinite, pts[!, xc]))
+            # a 1D gate on two different channels is refused
+            st, _ = post(api_gating_pop_add, Dict{String,Any}("name" => "bad", "gate" => merge(hspec("range"; lo = 0, hi = 1), Dict("y_channel" => yc))))
+            @test st == 400
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

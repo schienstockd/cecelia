@@ -34,7 +34,10 @@ axes is clipped in the picture, not in the list). The tick labels are RAW values
 the stored ones only when the plot uses the gate's own transforms. With a non-linear transform, read
 vertices off gate_histogram's `grid`, not off the ticks. A split gate (one divider, a population per
 region) lists as `slice` (`vertices` of a line run on to infinity, `side` 1 = left of its direction) or
-`quadrant` (`centre`, 4 counter-clockwise `arms`, sector `quadrant` 1–4); add_gate cannot draw those."""
+`quadrant` (`centre`, 4 counter-clockwise `arms`, sector `quadrant` 1–4). A 1D gate (x = y = its channel,
+drawn on that channel's histogram) lists as `range` (`lo`, `hi`) or `bisector` (`cut`, `side` 1 = above);
+a bisector with a `rule` cuts at the parent's density valley inside `rule.lo`–`rule.hi`, and `rule_ok`
+says whether it found one. add_gate cannot draw any of these."""
 
 GATE_CELLS_VIEW_DOC = """The image with populations marked — the check of a gate where it matters, on the cells.
 One timepoint `t` (default the middle frame) in the saved viewer contrast, with segmentation

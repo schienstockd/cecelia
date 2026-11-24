@@ -14,6 +14,7 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
+import { isHistGate, HIST_AXIS } from '../../plots/histGeometry'
 import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
@@ -422,7 +423,8 @@ function showDefiningPlot(pop: FlatPop) {
   p.state.kind = 'single'
   p.state.parent = pop.parent
   p.state.x = pop.gate.x_channel
-  p.state.y = pop.gate.y_channel
+  // a 1D gate (range / bisector) was drawn on its channel's histogram
+  p.state.y = isHistGate(pop.gate) ? HIST_AXIS : pop.gate.y_channel
   p.state.xt = pop.gate.x_transform.kind
   p.state.yt = pop.gate.y_transform.kind
   // an asinh gate opens at its own cofactor, so its outline and the dots sit where they were drawn

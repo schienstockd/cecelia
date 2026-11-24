@@ -235,6 +235,11 @@ function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
         # a split gate strokes its divider and names its REGION (the slice side / quadrant sector)
         dividers, pts = if kind in ("slice", "quadrant")
             Cecelia.split_outline(g, (xlo, xhi, ylo, yhi))
+        elseif kind in ("range", "bisector")
+            # 1D (x = y = its channel): vertical lines at the ends / the cut, the region spans the plot
+            ends = kind == "range" ? [g["lo"], g["hi"]] : [g["cut"]]
+            a, b = kind == "range" ? (g["lo"], g["hi"]) : g["side"] == 1 ? (g["cut"], xhi) : (xlo, g["cut"])
+            [((e, ylo), (e, yhi)) for e in ends], [(a, ylo), (b, ylo), (b, yhi), (a, yhi)]
         elseif kind == "rectangle"
             nothing, [(g["x_min"], g["y_min"]), (g["x_max"], g["y_min"]), (g["x_max"], g["y_max"]), (g["x_min"], g["y_max"])]
         else
@@ -260,7 +265,9 @@ function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
         if dividers !== nothing
             # a split region's outline is the divider + the plot border, so the above/below-the-box rule
             # would put each name in the NEIGHBOURING region — centre it in its own region instead
-            at = Cecelia.split_label_point(g, (xlo, xhi, ylo, yhi))
+            at = kind in ("range", "bisector") ?
+                 ((max(pts[1][1], xlo) + min(pts[2][1], xhi)) / 2, (ylo + yhi) / 2) :
+                 Cecelia.split_label_point(g, (xlo, xhi, ylo, yhi))
             at === nothing && continue
             cx = clamp(col(at[1]) - L, half, P - half)
             rtop = clamp(row(at[2]) - T - size(m, 1) / 2, 0, P - size(m, 1))

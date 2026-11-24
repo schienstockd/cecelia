@@ -45,7 +45,8 @@ function api_gating_plot_image(req::HTTP.Request)
     rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
     xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
-    gates = _child_gate_outlines(m, pop, x, y, xt, yt)
+    gates = _child_gate_outlines(m, pop, x, y, xt, yt;
+                                 parent_raw = _plot_xy_raw(img, vn, pt, x, y, pop; labels_version = pin)[1])
     gx, gy = _gate_edges(gates)
     # ticks label the data range on an unpadded side, as plotmeta does (`_display_extent`)
     tick_range(t, (lo, hi), r, grew) = (grew[1] ? invert_transform(t, lo) : 0.0, grew[2] ? invert_transform(t, hi) : float(r[2]))
@@ -375,6 +376,12 @@ function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector
         max(at(0.99) - at(0.01), eps())
     end
     sx = span(xt); sy = span(yt)
+    if g isa Cecelia.HistGate
+        # one axis: the distance to the nearest end / the cut (a rule's, on these — the parent's — cells)
+        g = Cecelia.resolve_gate(g, xraw)
+        ends = g isa RangeGate ? (g.lo, g.hi) : (g.cut,)
+        return [isfinite(v) ? minimum(abs(v - e) for e in ends) / sx : Inf for v in xt]
+    end
     segs = if g isa Cecelia.SplitGate
         # the divider, run out past the cells — a split gate's edge is its line / arms
         Cecelia.divider_segments(g, Cecelia._plane_box(xt, yt, Cecelia._divider_points(g)))

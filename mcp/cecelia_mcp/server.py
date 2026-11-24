@@ -835,7 +835,9 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
       - `gate` (flow/track): `{kind: rectangle|polygon|slice|quadrant, x_channel, y_channel, x_transform,
         y_transform, …geometry}` — the drawn gate on two channels. null for filter pops. slice / quadrant
         are split gates: one divider (`vertices`, or `centre` + 4 `arms`), one pop per region (`side` ±1 /
-        `quadrant` 1–4), linked by `group`.
+        `quadrant` 1–4), linked by `group`. range / bisector are 1D gates on ONE channel (x_channel =
+        y_channel): `lo`/`hi`, or a `cut` with `side` 1 above / -1 at-or-below; a bisector `rule`
+        `{kind: valley, lo, hi}` puts the cut at the parent's density valley in that window, per image.
       - `filter` (clust/trackclust/region/branch, and flow filter pops): `{measure, fun, values, default_all}`
         plus `conditions: [{measure, fun, values}, …]` when several rules are AND-ed (then `measure`/`fun`/
         `values` repeat only the first) — e.g. a cluster pop is `{measure: "clusters.movement", fun: "in",
