@@ -1208,7 +1208,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   tool is **paused**: no cursor-following preview, no new shape from a click — a crosshair still tracking
   the mouse read as "the gate I drew is gone". Add, × or Esc ends it; × and Esc leave the tool armed
   (Esc only disarms when nothing is pending). Shift-adjusting existing gates still works meanwhile. The
-  bar is one row that never wraps — the tool's icon stands for the kind, a quadrant shows "4 pops" —
+  bar is one row that never wraps — the tool's icon stands for the kind, a quadrant shows "4 populations" —
   and the name box shrinks first, so it fits a ~200 px plot (`GateNameBar.browser.test.ts`).
 - **Gate names dodge each other.** Every label on a plot is placed together: each starts where
   `utils/gateLabel.ts` / the split / 1D rule puts it, then `plots/chipPlacement.ts` `placeChips` pushes

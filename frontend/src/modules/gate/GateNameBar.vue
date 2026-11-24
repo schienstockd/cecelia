@@ -30,7 +30,7 @@ const emit = defineEmits<{ add: []; cancel: [] }>()
   <div class="gate-name" data-guide="gate.name">
     <div class="gate-name-row">
       <i :class="[icon, 'gate-name-kind']" v-tooltip.top="`New ${kind}`" />
-      <span v-if="count != null" class="gate-name-count cc-muted">{{ count }} pops</span>
+      <span v-if="count != null" class="gate-name-count cc-muted">{{ count }} populations</span>
       <input v-else v-model="name" class="gate-name-input" placeholder="name…" autofocus
              :aria-label="`Name for the new ${kind}`" v-tooltip.top="nameTip"
              :class="{ 'name-invalid': invalid }" @keyup.enter="emit('add')" />

@@ -27,9 +27,9 @@ function oneRowInside(host: HTMLElement, root: HTMLElement) {
 }
 
 describe('GateNameBar on a narrow plot', () => {
-  it('a quadrant: icon, "4 pops", Add, × on one row', async () => {
+  it('a quadrant: icon, "4 populations", Add, × on one row', async () => {
     const { host, root } = bar('quadrant', { count: 4 }); await frames()
-    expect(root.textContent).toContain('4 pops')
+    expect(root.textContent).toContain('4 populations')
     oneRowInside(host, root)
   })
   it('a rectangle with a long name keeps one row, and the whole name', async () => {
