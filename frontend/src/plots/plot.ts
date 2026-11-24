@@ -15,7 +15,7 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import { replicateOf, sinaOffsets, superplotColours, superplotOn } from './superplot'
+import { replicateOf, sinaOffsets, superplotCellTop, superplotColours, superplotOn } from './superplot'
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
@@ -702,24 +702,12 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
 
   // measure-axis range: default INCLUDE 0 (R expand_limits(y=0)) for non-negative, non-log charts;
   // a blank bound is filled from the data extent (so min-only or max-only works); +5% headroom on top.
-  const ext = measureExtent(r)
+  const ext = drawnExtent(r, o)
   const uMin = parseFloat(o.yMin), uMax = parseFloat(o.yMax)
   const hasUser = Number.isFinite(uMin) || Number.isFinite(uMax)
   let measDomain: number[] | null = null
   if (ext && isDist) {
-    // distribution charts (box/violin/strip/bar): the measure lives on the value axis, so we manage its
-    // full domain — include 0, +5% headroom, blank bound filled from the data extent.
-    if (o.logScale) {
-      const lo = Number.isFinite(uMin) && uMin > 0 ? uMin : ext.min
-      const hi = Number.isFinite(uMax) ? uMax : ext.max
-      if (hi > lo) measDomain = [lo, hi]
-    } else {
-      const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative ? 0 : Math.min(0, ext.min))
-      // the stats annotations' band is reserved at the end, once the margins (hence the axis length in
-      // pixels) are final — see reserveStatsBand
-      const hi = Number.isFinite(uMax) ? uMax : ext.max + (ext.max - lo) * 0.05
-      if (hi > lo) measDomain = [lo, hi]
-    }
+    measDomain = distDomain(ext, o)
   } else if (hasUser && ext) {
     // count/proportion charts (frequency, histogram, …) auto-scale their Y — but still HONOUR an explicit
     // yMin/yMax (previously these were ignored). ext here is the value/count extent (series `value`), used
@@ -1132,6 +1120,43 @@ function measureExtent(r: PlotDataResponse): { min: number; max: number } | null
   }
   return Number.isFinite(lo) && Number.isFinite(hi) ? { min: lo, max: hi } : null
 }
+// distribution charts (box/violin/strip/bar): the measure lives on the value axis, so we manage its
+// full domain — include 0, +5% headroom, blank bound filled from the data extent. The stats annotations'
+// band is reserved later, once the margins (hence the axis length in pixels) are final — reserveStatsBand.
+function distDomain(ext: { min: number; max: number }, o: Pick<BuildOpts, 'yMin' | 'yMax' | 'logScale' | 'nonNegative'>): number[] | null {
+  const uMin = parseFloat(o.yMin), uMax = parseFloat(o.yMax)
+  if (o.logScale) {
+    const lo = Number.isFinite(uMin) && uMin > 0 ? uMin : ext.min
+    const hi = Number.isFinite(uMax) ? uMax : ext.max
+    return hi > lo ? [lo, hi] : null
+  }
+  const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative ? 0 : Math.min(0, ext.min))
+  const hi = Number.isFinite(uMax) ? uMax : ext.max + (ext.max - lo) * 0.05
+  return hi > lo ? [lo, hi] : null
+}
+
+type CellAxisOpts = Pick<BuildOpts, 'chartType' | 'superplot' | 'yMin' | 'yMax' | 'logScale' | 'nonNegative'>
+const SUPERPLOT_CHARTS = new Set<ChartType>(['boxplot', 'strip'])   // the builders that draw the cells
+const cellsDrawn = (r: PlotDataResponse, o: CellAxisOpts) => SUPERPLOT_CHARTS.has(o.chartType) && superplotOn(r.series, o.superplot)
+
+/** Are SuperPlot cells cut off by the auto axis top? Only when the cells set the top (not a box above
+ *  them, not the user's Y max) and some lie past it — the panel's notice (`superplotClipNote`). */
+export function superplotCellsCut(r: PlotDataResponse, o: CellAxisOpts): boolean {
+  if (!cellsDrawn(r, o) || Number.isFinite(parseFloat(o.yMax))) return false
+  const ext = drawnExtent(r, o), means = measureExtent(r)
+  if (!ext || !means || ext.max <= means.max) return false
+  const top = distDomain(ext, o)?.[1]
+  return top != null && r.series.some(s => (s.cellPoints ?? []).some(v => v > top))
+}
+
+// the extent the chart draws: a SuperPlot's auto top covers most of its cells, not just the means
+// (plots/superplot.ts → superplotCellTop), and the stats brackets sit above that, not inside the cloud
+function drawnExtent(r: PlotDataResponse, o: CellAxisOpts): { min: number; max: number } | null {
+  const ext = measureExtent(r)
+  if (!ext || !cellsDrawn(r, o) || Number.isFinite(parseFloat(o.yMax))) return ext
+  const top = superplotCellTop(r.series)
+  return top != null && top > ext.max ? { ...ext, max: top } : ext
+}
 
 // distinct series keys in first-appearance order → x positions for distribution charts. In FACET
 // mode every series centres at index 0 (its own small-multiple panel via `fx`); otherwise each gets
@@ -1302,7 +1327,7 @@ function statsBracketMarks(
 ): unknown[] {
   const cmp = r.comparisons
   if (!cmp) return []
-  const extent = measureExtent(r)
+  const extent = drawnExtent(r, o)
   if (!extent) return []
   const { idx } = seriesIndex(r, keyOf, facetSingle(o))
   const labelBySeries = serverStatsLabels(r.series)
@@ -1421,8 +1446,8 @@ function superplotCellRows(series: readonly PlotSeries[], keyOf: (s: PlotSeries)
   return rows
 }
 // small, faint, no outline: the spread between cells, under the means that carry the test. Clipped to
-// the frame: the axis is fitted to the boxes and means, so a fast outlier cell is cut, not drawn
-// over the legend (Y max shows it).
+// the frame: the axis covers most cells (superplotCellTop), so the fastest few are cut, not drawn over
+// the legend; the panel says so (superplotClipNote) and Y max shows them.
 function superplotCellMarks(Plot: PlotModule, cells: SpCellRow[], o: BuildOpts, a: ReturnType<typeof axM>, f: object) {
   return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(0.8, o.pointSize * 0.5),
                                            fill: 'fill', fillOpacity: Math.min(0.3, o.pointOpacity), clip: true, ...f })] : []
