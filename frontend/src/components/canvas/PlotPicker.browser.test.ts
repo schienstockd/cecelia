@@ -3,11 +3,14 @@
 // A kind's blurb now heads its cards instead.
 import { describe, expect, it } from 'vitest'
 import { h } from 'vue'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import PlotPicker from './PlotPicker.vue'
 import { frames, mountInto } from '../../test/browser/mount'
 import { PLOT_CATEGORIES, PLOT_SKETCH_KINDS, type PlotOption } from '../../plots/plotPicker'
 import { useSettingsStore } from '../../stores/settings'
+import { specOption } from '../../plots/plotPicker'
+import { INTERACTIVE_VIEWS, viewOption } from './interactiveViews'
+import { CLUSTER_PANELS } from '../../modules/cluster/clusterPanels'
 
 const sketch = PLOT_SKETCH_KINDS[0]
 const options: PlotOption[] = [
@@ -58,5 +61,36 @@ describe('PlotPicker hover never covers the next level', () => {
     await frames()
     const t = tip()
     if (t) for (const c of cards.slice(1)) expect(overlaps(t.getBoundingClientRect(), c.getBoundingClientRect())).toBe(false)
+  })
+})
+
+// Every real plot's question line fits its card (two lines) — a longer one is cut off mid-sentence.
+type SpecJson = { id: string; label: string; answers?: string; category?: string; sketch?: string }
+const SPECS = Object.values(import.meta.glob<SpecJson>('../../../../app/src/plotDefinitions/*.json',
+                                                       { eager: true, import: 'default' }))
+const ALL: PlotOption[] = [
+  ...SPECS.map(s => specOption(s)),
+  ...Object.entries(INTERACTIVE_VIEWS).map(([k, v]) => ({ ...viewOption(k, v), value: k })),
+  ...Object.entries(CLUSTER_PANELS).map(([k, v]) => ({ ...viewOption(k, v), value: k })),
+]
+
+describe('PlotPicker card text', () => {
+  // a full-width window and a narrow one (a small laptop window or zoomed-in browser)
+  it.each([1280, 560])('every real plot\'s question fits its card at %ipx', async (w) => {
+    await page.viewport(w, 800)
+    expect(SPECS.length).toBeGreaterThan(10)
+    const host = mountInto({
+      setup() { useSettingsStore().plotPickerPreviews = true },
+      render: () => h(PlotPicker, { options: ALL }),
+    })
+    await openPicker(host)
+    const clipped: string[] = []
+    for (const kind of document.querySelectorAll<HTMLElement>('.pp-kind')) {
+      await userEvent.click(kind)
+      await frames()
+      for (const a of document.querySelectorAll<HTMLElement>('.pp-card-answers'))
+        if (a.scrollHeight > a.clientHeight + 1) clipped.push(a.textContent ?? '')
+    }
+    expect(clipped).toEqual([])
   })
 })

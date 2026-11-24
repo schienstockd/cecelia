@@ -156,7 +156,7 @@ function leaveKind() { clearTimeout(hoverTimer) }
 .plot-picker-btn .pi { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); }
 
 .pp { display: flex; flex-direction: column; width: 240px; max-height: min(70vh, 560px); }
-.pp-wide { width: min(660px, 94vw); }
+.pp-wide { width: min(495px, 94vw); }
 .pp-head { padding: 0.4rem; gap: 0.3rem; border-bottom: 1px solid var(--cc-border); }
 .pp-search { flex: 1; min-width: 0; }
 .pp-empty { padding: 0.8rem; }
@@ -173,7 +173,8 @@ function leaveKind() { clearTimeout(hoverTimer) }
 .pp-kind-on .pp-card-label { color: var(--cc-accent); }
 
 .pp-cards { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 0.4rem; }
-.pp-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
+/* cards keep a minimum width so the question fits in two lines; a narrow picker drops to one column */
+.pp-section { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 0.25rem; }
 .pp-blurb { padding: 0.1rem 0.2rem 0.35rem; }
 .pp-section + .pp-section { margin-top: 0.5rem; }
 .pp-section-head { grid-column: 1 / -1; padding: 0.3rem 0.2rem 0.1rem; }
@@ -184,7 +185,7 @@ function leaveKind() { clearTimeout(hoverTimer) }
 .pp-card-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .pp-card-label { font-size: var(--cc-fs-sm); font-weight: 600; }
 .pp-card-answers { color: var(--cc-text-dim); line-height: 1.25;
-                   display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+                   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .pp-list { overflow-y: auto; }
 </style>

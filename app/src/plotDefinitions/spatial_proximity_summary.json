@@ -3,7 +3,7 @@
   "label": "Proximity across images",
   "category": "compare",
   "sketch": "contactImages",
-  "answers": "Does a population's enrichment near a structure differ between images or treatments?",
+  "answers": "Does enrichment near a structure differ by treatment?",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["boxplot", "strip", "bar"],

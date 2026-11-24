@@ -3,7 +3,7 @@
   "label": "Populations over time",
   "category": "time",
   "sketch": "popOverTime",
-  "answers": "How does each population's size (count or proportion) change over the movie?",
+  "answers": "How does each population's size change over time?",
   "modules": {
     "phenotype": ["flow", "clust"],
     "behaviourAnalysis": ["flow", "live", "track", "trackclust"]

@@ -3,7 +3,7 @@
   "label": "Region composition",
   "category": "makeup",
   "sketch": "regions",
-  "answers": "How many cells of each type sit in each spatial region — what each region is made of, where each type lives, and which types a region is enriched for?",
+  "answers": "Which cell types make up each spatial region?",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["heatmap", "stacked100", "stacked", "frequency", "boxplot", "strip", "bar"],

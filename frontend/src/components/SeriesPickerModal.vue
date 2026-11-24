@@ -53,6 +53,7 @@ function save() {
           <input type="checkbox" class="sp-cb"
                  :checked="picked.has(s.index)"
                  @change="toggle(s.index)"
+                 v-tooltip.left="'Import this series'"
                  :aria-label="`Series ${s.index}`" />
           <div class="sp-thumb">
             <img v-if="s.thumbnailPngB64"

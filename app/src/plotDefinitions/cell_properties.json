@@ -3,7 +3,7 @@
   "label": "Cell properties",
   "category": "compare",
   "sketch": "cell",
-  "answers": "How does a per-cell measure (a marker, shape, speed, turning angle) differ between groups?",
+  "answers": "How does a cell measure differ by group?",
   "modules": {
     "phenotype": ["flow", "clust"],
     "behaviourAnalysis": ["live", "track", "trackclust"],

@@ -104,7 +104,7 @@ const CELL_FAMILIES: PopTypeOption[] = CELL_PLOT_POP_TYPES.map(popType =>
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   clusterMap: {
     label: 'Cluster map',
-    answers: 'Where does each cluster sit on the UMAP / behaviour map?',
+    answers: 'Where does each cluster sit on the UMAP?',
     component: ClusterMapView, clusterPage: true, analysisBoard: true,
     category: 'profiles', sketch: 'umap', square: true, rail: 'clusterPops',
     visControls: ['legend', 'pointSize', 'pointOpacity', 'palette', 'fontSize'],
@@ -118,12 +118,12 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     component: GatingStrategyView, analysisBoard: true, category: 'look', sketch: 'gate', rail: 'none', pluginPage: true,
     visControls: ['pointSize', 'fontSize'] },
   filmstrip: { label: 'Image / strip',
-    answers: 'What does it look like — a viewer screenshot or filmstrip?',
+    answers: 'What does the image look like — still or filmstrip?',
     component: ImageStripView, analysisBoard: true, category: 'look', sketch: 'image', rail: 'none', pluginPage: true },
   // A rendered figure (docs/todo/FIGURES_PLAN.md), picked by name and shown as made — the paper-quality
   // counterpart of `filmstrip`'s viewer screenshots. Read-only; the Movies & figures page edits it.
   figure: { label: 'Figure',
-    answers: 'Can a figure from Movies & figures sit beside the plots?',
+    answers: 'Can a saved figure sit beside the plots?',
     component: FigureView, analysisBoard: true, category: 'look', sketch: 'image', rail: 'none' },
   // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
   // from `filmstrip`, which is a viewer SCREENSHOT montage — these planes are computed, are not
@@ -131,7 +131,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `rail: 'none'` is the same statement its header makes: this question is asked BEFORE a model
   // exists, so it must not be handed one.
   flowMetrics: { label: 'Flow metrics',
-    answers: 'Which flow metric planes should the motion model train on?',
+    answers: 'Which flow metrics should the motion model train on?',
     component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'planes', rail: 'none' },
   // Training convergence per loss TERM. A plot, not a chart in the vault's details modal, so it gets
   // the canvas chrome and the CSV/PNG/SVG + board-PDF export for free.
@@ -150,7 +150,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is
   // a wrong one; the facet cells stay square too (`plots/facetGrid.ts`).
   trackPaths: { label: 'Tracks',
-    answers: 'What do the tracks look like — paths, star or rose plots?',
+    answers: 'What do the tracks look like — paths, star or rose?',
     component: TrackPathsView, trackPage: true, analysisBoard: true, category: 'look', sketch: 'tracksStar',
                 square: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
@@ -197,7 +197,7 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // on the rail where the page has one, and on the Cluster / Region pages (`clusterPage`) it draws the
   // populations their manager shows. `square`: x and y are both image distance.
   popPositions: { label: 'Population positions',
-    answers: 'Where do the populations sit on the image, frame by frame?',
+    answers: 'Where do the populations sit, frame by frame?',
     component: PopPositionsView, analysisBoard: true, clusterPage: true, category: 'look', sketch: 'popPositions',
     square: true, rail: 'pops', popTypes: CELL_FAMILIES,
     modules: {

@@ -3,7 +3,7 @@
   "label": "Interaction matrix",
   "category": "profiles",
   "sketch": "contacts",
-  "answers": "Which populations touch more or less often than chance?",
+  "answers": "Which populations touch more than by chance?",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["heatmap"],
