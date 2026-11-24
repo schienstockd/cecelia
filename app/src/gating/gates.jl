@@ -46,24 +46,28 @@ gate_channels(g::Gate) = (g.x_channel, g.y_channel)
 # `inside(gate, x_raw, y_raw)` → BitVector. x_raw/y_raw are the RAW channel columns
 # for `x_channel`/`y_channel`; the gate applies its own transforms.
 
-function inside(g::RectangleGate, x_raw::AbstractVector, y_raw::AbstractVector)::BitVector
-    length(x_raw) == length(y_raw) || error("inside: x and y length mismatch")
-    out = BitVector(undef, length(x_raw))
-    @inbounds for i in eachindex(x_raw)
-        xt = apply_transform(g.x_transform, float(x_raw[i]))
-        yt = apply_transform(g.y_transform, float(y_raw[i]))
-        out[i] = (xt >= g.x_min) & (xt <= g.x_max) & (yt >= g.y_min) & (yt <= g.y_max)
+# `inside_t(gate, xt, yt)` → the same test on columns ALREADY in the gate's transformed space
+# (`transform_column`). `recompute!` uses it so gates sharing an axis transform it once per map, and
+# so a child is tested only on its parent's rows. `inside` is `inside_t` over the transformed columns,
+# so the two cannot disagree.
+inside(g::Gate, x_raw::AbstractVector, y_raw::AbstractVector)::BitVector =
+    inside_t(g, transform_column(g.x_transform, x_raw), transform_column(g.y_transform, y_raw))
+
+function inside_t(g::RectangleGate, xt::AbstractVector{Float64}, yt::AbstractVector{Float64})::BitVector
+    length(xt) == length(yt) || error("inside: x and y length mismatch")
+    out = BitVector(undef, length(xt))
+    @inbounds for i in eachindex(xt, out)
+        x = xt[i]; y = yt[i]
+        out[i] = (x >= g.x_min) & (x <= g.x_max) & (y >= g.y_min) & (y <= g.y_max)
     end
     out
 end
 
-function inside(g::PolygonGate, x_raw::AbstractVector, y_raw::AbstractVector)::BitVector
-    length(x_raw) == length(y_raw) || error("inside: x and y length mismatch")
-    out = BitVector(undef, length(x_raw))
-    @inbounds for i in eachindex(x_raw)
-        xt = apply_transform(g.x_transform, float(x_raw[i]))
-        yt = apply_transform(g.y_transform, float(y_raw[i]))
-        out[i] = point_in_polygon(xt, yt, g.vertices)
+function inside_t(g::PolygonGate, xt::AbstractVector{Float64}, yt::AbstractVector{Float64})::BitVector
+    length(xt) == length(yt) || error("inside: x and y length mismatch")
+    out = BitVector(undef, length(xt))
+    @inbounds for i in eachindex(xt, out)
+        out[i] = point_in_polygon(xt[i], yt[i], g.vertices)
     end
     out
 end

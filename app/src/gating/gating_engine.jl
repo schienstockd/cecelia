@@ -165,6 +165,18 @@ gate_axis_scale(m::PopulationTree, col::AbstractString)::Float64 =
     (is_spatial_axis(String(col)) && gates_in_um(m)) ?
         physical_size_for_axis(m.physical_sizes, axis_of(String(col))) : 1.0
 
+# `parent_mask .& inside(g, x, y)`, tested only on the parent's rows: a child of a 7 % population
+# costs 7 % of a full pass. A slice gate is tested on every row — its half-plane is clipped to a box
+# around the points it is given, and the full column keeps that box exactly what `inside` uses.
+function _gate_mask(g::Gate, parent_mask::BitVector, tcol)::BitVector
+    xt = tcol(g.x_channel, g.x_transform); yt = tcol(g.y_channel, g.y_transform)
+    g isa SliceGate && return parent_mask .& inside_t(g, xt, yt)
+    idx = findall(parent_mask)
+    mask = falses(length(parent_mask))
+    mask[idx[inside_t(g, view(xt, idx), view(yt, idx))]] .= true
+    mask
+end
+
 """
     recompute!(m, fetch_cols) -> m
 
@@ -193,6 +205,10 @@ function recompute!(m::PopulationTree, fetch_cols::Function)
     labels = df.label
     n = length(labels)
     cols = Set(names(df))
+    # Each (column, transform) is transformed ONCE per evaluation: sibling gates drawn on the same axes
+    # share it (a logicle column of a 600k-cell movie is ~0.1 s, and every gate used to redo it).
+    tcols = Dict{Tuple{String,String},Vector{Float64}}()
+    tcol(ch, t) = get!(() -> transform_column(t, df[!, ch]), tcols, (String(ch), transform_key(t)))
     memb = Dict{String,BitVector}()
     memb[ROOT] = trues(n)
     for path in topo_order(m)
@@ -210,9 +226,9 @@ function recompute!(m::PopulationTree, fetch_cols::Function)
             # the filter case below for the rationale (missing column ≠ hard 500).
             # a rule gate (a valley-following bisector) is first resolved on its PARENT's cells
             (p.gate.x_channel in cols && p.gate.y_channel in cols) ?
-                parent_mask .& inside(needs_parent_data(p.gate) ?
-                                          resolve_gate(p.gate, df[parent_mask, p.gate.x_channel]) : p.gate,
-                                      df[!, p.gate.x_channel], df[!, p.gate.y_channel]) :
+                _gate_mask(needs_parent_data(p.gate) ?
+                               resolve_gate(p.gate, df[parent_mask, p.gate.x_channel]) : p.gate,
+                           parent_mask, tcol) :
                 _missing_col_mask(n, path, string(p.gate.x_channel, " / ", p.gate.y_channel))
         elseif p.filter_conditions !== nothing
             # compound filter (Decision 15): AND every condition's mask. A missing column degrades the

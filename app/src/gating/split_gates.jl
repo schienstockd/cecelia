@@ -164,10 +164,9 @@ _divider_points(g::SliceGate) = g.vertices
 _divider_points(g::QuadrantGate) = [g.centre; g.arms]
 
 # ── Membership ────────────────────────────────────────────────────────────────
-function inside(g::SliceGate, x_raw::AbstractVector, y_raw::AbstractVector)::BitVector
-    length(x_raw) == length(y_raw) || error("inside: x and y length mismatch")
-    xt = Float64[apply_transform(g.x_transform, float(v)) for v in x_raw]
-    yt = Float64[apply_transform(g.y_transform, float(v)) for v in y_raw]
+# `inside` (gates.jl) transforms the raw columns and calls these
+function inside_t(g::SliceGate, xt::AbstractVector{Float64}, yt::AbstractVector{Float64})::BitVector
+    length(xt) == length(yt) || error("inside: x and y length mismatch")
     poly = slice_left_polygon(g.vertices, _plane_box(xt, yt, g.vertices))
     want_left = g.side == 1
     # the right side is "finite and NOT left", never a second polygon test — so the two sides are exact
@@ -176,13 +175,12 @@ function inside(g::SliceGate, x_raw::AbstractVector, y_raw::AbstractVector)::Bit
               for i in eachindex(xt))
 end
 
-function inside(g::QuadrantGate, x_raw::AbstractVector, y_raw::AbstractVector)::BitVector
-    length(x_raw) == length(y_raw) || error("inside: x and y length mismatch")
-    out = BitVector(undef, length(x_raw))
-    @inbounds for i in eachindex(x_raw)
-        xt = apply_transform(g.x_transform, float(x_raw[i]))
-        yt = apply_transform(g.y_transform, float(y_raw[i]))
-        out[i] = isfinite(xt) && isfinite(yt) && quadrant_of(g, xt, yt) == g.quadrant
+function inside_t(g::QuadrantGate, xt::AbstractVector{Float64}, yt::AbstractVector{Float64})::BitVector
+    length(xt) == length(yt) || error("inside: x and y length mismatch")
+    out = BitVector(undef, length(xt))
+    @inbounds for i in eachindex(xt, out)
+        x = xt[i]; y = yt[i]
+        out[i] = isfinite(x) && isfinite(y) && quadrant_of(g, x, y) == g.quadrant
     end
     out
 end

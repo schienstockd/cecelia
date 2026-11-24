@@ -436,7 +436,12 @@ function _resolve_pops_compute(img::CciaImage, pt::String, value_name::String)::
     # `labels` are CELL labels, so membership is evaluated over the cell table — the shared source's
     # cell branch, whatever `pt` is (a `branch` map's ids are not cells). Raw column names. No transient
     # selection injection here — it must not enter the cached (pure on-disk) result.
-    recompute!(m, pop_membership_fetch(img, value_name, "flow"))
+    fetch = pop_membership_fetch(img, value_name, "flow")
+    # the membership cache the plots and stats share (`recompute_cached!`): an edit evaluates the map
+    # once, not once for the viewer and again for the plots. Its table stamp follows `pt`'s table, so
+    # only the cell-table pop types take it (a `branch` map read here is evaluated over cells).
+    _membership_table(pt) == MEMBERSHIP_CELL ? recompute_cached!(m, img, value_name, pt, fetch) :
+                                               recompute!(m, fetch)
     # `has_tracks`: does this pop hold any cell with `track_id > 0` AND authored by this pop (or by
     # whole-seg tracking, or from a legacy row with no `track_source` marker)? Provenance-aware — an
     # orphan row from a deleted pop whose label happens to fall inside a live pop's gate no longer
@@ -763,9 +768,12 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
     # the columns its gates name and must not be widened.
     out_fetch = centroids === false ? fetch :
                 _fetch_with_centroids(img, fetch; labels_version = labels_version)
+    evaluate = (m, vn) -> recompute_cached!(m, img, vn, pop_type,
+                                            pop_membership_fetch(img, vn, pop_type; labels_version=labels_version);
+                                            labels_version=labels_version)
     df = _pop_df(load_map, out_fetch, pop_type, pops;
                  default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
-                 drop_na=drop_na, membership_fetch=membership_fetch)
+                 drop_na=drop_na, membership_fetch=membership_fetch, evaluate=evaluate)
     _pop_df_store!(img, ckey, df, map_hook)
     # a copy so callers never mutate the cached frame; `_pop_df_finish` converts units on that copy
     _pop_df_finish(copy(df), img, centroids)

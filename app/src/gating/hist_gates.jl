@@ -71,19 +71,23 @@ const HistGate = Union{RangeGate,BisectorGate}
 
 # ── Membership ────────────────────────────────────────────────────────────────
 # `y_raw` is the same column as `x_raw` (the gate names its channel twice); only x is read.
-function inside(g::RangeGate, x_raw::AbstractVector, ::AbstractVector)::BitVector
-    out = BitVector(undef, length(x_raw))
-    @inbounds for i in eachindex(x_raw)
-        v = apply_transform(g.x_transform, float(x_raw[i]))
+# (`inside_t` takes the transformed column twice, the way `inside` takes the raw one twice.)
+inside(g::Union{RangeGate,BisectorGate}, x_raw::AbstractVector, ::AbstractVector)::BitVector =
+    (xt = transform_column(g.x_transform, x_raw); inside_t(g, xt, xt))
+
+function inside_t(g::RangeGate, xt::AbstractVector{Float64}, ::AbstractVector{Float64})::BitVector
+    out = BitVector(undef, length(xt))
+    @inbounds for i in eachindex(xt, out)
+        v = xt[i]
         out[i] = (v >= g.lo) & (v <= g.hi)
     end
     out
 end
 
-function inside(g::BisectorGate, x_raw::AbstractVector, ::AbstractVector)::BitVector
-    out = BitVector(undef, length(x_raw))
-    @inbounds for i in eachindex(x_raw)
-        v = apply_transform(g.x_transform, float(x_raw[i]))
+function inside_t(g::BisectorGate, xt::AbstractVector{Float64}, ::AbstractVector{Float64})::BitVector
+    out = BitVector(undef, length(xt))
+    @inbounds for i in eachindex(xt, out)
+        v = xt[i]
         out[i] = isfinite(v) && (g.side == 1 ? v > g.cut : v <= g.cut)
     end
     out

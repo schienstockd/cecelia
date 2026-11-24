@@ -30,6 +30,36 @@ abstract type AxisTransform end
 apply_transform(t::AxisTransform, x::AbstractArray) = map(v -> apply_transform(t, float(v)), x)
 invert_transform(t::AxisTransform, y::AbstractArray)    = map(v -> invert_transform(t, float(v)), y)
 
+"""
+    transform_column(t, raw) -> Vector{Float64}
+
+`apply_transform(t, float(v))` for every value of a raw column — what gate membership tests against.
+Typed on the concrete transform (a gate's `x_transform` field is abstract, so a per-element call on it
+dispatches dynamically) and split across threads on a large column: logicle solves per value, ~150 ns,
+so one logicle column of a 600k-cell movie is ~0.1 s single-threaded. `recompute!` calls it once per
+(column, transform) a map's gates share, not once per gate.
+"""
+function transform_column(t::AxisTransform, raw::AbstractVector)::Vector{Float64}
+    out = Vector{Float64}(undef, length(raw))
+    _transform_column!(out, t, raw)
+end
+function _transform_column!(out::Vector{Float64}, t::T, raw::AbstractVector) where {T<:AxisTransform}
+    n = length(raw)
+    if n < 50_000 || Threads.nthreads() == 1
+        @inbounds for i in 1:n; out[i] = apply_transform(t, float(raw[i])); end
+        return out
+    end
+    chunks = Iterators.partition(1:n, cld(n, Threads.nthreads()))
+    Threads.@sync for r in chunks
+        Threads.@spawn @inbounds for i in r; out[i] = apply_transform(t, float(raw[i])); end
+    end
+    out
+end
+
+"""A value identifying a transform by its parameters — two gates parsed separately with the same
+spec share one transformed column in `recompute!`."""
+transform_key(t::AxisTransform)::String = join(sort!([string(k, "=", v) for (k, v) in transform_spec(t)]), ";")
+
 # ── Linear ───────────────────────────────────────────────────────────────────────
 struct LinearTransform <: AxisTransform end
 apply_transform(::LinearTransform, x::Real) = float(x)

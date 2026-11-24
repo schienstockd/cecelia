@@ -329,6 +329,7 @@ include(joinpath(@__DIR__, "suite", "figures.jl"))
 # so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "pop_df.jl"))
+include(joinpath(@__DIR__, "suite", "gating_membership_cache.jl"))
 include(joinpath(@__DIR__, "suite", "pop_plot_cols.jl"))
 
 # ── resolve_pops: cached, display-ready per-pop membership (napari points overlay) ──

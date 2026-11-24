@@ -475,3 +475,41 @@ end
         old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end
 end
+
+# ── pop/update with `paths` — the manager's "all" viewer toggle as ONE write ─────────────────────
+# One request for every population: one save, one broadcast, so the viewer refetches once instead of
+# once per population. All or nothing: an unknown path writes nothing.
+@testset "API: pop/update paths sets show on every population in one write" begin
+  if !api_have_fixture(api_fixture("testpr"))   # MAINT-EXEMPT: route plumbing, the assertions read only the show flags written
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")   # MAINT-EXEMPT: route plumbing, as above
+    cp(api_fixture("testpr"), proj)   # MAINT-EXEMPT: route plumbing, as above
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        vn = "B"
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                      "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
+        shown() = Dict(p => pop_at(m, p).show for m in (load_pop_tree(joinpath(proj, "1", "KDIeEm"), vn; pop_type = "flow"),)
+                       for p in pop_paths(m))
+        for (n, par) in (("a", "root"), ("b", "/a"), ("c", "root"))
+            post(api_gating_pop_add, Dict{String,Any}("name" => n, "parent" => par, "gate" => gate(1.0)))
+        end
+        st, _ = post(api_gating_pop_update, Dict{String,Any}("paths" => ["/a", "/a/b"], "show" => false))
+        @test st == 200
+        @test shown() == Dict("/a" => false, "/a/b" => false, "/c" => true)
+        # an unknown path: 404, and nothing written
+        st, _ = post(api_gating_pop_update, Dict{String,Any}("paths" => ["/c", "/nope"], "show" => false))
+        @test st == 404 && shown()["/c"]
+        st, _ = post(api_gating_pop_update, Dict{String,Any}("paths" => ["/c"]))
+        @test st == 400
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

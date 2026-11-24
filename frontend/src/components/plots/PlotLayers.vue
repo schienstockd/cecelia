@@ -28,6 +28,7 @@ import { BLUE_HEAT_RGB, heatCss } from '../../plots/flowColors'
 import { normValues, barTicks, fitLabel, barStops, colourBarSvg } from '../../plots/valueColour'
 import { svgImage, svgCircles, svgPath, svgRect, svgClip } from '../../plots/export'
 import { paintDimmed } from '../../plots/dimLayer'
+import { splatDots, cssRgb, SPLAT_MIN, type Rgb } from '../../plots/dotSplat'
 import { NEUTRAL } from '../../plots/fixedColours'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
@@ -143,12 +144,27 @@ function paintDensityDots(points: Float32Array) {
     }
     c.fill()
   }
+  const ramp = (b: number): Rgb => {
+    const ci = Math.min(255, Math.round((b / (DOT_BUCKETS - 1)) * 255))
+    return [BLUE_HEAT_RGB[ci * 3], BLUE_HEAT_RGB[ci * 3 + 1], BLUE_HEAT_RGB[ci * 3 + 2]]
+  }
+  // a large cloud: the same disks, same order, stamped into one image (plots/dotSplat)
+  if (n >= SPLAT_MIN && c.globalAlpha === 1) {
+    const { w, h } = size()
+    const done = splatDots(c, w, h, r, dot => {
+      const each = (g: number[], rgb: Rgb) => {
+        for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); dot(px, py, rgb) }
+      }
+      if (missing.length) each(missing, cssRgb(c, ink()))
+      for (let b = 0; b < DOT_BUCKETS; b++) if (groups[b].length) each(groups[b], ramp(b))
+    })
+    if (done) return
+  }
   if (missing.length) { c.fillStyle = ink(); stamp(missing) }
   for (let b = 0; b < DOT_BUCKETS; b++) {
     const g = groups[b]; if (!g.length) continue
-    const ci = Math.min(255, Math.round((b / (DOT_BUCKETS - 1)) * 255))
-      // COLOUR-OK: a ramp stop as a CSS colour
-      c.fillStyle = `rgb(${BLUE_HEAT_RGB[ci * 3]},${BLUE_HEAT_RGB[ci * 3 + 1]},${BLUE_HEAT_RGB[ci * 3 + 2]})`
+    const [cr, cg, cb] = ramp(b)
+    c.fillStyle = `rgb(${cr},${cg},${cb})`   // COLOUR-OK: a ramp stop as a CSS colour
     stamp(g)
   }
 }
@@ -214,6 +230,12 @@ function drawContours(points: Float32Array, colour: string) {
 function drawDots(points: Float32Array, colour: string, r = POP_R * dotK()) {
   const c = ctx!; c.fillStyle = colour
   const n = points.length / 2, toPx = pxMap()
+  if (n >= SPLAT_MIN && c.globalAlpha === 1) {
+    const { w, h } = size(), rgb = cssRgb(c, colour)
+    if (splatDots(c, w, h, r, dot => {
+      for (let i = 0; i < n; i++) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); dot(px, py, rgb) }
+    })) return
+  }
   c.beginPath()                                  // one path for the whole layer — see paintDensityDots
   for (let i = 0; i < n; i++) {
     const [px, py] = toPx(points[2 * i], points[2 * i + 1])

@@ -690,6 +690,26 @@ transient napari-selection pop is excluded (it's the selection *source*). Cell p
 REPL contract (headless, no API/UI): `add_pop!`, `set_gate!`, `recompute!`,
 `cells_in_pop`, `pop_df`, `pop_df_multi`, `resolve_pops`, `save_pop_tree!`/`load_pop_tree`.
 
+### Membership cache — one evaluation per edit
+
+`recompute_cached!(m, img, vn, pop_type, fetch_cols; labels_version)` is `recompute!` kept server-wide
+(`_MEMBERSHIP_CACHE`, one slot per image × segmentation × pop type × labels pin). Its stamp is what the
+evaluation read: the map's membership fields (paths, parents, gates, filters, booleans, explicit labels
+in full, spatial unit, µm/px — not colour, uid, visibility or edit stamps) and the file stamp of the
+table `pop_membership_fetch` reads. Digesting the map *as evaluated* is what lets the API's hooked reads
+(the pick selection, injected in memory) cache too. One evaluation per slot runs at a time; requests
+that arrive during it wait and take its result — after an edit the GUI asks for the changed pops'
+stats, the plot refresh and the viewer overlays at once. `computed_pop_tree`, the cell `pop_df` path
+and `resolve_pops` (cell-table pop types) evaluate through it.
+
+`recompute!` itself transforms each (column, transform) once per evaluation (`transform_column`, shared
+by sibling gates on the same axes) and tests a child only on its parent's rows (`inside_t`); a slice
+gate is still tested on every row, since its half-plane is clipped to a box around the points given.
+The parsed `obs/_index` label column is cached per h5ad file (`_OBS_LABELS_CACHE`, mtime + size).
+
+Measured on a 608k-cell movie (KDIeEm scaled ×442, eight nested logicle gates, 8 threads): one
+evaluation 2.4 s → ~0.25 s; the request burst after a gate edit 9.5–15.5 s → 0.6–1.4 s.
+
 ### `pop_df_multi` — mixed-type module-function inputs
 
 A module function's `popSelection` can offer **any** pop type at once (cell gates, `clust`, `region`,
@@ -1056,7 +1076,9 @@ client-side; the server persistence was already correct.
 One rule for every canvas: **a gate write refetches only what shows a changed population** —
 the redrawn, added or deleted pop and everything under it (`utils/popChanges.ts`,
 `changedPopPaths`). The gating plots bump per-pop versions with it (`stores/gating.ts`
-`popVersion`); the summary and layout canvases key each panel's refetch off the pops it plots
+`popVersion`); the edit's own reply refetches the manager's counts of exactly those pops
+(`statsToFetch`), and the broadcast that follows, like a fresh tree read, refreshes every count — it
+also carries writes this tab did not make, and the server answers them from its membership cache; the summary and layout canvases key each panel's refetch off the pops it plots
 (`seriesReloadToken`, ancestors included so a derived `/_tracked` follows its parent). A new
 gate is never ticked, so it refetches no plot. One exception: a panel reading a cluster column
 (measure, heatmap category or group-by — Track cluster frequency) follows **every** pop write,
