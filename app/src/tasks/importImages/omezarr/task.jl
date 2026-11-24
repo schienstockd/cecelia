@@ -19,8 +19,15 @@ Base.@kwdef struct ImportOmezarrParams
 end
 
 function parse_import_omezarr_params(d::AbstractDict)::ImportOmezarrParams
+    value_name = string(get(d, "valueName", VERSIONED_DEFAULT_VAL))
+    # The import's image-level meta describes the `default` store: an overwrite merge replaces
+    # `saturation` / `partialTimepoint` with the probe of the store written here, and
+    # `ensure_saturation_meta!` reads that verdict as default's. Importing into another value_name
+    # would hand default another store's clipping verdict (or clear it), so refuse it.
+    value_name == VERSIONED_DEFAULT_VAL || throw(ArgumentError(
+        "importImages.omezarr writes the \"$VERSIONED_DEFAULT_VAL\" store only; got valueName \"$value_name\""))
     ImportOmezarrParams(;
-        valueName     = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        valueName     = value_name,
         src_path      = string(get(d, "src_path", "")),
         pyramidLevels = get(d, "pyramidLevels", nothing),
         pyramidScale  = Int(get(d, "pyramidScale", 2)),

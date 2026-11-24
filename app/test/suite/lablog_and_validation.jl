@@ -662,3 +662,13 @@ end
         ImportOmezarr(), img2, Dict{String,Any}("pyramidLevels" => 99))
     rm(proj2.root; recursive=true)
 end
+
+@testset "ImportOmezarr refuses a non-default valueName" begin
+    # The import's `saturation` / `partialTimepoint` meta is default's clipping verdict
+    # (`ensure_saturation_meta!` probes `default`); an import into another value_name would replace
+    # or clear it with another store's.
+    @test Cecelia.parse_import_omezarr_params(Dict{String,Any}()).valueName == VERSIONED_DEFAULT_VAL
+    @test Cecelia.parse_import_omezarr_params(
+        Dict{String,Any}("valueName" => VERSIONED_DEFAULT_VAL)).valueName == VERSIONED_DEFAULT_VAL
+    @test_throws ArgumentError Cecelia.parse_import_omezarr_params(Dict{String,Any}("valueName" => "corrected"))
+end
