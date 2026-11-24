@@ -3,6 +3,7 @@
   "fun_name": "tracking.bayesian_tracking",
   "label": "Bayesian tracking",
   "citations": ["10.3389/fcomp.2021.734559"],
+  "methodsText": ["{popsToTrack} cells were tracked with btrack (maximum search radius {maxSearchRadius}, gaps of up to {maxLost} frames, tracks of at least {minTimepoints} timepoints)."],
   "purpose": "Link segmented cells across frames into tracks",
   "useWhen": [
     "Time-lapse with cells segmented on every frame",

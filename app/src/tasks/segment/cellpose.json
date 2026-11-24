@@ -3,6 +3,7 @@
   "fun_name": "segment.cellpose",
   "label": "Cellpose segmentation",
   "citations": ["10.1038/s41592-020-01018-x", "10.1101/2025.04.28.651001"],
+  "methodsText": ["Cells were segmented on the {valueName} image with Cellpose (model {model}; channels {cellChannels}; diameter {cellDiameter}; cell probability threshold {cellprobThreshold})."],
   "purpose": "Find cells by their appearance, one frame at a time",
   "useWhen": [
     "Cells with a visible outline in each frame",
