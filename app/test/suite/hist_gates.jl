@@ -133,3 +133,32 @@ end
     @test pj["kind"] == "bisector" && pj["cut"] ≈ 100.0 && pj["side"] == -1
     @test project_gate(RangeGate("c", 0.0, 1.0), "c", "d", LinearTransform(), LinearTransform()) === nothing
 end
+
+@testset "range with valley ends: a middle population between two dips, per image" begin
+    rng = MersenneTwister(5)
+    # three populations at 0, 4, 8 (sd 0.6): the middle one lies between valleys at 2 and 6
+    three(shift) = shift .+ [0.6 .* randn(rng, 3000); 4 .+ 0.6 .* randn(rng, 3000); 8 .+ 0.6 .* randn(rng, 3000)]
+    g = RangeGate("c", 1.0, 7.0; lo_rule = ValleyRule(0.5, 3.5), hi_rule = ValleyRule(4.5, 7.5))
+    @test Cecelia.needs_parent_data(g) && !Cecelia.needs_parent_data(RangeGate("c", 0, 1))
+    m = PopulationTree(pop_type = "flow", value_name = "B")
+    add_pop!(m, "mid"; gate = g)
+    v = three(0.0)
+    recompute!(m, _ -> DataFrame("label" => collect(1:length(v)), "c" => v))
+    r = Cecelia.resolve_gate(g, v)
+    @test abs(r.lo - 2.0) < 0.3 && abs(r.hi - 6.0) < 0.3
+    @test Set(cells_in_pop(m, "/mid")) == Set(findall(x -> r.lo <= x <= r.hi, v))
+    @test 2800 < length(cells_in_pop(m, "/mid")) < 3200
+    @test Cecelia.rule_flags(g, v) == Dict("lo_rule_ok" => true, "hi_rule_ok" => true)
+    # only the upper end ruled; the lower stays where it was drawn
+    g2 = RangeGate("c", 1.0, 7.0; hi_rule = ValleyRule(4.5, 7.5))
+    r2 = Cecelia.resolve_gate(g2, v)
+    @test r2.lo == 1.0 && abs(r2.hi - 6.0) < 0.3
+    @test Cecelia.rule_flags(g2, v) == Dict("hi_rule_ok" => true)
+    # an end whose window holds no valley keeps its stored value, flagged
+    w = 4 .+ 0.6 .* randn(rng, 5000)
+    @test Cecelia.resolve_gate(g, w).lo == 1.0 && Cecelia.rule_flags(g, w)["lo_rule_ok"] == false
+    # spec round-trip + display projection keep the windows
+    @test gate_spec(gate_from_spec(gate_spec(g))) == gate_spec(g)
+    pj = project_gate(g, "c", "c", LinearTransform(), LinearTransform())
+    @test pj["lo_rule"]["lo"] == 0.5 && pj["hi_rule"]["hi"] == 7.5
+end

@@ -141,4 +141,13 @@ describe('1D tools (on a histogram)', () => {
     expect(o.edits).toHaveLength(1)
     expect(Math.abs(o.edits[0].gate.rule!.hi - 90) < 0.6).toBe(true)
   })
+
+  it("a double-click on a range's end makes that end follow the valley", async () => {
+    const g: Entry = { path: '/r', colour: '#f00', gate: { ...hb, kind: 'range', lo: 20, hi: 60 } }
+    const o = overlay('off', [g]); await frames()
+    o.fire('mousemove', 60, 50); o.fire('dblclick', 60, 50)
+    expect(o.edits).toHaveLength(1)
+    expect(o.edits[0].gate.hi_rule).toEqual({ kind: 'valley', lo: 40, hi: 80 })
+    expect(o.edits[0].gate.lo_rule).toBeUndefined()
+  })
 })

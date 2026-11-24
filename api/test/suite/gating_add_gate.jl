@@ -479,3 +479,93 @@ end
     end
   end
 end
+
+# add-gate's 1D and split proposals: a range is one population; a bisector / slice / quadrant adds a
+# population per region (`name+` / `name-`, `name++` …), linked by one group, all or none — and the
+# regions tile the parent (docs/POPULATION.md → Split gates, 1D gates).
+@testset "API: add-gate proposes ranges, bisectors, slices and quadrants" begin
+  fx = fixture_for(:cells)                       # any cell table: the assertions count its own cells
+  if fx === nothing
+    @test_skip "cell-table fixture missing"
+  else
+    dir = mktempdir()
+    pid, iid, vn = basename(fx.project), fx.uid, fx.value_name
+    cp(fx.project, joinpath(dir, pid))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        ids = Dict{String,Any}("projectUid" => pid, "imageUid" => iid, "valueName" => vn)
+        q = "projectUid=$pid&imageUid=$iid&valueName=$vn"
+        add(obj) = _post(api_gating_pop_add_gate, merge(ids, obj))
+        count(p) = JSON3.read(api_gating_stats(HTTP.Request("GET", "/x?$q&pop=$(HTTP.escapeuri(p))"))[2]).count
+        cols = JSON3.read(api_gating_channels(HTTP.Request("GET", "/x?$q&popType=flow"))[2]).columns
+        summ(x, y) = JSON3.read(api_gating_summary(HTTP.Request("GET", "/x?$q&x=$x&y=$y&pop=root"))[2])
+        # the first column with a spread (min < median, so a range up to the median is not empty)
+        xc = String(cols[something(findfirst(c -> (s = summ(c, c).x; s.min < s.quantiles[:p50]), cols), 1)])
+        yc = String(first(c for c in cols if String(c) != xc))
+        sm = summ(xc, yc)
+        mid, lo, hi = sm.x.quantiles[:p50], sm.x.min, sm.x.max
+        lin = Dict("kind" => "linear")
+        one(kind; kw...) = Dict{String,Any}("kind" => kind, "x_channel" => xc, "x_transform" => lin,
+                                            (String(k) => v for (k, v) in kw)...)
+        root = count("root")
+
+        # a range: one population (y_channel may be left out — one channel)
+        st, b = add(Dict("name" => "rng", "gate" => one("range"; lo = lo, hi = mid)))
+        @test st == 200 && JSON3.read(b).path == "/rng" && isempty(JSON3.read(b).regions)
+        # a bisector following the valley in the whole range: two halves that tile the parent
+        st, b = add(Dict("name" => "cut", "gate" => one("bisector"; cut = mid,
+                                                         rule = Dict("kind" => "valley", "lo" => lo, "hi" => hi))))
+        r = JSON3.read(b)
+        @test st == 200 && [x.path for x in r.regions] == ["/cut+", "/cut-"]
+        @test count("/cut+") + count("/cut-") == root
+        @test r.gate.rule.kind == "valley" && r.gate.side == 1
+        # a slice (vertical line through the median, drawn upward → + is to its right) and a quadrant
+        sl = Dict{String,Any}("kind" => "slice", "x_channel" => xc, "y_channel" => yc,
+                              "vertices" => [[mid, 0.0], [mid, 1.0]])
+        st, b = add(Dict("name" => "sl", "gate" => sl))
+        @test st == 200 && count("/sl+") + count("/sl-") == root
+        # left of the line is strict, so a cell ON it is on the right (+) side
+        @test count("/sl+") == Base.count(>=(mid), filter(isfinite, Cecelia.pop_plot_cols(
+            Cecelia.init_object(pid, iid), "flow", "root", [xc]; value_name = vn)[1]))
+        qd = Dict{String,Any}("kind" => "quadrant", "x_channel" => xc, "y_channel" => yc,
+                              "centre" => [mid, sm.y.quantiles[:p50]])
+        st, b = add(Dict("name" => "q", "gate" => qd))
+        @test st == 200 && length(JSON3.read(b).regions) == 4
+        @test sum(count("/q$s") for s in ("++", "-+", "--", "+-")) == root
+        # sectors are named by where they point, whichever arm the list starts at (here +y)
+        qg = Cecelia.gate_from_spec(Dict{String,Any}("kind" => "quadrant", "x_channel" => "a", "y_channel" => "b",
+            "x_transform" => lin, "y_transform" => lin, "centre" => [0, 0], "arms" => [[0, 1], [-1, 0], [0, -1], [1, 0]]))
+        @test _proposed_regions(qg) == [("-+", 1), ("--", 2), ("+-", 3), ("++", 4)]
+        # Claude moving one half of ITS bisector: the half keeps its side, the other half follows, they still
+        # tile the parent; a split region can't become another kind
+        claude = ["X-Cecelia-Client" => "claude", "X-Cecelia-Session" => "s1"]
+        call(route, obj) = (r = handle_http(HTTP.Request("POST", route, claude), Vector{UInt8}(JSON3.write(merge(ids, obj))));
+                            (r[1], JSON3.read(r[2])))
+        @test call("/api/gating/pop/add-gate", Dict("name" => "own", "gate" => one("bisector"; cut = mid)))[1] == 200
+        q1 = (lo + mid) / 2
+        st, r = call("/api/gating/pop/set-own-gate", Dict("path" => "/own-", "gate" => one("bisector"; cut = q1)))
+        @test st == 200 && r.gate.side == -1 && r.gate.cut ≈ q1
+        @test count("/own+") + count("/own-") == root
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/own+", "gate" => one("range"; lo = lo, hi = mid)))[1] == 422
+        # a slice moved with its line drawn the other way round: `+` still names the higher-x side
+        slc(x, v) = Dict{String,Any}("kind" => "slice", "x_channel" => xc, "y_channel" => yc, "vertices" => v)
+        @test call("/api/gating/pop/add-gate", Dict("name" => "os", "gate" => slc(mid, [[mid, 0.0], [mid, 1.0]])))[1] == 200
+        st, _ = call("/api/gating/pop/set-own-gate", Dict("path" => "/os+", "gate" => slc(q1, [[q1, 1.0], [q1, 0.0]])))
+        xs = filter(isfinite, Cecelia.pop_plot_cols(Cecelia.init_object(pid, iid), "flow", "root", [xc]; value_name = vn)[1])
+        @test st == 200 && count("/os+") == Base.count(>=(q1), xs) && count("/os+") + count("/os-") == root
+        # swapped axes would mirror the regions: refused
+        sw = Dict{String,Any}("kind" => "slice", "x_channel" => yc, "y_channel" => xc, "vertices" => [[0.0, q1], [1.0, q1]])
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/os+", "gate" => sw))[1] == 422
+        # one taken region name refuses the whole split; a bad rule window is a 422
+        img = Cecelia.init_object(pid, iid)
+        n0 = length(pop_paths(load_pop_tree(img; value_name = vn, pop_type = "flow")))
+        @test add(Dict("name" => "cut", "gate" => one("bisector"; cut = mid)))[1] == 409
+        @test add(Dict("name" => "c2", "gate" => one("bisector"; cut = mid, rule = Dict("lo" => "a"))))[1] == 422
+        @test add(Dict("name" => "c3", "gate" => merge(one("range"; lo = 0, hi = 1), Dict("y_channel" => yc))))[1] == 422
+        @test length(pop_paths(load_pop_tree(img; value_name = vn, pop_type = "flow"))) == n0
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

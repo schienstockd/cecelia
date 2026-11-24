@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { axisQ, outlineToGate, type SrvGate } from '../../plots/montage'
 import { isSplitGate, sliceRegions, quadrantRegions } from '../../plots/splitGeometry'
-import { histCounts, countTicks, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
+import { histogramView, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
 import CcToggle from '../../components/CcToggle.vue'
 import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
@@ -221,16 +221,12 @@ const currentGates = computed(() => serverGates.value.map(s => ({
 
 // The histogram (1D mode): the shown population's X values and each highlighted pop's, binned over the
 // X view — the count axis replaces Y (extent, ticks), so the bars and the axis agree.
-const hist = computed(() => {
-  if (!isHist.value || !points.value) return null
-  const { xMin, xMax } = viewExtents.value
-  return { lo: xMin, hi: xMax, base: histCounts(points.value, xMin, xMax),
-           layers: popLayers.value.map(l => ({ colour: l.colour, counts: histCounts(l.points, xMin, xMax) })) }
-})
-const histMax = computed(() => Math.max(1, ...(hist.value?.base ?? [])))
-const cellExtents = computed(() => isHist.value ? { ...extents.value, yMin: 0, yMax: histMax.value * 1.08 } : extents.value)
-const cellViewExtents = computed(() => isHist.value ? { ...viewExtents.value, yMin: 0, yMax: histMax.value * 1.08 } : viewExtents.value)
-const cellYTicks = computed(() => isHist.value ? countTicks(histMax.value) : yTicks.value)
+const histView = computed(() => isHist.value && points.value
+  ? histogramView(points.value, popLayers.value, viewExtents.value.xMin, viewExtents.value.xMax) : null)
+const hist = computed(() => histView.value?.hist ?? null)
+const cellExtents = computed(() => histView.value ? { ...extents.value, yMin: 0, yMax: histView.value.yMax } : extents.value)
+const cellViewExtents = computed(() => histView.value ? { ...viewExtents.value, yMin: 0, yMax: histView.value.yMax } : viewExtents.value)
+const cellYTicks = computed(() => histView.value?.yTicks ?? yTicks.value)
 
 async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
