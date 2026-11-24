@@ -34,3 +34,30 @@ describe('useCanvasPanels.duplicate', () => {
     expect(useCanvasPanelsStore().getGeom(`${KEY}:${id}`)).toBeUndefined()
   })
 })
+
+// Show series used to `add()` one panel per measure and then Tile the whole canvas: every copy came up
+// at the grid cell's size, not the plot you asked to see the series of (and the source was resized too).
+describe('useCanvasPanels.duplicate — series', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  const SRC = { x: 100, y: 50, w: 420, h: 610 }
+  const overlap = (a: typeof SRC, b: typeof SRC) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+  it('every series panel takes the source size, laid out beside it without overlapping', () => {
+    const c = useCanvasPanels(ref(null), () => ({}), KEY, { tileBox: () => ({ w: 1400, h: 900 }) })
+    const src = c.add()
+    const store = useCanvasPanelsStore()
+    store.setGeom(`${KEY}:${src}`, SRC)
+    const ids = c.duplicate(src, 4)
+    expect(ids).toHaveLength(4)
+    const geoms = ids.map(id => store.getGeom(`${KEY}:${id}`)!)
+    for (const g of geoms) expect({ w: g.w, h: g.h }).toEqual({ w: 420, h: 610 })
+    expect(store.getGeom(`${KEY}:${src}`)).toEqual(SRC)                 // the source is left alone
+    const all = [SRC, ...geoms]
+    for (let i = 0; i < all.length; i++)
+      for (let j = i + 1; j < all.length; j++) expect(overlap(all[i], all[j]), `${i} vs ${j}`).toBe(false)
+    // wraps at the workspace edge: 1400 wide from x=100 fits 3 source-sized cells per row
+    for (const g of geoms) expect(g.x + g.w).toBeLessThanOrEqual(1400)
+  })
+})
