@@ -27,6 +27,8 @@ These change results when old work is re-run:
 ### Changed
 
 - **One word for populations:** the app says *Populations* where it said *Pops* or *pop*.
+- **Summary-plot points** share one sina layout: no chevrons at thousands of points. Offset is now sina / random / none; a saved beeswarm opens as sina.
+- **Box and strip points** subsample to 500 per series by default (Points → Subsample; off draws every point). Point opacity now fades the dot outlines too.
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).
 
 ## [0.2.13] — 2026-11-17
