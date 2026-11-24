@@ -60,7 +60,7 @@ const FLIPS: Record<Exclude<VisControl, 'stats' | 'title'>, [object, object][]> 
   rotate: [[{}, { rotate: true }]],
   facetBy: [[{}, { facetBy: 'series' }], [{}, { facetBy: 'image' }]],
   yRange: [[{}, { yMin: '0.7' }], [{}, { yMax: '50' }]],
-  jitter: [[{ jitter: 'beeswarm' }, { jitter: 'none' }]],
+  jitter: [[{ jitter: 'sina' }, { jitter: 'none' }]],
   colorData: [[{ colorData: true }, { colorData: false }]],
   superplot: [[{ superplot: true }, { superplot: false }]],
   pointSize: [[{}, { pointSize: 7 }]],

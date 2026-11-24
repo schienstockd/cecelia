@@ -15,7 +15,8 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import { replicateOf, sinaOffsets, superplotColours, superplotOn } from './superplot'
+import { replicateOf, superplotColours, superplotOn } from './superplot'
+import { pointOffsets, sinaOffsets, type PointLayout } from './pointLayout'
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
@@ -127,8 +128,8 @@ export function distinctColors(n: number): string[] {
 // Ported from the old R plotCharts adjustments (plotHelpers.R) — grouped in the SeriesPicker Options.
 export interface VisProps {
   // points / data
-  jitter: 'beeswarm' | 'random' | 'none'   // data offset (R jitterType: quasirandom/random/none)
-  pointSize: number                          // raw-point radius (beeswarm / strip / box overlay)
+  jitter: PointLayout                        // data offset (plots/pointLayout.ts; a saved 'beeswarm' reads as sina)
+  pointSize: number                          // raw-point radius (strip / box overlay)
   pointOpacity: number                       // raw-point opacity (R alphaInput)
   colorData: boolean                         // colour points by series (else single grey) (R colorData)
   superplot?: boolean                        // draw the cells under replicate means (plots/superplot.ts); absent = on
@@ -316,7 +317,7 @@ const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, serie
   facetMode(v) === 'image' ? (s.uID ?? '') : seriesKey
 
 export const defaultVis = (): VisProps => ({
-  jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true, superplot: true,
+  jitter: 'sina', pointSize: 2, pointOpacity: 0.5, colorData: true, superplot: true,
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, facetBy: 'none',
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
@@ -566,34 +567,6 @@ function kde(values: number[], gridN = 64): { v: number; d: number }[] {
     for (const x of xs) { const u = (v - x) / h; s += Math.exp(-0.5 * u * u) }
     out.push({ v, d: s / (n * h * Math.sqrt(2 * Math.PI)) })
   }
-  return out
-}
-
-// Deterministic beeswarm: bin points by value into rows (no overlap), spread each row symmetrically
-// about the series centre, and NORMALISE so the densest row exactly fills ±halfWidth — sparser rows
-// are proportionally narrower, giving a real swarm silhouette (wide where dense). Unlike random
-// jitter this is a true beeswarm AND stable across re-renders (no reshuffle/flicker on resize).
-// Returns x-offsets (in series-index units) parallel to `values`. Bin count scales with n (≈2√n,
-// clamped); we have no pixel scale in the builder, so this approximates the pixel-row packing a
-// force layout would do.
-function swarmOffsets(values: number[], halfWidth = 0.26, bins?: number): number[] {
-  const pts = values.map((v, i) => ({ v, i })).filter(p => Number.isFinite(p.v))
-  const out = new Array(values.length).fill(0)
-  const n = pts.length
-  if (n < 2) return out
-  const lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v))
-  const span = (hi - lo) || 1
-  const B = bins ?? Math.max(10, Math.min(60, Math.round(Math.sqrt(n) * 2)))
-  const rows = new Map<number, { v: number; i: number }[]>()
-  for (const p of pts) {
-    const b = Math.min(B - 1, Math.floor(((p.v - lo) / span) * B))
-    ;(rows.get(b) ?? rows.set(b, []).get(b)!).push(p)
-  }
-  let maxHalf = 1
-  for (const g of rows.values()) maxHalf = Math.max(maxHalf, Math.floor(g.length / 2))
-  const step = halfWidth / maxHalf                              // densest row fills ±halfWidth
-  for (const g of rows.values())
-    g.forEach((p, k) => { out[p.i] = (Math.ceil(k / 2) * (k % 2 === 1 ? 1 : -1)) * step }) // 0,+1,-1,+2,-2,…
   return out
 }
 
@@ -1414,7 +1387,7 @@ function superplotCellRows(series: readonly PlotSeries[], keyOf: (s: PlotSeries)
     const vals = s.cellPoints ?? []
     if (i === undefined || !vals.length) continue
     const units = s.cellUnits ?? []
-    const off = sinaOffsets(vals, halfWidth)                  // density-shaped cloud, not a swarm
+    const off = sinaOffsets(vals, halfWidth)                  // always a cloud, whatever the point offset
     vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
                                        fill: colours.get(replicateOf(units[k] ?? '')) ?? 'currentColor' }))
   }
@@ -1435,15 +1408,6 @@ function axM(o: BuildOpts) {
   return o.rotate
     ? { pos: 'y', meas: 'x', posLo: 'y1', posHi: 'y2', measLo: 'x1', measHi: 'x2' as const }
     : { pos: 'x', meas: 'y', posLo: 'x1', posHi: 'x2', measLo: 'y1', measHi: 'y2' as const }
-}
-
-// per-point x-offset within a series — beeswarm (deterministic swarm), random (deterministic hash,
-// no resize reshuffle), or none (R jitterType: quasirandom/random/none).
-function offsetsFor(o: BuildOpts, vals: number[], halfWidth: number): number[] {
-  if (o.jitter === 'none') return vals.map(() => 0)
-  if (o.jitter === 'random')
-    return vals.map((_, i) => ((Math.abs(Math.sin((i + 1) * 12.9898) * 43758.5453) % 1) * 2 - 1) * halfWidth)
-  return swarmOffsets(vals, halfWidth)
 }
 
 // ── numeric: histogram (overlaid, translucent, shared bin edges) ──────────────────
@@ -1603,7 +1567,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
              lower: floor ? Math.max(0, s.lower as number) : s.lower, upper: s.upper, mean: s.mean, n: s.n,
              tip: `${k}\nmedian ${fmt(s.median)}\nq1 ${fmt(s.q1)}  q3 ${fmt(s.q3)}\nn ${s.n}` }
   })
-  // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
+  // raw points overlaid around the series index (sit ON the box, not beside it) — plots/pointLayout.ts
   const activeIds = o.brushActiveIds ?? null
   const pts: Array<{ series: string; fkey: string; xj: number; value: number; unitFill?: string;
                      pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
@@ -1616,7 +1580,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const pids = (s.pointIds ?? []) as number[]
     const puids = (s.pointUids ?? []) as string[]
     const units = (s.pointUnits ?? []) as string[]
-    const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
+    const off = pointOffsets(o.jitter, vals, 0.26)                     // ≈ box half-width, points sit over the box
     vals.forEach((v, k) => pts.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
       unitFill: sp ? sp.get(replicateOf(units[k] ?? '')) : undefined,
@@ -1792,7 +1756,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const pids = (s.pointIds ?? []) as number[]
     const puids = (s.pointUids ?? []) as string[]
     const units = (s.pointUnits ?? []) as string[]
-    const off = offsetsFor(o, vals, 0.42)                     // wider swarm (no box to overlay)
+    const off = pointOffsets(o.jitter, vals, 0.42)            // wider cloud (no box to overlay)
     vals.forEach((v, k) => rows.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
       unitFill: sp ? sp.get(replicateOf(units[k] ?? '')) : undefined,

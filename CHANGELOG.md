@@ -26,6 +26,7 @@ These change results when old work is re-run:
 
 ### Changed
 
+- **Summary-plot points** (box, beeswarm, SuperPlot cells) share one sina layout: no chevrons at thousands of points. The Offset option is now sina / random / none; a saved beeswarm opens as sina.
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).
 
 ## [0.2.13] — 2026-11-17
