@@ -145,7 +145,7 @@ export function textStrings(src: string): string[] {
  * `'no populations selected'` from the identifiers (`'pops'`, `q.set('pops', …)`) that share its
  * words. Comment lines are skipped; for an SFC only the `<script>` blocks are read.
  */
-const SCRIPT_BLOCK = /<script\b[^>]*>([\s\S]*?)<\/script>/g
+const SCRIPT_BLOCK = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi
 const SCRIPT_LITERAL = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`([^`]*)`/g
 
 export function scriptStrings(src: string, path = ''): string[] {
