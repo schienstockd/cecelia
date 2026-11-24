@@ -105,6 +105,7 @@ function _run_task(task::SplitTissues, img::CciaImage, params::Dict{String,Any};
 
     # 2. one new image per tissue, then write them all in one pass over the source
     src_meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    z_flipped = store_z_flipped(src_meta, string(filename))   # made from a Z-flipped version
     src_counts = read_ome_metadata(String(im_path))
     new_imgs, outputs = CciaImage[], Dict{String,Any}[]
     for (i, t) in enumerate(tissues)
@@ -116,8 +117,8 @@ function _run_task(task::SplitTissues, img::CciaImage, params::Dict{String,Any};
                                            "z0"=>-1, "z1"=>-1, "t0"=>-1, "t1"=>-1),
             "tissue_label" => Int(t[:label]), "tissue_area_mm2" => Float64(t[:areaMm2]))
         merge!(meta, _crop_inherited_meta(src_meta, bnt))
-        merge!(meta, crop_acquisition(src_meta, bnt, src_counts))
-        copy_source_meta!(meta, src_meta)
+        merge!(meta, crop_acquisition(src_meta, bnt, src_counts; z_flipped))
+        copy_source_meta!(meta, src_meta; z_flipped)
         new_img = add_image!(s; name = derived_image_name(proj, img.name,
                                                           split_tissue_suffix(p.nameSuffix, i, n)),
                              meta = meta, attr = img.attr)

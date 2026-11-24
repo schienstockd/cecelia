@@ -69,12 +69,13 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
     s = proj._sets[set_idx]
 
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    z_flipped = store_z_flipped(src_meta, string(filename))   # made from a Z-flipped version
     proj_meta = Dict{String,Any}(
         "tproj_source_uid"        => img.uid,
         "tproj_source_value_name" => p.valueName,
         "tproj_op"                => p.op)
     merge!(proj_meta, _tproj_inherited_meta(src_meta))
-    copy_source_meta!(proj_meta, src_meta)
+    copy_source_meta!(proj_meta, src_meta; z_flipped)
 
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "t-$(p.op)"), meta = proj_meta, attr = img.attr)
 

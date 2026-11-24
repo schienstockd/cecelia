@@ -16,8 +16,8 @@ const _OME_DERIVED_META_KEYS = (
     "SizeC", "SizeT", "SizeZ",
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
     "TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared",
-    # Read from the SOURCE file, same rule: a re-import must not keep the previous source's settings.
-    "acquisition", "acquisitionMissing",
+    # Read from the SOURCE file, same rule; and the new store runs in the file's plane order.
+    "acquisition", "acquisitionMissing", ORI_Z_REVERSED_KEY,
     # The saturation probe of the store just written: a failed probe must not keep the previous
     # store's verdict (`ensure_saturation_meta!` re-probes only an absent or outdated record).
     "saturation", "partialTimepoint",

@@ -85,6 +85,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     # timestamp had no Δt to draw. (`read_ome_metadata` does now read the crop's flat layout too —
     # see the OME-ZARR dual-format section in CLAUDE.md — but ccid stays the authoritative source.)
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    z_flipped = store_z_flipped(src_meta, string(filename))   # made from a Z-flipped version
     crop_meta = Dict{String,Any}(
         "crop_source_uid"        => img.uid,
         "crop_source_value_name" => p.valueName,
@@ -92,11 +93,11 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
                                        "z0"=>b.z0, "z1"=>b.z1, "t0"=>b.t0, "t1"=>b.t1))
     box_nt = (; b.x0, b.x1, b.y0, b.y1, b.z0, b.z1, b.t0, b.t1)
     merge!(crop_meta, _crop_inherited_meta(src_meta, box_nt))
-    merge!(crop_meta, crop_acquisition(src_meta, box_nt, read_ome_metadata(String(im_path))))   # microscope settings
+    merge!(crop_meta, crop_acquisition(src_meta, box_nt, read_ome_metadata(String(im_path)); z_flipped))   # microscope settings
     # provenance: a crop derives from the source's original file, so carry `ori_path` forward. Best-effort
     # — images imported before source-path tracking have none, so the crop's dialog still reads "not
     # recorded" (it inherits the source's gap rather than inventing one).
-    copy_source_meta!(crop_meta, src_meta)
+    copy_source_meta!(crop_meta, src_meta; z_flipped)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
     new_img = add_image!(s; name = derived_image_name(proj, img.name, crop_name_suffix(p.nameSuffix)),

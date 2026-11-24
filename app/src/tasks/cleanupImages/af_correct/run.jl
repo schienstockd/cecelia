@@ -96,7 +96,8 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] AF correction complete.")
 
     commit_state!(img) do raw
-        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version)
+        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version,
+            from = string(filename))
     end
 
     # QC: the correction itself has no free parameter left to land badly, so the objective signals are

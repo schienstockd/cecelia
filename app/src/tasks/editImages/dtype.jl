@@ -69,7 +69,8 @@ function _run_task(task::DtypeConvert, img::CciaImage, params::Dict{String,Any};
     ok || return nothing
 
     commit_state!(img) do raw2
-        versioned_filepath_write!(raw2, out_value_name, store_rel; as_new_version = as_new_version)
+        versioned_filepath_write!(raw2, out_value_name, store_rel; as_new_version = as_new_version,
+            from = string(filename))
     end
 
     on_log("[INFO] Dtype conversion complete → version '$out_value_name'")
