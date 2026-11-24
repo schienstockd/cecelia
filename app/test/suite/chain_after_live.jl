@@ -64,10 +64,11 @@ end
     t = Threads.@spawn run_chain(proj, [a, b]; template = _al_template(), on_log = _ -> nothing)
     run_id = _al_run_id(proj)
     @test _al_wait(() -> (r = load_chain_run(proj, run_id);
-                          _al_state(r, a, "wait") == NODE_RUNNING && _al_state(r, b, "wait") == NODE_DONE))
+                          _al_state(r, a, "wait") == NODE_RUNNING && _al_state(r, b, "wait") == NODE_RUNNING))
     mid = load_chain_run(proj, run_id)
     @test _al_live(a)                                   # still going…
-    @test _al_state(mid, b, "wait") == NODE_DONE        # nothing ran on b: nothing to wait for
+    # nothing ran on b, but the fn is still going on a: b holds too (it may be a sweep's early finisher)
+    @test _al_state(mid, b, "next") == NODE_PENDING
     @test _al_state(mid, a, "next") == NODE_PENDING     # …and the follow-up has not started
     @test mid.image_states[a]["wait"].task_id == live_id
 
@@ -119,13 +120,34 @@ end
                                  on_log = _ -> nothing)
     run_id = _al_run_id(proj)
     @test _al_wait(() -> (r = load_chain_run(proj, run_id);
-                          _al_state(r, a, "wait") == NODE_RUNNING && _al_state(r, b, "wait") == NODE_DONE))
-    @test load_chain_run(proj, run_id).image_states[a]["wait"].task_id == ghost
+                          _al_state(r, a, "wait") == NODE_RUNNING && _al_state(r, b, "wait") == NODE_RUNNING))
+    @test load_chain_run(proj, run_id).image_states[a]["wait"].task_id == ghost   # b holds on a's id too
     @test _al_state(load_chain_run(proj, run_id), a, "next") == NODE_PENDING
     record_task_outcome!(ghost, "failed"; image_uid = a, fun = _AL_FN)
     run = fetch(t)
     @test _al_state(run, a, "wait") == NODE_FAILED
     @test _al_state(run, a, "next") == NODE_SKIPPED
     @test _al_state(run, b, "next") == NODE_DONE
+    rm(proj.root; recursive = true)
+end
+
+@testset "Queue after — an image that finishes early holds while the run goes on elsewhere" begin
+    # A sequential sweep sends its next value only once the current one has ended on every image, so an
+    # image done early sits idle far longer than the grace. Its wait must not end while another image of
+    # the chain still runs `fn` — else the follow-up runs on that value's output and the next one overwrites it.
+    proj, (a, b) = _al_project(2)
+    id_a, live_a = _al_start_live(proj, a; wait_ms = 300)
+    _,    live_b = _al_start_live(proj, b; wait_ms = 5000)   # the spec's max
+    # a's id passed as seen, so its wait engages even if a ends before the chain looks
+    t = Threads.@spawn run_chain(proj, [a, b]; template = _al_template(Dict{String,Any}(a => [id_a])),
+                                 on_log = _ -> nothing)
+    run_id = _al_run_id(proj)
+    @test _al_wait(() -> !_al_live(a))
+    sleep(Cecelia._AFTER_LIVE_GRACE + 0.5)           # a's own grace is long over…
+    @test _al_live(b)                                # …while b is still going
+    @test _al_state(load_chain_run(proj, run_id), a, "wait") == NODE_RUNNING
+    run = fetch(t)
+    fetch(live_a); fetch(live_b)
+    @test all(_al_state(run, u, n) == NODE_DONE for u in (a, b), n in ("wait", "next"))
     rm(proj.root; recursive = true)
 end

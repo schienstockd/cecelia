@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { liveGroups, queueAfterTarget, queueAfterTemplate, type LiveGroup } from './queueAfter'
+import { liveGroups, queueAfterTarget, queueAfterTemplate, assertNoAfterLive, type LiveGroup } from './queueAfter'
 import type { TaskEntry } from '../stores/tasks'
+import { adoptableTasks, type InFlightTaskRow } from './runningTasks'
 
 function row(p: Partial<TaskEntry>): TaskEntry {
   return {
@@ -70,5 +71,35 @@ describe('queueAfterTarget', () => {
   it('a pick that finished asks again — unless one live function is left', () => {
     expect(queueAfterTarget(groups.slice(0, 2), 'segment')).toBeNull()
     expect(queueAfterTarget(groups.slice(0, 1), 'segment')?.funName).toBe('cluster')
+  })
+})
+
+describe('liveGroups on rows adopted from the in-flight snapshot', () => {
+  it('an adopted set run is waited for on every member, not only its representative', () => {
+    // a set run over a, b, c, adopted after a reload: the snapshot keys it by `a`, but it is live on b and
+    // c too — without that, their wait is done at once and the follow-up runs on their old output
+    const rows = [
+      { id: 'T', fun_name: 'clustPops.cluster', image_uid: 'a', image_uids: ['a', 'b', 'c'], status: 'running' },
+    ] as InFlightTaskRow[]
+    const adopted = adoptableTasks(rows, { projectUid: 'P', imageNames: { a: 'A', b: 'B', c: 'C' } }, () => false)
+    const tasks = adopted.map(t => row({ ...t, log: [], seq: 1, params: {} }))
+    expect(liveGroups(tasks, ['a', 'b', 'c'], 'P')[0]?.waitFor).toEqual({ a: ['T'], b: ['T'], c: ['T'] })
+  })
+  it('a single-image run adopts no member list', () => {
+    const plain = adoptableTasks([{ id: 'U', fun_name: 'f', image_uid: 'a', image_uids: ['a'], status: 'running' }],
+                                 { projectUid: 'P', imageNames: { a: 'A' } }, () => false)
+    expect(plain[0]?.imageUids).toBeUndefined()
+  })
+})
+
+describe('assertNoAfterLive', () => {
+  it('refuses a template with a Queue-after wait step — the editor would save it as a plain run', () => {
+    const tmpl = queueAfterTemplate({ funName: 'segment.cellpose', label: 'Cellpose', waitFor: { a: ['T'] } },
+      { funName: 'clustPops.cluster', label: 'Cluster', scope: 'set', params: {}, pool: '' })
+    expect(() => assertNoAfterLive(tmpl)).toThrow(/wait step \(wait\)/)
+  })
+  it('passes an ordinary template', () => {
+    expect(() => assertNoAfterLive({ nodes: [{ id: 'n', fn: 'f', scope: 'image', params: {},
+                                               barrier_policy: 'all', resource_pool: '' }] })).not.toThrow()
   })
 })

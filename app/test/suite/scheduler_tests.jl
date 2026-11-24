@@ -375,6 +375,11 @@ end
     c = reg("k4", [other.uid], "default")                            # other image
     d = reg("k5", [img.uid], "default"; fun = "segment.cellpose")    # other task
     @test_throws DuplicateRunError reg("k6", [other.uid, img.uid], "nuc")   # set run sharing `img`
+    # the snapshot names every member of a set run, not just the representative `image_uid`
+    s = reg("k8", [other.uid, img.uid], "setout")
+    row = only(filter(r -> r.id == "k8", list_tasks()))
+    @test row.image_uid == other.uid && row.image_uids == [other.uid, img.uid]
+    Cecelia._deregister_task!(s)
     # a FINISHED run no longer blocks — only queued/running ones do
     Cecelia._set_status!(a, TASK_CANCELLED)
     e = reg("k7", [img.uid], "default")
@@ -627,7 +632,7 @@ end
         # (frontend/src/utils/runningTasks.ts), each of which silently blanks a column if one is renamed.
         # Pinned here so a rename fails a test instead — the frontend pins its own half in
         # runningTasks.test.ts.
-        @test issubset(Set([:id, :fun_name, :pool_name, :image_uid, :project_uid, :chain_run_id,
+        @test issubset(Set([:id, :fun_name, :pool_name, :image_uid, :image_uids, :project_uid, :chain_run_id,
                             :chain_node_id, :status, :queued_at, :started_at, :params]), Set(keys(row)))
         # …and WHICH project the image belongs to: one server serves every project under
         # `projects_dir()`, so the task console (which watches the whole rail, not one project) can't
