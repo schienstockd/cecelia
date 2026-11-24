@@ -114,11 +114,11 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
   it('showPops with a filter that matches nothing → empty + explanatory caption', () => {
     // popsForConfig hashes paths to scene pop indices, so an empty filter is "all", not "none".
     // To get "matches nothing" we'd need a pre-filter of `scene.pops.length` slots and remove all
-    // — instead assert the "no pops selected" caption path via `showPops` with no pops in scene.
+    // — instead assert the "no populations selected" caption path via `showPops` with no pops in scene.
     const empty: typeof scene = { cells: [], pops: [] }
     const r = renderOverlayPreview({ showPopulations: true }, empty)
     expect(r.points).toEqual([])
-    expect(r.caption).toBe('no pops selected')
+    expect(r.caption).toBe('no populations selected')
   })
 
   it('labelValueNames non-empty → every drawn point is ringed', () => {

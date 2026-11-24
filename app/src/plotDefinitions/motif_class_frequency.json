@@ -3,7 +3,7 @@
   "label": "Motif class frequency",
   "category": "makeup",
   "sketch": "motif",
-  "answers": "What fraction of each population's cells is in each motif class?",
+  "answers": "How do populations split across motifs?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["frequency", "stacked", "stacked100"],

@@ -44,8 +44,9 @@ export function useFloatingCanvas<S>(
   const zoomApi = useCanvasZoom(canvasEl,
     () => ({ w: canvas.contentBounds.value.w || null, h: canvas.contentBounds.value.h }))
   provide(CANVAS_ZOOM_KEY, zoomApi.zoom)
-  // Snap: dragged panels snap to each other and the canvas edges. Per canvas, persisted in its bag.
-  const snap = computed<boolean>({ get: () => canvas.shared.value.snap === true, set: v => { canvas.shared.value.snap = v } })
+  // Snap: dragged panels snap to each other and the canvas edges. On unless turned off; per canvas,
+  // persisted in its bag.
+  const snap = computed<boolean>({ get: () => canvas.shared.value.snap !== false, set: v => { canvas.shared.value.snap = v } })
   provide(CANVAS_SNAP_KEY, () => snap.value)
   const workspace = useCanvasWorkspace(canvasEl, zoomApi.zoom, () => canvas.contentBounds.value)
 

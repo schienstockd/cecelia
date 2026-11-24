@@ -21,6 +21,8 @@ import { isImageYAxis } from '../../utils/gatingAxes'
 import type { GateSpec, TransformSpec } from '../../stores/gating'
 import { elementToImageURL, loadImg, svgDoc, svgText, rowsToCsv } from '../../plots/export'
 import GateScatterCell from './GateScatterCell.vue'
+import type { HistData } from './HistogramLayer.vue'
+import { histogramView } from '../../plots/histGeometry'
 import type { PopLayer } from './PlotLayers.vue'
 import {
   type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate, type ColourBy,
@@ -93,6 +95,8 @@ interface PanelData {
   // BIDIR PR #4b Slice B — per-point label id aligned to `points`, from the `withLabels=1` wire.
   // Feeds each tile's pickHighlight/trackHighlight overlay (Decision 19).
   labels: Float32Array
+  // a 1D tile (a range / bisector: x = y = its channel) is its channel's histogram (plots/histGeometry.ts)
+  hist: HistData | null
 }
 const panelData = ref<Record<string, PanelData>>({})
 // The colour ramp for the WHOLE grid: range + raw-value labels, as plotmeta served them. It depends on
@@ -206,11 +210,15 @@ async function loadPanels() {
         const raw = (await ptsFor(o, h.path, m.effA, m.effB, m.effZ)).points
         return { path: h.path, colour: h.colour, points: o.swap ? transposePoints(raw) : raw }
       }))
+      const ext = o.swap ? transposeExt(m.extents) : m.extents
+      // a 1D tile: the count axis replaces y (its extent + ticks), as on the Gate page's histogram
+      const hv = d.xChan === d.yChan ? histogramView(ptsRaw, popLayers, ext.xMin, ext.xMax) : null
       const data: PanelData = {
         points: o.swap ? transposePoints(ptsRaw) : ptsRaw,
-        extents: o.swap ? transposeExt(m.extents) : m.extents,
+        extents: hv ? { ...ext, yMin: 0, yMax: hv.yMax } : ext,
         xTicks: o.swap ? m.yTicks : m.xTicks,
-        yTicks: o.swap ? m.xTicks : m.yTicks,
+        yTicks: hv ? hv.yTicks : o.swap ? m.xTicks : m.yTicks,
+        hist: hv?.hist ?? null,
         gates, popLayers,
         values,                                        // per-point, orientation-invariant → no transpose
         labels,                                        // per-point, orientation-invariant (id, not coord)
@@ -415,15 +423,17 @@ const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value
                            :extents="panelData[d.key].extents"
                            :view-extents="panelData[d.key].extents"
                            :x-ticks="panelData[d.key].xTicks" :y-ticks="panelData[d.key].yTicks"
-                           :gates="panelData[d.key].gates" :x-label="colLabel(d.xChan)" :y-label="colLabel(d.yChan)"
+                           :gates="panelData[d.key].gates" :x-label="colLabel(d.xChan)"
+                           :y-label="panelData[d.key].hist ? 'count' : colLabel(d.yChan)"
                            :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
+                           :hist="panelData[d.key].hist"
                            :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
                            :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
                            :hide-axis-labels="cols != null" :font-size="fontSize" :dot-size="dotSize"
                            :base-values="panelData[d.key].values" :value-extent="valueRamp?.extent ?? null"
                            :value-ticks="valueRamp?.ticks" :value-label="legendLabel"
                            :value-legend="single"
-                           :flip-y="isImageYAxis(d.yChan)"
+                           :flip-y="!panelData[d.key].hist && isImageYAxis(d.yChan)"
                            :family="pointOutFamily" :plot-id="plotId" :cell-key="d.key" />
           <div v-else class="gm-loading">…</div>
         </div>

@@ -3,6 +3,7 @@
   "fun_name": "clustTracks.cluster",
   "label": "Cluster tracks",
   "citations": ["10.1186/s13059-017-1382-0", "10.1038/s41598-019-41695-z"],
+  "methodsText": ["Tracks of {popsToCluster} cells with at least {minTracklength} timepoints were clustered by Leiden (resolution {resolution}) on {clusterMeasures}."],
   "purpose": "Group whole tracks into behaviours by how they move",
   "useWhen": [
     "Tracked cells, grouped by motility plus per-track cell measures",

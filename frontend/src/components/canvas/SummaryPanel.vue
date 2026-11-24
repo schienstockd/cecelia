@@ -22,7 +22,7 @@ import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
 import { clusterAwareFetchToken } from '../../utils/popChanges'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, defaultNormalize, chartsForMeasure, COMPOSITION_CHARTS, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
+import { backendChart, defaultNormalize, chartsForMeasure, COMPOSITION_CHARTS, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, superplotCellsCut, heatmapControls, type VisProps, type BuildOpts, facetMode, maxPointsFor } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
 import { centroidLabel } from '../../utils/gatingAxes'
@@ -33,7 +33,7 @@ import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, M
 import { isRunMatrixMode } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { visControlsFor } from '../../plots/plotControls'
-import { superplotOn } from '../../plots/superplot'
+import { superplotClipNote, superplotOn } from '../../plots/superplot'
 import { statsNotice } from '../../plots/statsInfo'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
@@ -59,6 +59,7 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
 import { DEFAULT_STAT_UNIT, plotCaption, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
+import type { SummaryLegendFacts } from '../../utils/panelLegend'
 import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
@@ -688,6 +689,7 @@ async function fetchData(isCurrent: () => boolean) {
         bins: bins.value,
         normalize: be.normalize ?? normalize.value,
         rawPoints: be.rawPoints ?? false,
+        ...(maxPoints.value != null ? { maxPoints: maxPoints.value } : {}),
         ...(groupBy.value ? { groupBy: groupBy.value } : {}),
         ...statUnitBody(),
         ...(composition.value ? { composition: true } : {}),
@@ -713,6 +715,10 @@ async function fetchData(isCurrent: () => boolean) {
   }
 }
 
+// raw points per series for the box/strip dots (the Subsample toggle) — a fetch input, unlike the
+// other point settings, which only restyle the drawn dots
+const maxPoints = computed(() => timeSeries.value ? undefined : maxPointsFor(chartType.value, props.vis ?? DEFAULT_VIS))
+
 // errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger.
 // matrixCategory is included because for heatmaps the category resolves ASYNC (from obsCols loaded on
 // mount) — without it the heatmap's first fetch bails ("pick a category") and never re-runs until the
@@ -732,7 +738,7 @@ watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).joi
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto',
        // the run (interaction matrix / per-image metric) and the metric's population are fetch inputs
        // too — without them a run picked in the header changed nothing until another setting did
-       statsSuffix, metricPop],
+       statsSuffix, metricPop, maxPoints],
       scheduleFetch)
 onMounted(scheduleFetch)
 
@@ -751,6 +757,8 @@ const overrideTip = computed(() =>
 const hasCells = computed(() => superplotOn(result.value?.series ?? [], true))
 // the SuperPlot cell layer is on screen: this chart draws it (box/strip) and the toggle is on
 const cellsDrawn = computed(() => visControls.value.includes('superplot') && superplotOn(result.value?.series ?? [], vis.value.superplot))
+// the auto axis covers most cells, not all: say so, or a cut cloud looks complete
+const clipNote = computed(() => (result.value && cellsDrawn.value ? superplotClipNote(superplotCellsCut(result.value, buildOpts.value)) : null))
 const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value,
   ...(hasCells.value ? { superplot: vis.value.superplot === false ? 'off' as const : 'on' as const } : {}) }))
 const readout = computed<PlotReadout>(() =>
@@ -1000,7 +1008,21 @@ async function exportSvg(): Promise<string | null> {
 // on the axis-label / legend gutter; SummaryPanel is Observable Plot rendered edge-to-edge inside
 // `.sp-body`, so we honour `scale('x')/'y')` the same way ClusterHeatmapPanel does.
 const summaryFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
-defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg,
+// The facts a figure legend states (`utils/panelLegend.ts`), from what the panel draws now; null before
+// the first draw. The test is the one drawn — none when stats are off or the plot cannot compare.
+function legendFacts(): SummaryLegendFacts | null {
+  const r = result.value
+  if (!r) return null
+  return {
+    plot: props.spec.label, title: vis.value.title || undefined,
+    measure: measure.value && props.spec.dataSource.measureLabels?.[measure.value] ? measureLabel(measure.value) : (measure.value || props.spec.label),
+    chart: chartType.value,
+    series: r.series.map(s => ({ pop: s.pop, uID: s.uID, n: s.n ?? s.points?.length ?? 0 })),
+    pointKind: r.pointIdKind, statUnit: canStatUnit.value ? statUnit.value : 'individual', imageAgg: imageAgg.value,
+    unitNoun: unitNoun.value, test: vis.value.statsEnabled ? (r.comparisons?.methodNote ?? '') : '',
+  }
+}
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, legendFacts,
                isBusy: () => loading.value, getFrame: (): Frame => summaryFrame })
 
 // Register this panel as PNG-exportable so the canvas Share compositor can request its plot
@@ -1543,6 +1565,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
            Icon-only, text on hover: a wrapped sentence here made the footer row grow. -->
       <PlotNotice v-if="statsNote" class="sp-foot-note" icon-only :text="statsNote.text" :tip="statsNote.tip" />
       <PlotNotice v-if="skippedNote" class="sp-foot-note" icon-only :text="skippedNote.text" :tip="skippedNote.tip" />
+      <PlotNotice v-if="clipNote" class="sp-foot-note" icon-only tone="muted" :text="clipNote.text" :tip="clipNote.tip" />
       <PlotNotice v-if="overrideText" class="sp-foot-note" icon-only :text="overrideText" :tip="overrideTip" />
       <PlotNotice v-else-if="facetNote" class="sp-foot-note" icon-only :text="facetNote.text" :tip="facetNote.tip" />
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"

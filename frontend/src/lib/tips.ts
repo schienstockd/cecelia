@@ -84,11 +84,11 @@ export const TIPS: WhatNewCard[] = [
     guideId: 'gate-populations',
     kind: 'tip',
     title: 'Populations form a tree',
-    description: 'A gate is applied INSIDE its parent population — so populations form a tree (root/CD4+/effector). Any child pop can itself be gated further; the address is the "/-separated" path.',
+    description: 'A gate is applied INSIDE its parent population — so populations form a tree (root/CD4+/effector). Any child population can itself be gated further; the address is the "/-separated" path.',
     steps: [
       'Select the parent population in the Population Manager.',
       'Draw the next gate — it operates on that parent only.',
-      'The new pop appears indented beneath its parent.',
+      'The new population appears indented beneath its parent.',
     ],
     sketchAnimation: { id: 'hierarchy' },
   },
@@ -101,7 +101,7 @@ export const TIPS: WhatNewCard[] = [
     steps: [
       'Run Cluster cells (or Cluster tracks).',
       'Open the Cluster panel, select clusters that share a phenotype.',
-      'Save as population — the new pop appears in the manager.',
+      'Save as population — it appears in the manager.',
     ],
     sketchAnimation: { id: 'clusters' },
   },

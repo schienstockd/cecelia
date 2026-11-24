@@ -2,6 +2,7 @@
   "task": "hmm",
   "fun_name": "behaviour.hmm",
   "label": "HMM (states + transitions)",
+  "methodsText": ["Per-cell behaviour was modelled with a {numStates}-state hidden Markov model on {modelMeasurements} of {pops} cells, fitted across all images, and state transitions were counted per track."],
   "purpose": "Run HMM states, then HMM transitions",
   "useWhen": [
     "The usual way to give each cell a behaviour state per timepoint",

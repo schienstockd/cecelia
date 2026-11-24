@@ -14,7 +14,7 @@ import type { ChartType } from './types'
  */
 export type VisControl =
   | 'legend' | 'logScale' | 'grid' | 'rotateXLabel' | 'rotate' | 'facetBy' | 'yRange'
-  | 'jitter' | 'colorData' | 'pointSize' | 'pointOpacity' | 'superplot'
+  | 'jitter' | 'colorData' | 'pointSize' | 'pointOpacity' | 'superplot' | 'subsample'
   | 'palette'
   | 'stats'
   | 'title' | 'labX' | 'labY' | 'fontSize'
@@ -28,7 +28,7 @@ export interface PlotKind {
 }
 
 const LABELS: VisControl[] = ['title', 'labX', 'labY', 'fontSize']
-const POINTS: VisControl[] = ['jitter', 'colorData', 'pointSize', 'pointOpacity']
+const POINTS: VisControl[] = ['subsample', 'jitter', 'colorData', 'pointSize', 'pointOpacity']
 // one position per series, measure on the value axis: the charts that flip, facet and compare groups
 const DIST: VisControl[] = ['legend', 'logScale', 'grid', 'rotateXLabel', 'rotate', 'facetBy', 'yRange', 'palette', ...LABELS]
 const COMPARE: VisControl[] = [...DIST, 'stats']
@@ -68,7 +68,7 @@ export type OptionSection = 'layout' | 'points' | 'colours' | 'labels' | 'stats'
 export const DEFAULT_SECTIONS: OptionSection[] = ['layout', 'points', 'colours', 'labels']
 export const SECTION_ROWS: Record<OptionSection, VisControl[]> = {
   layout: ['legend', 'logScale', 'grid', 'rotateXLabel', 'rotate', 'facetBy', 'yRange'],
-  points: ['superplot', 'jitter', 'colorData', 'pointSize', 'pointOpacity'],
+  points: ['superplot', 'subsample', 'jitter', 'colorData', 'pointSize', 'pointOpacity'],
   colours: ['palette'],
   stats: ['stats'],
   labels: ['title', 'labX', 'labY', 'fontSize'],
@@ -79,7 +79,7 @@ export const VIS_KEYS: Record<VisControl, string[]> = {
   legend: ['legend'], logScale: ['logScale'], grid: ['grid'],
   rotateXLabel: ['rotateXLabel', 'rotateXAngle'], rotate: ['rotate'], facetBy: ['facetBy', 'facet'],
   yRange: ['yMin', 'yMax'], jitter: ['jitter'], colorData: ['colorData'],
-  pointSize: ['pointSize'], pointOpacity: ['pointOpacity'], superplot: ['superplot'], palette: ['palette', 'userColors'],
+  pointSize: ['pointSize'], pointOpacity: ['pointOpacity'], superplot: ['superplot'], subsample: ['subsample'], palette: ['palette', 'userColors'],
   stats: ['statsEnabled', 'statsTest', 'statsUseLetters', 'statsShowNs', 'statsUseStars'],
   title: ['title'], labX: ['labX'], labY: ['labY'], fontSize: ['fontSize'],
 }

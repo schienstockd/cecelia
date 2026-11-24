@@ -306,7 +306,7 @@ export function batchMaskColour(cfg: BatchMovieCfg): MaskColour {
   return cfg.showPopulations && !cfg.maskAllCells ? 'pops' : 'id'
 }
 
-/** The request's mask keys: `maskColourKeys` of the config's *Colour*. A batch's *Pops* is its one
+/** The request's mask keys: `maskColourKeys` of the config's *Colour*. A batch's *Populations* is its one
  *  pop layer, on whenever the points are (`showPopulations`). */
 export function batchMaskKeys(cfg: BatchMovieCfg): { maskAllCells: boolean; maskPopTypes: string[]; colourLabels: boolean } {
   return maskColourKeys(batchMaskColour(cfg), !!cfg.showPopulations, cfg.colourBy ?? '')

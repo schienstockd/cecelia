@@ -3,7 +3,7 @@
   "label": "Segmentation QC",
   "category": "checks",
   "sketch": "masks",
-  "answers": "Did segmentation work — cell counts and shape (area, …) per image and over time?",
+  "answers": "Did segmentation work — cell counts and shapes?",
   "module": "segment",
   "family": "summary",
   "defaultOn": ["segment"],

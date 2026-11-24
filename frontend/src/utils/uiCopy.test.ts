@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
   tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips, nestedTooltips,
-  hasPerOptionTips, unnamedToggles, misplacedTooltips,
+  hasPerOptionTips, unnamedToggles, misplacedTooltips, scriptStrings, abbreviatesPopulation,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -390,6 +390,68 @@ describe('UI copy is written the house way (docs/UI.md → House style)', () => 
       }
     }
     expect(found).toEqual([])
+  })
+})
+
+// ── One noun for a population (docs/ui/COPY.md → Noun vocabulary) ────────────────────────────────
+//
+// The app said "Populations" in one place and "Pops" in the next (a mask colour choice, a gate
+// panel's row label, toasts, guide bullets). The house noun is *population*; code, routes, store keys
+// and MCP params keep `pop`. Copy built in script (`{ label: … }`, `log.error(…)`, guide bullets)
+// is read too, because the worst offender was an options table in a `.ts` file.
+const TS = import.meta.glob(['/src/**/*.ts', '!/src/**/*.test.ts'], { query: '?raw', import: 'default', eager: true }) as
+  Record<string, string>
+
+// A literal that matches but is not copy a user reads. Keep it short — say why on each line.
+const ALLOWED_POP: string[] = []
+
+describe('copy says population, not pop (docs/ui/COPY.md → Noun vocabulary)', () => {
+  it('found the script sources it is meant to police', () => {
+    expect(Object.keys(TS).length).toBeGreaterThan(50)
+  })
+
+  it('no label, tooltip, message or guide text calls a population a pop', () => {
+    const found: string[] = []
+    const check = (path: string, s: string) => {
+      if (abbreviatesPopulation(s) && !ALLOWED_POP.includes(s)) found.push(`${path}: ${s}`)
+    }
+    for (const [path, src] of Object.entries(SFC)) {
+      for (const s of [...tooltipStrings(src), ...hintStrings(src), ...attrStrings(src), ...textStrings(src)]) check(path, s)
+      for (const s of scriptStrings(src, path)) check(path, s)
+    }
+    for (const [path, src] of Object.entries(TS)) for (const s of scriptStrings(src, path)) check(path, s)
+    expect(found).toEqual([])
+  })
+})
+
+describe('abbreviatesPopulation', () => {
+  it('flags pop / pops / Pops used as the noun', () => {
+    for (const s of ['Pops', 'pop', 'no pops selected', 'Any child pop can be gated', 'Gating pop tree: x'])
+      expect(abbreviatesPopulation(s), s).toBe(true)
+  })
+
+  it('leaves the verb, classes, member access and population itself alone', () => {
+    for (const s of ['Open the pop-out viewer first', 'measures pop out for free', 'a menu pops up',
+                     'vw-pop-name cc-fs-2xs', 'p in b.pops', 'split(x).pop()', 'pop_type', 'Populations',
+                     'population', 'popType'])
+      expect(abbreviatesPopulation(s), s).toBe(false)
+  })
+})
+
+describe('scriptStrings', () => {
+  it('reads prose literals in a .ts table, not identifiers', () => {
+    const src = `const O = [{ value: 'pops', label: 'Pops', tip: 'Each cell by its population' }]\nq.set('pops', x)`
+    expect(scriptStrings(src, 'a.ts')).toEqual(['Pops', 'Each cell by its population'])
+  })
+
+  it('reads only the <script> of an SFC and skips comment lines', () => {
+    const src = `<script setup>\n// 'no pops here'\nconst c = 'no pops selected' // 'trailing pop'\n</` +
+      `script>\n<template><span class="vw-pop">pop</span></template>`
+    expect(scriptStrings(src, 'A.vue')).toEqual(['no pops selected'])
+  })
+
+  it('drops ${…} so an interpolated id is not read as a word', () => {
+    expect(scriptStrings('const m = `${pop} | ${img}`; const n = `${k} pops shown`', 'a.ts')).toEqual(['pops shown'])
   })
 })
 

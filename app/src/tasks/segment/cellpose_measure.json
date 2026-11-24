@@ -2,6 +2,7 @@
   "task": "cellposeMeasure",
   "fun_name": "segment.cellposeMeasure",
   "label": "Cellpose segment + measure",
+  "methodsText": ["Cells were segmented with Cellpose (model {model}; channels {cellChannels}; diameter {cellDiameter}; cell probability threshold {cellprobThreshold}), and shape and intensity measures were extracted for each cell from the {intensityValueName} image", {"showIf": {"extendedMeasures": true}, "text": ", including extended shape measures"}, "."],
   "purpose": "Run Cellpose segmentation, then Measure labels",
   "useWhen": ["The usual choice: labels alone leave nothing to gate, track or cluster"],
   "notWhen": [

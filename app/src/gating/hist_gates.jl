@@ -1,6 +1,7 @@
 # ── 1D gates: drawn on one channel's histogram ────────────────────────────────
 #
-#   RangeGate     an interval [lo, hi] — one population.
+#   RangeGate     an interval [lo, hi] — one population. Either end may follow its own valley rule
+#                 (`lo_rule` / `hi_rule`): a middle population between two dips.
 #   BisectorGate  one cut that splits the axis in two: `side = +1` is above the cut (the `+` population),
 #                 `side = -1` at or below it. Both halves share a `group`, like a slice's two sides, so
 #                 moving the cut of one moves the other (`set_gate!`) and every finite cell lands in
@@ -11,9 +12,10 @@
 # gate to a plot — then carries it unchanged, and it is drawn on the histogram, whose plot asks for
 # x = y = that channel. Geometry is in TRANSFORMED coordinates, like every gate.
 #
-# A bisector may carry a RULE instead of a fixed position: `ValleyRule(lo, hi)` cuts at the deepest
-# valley of the parent's density between lo and hi, re-found on every image (and whenever the parent's
-# cells change). The stored `cut` is then only the fallback for a parent with no valley in the window.
+# A bisector's cut, or a range's end, may follow a RULE instead of a fixed position: `ValleyRule(lo, hi)`
+# puts it at the deepest valley of the parent's density between lo and hi, re-found on every image (and
+# whenever the parent's cells change). The stored position is then only the fallback for a parent with no
+# valley in the window.
 # docs/POPULATION.md → 1D gates.
 
 using Statistics: quantile, std
@@ -39,12 +41,15 @@ struct RangeGate <: Gate
     y_transform::AxisTransform          # == x_transform
     lo::Float64
     hi::Float64
+    lo_rule::Union{Nothing,ValleyRule}  # each end may follow its own valley (its stored value the fallback)
+    hi_rule::Union{Nothing,ValleyRule}
 end
 
-function RangeGate(channel, lo, hi; x_transform::AxisTransform = LinearTransform())
+function RangeGate(channel, lo, hi; x_transform::AxisTransform = LinearTransform(),
+                   lo_rule::Union{Nothing,ValleyRule} = nothing, hi_rule::Union{Nothing,ValleyRule} = nothing)
     (isfinite(lo) && isfinite(hi)) || error("a range gate's ends must be finite")
     a, b = minmax(float(lo), float(hi))
-    RangeGate(String(channel), String(channel), x_transform, x_transform, a, b)
+    RangeGate(String(channel), String(channel), x_transform, x_transform, a, b, lo_rule, hi_rule)
 end
 
 struct BisectorGate <: Gate
@@ -98,12 +103,64 @@ end
 `resolve_gate` it with the parent's values first."""
 needs_parent_data(::Gate) = false
 needs_parent_data(g::BisectorGate) = g.rule !== nothing
+needs_parent_data(g::RangeGate) = g.lo_rule !== nothing || g.hi_rule !== nothing
 
 """The rule's cut on these RAW parent values, or `nothing` (no rule, or no valley in its window)."""
 resolve_cut(::Gate, raw) = nothing
 function resolve_cut(g::BisectorGate, raw::AbstractVector)
     g.rule === nothing && return nothing
-    valley_cut(apply_transform(g.x_transform, raw), g.rule.lo, g.rule.hi; adjust = g.rule.adjust)
+    _rule_cut(g.rule, apply_transform(g.x_transform, raw))
+end
+_rule_cut(r::Nothing, v) = nothing
+_rule_cut(r::ValleyRule, v) = valley_cut(v, r.lo, r.hi; adjust = r.adjust)
+
+"""For a display: whether each of `g`'s rules found its valley on these RAW parent values — `rule_ok` for a
+bisector, `lo_rule_ok` / `hi_rule_ok` for a range's ruled ends; empty for a gate without rules."""
+rule_flags(::Gate, raw) = Dict{String,Any}()
+rule_flags(g::BisectorGate, raw::AbstractVector) =
+    g.rule === nothing ? Dict{String,Any}() : Dict{String,Any}("rule_ok" => resolve_cut(g, raw) !== nothing)
+function rule_flags(g::RangeGate, raw::AbstractVector)
+    _, _, lo_ok, hi_ok = _resolved_ends(g, apply_transform(g.x_transform, raw))
+    out = Dict{String,Any}()
+    g.lo_rule === nothing || (out["lo_rule_ok"] = lo_ok)
+    g.hi_rule === nothing || (out["hi_rule_ok"] = hi_ok)
+    out
+end
+
+# A range's ends on transformed values `v` and whether each ruled end's valley is the one used: each moves to
+# its valley inside its `end_window` or keeps its stored value; a found end past the other's stored value
+# (that one missed) is not used — both stored ends stand, both flagged. One answer for membership and display.
+function _resolved_ends(g::RangeGate, v)
+    a, b = _end_cut(g, :lo, v), _end_cut(g, :hi, v)
+    lo, hi = something(a, g.lo), something(b, g.hi)
+    lo <= hi || return (g.lo, g.hi, false, false)
+    (lo, hi, a !== nothing, b !== nothing)
+end
+
+# The window a range end's rule actually searches, or `nothing` (no rule there). Where the two ends' windows
+# overlap they split the overlap at its middle, so both ends can't land in one dip; against a fixed other
+# end the window stops at that end, so a ruled end can't cross it. The client draws the same windows
+# (plots/histGeometry.ts `histWindows`).
+function end_window(g::RangeGate, e::Symbol)
+    r = e === :lo ? g.lo_rule : g.hi_rule
+    r === nothing && return nothing
+    a, b = r.lo, r.hi
+    if e === :lo
+        o = g.hi_rule
+        b = o === nothing ? min(b, g.hi) : o.lo < b ? (o.lo + b) / 2 : b
+    else
+        o = g.lo_rule
+        a = o === nothing ? max(a, g.lo) : a < o.hi ? (a + o.hi) / 2 : a
+    end
+    (a, b)
+end
+
+# A range end's valley on transformed values `v` inside its `end_window`, or `nothing`.
+function _end_cut(g::RangeGate, e::Symbol, v)
+    w = end_window(g, e)
+    (w === nothing || !(w[2] > w[1])) && return nothing
+    r = e === :lo ? g.lo_rule : g.hi_rule
+    valley_cut(v, w[1], w[2]; adjust = r.adjust)
 end
 
 """`g` with its rule applied to the RAW parent values: a bisector's cut moves to the valley; with no
@@ -112,6 +169,13 @@ resolve_gate(g::Gate, raw) = g
 function resolve_gate(g::BisectorGate, raw::AbstractVector)
     c = resolve_cut(g, raw)
     c === nothing ? g : BisectorGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, c, g.side, g.group, g.rule)
+end
+# each ruled end moves to its valley inside its `end_window`, or keeps its stored value
+function resolve_gate(g::RangeGate, raw::AbstractVector)
+    needs_parent_data(g) || return g
+    v = apply_transform(g.x_transform, raw)
+    lo, hi = _resolved_ends(g, v)
+    RangeGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, lo, hi, g.lo_rule, g.hi_rule)
 end
 
 const VALLEY_GRID = 512        # density evaluation points, at least (more when the span needs them)
@@ -235,7 +299,12 @@ function _hist_spec(g::HistGate, kind)
     Dict{String,Any}("kind" => kind, "x_channel" => g.x_channel, "y_channel" => g.y_channel,
                      "x_transform" => transform_spec(g.x_transform), "y_transform" => transform_spec(g.y_transform))
 end
-gate_spec(g::RangeGate) = merge(_hist_spec(g, "range"), Dict{String,Any}("lo" => g.lo, "hi" => g.hi))
+function gate_spec(g::RangeGate)
+    d = merge(_hist_spec(g, "range"), Dict{String,Any}("lo" => g.lo, "hi" => g.hi))
+    g.lo_rule === nothing || (d["lo_rule"] = rule_spec(g.lo_rule))
+    g.hi_rule === nothing || (d["hi_rule"] = rule_spec(g.hi_rule))
+    d
+end
 function gate_spec(g::BisectorGate)
     d = merge(_hist_spec(g, "bisector"), Dict{String,Any}("cut" => g.cut, "side" => g.side, "group" => g.group))
     g.rule === nothing || (d["rule"] = rule_spec(g.rule))
@@ -244,11 +313,16 @@ end
 
 # `to_disp(v, v)[1]` = a stored value on the gate's axis → the plot's x display coordinate. A 1D gate
 # only matches a plot with x = y = its channel (the histogram), so there is no swap to honour.
-_projected(g::RangeGate, to_disp, swap) =
-    Dict{String,Any}("kind" => "range", "lo" => to_disp(g.lo, g.lo)[1], "hi" => to_disp(g.hi, g.hi)[1])
+_rule_disp(r::ValleyRule, to_disp) = Dict{String,Any}("kind" => "valley",
+    "lo" => to_disp(r.lo, r.lo)[1], "hi" => to_disp(r.hi, r.hi)[1], "adjust" => r.adjust)
+function _projected(g::RangeGate, to_disp, swap)
+    d = Dict{String,Any}("kind" => "range", "lo" => to_disp(g.lo, g.lo)[1], "hi" => to_disp(g.hi, g.hi)[1])
+    g.lo_rule === nothing || (d["lo_rule"] = _rule_disp(g.lo_rule, to_disp))
+    g.hi_rule === nothing || (d["hi_rule"] = _rule_disp(g.hi_rule, to_disp))
+    d
+end
 function _projected(g::BisectorGate, to_disp, swap)
     d = Dict{String,Any}("kind" => "bisector", "cut" => to_disp(g.cut, g.cut)[1], "side" => g.side, "group" => g.group)
-    g.rule === nothing || (d["rule"] = Dict{String,Any}("kind" => "valley",
-        "lo" => to_disp(g.rule.lo, g.rule.lo)[1], "hi" => to_disp(g.rule.hi, g.rule.hi)[1], "adjust" => g.rule.adjust))
+    g.rule === nothing || (d["rule"] = _rule_disp(g.rule, to_disp))
     d
 end

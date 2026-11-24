@@ -227,8 +227,11 @@ include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_hmm_sibling.jl"))
 include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
 include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
-# The draft Methods section: set / board / chain-run scopes (ai/methods_report.jl).
+# The draft Methods section: set / chain-run scopes (ai/methods_report.jl).
 include(joinpath(@__DIR__, "suite", "methods_report.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_methods_partial_input.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_methods_input_spread.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_methods_group_entries.jl"))
 # A chain run as an RO-Crate (Workflow Run Crate 0.5): the profile's MUST list (ai/ro_crate.jl).
 include(joinpath(@__DIR__, "suite", "ro_crate.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
@@ -265,6 +268,9 @@ include(joinpath(@__DIR__, "suite", "gating.jl"))
 include(joinpath(@__DIR__, "suite", "split_gates.jl"))
 include(joinpath(@__DIR__, "suite", "hist_gates.jl"))
 include(joinpath(@__DIR__, "suite", "valley_outlier.jl"))
+include(joinpath(@__DIR__, "suite", "range_ends_overlap.jl"))
+include(joinpath(@__DIR__, "suite", "range_ends_fixed_end.jl"))
+include(joinpath(@__DIR__, "suite", "range_ends_flags.jl"))
 # ── Population types + cluster/region + spatial obs testsets ─────────────
 # 10 sections covering GATING_POP_TYPES, img_has_value_name, clust/trackclust pop types,
 # region pop type (spatial regions), contact_matrix, region pop auto-share, bare

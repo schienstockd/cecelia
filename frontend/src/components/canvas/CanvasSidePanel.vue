@@ -196,8 +196,8 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
       <button v-if="manualApply !== null" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
               :class="{ 'cc-btn-on cc-btn-on-tint': manualApply }"
               v-tooltip.top="manualApply
-                ? 'Manual apply on — pop toggles and gate updates wait for Apply'
-                : 'Live — plots update on every pop toggle'"
+                ? 'Manual apply on — population toggles and gate updates wait for Apply'
+                : 'Live — plots update on every population toggle'"
               @click="emit('update:manualApply', !manualApply)">
         <i class="pi pi-clock" />
       </button>

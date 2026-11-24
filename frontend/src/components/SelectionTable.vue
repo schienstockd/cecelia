@@ -39,7 +39,8 @@ import { fillColumnKey, fillExtraPx, lengthPx } from '../utils/columnFill'
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { headerLift, liftScrollBox, verticalScrollBox } from '../utils/stickyHead'
 import { allSelected as allChosen, someSelected as someChosen,
-         toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep } from '../utils/tableSelection'
+         toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep,
+         fileManagerPick } from '../utils/tableSelection'
 
 export interface SelectionColumn {
   /** key into the row object; its value is rendered verbatim */
@@ -362,14 +363,11 @@ function autoScroll() {
 }
 
 function pickMulti(id: string, e: MouseEvent) {
-  const onBox = !!(e.target as HTMLElement).closest('.sel-sticky-pick')
-  if (e.shiftKey && anchorId) {
-    emit('update:selected',
-      rangeSelection(renderedIds(), anchorId, id, props.disabledIds, additive(e) ? selectedIds.value : []))
-    return                                                  // the anchor stays, as in a file browser
-  }
-  anchorId = id
-  emit('update:selected', additive(e) || onBox ? toggleOneSelection(id, selectedIds.value) : [id])
+  const toggle = !!(e.target as HTMLElement).closest('.sel-sticky-pick')
+  const r = fileManagerPick(renderedIds(), selectedIds.value, anchorId, id,
+                            { shift: e.shiftKey, additive: additive(e), toggle }, props.disabledIds)
+  anchorId = r.anchor
+  emit('update:selected', r.selected)
 }
 
 function pick(row: Row, e: MouseEvent) {

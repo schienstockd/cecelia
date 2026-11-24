@@ -330,7 +330,7 @@ def merge_track_lineage(props_path: str, track_df: pd.DataFrame, track_source: s
             for i in sweep_idx:
                 src_obj[i] = None
             log.log(f">> Sweep {len(sweep_idx)} orphan rows "
-                         f"(track_source from deleted pop(s))")
+                         f"(track_source from deleted population(s))")
 
     # ── 2b. conflict detector (MULTI_POP_TRACKING_ORPHANS_PLAN P1) ─────────────
     # After DELETE, any row still stamped with a track_source other than {None, whole_seg,
@@ -354,8 +354,8 @@ def merge_track_lineage(props_path: str, track_df: pd.DataFrame, track_source: s
         tail = f" (and {len(conflicts) - 5} more)" if len(conflicts) > 5 else ""
         pairs = ", ".join(f"label={l} source='{s}'" for l, s in sample)
         msg = (f"track_source='{track_source}': {len(conflicts)} labels already owned by "
-               f"other pop(s). First: {pairs}{tail}. "
-               f"Re-track the owning pops first, adjust pop definitions to remove overlap, "
+               f"other population(s). First: {pairs}{tail}. "
+               f"Re-track the owning populations first, adjust their definitions to remove overlap, "
                f"or pass trackSourceForce=true.")
         if force_track_source:
             log.log(f">> [WARN] {msg} — proceeding under trackSourceForce=true")

@@ -73,12 +73,13 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
 
     # Inherit calibration + provenance onto the projection. Same source→new pattern as cropImage.
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    z_flipped = store_z_flipped(src_meta, string(filename))   # made from a Z-flipped version
     proj_meta = Dict{String,Any}(
         "zproj_source_uid"        => img.uid,
         "zproj_source_value_name" => p.valueName,
         "zproj_op"                => p.op)
     merge!(proj_meta, _zproj_inherited_meta(src_meta))
-    copy_source_meta!(proj_meta, src_meta)
+    copy_source_meta!(proj_meta, src_meta; z_flipped)
     inherit_data_source!(proj_meta, proj, img, s)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to set manifest)

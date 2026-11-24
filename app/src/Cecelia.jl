@@ -135,7 +135,8 @@ export Population, PopulationTree, ROOT, PopType, PopTypeArg
 export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
 export parse_pop_type
 export pop_parent, pop_name, pop_path, is_root, pop_display_labels
-export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
+export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!,
+       move_pops!, del_pops!, selection_roots, pops_with_subtrees
 export boolean_dependents, boolean_spec, filter_spec, pops_depending_on, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse_bool_membership
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,
        parse_filter_fun, FilterCondition
@@ -292,7 +293,7 @@ export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
 export chain_from_history, chain_preflight, history_params_table, board_export_provenance, board_designs, gate_file_edits
-export methods_report, methods_ai_phrase, history_params_csv
+export methods_report, methods_ai_phrase, history_params_csv, methods_measure_phrase, methods_pop_phrase
 export chain_run_ro_crate, chain_run_ro_crate_files, chain_run_ro_crate_zip, write_stored_zip, crc32_ieee
 export chain_node, make_chain
 
@@ -520,6 +521,8 @@ include("hpc/job.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("analysis_export_provenance.jl")   # after ai/lineage.jl (`_parse_tkey`) and tasks/chain.jl
+include("ai/methods_text.jl")          # a step as a sentence: `methodsText`, value phrases, references
+include("ai/methods_populations.jl")   # how the populations were defined, for the Methods report
 include("ai/methods_report.jl")   # after analysis_export_provenance.jl: the draft Methods section
 include("stored_zip.jl")          # a stored-method ZIP writer (the RO-Crate download)
 include("ai/ro_crate.jl")         # after ai/methods_report.jl: a chain run as a Workflow Run Crate

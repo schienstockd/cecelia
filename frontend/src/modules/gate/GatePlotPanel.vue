@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { axisQ, outlineToGate, type SrvGate } from '../../plots/montage'
 import { isSplitGate, sliceRegions, quadrantRegions } from '../../plots/splitGeometry'
-import { histCounts, countTicks, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
+import { histogramView, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
 import CcToggle from '../../components/CcToggle.vue'
 import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
@@ -221,16 +221,12 @@ const currentGates = computed(() => serverGates.value.map(s => ({
 
 // The histogram (1D mode): the shown population's X values and each highlighted pop's, binned over the
 // X view — the count axis replaces Y (extent, ticks), so the bars and the axis agree.
-const hist = computed(() => {
-  if (!isHist.value || !points.value) return null
-  const { xMin, xMax } = viewExtents.value
-  return { lo: xMin, hi: xMax, base: histCounts(points.value, xMin, xMax),
-           layers: popLayers.value.map(l => ({ colour: l.colour, counts: histCounts(l.points, xMin, xMax) })) }
-})
-const histMax = computed(() => Math.max(1, ...(hist.value?.base ?? [])))
-const cellExtents = computed(() => isHist.value ? { ...extents.value, yMin: 0, yMax: histMax.value * 1.08 } : extents.value)
-const cellViewExtents = computed(() => isHist.value ? { ...viewExtents.value, yMin: 0, yMax: histMax.value * 1.08 } : viewExtents.value)
-const cellYTicks = computed(() => isHist.value ? countTicks(histMax.value) : yTicks.value)
+const histView = computed(() => isHist.value && points.value
+  ? histogramView(points.value, popLayers.value, viewExtents.value.xMin, viewExtents.value.xMax) : null)
+const hist = computed(() => histView.value?.hist ?? null)
+const cellExtents = computed(() => histView.value ? { ...extents.value, yMin: 0, yMax: histView.value.yMax } : extents.value)
+const cellViewExtents = computed(() => histView.value ? { ...viewExtents.value, yMin: 0, yMax: histView.value.yMax } : viewExtents.value)
+const cellYTicks = computed(() => histView.value?.yTicks ?? yTicks.value)
 
 async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
@@ -360,7 +356,7 @@ async function loadPopLayers() {
       ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? UNASSIGNED_POP,
          points: await fetchBuf(plotQ(path, effXs.value, effYs.value)) })))
   } catch (e) {
-    log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+    log.error(`Gating population layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
   }
 }
 
@@ -594,7 +590,7 @@ watch(() => props.reloadToken, fetchPlot)
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="zOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(zOverride, '')" /></label>
-        <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
+        <label class="ax-row cc-muted"><span class="ax-lbl">population</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
           <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-fs-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
@@ -658,8 +654,8 @@ watch(() => props.reloadToken, fetchPlot)
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
-/* wide enough for the longest row label ("colour") so all four rows' selects still line up */
-.ax-lbl { width: 3.4rem; color: var(--cc-text-dim); flex-shrink: 0; }
+/* wide enough for the longest row label ("population") so all four rows' selects still line up */
+.ax-lbl { width: 4.2rem; white-space: nowrap; color: var(--cc-text-dim); flex-shrink: 0; }
 /* fixed widths so the controls don't stretch when the plot is resized */
 .ax-chan { width: 9rem; flex: none; }
 .ax-row .tsel { flex-shrink: 0; }

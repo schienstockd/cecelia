@@ -18,7 +18,7 @@
       "required": true,
       "requiredMessage": "Select at least one track population",
       "default": [],
-      "tip": "Tracks to summarise; the whole set is the segmentation's tracked pop"
+      "tip": "Tracks to summarise; the whole set is the segmentation's tracked population"
     },
     {
       "key": "measure",

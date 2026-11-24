@@ -127,10 +127,12 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     # "—"); same source→new pattern as cropImage, minus the extent change.
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     copy_meta = _copied_meta(src_meta, img.uid, p.valueName)
+    z_flipped = store_z_flipped(src_meta, string(filename))   # made from a Z-flipped version
+    copy_source_meta!(copy_meta, src_meta; z_flipped)
     inherit_data_source!(copy_meta, proj, img, dest)
     # the source's microscope settings, when they describe the copied version (a copy of a crop can't
     # re-derive them from `ori_path`; a drift-corrected version is padded in Z)
-    merge!(copy_meta, inherited_acquisition(src_meta, read_ome_metadata(String(im_path))))
+    merge!(copy_meta, inherited_acquisition(src_meta, read_ome_metadata(String(im_path)); z_flipped))
 
     # register a NEW image in the destination set (new uid + {proj}/0|1/{uid} dirs, appended to manifest)
     new_img = add_image!(dest; name = derived_image_name(proj, img.name, "copy"), meta = copy_meta, attr = img.attr)

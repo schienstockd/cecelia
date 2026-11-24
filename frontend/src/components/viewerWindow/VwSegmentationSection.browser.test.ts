@@ -1,5 +1,5 @@
 // The viewer's Segmentation section in a real browser: at the rail's narrow width the Colour control
-// stays inside it. The segmented chips it replaced (Cell id / Pops / Track clusters / Colour by)
+// stays inside it. The segmented chips it replaced (Cell id / Populations / Track clusters / Colour by)
 // ran past the rail's edge and were clipped.
 import { describe, expect, it } from 'vitest'
 import { h } from 'vue'
@@ -34,6 +34,6 @@ describe('VwSegmentationSection Colour', () => {
     expect(control.scrollWidth).toBeLessThanOrEqual(control.clientWidth + 1)
     // all four choices are still there, reachable from the control
     const labels = [...control.querySelectorAll('option, button, .chip')].map(e => e.textContent?.trim())
-    expect(labels).toEqual(expect.arrayContaining(['Cell id', 'Pops', 'Track clusters', 'Colour by']))
+    expect(labels).toEqual(expect.arrayContaining(['Cell id', 'Populations', 'Track clusters', 'Colour by']))
   })
 })

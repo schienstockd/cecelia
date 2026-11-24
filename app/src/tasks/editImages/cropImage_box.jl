@@ -73,8 +73,9 @@ end
 # before it go negative, so the ramp between them is kept); a T-crop records the frames it kept as
 # `timelapse.acquired`, the field a time-lapse stopped early already uses. Needed because re-reading
 # the source file rejects a Z-crop (`_acquisition_describes_store`: other z-planes).
-function crop_acquisition(src_meta::AbstractDict, box, src_counts::AbstractDict)::Dict{String,Any}
-    inherited = inherited_acquisition(src_meta, src_counts)
+function crop_acquisition(src_meta::AbstractDict, box, src_counts::AbstractDict;
+                          z_flipped::Bool = false)::Dict{String,Any}
+    inherited = inherited_acquisition(src_meta, src_counts; z_flipped)   # mirrored first: the box is in the version's planes
     out = get(inherited, "acquisition", nothing)
     isnothing(out) && return inherited
     if box.z0 != -1 && box.z1 != -1

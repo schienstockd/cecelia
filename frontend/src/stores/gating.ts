@@ -38,6 +38,8 @@ export interface GateSpec {
   cut?: number                               // bisector: the cut (side 1 = above it, -1 = at or below)
   rule?: GateRule                            // bisector: cut at the parent's density valley instead
   rule_ok?: boolean                          // server outline: the rule found a valley on this parent
+  lo_rule?: GateRule; hi_rule?: GateRule     // range: an end that follows its own valley
+  lo_rule_ok?: boolean; hi_rule_ok?: boolean // server outline: that end's rule found a valley
 }
 // a bisector's rule: the deepest valley of the parent's density in [lo, hi] (gate coordinates)
 export interface GateRule { kind: 'valley'; lo: number; hi: number; adjust?: number }
@@ -337,7 +339,7 @@ export function createGatingStore(initialPopType: string) {
       authoredLabelsVersion.value = d.authoredLabelsVersion ?? null
       currentLatestLabelsVersion.value = d.currentLatestLabelsVersion ?? null
     } catch (e) {
-      log.error(`Gating pop tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Gating population tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
     }
   }
 
@@ -418,6 +420,11 @@ export function createGatingStore(initialPopType: string) {
   // Re-parent a population, subtree and all. The gate is untouched; its MEMBERSHIP is not — a pop is
   // its own gate ∩ its parent's, so lifting `/qc/B` out to root re-derives it against all cells.
   const movePop    = (path: string, parent: string)  => _post('/api/gating/pop/move', { path, parent })
+  // A multi-selection (the manager's ctrl/shift-click) in ONE request — one save, one broadcast, one
+  // undo step — not one request per population each rewriting the tree. A selected child of a selected
+  // parent rides with the parent; a refused selection changes nothing (`move_pops!` / `del_pops!`).
+  const movePops   = (paths: string[], parent: string) => _post('/api/gating/pop/move', { paths, parent })
+  const deletePops = (paths: string[])                 => _post('/api/gating/pop/delete', { paths })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
   // the user has checked a stale cluster population's clusters against the run as it is now (the stale icon)
   // show/hide several populations in ONE write (the manager's "all" toggle) — one reply, one broadcast,
@@ -560,7 +567,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
     renamePop, updatePop, setPopsShown, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,

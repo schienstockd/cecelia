@@ -2473,7 +2473,7 @@ differs, so only this group is shared. A host that drives `useCanvasPanels` but 
 arrange buttons fails the *every canvas host offers Close all* testset — the point being that a bulk
 close a user asks for on one page has to appear on all of them.
 
-**Snap** (the magnet, beside Cascade) — while it is on, a dragged panel's edges snap to the other
+**Snap** (the magnet, beside Cascade; on by default) — while it is on, a dragged panel's edges snap to the other
 panels' (touching or lined up, only with a neighbour that overlaps on the other axis) and to the
 canvas's left/top edges, within `SNAP_PX` (`utils/panelSnap.ts::snapPosition`). Per canvas, persisted in
 its `shared` bag by `useFloatingCanvas`, which provides it to every `CanvasPanel` (`CANVAS_SNAP_KEY`;
@@ -3598,6 +3598,32 @@ current parent. This is a MEMBERSHIP edit, not a cosmetic one: a pop's cells are
 parent's, so lifting `/qc/B` out to `/B` re-derives it against all cells. The same select is now live
 while editing a filter population (it used to read "delete & recreate to move"). Gates, children and
 colours survive — the alternative was deleting the branch and redrawing every gate in it.
+
+**Multi-selection.** Ctrl/⌘-click and shift-click pick several rows — the same file-manager rule as
+every `SelectionTable` (`fileManagerPick`, `utils/tableSelection.ts`), so nobody learns a second one. A
+plain click is unchanged (it picks the row the plots show) and restarts the selection there; a modified
+click only grows or shrinks the selection and leaves the plots alone. Picked rows carry the house
+selection mark (`--cc-selected` left rule); a "N selected ✕" line (and Esc) clears it. The ⋯ menu of a
+**selected** row acts on the whole selection, the menu of any other row on that row alone (as in a file
+manager). A selected child of a selected parent travels with the parent (`selectionRoots`, the client
+twin of Julia `selection_roots`). Which actions reach more than one population
+(`MULTI_ACTIONS`, `utils/popSelection.ts`):
+
+| Action | Many? | Why |
+|---|---|---|
+| Move under… | yes | one `pop/move` with `paths` — one save, one undo step; targets exclude every selected subtree |
+| Delete population | yes | one `pop/delete` with `paths`; refused as a whole if a combined pop that stays would lose a term |
+| Combine with… | yes | the selection seeds the form's terms, under their shared parent (else all cells) |
+| Add to Kiwi | yes | one reference per population, client-side only |
+| Delete N below it | no | "below a selection" holding a parent and its child is ambiguous (keep the child, or prune it?) |
+| Rename | no | a name is one population's; one name on many collides under a shared parent |
+| Rectangle ⇄ polygon | no | per-gate geometry, and only one direction is lossless — each needs its own look |
+| Show the gate's plot | no | opens one plot |
+| Colour swatch, highlight eye, viewer eye (row) | no | immediate per-row toggles; the *All populations* row is their bulk form |
+
+Single-only items stay in the menu, `aria-disabled` with *One population at a time* as their tooltip
+(not `disabled`: a disabled button shows no tooltip), so the menu doesn't change shape under the
+cursor. Transient (viewer) pops and read-only surfaces take no part in the selection.
 
 **Combine populations** — the two questions no single 2D gate can draw: *"cells positive for nuc-GFP
 **or** mem-TOM"* and *"mem-TOM+ **and** nuc-GFP+ **but not** CD169+"*. The manager's second

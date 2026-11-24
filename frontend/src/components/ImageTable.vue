@@ -26,6 +26,7 @@ import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import TissueExtent from './TissueExtent.vue'
 import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
 import { profileStorage } from '../utils/profileStorage'
@@ -108,7 +109,9 @@ function scaleTip(img: CciaImage): string {
   const x = img.physicalSizeX != null ? fmtNum(img.physicalSizeX) : '?'
   const y = img.physicalSizeY != null ? fmtNum(img.physicalSizeY) : '?'
   const bits = [`XY ${x} × ${y} ${u}/px`]
-  if (img.physicalSizeZ != null) bits.push(`Z ${fmtNum(img.physicalSizeZ)} ${u}`)
+  // a per-axis Z unit (extraMeta.PhysicalSizeZUnit) wins, as in tissueExtent / the backend
+  const zu = typeof img.extraMeta?.PhysicalSizeZUnit === 'string' ? shortUnit(img.extraMeta.PhysicalSizeZUnit) : u
+  if (img.physicalSizeZ != null) bits.push(`Z ${fmtNum(img.physicalSizeZ)} ${zu}`)
   if (img.timeIncrement != null)
     bits.push(`${fmtNum(img.timeIncrement)} ${shortTimeUnit(img.timeIncrementUnit)} per frame`)
   return bits.join(' · ')
@@ -538,6 +541,8 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   // cannot run anything that measures in microns (`requires.scale`, utils/taskGating.ts). Sorting it
   // is how you find those — see `imageSortValue`, which puts them first rather than last.
   { key: 'scale', label: 'Scale', sortable: true, fixed: true, width: 104 },
+  // X × Y (× Z) of the ACTIVE version in µm/mm; click → area + volume (TissueExtent.vue)
+  { key: 'tissue', label: 'Tissue', fixed: true, width: 132 },
   ...(props.module ? [{ key: 'status', label: 'Status', fixed: true, width: 90 }] : []),
 ])
 
@@ -825,6 +830,10 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
         <i class="pi pi-ban" /> not set
       </button>
       <span v-else class="scale-cell" v-tooltip.left="scaleTip(img)">{{ scaleText(img) }}</span>
+    </template>
+
+    <template #cell-tissue="{ row: img }">
+      <TissueExtent :image="img" compact />
     </template>
 
     <template #cell-status="{ row: img }">

@@ -92,7 +92,8 @@ _rename_gate(g::SliceGate, f)     = SliceGate(f(g.x_channel), f(g.y_channel), g.
                                               g.vertices, g.side, g.group)
 _rename_gate(g::QuadrantGate, f)  = QuadrantGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
                                                  g.centre, g.arms, g.quadrant, g.group)
-_rename_gate(g::RangeGate, f)     = RangeGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform, g.lo, g.hi)
+_rename_gate(g::RangeGate, f)     = RangeGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform, g.lo, g.hi,
+                                              g.lo_rule, g.hi_rule)
 _rename_gate(g::BisectorGate, f)  = BisectorGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
                                                  g.cut, g.side, g.group, g.rule)
 

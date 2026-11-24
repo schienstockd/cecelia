@@ -4,7 +4,8 @@
 // along the arms. Monotone, so every arm keeps its order and direction; only spacing changes.
 // Applied for display only (the CSV export keeps the raw coordinates).
 
-function quantile(sorted: Float64Array, q: number): number {
+/** Linear-interpolated quantile of an ascending array. */
+export function quantile(sorted: ArrayLike<number>, q: number): number {
   const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i)
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo)
 }

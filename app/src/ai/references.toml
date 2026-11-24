@@ -1,0 +1,21 @@
+# Reference lines for the DOIs task specs cite (`"citations"`), for the Methods report's reference list.
+# Generated from Crossref (api.crossref.org/works/<doi>) — regenerate an entry from there, never by hand.
+# A DOI a spec cites must have an entry: the `references cover every cited DOI` testset fails otherwise.
+
+"10.1007/3-540-45103-X_50" = "Farnebäck G (2003) Two-Frame Motion Estimation Based on Polynomial Expansion. Lecture Notes in Computer Science."
+"10.1016/j.cell.2018.07.010" = "Goltsev Y et al. (2018) Deep Profiling of Mouse Splenic Architecture with CODEX Multiplexed Imaging. Cell."
+"10.1016/j.celrep.2020.107523" = "Stoltzfus CR et al. (2020) CytoMAP: A Spatial Analysis Toolbox Reveals Features of Myeloid Cell Organization in Lymphoid Tissues. Cell Reports."
+"10.1038/s41467-025-57193-y" = "Schienstock D et al. (2025) Cecelia: a multifunctional image analysis toolbox for decoding spatial cellular interactions and behaviour. Nature Communications."
+"10.1038/s41592-020-01018-x" = "Stringer C et al. (2020) Cellpose: a generalist algorithm for cellular segmentation. Nature Methods."
+"10.1038/s41592-021-01326-w" = "Moore J et al. (2021) OME-NGFF: a next-generation file format for expanding bioimaging data-access strategies. Nature Methods."
+"10.1038/s41592-023-02005-8" = "Eom M et al. (2023) Statistically unbiased prediction enables accurate denoising of voltage imaging data. Nature Methods."
+"10.1038/s41598-019-41695-z" = "Traag VA et al. (2019) From Louvain to Leiden: guaranteeing well-connected communities. Scientific Reports."
+"10.1083/jcb.201004104" = "Linkert M et al. (2010) Metadata matters: access to image data in the real world. Journal of Cell Biology."
+"10.1101/2025.04.28.651001" = "Pachitariu M et al. (2025) Cellpose-SAM: superhuman generalization for cellular segmentation. bioRxiv."
+"10.1186/s13059-017-1382-0" = "Wolf FA et al. (2018) SCANPY: large-scale single-cell gene expression data analysis. Genome Biology."
+"10.21105/joss.01504" = "Law S (2019) STUMPY: A Powerful and Scalable Python Library for Time Series Data Mining. Journal of Open Source Software."
+"10.21105/joss.06436" = "Dalle G (2024) HiddenMarkovModels.jl: generic, fast and reliable state space modeling. Journal of Open Source Software."
+"10.3389/fcomp.2021.734559" = "Ulicna K et al. (2021) Automated Deep Lineage Tree Analysis Using a Bayesian Single Cell Tracking Approach. Frontiers in Computer Science."
+"10.3389/fninf.2013.00045" = "Lowekamp BC et al. (2013) The Design of SimpleITK. Frontiers in Neuroinformatics."
+"10.7554/eLife.35800" = "Warren SC et al. (2018) Removing physiological motion from intravital and clinical functional imaging data. eLife."
+"10.7717/peerj.453" = "van der Walt S et al. (2014) scikit-image: image processing in Python. PeerJ."
