@@ -70,7 +70,9 @@ def call_judge(prompt: str, schema: dict, *, budget_usd: float = CALL_USD,
                  "--output-format", "json", "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)],
                 input=prompt, cwd=cwd, env={**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"},
                 capture_output=True, text=True, encoding="utf-8", timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired) as e:
+    except subprocess.TimeoutExpired as e:   # its text is the whole argv, which buries the reason
+        raise JudgeError(f"judge call timed out after {timeout:.0f}s") from e
+    except OSError as e:
         raise JudgeError(f"judge call failed: {e}") from e
     out = read_result(proc)
     answer = out.get("structured_output")

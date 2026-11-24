@@ -134,24 +134,27 @@ class VerifyTest(unittest.TestCase):
                          ("parked", "verified guard (2026-10-03): can't happen yet; live once a caller passing None"))
         self.assertEqual(self.v.eligible(out), [])
 
-    def test_guard_on_a_duplicate_goes_to_the_owner_instead_of_parking(self):
+    def test_guard_on_a_duplicate_is_a_fix_instead_of_parking(self):
+        # the copy is there, so the reuse is the fix: asking the owner only queued an approval
         def guard(prompt):
             return {"items": [{"key": "conv-1", "verdict": "guard", "evidence": "a.py:1", "effect": "both used",
                                "trigger": "use the helper once the copy's caller moves"}]}, 1.0
         out, _ = self.v.verify([_bug("conv-1", kind="duplicate", marker="should reuse")], date="2026-10-03",
                                sha="s" * 40, agent=guard)
         self.assertEqual(out[0]["status"], "open")
-        self.assertEqual(out[0]["verify"]["verdict"], "decide")
+        self.assertEqual(out[0]["verify"]["verdict"], "fix")
+        self.assertNotIn("question", out[0]["verify"])
         self.assertEqual(out[0]["verify"]["recommendation"], "use the helper once the copy's caller moves")
         self.assertNotIn("trigger", out[0]["verify"])
 
-    def test_a_shipped_reproduced_result_goes_to_the_owner_whatever_verify_says(self):
+    def test_only_the_owner_closes_a_shipped_reproduced_result(self):
         shipped = _bug("result-1", file="s.py", branch="s", marker="reproduced", outcome="false_positive",
                        reason="the repro expects the wrong unit")
         untagged = _bug("result-2", file="t.py", branch="t", marker="reproduced")
         inferred = _bug("result-3", file="u.py", branch="u", marker="inferred", outcome="shipped_with_finding")
         gone = _bug("result-4", file="w.py", branch="w", marker="reproduced", outcome="shipped_with_finding")
-        out, _ = self.v.verify([shipped, untagged, inferred, gone], date="2026-10-03", sha="s" * 40,
+        fix = _bug("result-5", file="x.py", branch="x", marker="reproduced", outcome="shipped_with_finding")
+        out, _ = self.v.verify([shipped, untagged, inferred, gone, fix], date="2026-10-03", sha="s" * 40,
                                agent=self.agent({"result-1": "dismiss", "result-4": "fixed"}))
         by = {b["key"]: b for b in out}
         self.assertEqual(by["result-1"]["verify"]["verdict"], "decide")
@@ -161,6 +164,8 @@ class VerifyTest(unittest.TestCase):
         self.assertEqual(by["result-2"]["verify"]["verdict"], "fix")  # untagged: verify's call stands
         self.assertEqual(by["result-3"]["verify"]["verdict"], "fix")  # inferred: no repro to overrule
         self.assertEqual(by["result-4"]["status"], "gone")            # fixed since: nothing to decide
+        # a fix closes nothing by itself: its PR goes to the owner, so verify's call stands
+        self.assertEqual((by["result-5"]["verify"]["verdict"], by["result-5"]["status"]), ("fix", "open"))
 
     def test_the_cap_holds_even_if_every_agent_spends_its_budget(self):
         bugs = [_bug(k, file=f"{k}.py", branch=k) for k in "abc"]

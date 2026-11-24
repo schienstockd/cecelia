@@ -61,7 +61,7 @@ from cecelia.effectiveness.claude_cli import (  # noqa: E402
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.attribution import coauthor_line, footer, trailer_lines  # noqa: E402
 from cecelia.effectiveness.claude_sessions import live_sessions, session_stamp, sessions_in  # noqa: E402
-from cecelia.effectiveness.recital import reviewer_errors  # noqa: E402
+from cecelia.effectiveness.recital import SLUG_PATTERN, reviewer_errors  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
 from cecelia.effectiveness.palette import GREY, ORANGE, SKY_BLUE, VERMILLION, YELLOW  # noqa: E402
@@ -594,6 +594,13 @@ def pr_body(record: dict, bugs: _t.Sequence[dict], answer: dict, stamp: dict | N
                       "", *rows, "", footer(stamp or {})]) + "\n"
 
 
+def _tag_slug(tag: str) -> str:
+    """`[<slug>: <outcome>…]` → its slug, as the commit hook reads it (`SLUG_PATTERN`); a tag of
+    another shape (a legacy bare one) is its own key."""
+    m = re.match(rf"\[\s*({SLUG_PATTERN})\s*:", tag.strip())
+    return m.group(1) if m else tag
+
+
 def _fixed_keys(answer: dict) -> set[str]:
     return {r["key"] for r in answer.get("bugs", []) if r.get("outcome") == "fixed"}
 
@@ -1070,15 +1077,27 @@ def _work(job, tree, branch, hooks, *, main, say, out, session, sh, recap: str |
         say(job.handback(trusted))
         return spent
 
+    def undone(n: int, said: _t.Sequence[str]) -> float:
+        """Acting on recital round `n`, the agent reverted its whole fix: the review showed it wrong. Its
+        fixed bugs are `left` with what the review found, and there is no work to hand back."""
+        why = f"It undid its fix after recital round {n}" + (": " + " ".join(said) if said else ".")
+        job.log({**answer, "bugs": [{**r, "outcome": "left", "reason": why} if r.get("outcome") == "fixed" else r
+                                    for r in answer["bugs"]]}, "")
+        agent_sandbox.remove_worktree(main, tree)
+        sh(["git", "branch", "-D", branch], main)
+        say(f"the agent undid its fix after recital round {n}: no PR, worktree removed", bad=True)
+        return spent
+
     def ship(message: _t.Callable[[list[str], str], str]) -> float | None:
         """Guard, recital rounds, commit and push the worktree's changes; the stop's return if it stopped.
         Another recital round whenever acting on the last changed the diff, as interactive sessions do;
-        every round's tags go in the commit, the last round's body with them."""
+        every round's tags go in the commit, the last round's body with them: a slug a later round tags
+        again keeps that round's outcome (the commit hook refuses a slug twice)."""
         nonlocal spent
         why, diff, trusted = guard(tree, before, hooks, sh)
         if why:
             return stop(why, trusted=trusted)
-        tags: list[str] = []
+        tags: dict[str, str] = {}   # slug → its tag
         for n in range(1, RECITAL_ROUNDS + 1):
             round_ = "" if n == 1 else f" · round {n}"
             waits = 0
@@ -1111,16 +1130,19 @@ def _work(job, tree, branch, hooks, *, main, say, out, session, sh, recap: str |
             spent += cost
             if failed:
                 return stop(f"tagging the recital: {failed}")
-            tags += [t for t in tagged["tags"] if t not in tags]
+            tags |= {_tag_slug(t): t for t in tagged["tags"]}
             why, now, trusted = guard(tree, before, hooks, sh)
             if why:
                 return stop(why, trusted=trusted)
+            if diff.strip() and not now.strip():   # it emptied the diff: "recital failed" would say otherwise
+                return (stop(f"its changes were all undone after recital round {n}: nothing to commit")
+                        if opened_pr else undone(n, tagged["tags"]))
             if now == diff:
                 break
             diff = now
         else:
             return stop(f"its diff still changed after {RECITAL_ROUNDS} recital rounds")
-        return commit_push(message(tags, recital))
+        return commit_push(message(list(tags.values()), recital))
 
     def commit_push(text: str | None) -> float | None:
         """Commit (with `text`; None: a merge's own message) and push; the stop's return if one failed."""
@@ -1343,7 +1365,9 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
     main = main or _rv.main_checkout()
     if not dry_run:   # first: an expired bug is back in the queue this run
         expire_stranded(main, out=out, sh=kw.get("sh") or default_sh, auto_log=auto_log)
-    items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
+    reviews = _rv.read_reviews(path)
+    record = _rv.apply_reviews(record, reviews, older)   # the briefs carry the owner's answers since the pass
+    items = _rv.auto_items(record, reviews, older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
     colour, width = out.isatty(), _width()
     if items and not dry_run:
