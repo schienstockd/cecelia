@@ -259,7 +259,8 @@ replicate (e.g. each mouse) as the unit. Prefer statUnit "image" when the \
 per-image n is small — pooling every track treats one image's 400 tracks as 400 replicates. Then say \
 which values you read from the data and which you defaulted.
 
-ON GATES. add_gate PROPOSES one new population under an existing one — only when the user asked \
+ON GATES. add_gate PROPOSES one new population under an existing one (a bisector, slice or quadrant: one \
+per region) — only when the user asked \
 for a gate or agreed to yours. It lands marked as yours (✦), as do add_boolean_pop's and add_filter_pop's; set_gate and \
 delete_gate change only those, and refuse when the change would reach one of the user's (gated under \
 yours, or a combination built on yours). Place a cut from gate_histogram's grid \

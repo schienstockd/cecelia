@@ -3,6 +3,7 @@ import type { GateSpec } from '../stores/gating'
 import { withDivider } from './splitGeometry'
 import {
   histCounts, countTicks, bisectorRegions, defaultRuleWindow, histRegion, histHandles, moveHistHandle, toggleRule,
+  histLines, histWindows, shiftRange, histogramView, histTip,
 } from './histGeometry'
 
 // Expected values from the definitions (equal bins over [lo, hi]; + above the cut; a window a fifth of the
@@ -20,6 +21,18 @@ describe('histCounts', () => {
   })
   it('an empty range counts nothing', () => {
     expect(histCounts(new Float32Array([1, 1]), 5, 5, 4)).toEqual([0, 0, 0, 0])
+  })
+})
+
+describe('histogramView', () => {
+  it('bins the base and each overlay over the view; the count axis tops the tallest bin', () => {
+    const base = new Float32Array([1, 1, 1, 1, 3, 3]), sub = new Float32Array([3, 3])
+    const v = histogramView(base, [{ colour: '#f00', points: sub }], 0, 4)
+    expect(v.hist.base.reduce((a, b) => a + b, 0)).toBe(3)
+    expect(Math.max(...v.hist.base)).toBe(2)                     // the two x = 1 values share a bin
+    expect(v.hist.layers[0]).toMatchObject({ colour: '#f00' })
+    expect(v.yMax).toBeCloseTo(2 * 1.08)
+    expect(v.yTicks.at(-1)!.pos).toBeLessThanOrEqual(2)
   })
 })
 
@@ -60,5 +73,36 @@ describe('bisector', () => {
     const a = bis(4, 1, { group: 'g' }), b = bis(4, -1, { group: 'g' })
     expect(withDivider(b, { ...a, cut: 6 })).toMatchObject({ cut: 6, side: -1 })
     expect(withDivider({ ...b, group: 'h' }, { ...a, cut: 6 }).cut).toBe(4)
+  })
+  it("a range's ends follow their own valleys: handles, lines, windows, toggles", () => {
+    const r: GateSpec = { ...base, kind: 'range', lo: 2, hi: 8 }
+    const on = toggleRule(r, view, 'hi')
+    expect(on.hi_rule).toEqual({ kind: 'valley', lo: 6, hi: 10 })            // a fifth either side, in view
+    expect(on.lo_rule).toBeUndefined()
+    expect(histHandles(on).map(h => h.part)).toEqual(['lo', 'hi_rule-lo', 'hi_rule-hi'])
+    expect(histLines({ ...on, hi_rule_ok: false })).toEqual([
+      { end: 'lo', x: 2, ruled: false, ok: true }, { end: 'hi', x: 8, ruled: true, ok: false }])
+    expect(histWindows(on)).toEqual([[6, 10]])
+    expect(moveHistHandle(on, 'hi_rule-lo', 7).hi_rule).toMatchObject({ lo: 7, hi: 10 })
+    expect(shiftRange(on, 1)).toMatchObject({ lo: 3, hi: 9, hi_rule: { lo: 7, hi: 11 } })
+    expect(toggleRule({ ...on, hi_rule_ok: true }, view, 'hi')).toEqual(r)   // off again
+    expect(toggleRule(r, view, 'cut')).toBe(r)                                // a range has no cut
+  })
+  it("draws the windows a range's ends search: an overlap split at its middle, a fixed end a limit", () => {
+    const n: GateSpec = { ...base, kind: 'range', lo: 4, hi: 6,
+                          lo_rule: { kind: 'valley', lo: 2, hi: 7 }, hi_rule: { kind: 'valley', lo: 4, hi: 8 } }
+    expect(histWindows(n)).toEqual([[2, 5.5], [5.5, 8]])                         // overlap [4, 7] → 5.5
+    expect(histWindows({ ...n, lo_rule: undefined, lo: 3 })).toEqual([[4, 8]])   // nothing to split with
+    expect(histWindows({ ...n, lo_rule: undefined, lo: 5 })).toEqual([[5, 8]])   // stops at the fixed lo
+    expect(histWindows({ ...n, hi_rule: undefined, hi: 9 })).toEqual([[2, 7]])
+  })
+  it('says what a hovered handle or ruled line is, and whether its rule found a valley', () => {
+    const r = bis(4, 1, { rule: { kind: 'valley', lo: 2, hi: 6 } })
+    expect(histTip(r, { kind: 'hist-handle', part: 'rule-hi' })).toMatch(/search window/)
+    expect(histTip(r, { kind: 'hist-line', end: 'cut' })).toMatch(/^Cut at the valley/)
+    expect(histTip({ ...r, rule_ok: false }, { kind: 'hist-line', end: 'cut' })).toMatch(/No valley in window: cut stays put/)
+    expect(histTip({ ...base, kind: 'range', lo: 1, hi: 5, hi_rule: { kind: 'valley', lo: 4, hi: 7 }, hi_rule_ok: false },
+                   { kind: 'hist-line', end: 'hi' })).toMatch(/end stays put/)
+    expect(histTip(bis(4), { kind: 'hist-handle', part: 'cut' })).toMatch(/follow the valley/)
   })
 })

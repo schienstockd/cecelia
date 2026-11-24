@@ -873,7 +873,8 @@ Display: the divider is drawn once per group (in ink), each region's name at the
 part; a split gate is never selected by a click inside it (its regions cover the whole plot) — its line
 moves it, its vertices / arm handles reshape it. A region is built by closing the divider round a box
 (`slice_left_polygon` / `quadrant_polygon` in Julia, the same in `splitGeometry.ts`); membership uses a box
-padded past every cell, display the view box. The MCP `add_gate` still draws rectangles and polygons only.
+padded past every cell, display the view box. The MCP `add_gate` proposes one too: a split adds every region
+(`name+` / `name-`, or `name++`, `name-+`, `name--`, `name+-` for a quadrant), all or none.
 
 ### 1D gates — range and bisector, on a histogram
 
@@ -912,6 +913,22 @@ population. A new rule's window is a fifth of the view either side of the clicke
 (`defaultRuleWindow`); its ends drag on the plot, the cut itself does not (the rule places it).
 Double-clicking a bisector's cut switches it between a fixed cut and following the valley; off, the cut
 stays where the rule last put it.
+
+**A range's ends** may each follow their own valley (`lo_rule` / `hi_rule`, each a valley window): the
+middle population between two dips. An end whose window holds no valley keeps its stored value and its
+line is drawn dashed (`lo_rule_ok` / `hi_rule_ok` on the outline, from `rule_flags`). Double-clicking an
+end switches that end; dragging the range moves its windows with it. Where the two windows overlap they split
+the overlap at its middle, and one ruled end beside a fixed end searches only up to that end
+(`end_window`), so both ends can't land in one dip and a ruled end can't cross the other. The plot shades
+those same windows (`histWindows`).
+
+Hovering a window edge or a ruled line writes what it is beside it on the plot (`histTip`): a search
+window edge, a cut at its valley, or "no valley in window" when the stored position stands in.
+
+A Claude-moved split region (MCP set-own-gate on one half / sector) keeps its region and group
+(`with_divider`), so its siblings follow. A divider re-sent the other way round (reversed slice vertices,
+quadrant arms from another start) is turned back so each name keeps its cells; another kind or swapped
+axes is refused (`_keep_split_region`).
 
 ## Undo / redo
 
