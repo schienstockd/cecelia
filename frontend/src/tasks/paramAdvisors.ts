@@ -1049,15 +1049,19 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
 // `fetch`-then-`compute` third kind would be machinery for a single case.
 const _geomCache = new Map<string, Promise<FrameGeometry | null>>()
 
+// `version` names the version to read (omitted ⇒ the active one) and `rev` is any extra cache key —
+// the image table passes the active filename + data revision so a re-run or a version switch re-reads.
 export function frameGeometry(
   projectUid: string, imageUid: string, umPerPx?: number | null,
+  opts: { version?: string | null, rev?: string | number } = {},
 ): Promise<FrameGeometry | null> {
-  const key = `${projectUid}|${imageUid}`
+  const key = `${projectUid}|${imageUid}|${opts.version ?? ''}|${opts.rev ?? ''}`
   const hit = _geomCache.get(key)
   if (hit) return hit.then(g => g && { ...g, umPerPx })
+  const vq = opts.version ? `&valueName=${encodeURIComponent(opts.version)}` : ''
   const p = (async (): Promise<FrameGeometry | null> => {
     try {
-      const res = await fetch(`/api/images/geometry?projectUid=${projectUid}&imageUid=${imageUid}`)
+      const res = await fetch(`/api/images/geometry?projectUid=${projectUid}&imageUid=${imageUid}${vq}`)
       if (!res.ok) return null
       const d = await res.json() as { sizeX?: number; sizeY?: number; sizeT?: number; sizeZ?: number
                                       sizeC?: number; bytesPerVoxel?: number }

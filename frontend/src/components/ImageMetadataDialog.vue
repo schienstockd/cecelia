@@ -19,6 +19,7 @@ import AcquisitionLightPath from './AcquisitionLightPath.vue'
 import AcquisitionCardDialog from './AcquisitionCardDialog.vue'
 import { hasAcquisitionCard } from '../utils/acquisitionCard'
 import CollapsibleSection from './CollapsibleSection.vue'
+import TissueExtent from './TissueExtent.vue'
 import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
@@ -91,7 +92,8 @@ const physical = computed(() => {
   return {
     x: formatPhysicalSize(i.physicalSizeX, u),
     y: formatPhysicalSize(i.physicalSizeY, u),
-    z: formatPhysicalSize(i.physicalSizeZ, u),
+    // a per-axis Z unit (extraMeta.PhysicalSizeZUnit) wins, as in tissueExtent / the backend
+    z: formatPhysicalSize(i.physicalSizeZ, typeof i.extraMeta?.PhysicalSizeZUnit === 'string' ? i.extraMeta.PhysicalSizeZUnit : u),
   }
 })
 
@@ -302,6 +304,8 @@ async function saveEditVn() {
           <span class="md-k">Voxel depth Z</span><span class="md-v">{{ physical.z }}</span>
           <span class="md-k">Frame interval</span><span class="md-v">{{ timeStr }}</span>
         </div>
+        <h4 class="md-h md-sub cc-eyebrow">Tissue size</h4>
+        <TissueExtent :image="img" />
         </div>
       </CollapsibleSection>
 
@@ -527,6 +531,7 @@ async function saveEditVn() {
   gap: 0.25rem 1rem; font-size: var(--cc-fs-md); align-items: baseline;
 }
 .md-k { color: var(--cc-text-dim); white-space: nowrap; }
+.md-sub { margin-top: 0.75rem; }
 .md-v { color: var(--cc-text); word-break: break-word; }
 .md-mono, .md-v.md-mono { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 
