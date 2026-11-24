@@ -1,6 +1,7 @@
 // The SuperPlot cell layer as Chromium draws it (plots/superplot.ts). On real speed data the cells
-// came out as V-shaped stripes — the beeswarm laid each value row out 0,+1,−1,+2… — and the cells past
-// the axis (fitted to the boxes and means) were drawn over the legend. Read off the rendered circles.
+// came out as V-shaped stripes — the beeswarm laid each value row out 0,+1,−1,+2… — the cells past
+// the axis were drawn over the legend, and an axis fitted to the means cut most of the cloud off.
+// Read off the rendered circles.
 import { describe, expect, it } from 'vitest'
 import * as Plot from '@observablehq/plot'
 import { buildPlotOptions, defaultVis } from './plot'
@@ -38,6 +39,14 @@ describe('SuperPlot cells on screen', () => {
   it('a cell beyond the axis is clipped to the frame', () => {
     const svg = draw({ yMax: '20' })
     expect(cellGroup(svg)!.getAttribute('clip-path')).toMatch(/^url\(/)
+    svg.remove()
+  })
+  it('the axis covers most cells, not just the means', () => {
+    const svg = draw()
+    const y = (svg as unknown as { scale: (k: string) => { range: number[] } }).scale('y')
+    const topPx = Math.min(...y.range)
+    const cys = [...cellGroup(svg)!.querySelectorAll('circle')].map(c => Number(c.getAttribute('cy')))
+    expect(cys.filter(cy => cy < topPx).length / cys.length).toBeLessThanOrEqual(0.05)
     svg.remove()
   })
   it('SuperPlot off draws no cells', () => {

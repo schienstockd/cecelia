@@ -5,7 +5,7 @@
   (Analysis board) reuses it instead of forking a second one (feedback_use_existing_framework).
 
   It renders whatever it's given: the host owns data fetching, axis selection, and gate state. Interactive
-  use (Gate page) passes `mode` = rectangle/polygon/slice/quadrant and handles @draw/@edit; read-only use (Analysis
+  use (Gate page) passes `mode` = rectangle/polygon/slice/quadrant (range/bisector on a histogram, `hist`) and handles @draw/@edit; read-only use (Analysis
   canvas) passes `mode='off'` so nothing can be drawn or edited. Host-specific overlays (e.g. the gate
   naming input) go in the default slot (absolutely positioned inside the plot body).
 
@@ -21,6 +21,7 @@ import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
 import type { RenderMode } from './RenderModeToggle.vue'
 import GateOverlay from './GateOverlay.vue'
+import HistogramLayer, { type HistData } from './HistogramLayer.vue'
 import { svgDoc, svgLine, svgText } from '../../plots/export'
 import { rectFrame, type Frame } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
@@ -52,7 +53,9 @@ const props = withDefaults(defineProps<{
   // binned = the colour-by mean field
   renderMode?: RenderMode
   showPops?: boolean
-  mode?: 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant'   // 'off' = read-only (no draw/edit)
+  mode?: 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'   // 'off' = read-only (no draw/edit)
+  // a 1D plot: this histogram (the host bins it, plots/histGeometry.ts) instead of the dots
+  hist?: HistData | null
   gateLineWidth?: number
   gateLabels?: boolean
   viewTick?: number
@@ -90,7 +93,7 @@ const props = withDefaults(defineProps<{
   gates: () => [], popLayers: () => [], renderMode: 'points', showPops: false,
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
   hideAxisLabels: false, fontSize: 11, plotId: '', family: 'gate-scatter', cellKey: '',
-  labels: null, imageUid: '', valueName: '', popType: '',
+  labels: null, hist: null, imageUid: '', valueName: '', popType: '',
 })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -313,7 +316,8 @@ const plotPointOuts = computed(() => {
 const isTrackScope = computed(() => props.popType === 'track')
 const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() => {
   const pts = props.points, labs = props.labels
-  if (!pts || !labs || !props.imageUid) return []
+  // a histogram has no dot per cell to ring
+  if (!pts || !labs || !props.imageUid || props.hist) return []
   const bag = isTrackScope.value ? viewer.trackHighlight : viewer.pickHighlight
   if (!bag || bag.origin !== 'claude') return []
   if (bag.imageUid !== props.imageUid) return []
@@ -345,7 +349,9 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
        :style="{ '--gate-font': `${fontSize}px` }">
     <div ref="panelPlotEl" class="panel-plot" :style="aspect ? { aspectRatio: String(aspect) } : undefined">
       <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
-      <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
+      <HistogramLayer v-if="hist" ref="layersRef" :view-extents="viewExtents" :hist="hist"
+                      :show-pops="showPops" :view-tick="viewTick" />
+      <PlotLayers v-else ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :flip-y="flipY"
                   :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
                   :value-label="valueLabel" :value-legend="valueLegend" :dot-size="dotSize"

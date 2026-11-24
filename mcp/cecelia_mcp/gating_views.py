@@ -34,7 +34,10 @@ axes is clipped in the picture, not in the list). The tick labels are RAW values
 the stored ones only when the plot uses the gate's own transforms. With a non-linear transform, read
 vertices off gate_histogram's `grid`, not off the ticks. A split gate (one divider, a population per
 region) lists as `slice` (`vertices` of a line run on to infinity, `side` 1 = left of its direction) or
-`quadrant` (`centre`, 4 counter-clockwise `arms`, sector `quadrant` 1–4); add_gate cannot draw those."""
+`quadrant` (`centre`, 4 counter-clockwise `arms`, sector `quadrant` 1–4). A 1D gate (x = y = its channel,
+drawn on that channel's histogram) lists as `range` (`lo`, `hi`) or `bisector` (`cut`, `side` 1 = above);
+a bisector with a `rule` cuts at the parent's density valley inside `rule.lo`–`rule.hi`, and `rule_ok`
+says whether it found one."""
 
 GATE_CELLS_VIEW_DOC = """The image with populations marked — the check of a gate where it matters, on the cells.
 One timepoint `t` (default the middle frame) in the saved viewer contrast, with segmentation
@@ -81,18 +84,28 @@ raw tick labels:
 {"kind": "rectangle", "x_channel", "y_channel", "x_transform", "y_transform",
  "x_min", "x_max", "y_min", "y_max"}  or
 {"kind": "polygon", "x_channel", "y_channel", "x_transform", "y_transform",
- "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly).
+ "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly)  or
+a 1D gate on ONE channel (`y_channel` may be left out), drawn on its histogram:
+{"kind": "range", "x_channel", "x_transform", "lo", "hi"}  or
+{"kind": "bisector", "x_channel", "x_transform", "cut"}  — two populations, `name+` above and `name-`;
+either may follow the parent's density valley per image: a bisector's `"rule": {"kind": "valley", "lo": a,
+"hi": b}` (a search window), a range's `"lo_rule"` / `"hi_rule"` (one per end); the cut / end you give is
+where it sits when no valley is found  or
+a split of the plane into region populations:
+{"kind": "slice", "x_channel", "y_channel", …, "vertices": [[x1, y1], [x2, y2], …]}  — a dividing line (≥ 2
+points, may bend; its ends run on) → `name+` (the side toward higher values) and `name-`;
+{"kind": "quadrant", "x_channel", "y_channel", …, "centre": [x, y]}  — arms along the axes (or 4
+counter-clockwise `arms`) → `name++`, `name-+`, `name--`, `name+-` (each sector by where it points: x sign, then y sign).
 `x_channel`/`y_channel` are gateable columns (e.g. `mean_intensity_2`, `volume_mesh`); each
 transform is gate_plot's `transform` for that axis: {"kind": "linear"} (default) |
 {"kind": "asinh", "cof": 150} | {"kind": "log", "floor": 1} |
 {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or asinh sent without its
 parameters takes the channel's own (logicle top = its max), as gate_plot draws it. A gate listed by gate_plot has the
 same geometry fields — add the channels and transforms you plotted with. A one-channel threshold
-is a rectangle spanning the whole other axis; write its open side at the data's own edge
-(gate_histogram's `min`/`max`, or gate_plot's `extent`, a little beyond), not at an arbitrary large
-number. A population whose cloud is not axis-aligned is a polygon."""
+is a bisector (or a range); "positive vs negative where the dip is, on every image" is a bisector with
+a valley rule whose window brackets the dip — not the pile of zero cells at the axis floor. A population whose cloud is not axis-aligned is a polygon."""
 
-ADD_GATE_DOC = """ADD one gated population — a PROPOSED gate the user reviews in the population manager.
+ADD_GATE_DOC = """ADD one gated population (a split: one per region) — a PROPOSED gate the user reviews in the population manager.
 It lands as a new child of `parent`, marked as yours (✦); the user deletes or undoes it in one click.
 409 if the name is taken under that parent or by another population type (pick another name;
 never try to replace theirs); 404 if `parent` does not exist; 422 on a column, transform or
@@ -106,7 +119,8 @@ agreed to one.
 Place it from gate_histogram's `grid` / gate_plot on `parent` with the SAME transform. Before writing,
 `dry_run=True` answers with the counts and writes nothing, and gate_examples with `parent` + `gate`
 shows the cells the cut decides. The reply carries the stored `path`, `count` (inside) and `outside`
-over `parentCount`, and the `gate` as stored. Tell the user it is a proposal, with the numbers."""
+over `parentCount`, and the `gate` as stored; a split lists every region's `path` / `count` in `regions`
+(all are added or none — one taken name refuses the split). Tell the user it is a proposal, with the numbers."""
 
 ADD_BOOLEAN_POP_DOC = """ADD one COMBINED population — a set operation over populations that already exist, instead
 of a drawn shape. The way to say "everything in qc except OTI" (`parent="/qc"`, `not_pops=["/qc/OTI"]`), "GFP+

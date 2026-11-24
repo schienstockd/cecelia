@@ -1065,8 +1065,26 @@ keeps the source's timing carries all three, so the interval never arrives witho
 splat this into an inherited-meta key list instead of naming `TimeIncrement*` by hand."""
 const TIME_META_KEYS = ("TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared")
 
-copy_source_meta!(dst::AbstractDict, src::AbstractDict) =
-    (for k in SOURCE_META_KEYS; haskey(src, k) && (dst[k] = src[k]); end; dst)
+"""The `meta` flag saying an image's planes run the REVERSE of its `ori_path` file's: it was derived from
+a Z-flipped version (`store_z_flipped`). A settings re-read from that file is mirrored in Z for it
+(`_recover_acquisition_settings!`). Set by `copy_source_meta!`."""
+const ORI_Z_REVERSED_KEY = "oriZReversed"
+
+"""
+    copy_source_meta!(dst, src; z_flipped = false) -> dst
+
+Carry `SOURCE_META_KEYS` from a source image's `meta` to a new image derived from it, and whether the
+new image runs Z-reversed against that file (`ORI_Z_REVERSED_KEY`): the source's own flag, turned
+again when the version it was made from is Z-flipped (`z_flipped`, `store_z_flipped`).
+"""
+function copy_source_meta!(dst::AbstractDict, src::AbstractDict; z_flipped::Bool = false)
+    for k in SOURCE_META_KEYS
+        haskey(src, k) && (dst[k] = src[k])
+    end
+    (get(src, ORI_Z_REVERSED_KEY, false) === true) ⊻ z_flipped ? (dst[ORI_Z_REVERSED_KEY] = true) :
+                                                                  delete!(dst, ORI_Z_REVERSED_KEY)
+    dst
+end
 
 """
     physical_size_for_axis(img_or_sizes, axis::Symbol) -> Float64

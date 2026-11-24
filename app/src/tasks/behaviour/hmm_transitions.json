@@ -2,6 +2,7 @@
   "task": "hmmTransitions",
   "fun_name": "behaviour.hmm_transitions",
   "label": "HMM transitions",
+  "methodsText": ["Transitions between HMM states were counted per track for {pops} cells."],
   "purpose": "Record each cell's change of behaviour state along its track",
   "useWhen": [
     "After HMM states, to see how cells switch between behaviours",

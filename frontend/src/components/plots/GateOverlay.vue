@@ -10,7 +10,10 @@
       drag / insert (dbl-click edge) / delete (right-click vertex) polygon vertices. A split gate
       (slice / quadrant, plots/splitGeometry.ts) has no body to grab — its regions tile the plot: drag
       its line or centre to move it, a slice vertex or a quadrant arm handle to reshape it; all of its
-      region populations follow (the server moves the group). An outline or
+      region populations follow (the server moves the group). A 1D gate (range / bisector, on a
+      histogram — plots/histGeometry.ts) is drawn by dragging the interval / clicking the cut; its ends,
+      its cut, or a rule's window ends drag sideways, and a double-click on a bisector switches it
+      between a fixed cut and following the density valley (a range's end, its own valley). An outline or
       corner grabs on hover; a gate's BODY moves it only once the gate is SELECTED — click inside it
       (the smallest gate there wins, `gateAt`); click outside every gate, outside the plot, or Esc
       deselects — and while nothing is selected, presses inside gates reach the plot (pan/zoom). Live local
@@ -37,12 +40,13 @@ import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateSh
 import { handleRadius, distToSeg, HANDLE_R_PX } from '../../utils/drawGeometry'
 import { parseHex, luminance } from '../../utils/colour'
 import { isSplitGate, dividerSegments, splitLabelPoint, armsCcw, defaultArms, withDivider, type Box } from '../../plots/splitGeometry'
+import { isHistGate, histRegion, histHandles, histLines, histWindows, histTip, moveHistHandle, shiftRange, toggleRule } from '../../plots/histGeometry'
 import { PAPER_INK, HALO_LIGHT, HALO_DARK, STORED_WHITES, WHITE, NEUTRAL } from '../../plots/fixedColours'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
   extents: Ext                              // LIVE (zoom-synced) view extents
-  mode: 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant'
+  mode: 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'
   gates?: { path: string; colour: string; gate: GateSpec; label?: string }[]
   viewTick?: number                          // bump → redraw (camera moved)
   lineWidth?: number                         // gate stroke width
@@ -99,6 +103,16 @@ const clone = (g: GateSpec): GateSpec => JSON.parse(JSON.stringify(g))
 function rectCorners(g: GateSpec): [number, number][] {
   return [[g.x_min!, g.y_min!], [g.x_max!, g.y_min!], [g.x_max!, g.y_max!], [g.x_min!, g.y_max!]]
 }
+// a range as the box it shades: its interval, the plot's full height
+function rangeCorners(g: GateSpec): [number, number][] {
+  const v = viewBox()
+  return [[g.lo!, v.yMin], [g.hi!, v.yMin], [g.hi!, v.yMax], [g.lo!, v.yMax]]
+}
+// a 1D gate's vertical lines (the ends / the cut), top to bottom of the plot, in px
+function histLinesPx(g: GateSpec): [[number, number], [number, number]][] {
+  const { h } = size()
+  return histLines(g).map(l => { const px = dataToPx(l.x, 0)[0]; return [[px, 0], [px, h]] })
+}
 // the live view as a data box — a split gate's divider runs out to its border
 const viewBox = (): Box => ({ xMin: Math.min(props.extents.xMin, props.extents.xMax), xMax: Math.max(props.extents.xMin, props.extents.xMax),
                               yMin: Math.min(props.extents.yMin, props.extents.yMax), yMax: Math.max(props.extents.yMin, props.extents.yMax) })
@@ -119,12 +133,29 @@ type Handle =
   // there on double-click), a slice vertex, or a quadrant arm
   | { path: string; kind: 'split-drag'; seg: number } | { path: string; kind: 'slice-vertex'; vi: number }
   | { path: string; kind: 'quad-arm'; ai: number }
+  // 1D gates: an end / the cut / a rule window end (`part`), a range's body, a rule bisector's line
+  | { path: string; kind: 'hist-handle'; part: string } | { path: string; kind: 'hist-move' }
+  | { path: string; kind: 'hist-line'; end: 'lo' | 'hi' | 'cut' }
 
 // grab-zone radius + vertex/edge/body priority: plots/gateGeometry.ts (`hitGateShape`)
 // `anyBody`: the Shift-while-armed grab (header) takes ANY gate's body; otherwise only the selected one's
 function hitGate(entry: { path: string; gate: GateSpec }, p: [number, number], anyBody = false): Handle | null {
   const bodyOk = anyBody || entry.path === selected.value
   const g = entry.gate
+  if (isHistGate(g)) {
+    // 1D: the handles are vertical lines, grabbed anywhere along them
+    const near = (x: number) => Math.abs(dataToPx(x, 0)[0] - p[0]) < HANDLE_R_PX
+    const hh = histHandles(g).find(h => near(h.x))
+    if (hh) return { path: entry.path, kind: 'hist-handle', part: hh.part }
+    // a ruled end / cut: grabbed for its double-click (the rule places it — nothing to drag)
+    const rl = histLines(g).find(l => l.ruled && near(l.x))
+    if (rl) return { path: entry.path, kind: 'hist-line', end: rl.end }
+    if (g.kind === 'range' && bodyOk) {
+      const a = dataToPx(g.lo!, 0)[0], b = dataToPx(g.hi!, 0)[0]
+      if (p[0] > Math.min(a, b) && p[0] < Math.max(a, b)) return { path: entry.path, kind: 'hist-move' }
+    }
+    return null
+  }
   if (g.kind === 'rectangle') {
     const hit = hitGateShape(rectCorners(g).map(c => dataToPx(c[0], c[1])) as [number, number][], p)
     if (hit?.part === 'vertex') return { path: entry.path, kind: 'rect-corner', ix: hit.i }
@@ -165,13 +196,15 @@ function cursorFor(h: Handle | null): string {
   if (h.kind === 'rect-edge') return h.edge % 2 === 0 ? 'ns-resize' : 'ew-resize'
   if (h.kind === 'poly-vertex' || h.kind === 'slice-vertex' || h.kind === 'quad-arm') return 'grab'
   if (h.kind === 'poly-edge') return 'copy'
+  if (h.kind === 'hist-handle') return 'ew-resize'
+  if (h.kind === 'hist-line') return 'pointer'
   return 'move'
 }
 
 // ── selection: the one gate whose body moves it (header) ──
 const selected = ref<string | null>(null)
 function outlinePx(g: GateSpec): [number, number][] {
-  const pts = g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])
+  const pts = g.kind === 'rectangle' ? rectCorners(g) : g.kind === 'range' ? rangeCorners(g) : (g.vertices ?? [])
   return pts.map(v => dataToPx(v[0], v[1])) as [number, number][]
 }
 function select(path: string | null) { if (selected.value !== path) { selected.value = path; draw() } }
@@ -187,7 +220,7 @@ function onParentUp(e: MouseEvent) {
   if (h && !h.kind.endsWith('-move')) return      // a click on an outline / corner keeps the selection
   // a split gate's regions cover the whole plot, so it is never selected by a click inside it (nothing
   // could be deselected, and the plot could not pan) — its line and handles grab it instead
-  select(gateAt((props.gates ?? []).filter(g => !isSplitGate(g.gate))
+  select(gateAt((props.gates ?? []).filter(g => !isSplitGate(g.gate) && g.gate.kind !== 'bisector')
     .map(g => ({ path: g.path, pts: outlinePx(g.gate) })), p))
 }
 // a press anywhere outside this plot deselects
@@ -224,7 +257,9 @@ const editIntent = (e: MouseEvent) => props.mode !== 'off' && e.shiftKey && !pro
 
 // ── render ──
 function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
-  const c = ctx!; c.strokeStyle = colour; c.lineWidth = lw; c.beginPath()
+  const c = ctx!; c.strokeStyle = colour; c.lineWidth = lw
+  if (isHistGate(g)) return strokeHist(g, colour, lw)
+  c.beginPath()
   if (isSplitGate(g)) {
     for (const [a, b] of segsPx(g)) { c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]) }
   } else if (g.kind === 'rectangle') {
@@ -236,11 +271,33 @@ function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
   }
   c.stroke()
 }
+// a 1D gate: its lines; a range's interval shaded faintly; a rule bisector's search window shaded and
+// its cut dashed when the rule found no valley on this parent (the stored cut stands in)
+function strokeHist(g: GateSpec, colour: string, lw: number) {
+  const c = ctx!; const { h } = size()
+  const band = (lo: number, hi: number) => {
+    const a = dataToPx(lo, 0)[0], b = dataToPx(hi, 0)[0]
+    c.fillStyle = tint(colour, 0.08); c.fillRect(Math.min(a, b), 0, Math.abs(b - a), h)
+  }
+  if (g.kind === 'range') band(g.lo!, g.hi!)
+  for (const [lo, hi] of histWindows(g)) band(lo, hi)
+  for (const l of histLines(g)) {
+    const x = dataToPx(l.x, 0)[0]
+    c.save(); c.strokeStyle = colour; c.lineWidth = lw
+    if (l.ruled && !l.ok) c.setLineDash([5, 4])
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); c.restore()
+  }
+}
 // subtle population-name label centred at the gate's top edge. An explicit `label` overrides the
 // derived name (the gating-strategy plot passes "name  pct%").
 // Where a gate's name goes: above / below / inside its outline (utils/gateLabel.ts), or, for a split
 // gate, centred on the visible part of its region.
 function labelPos(g: GateSpec, labelW: number, w: number, h: number): GateLabelPos | null {
+  if (isHistGate(g)) {              // the middle of its interval, near the top — a range's a line lower,
+    const r = histRegion(g, viewBox()); if (!r) return null    // so it can't sit on a bisector half's
+    const x = dataToPx((r[0] + r[1]) / 2, 0)[0]
+    return { x: Math.min(w - labelW / 2, Math.max(labelW / 2, x)), y: g.kind === 'range' ? 22 : 6, baseline: 'top' }
+  }
   if (isSplitGate(g)) {
     const q = splitLabelPoint(g, viewBox()); if (!q) return null
     const [x, y] = dataToPx(q[0], q[1])
@@ -261,8 +318,30 @@ function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string
   c.strokeText(name, pos.x, pos.y)
   c.fillStyle = colour; c.fillText(name, pos.x, pos.y); c.restore()
 }
+// beside a hovered 1D handle / ruled line: what it is (a window edge, a ruled cut that found its valley or
+// not) — a canvas tip, since v-tooltip anchors to the whole plot. Live canvas only, never exported.
+function drawHistTip() {
+  const h0 = hover.value
+  if (editHandle || !h0 || (h0.kind !== 'hist-handle' && h0.kind !== 'hist-line')) return
+  const g = gateOf(h0.path)?.gate; if (!g) return
+  const x = h0.kind === 'hist-handle' ? histHandles(g).find(q => q.part === h0.part)?.x
+                                      : histLines(g).find(l => l.end === h0.end)?.x
+  if (x === undefined) return
+  const text = histTip(g, h0), c = ctx!, { w } = size(), px = dataToPx(x, 0)[0]
+  c.save(); c.font = '11px system-ui, sans-serif'; c.textBaseline = 'top'
+  const tw = c.measureText(text).width, right = px + 6 + tw <= w
+  c.textAlign = right ? 'left' : 'right'
+  const tx = right ? px + 6 : px - 6
+  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo(); c.strokeText(text, tx, 40)
+  c.fillStyle = themed('--cc-text', NEUTRAL); c.fillText(text, tx, 40); c.restore()
+}
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = WHITE; c.strokeStyle = colour; c.lineWidth = 1.5
+  if (isHistGate(g)) {              // a square on each draggable line, halfway up
+    const r = HANDLE_R_PX, y = size().h / 2
+    for (const hh of histHandles(g)) { const x = dataToPx(hh.x, 0)[0]; c.beginPath(); c.rect(x - r / 2, y - r / 2, r, r); c.fill(); c.stroke() }
+    return
+  }
   if (isSplitGate(g)) {
     const r = HANDLE_R_PX                        // drawn at the reach `hitGate` grabs with, like the others
     const dot = (p: [number, number]) => { c.beginPath(); c.arc(p[0], p[1], r * 0.6, 0, 2 * Math.PI); c.fill(); c.stroke() }
@@ -300,7 +379,8 @@ function paintGates() {
     const spec = shownSpec(g)
     // a white/default gate flips to the ground's ink, outline and label alike — the label's halo is
     // ground-toned, so a white label would vanish on a light plot.
-    if (!isSplitGate(spec)) strokeShape(spec, gateColour(g.colour))
+    // a split's / bisector's regions share one divider: stroked once, in ink
+    if (!isSplitGate(spec) && spec.kind !== 'bisector') strokeShape(spec, gateColour(g.colour))
     else if (!spec.group || !drawn.has(spec.group)) { strokeShape(spec, ink()); if (spec.group) drawn.add(spec.group) }
     if (props.showLabels) drawGateLabel(spec, g.path, gateColour(g.colour), g.label)
   }
@@ -332,6 +412,16 @@ function exportSvgContent(): string {
   let outlines = '', labels = ''
   const drawn = new Set<string>()
   for (const g of props.gates ?? []) {
+    if (isHistGate(g.gate)) {           // 1D: its lines (a bisector's once per pair, in ink)
+      const shared = g.gate.kind === 'bisector'
+      if (!shared || !g.gate.group || !drawn.has(g.gate.group)) {
+        for (const [a, b] of histLinesPx(g.gate))
+          outlines += svgLine(a[0], a[1], b[0], b[1], { stroke: shared ? ink() : gateColour(g.colour), width: props.lineWidth })
+        if (shared && g.gate.group) drawn.add(g.gate.group)
+      }
+      if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, gateColour(g.colour), g.label, w, h)
+      continue
+    }
     if (isSplitGate(g.gate)) {          // the divider once per split, as lines; each region's name
       if (!g.gate.group || !drawn.has(g.gate.group)) {
         for (const [a, b] of segsPx(g.gate)) outlines += svgLine(a[0], a[1], b[0], b[1], { stroke: ink(), width: props.lineWidth })
@@ -365,6 +455,7 @@ function draw() {
     const spec = active.path === editPath && draft.value ? draft.value : active.gate
     drawHandles(spec, active.colour || themed('--cc-accent', NEUTRAL))
   }
+  drawHistTip()
 
   // in-progress NEW shape (accent)
   const accent = themed('--cc-accent', NEUTRAL)
@@ -385,6 +476,12 @@ function draw() {
       const segs = segsPx({ ...previewBase, kind: 'slice', vertices: line.map(p => pxToData(p[0], p[1])) as [number, number][] })
       dashed(() => { for (const s of [segs[0], segs[segs.length - 1]]) { ctx!.moveTo(s[0][0], s[0][1]); ctx!.lineTo(s[1][0], s[1][1]) } })
     }
+  } else if (props.mode === 'range' && start && cur) {
+    const { h } = size(), x = Math.min(start[0], cur[0])
+    ctx.fillRect(x, 0, Math.abs(cur[0] - start[0]), h); ctx.strokeRect(x, 0, Math.abs(cur[0] - start[0]), h)
+  } else if (props.mode === 'bisector' && cur && !shiftEdit.value) {
+    const { h } = size(), x0 = cur[0]
+    dashed(() => { ctx!.moveTo(x0, 0); ctx!.lineTo(x0, h) })
   } else if (props.mode === 'quadrant' && cur && !shiftEdit.value) {
     // the crosshair a click would place
     const { w, h } = size(), c0 = cur
@@ -447,6 +544,12 @@ function applyEdit(p: [number, number]) {
     const mv = (v: [number, number]) => [v[0] + dx, v[1] + dy] as [number, number]
     if (orig.kind === 'slice') d.vertices = orig.vertices!.map(mv)
     else { d.centre = mv(orig.centre!); d.arms = orig.arms!.map(mv) }
+  } else if (h.kind === 'hist-handle') {
+    Object.assign(d, moveHistHandle(orig, h.part, cx))
+  } else if (h.kind === 'hist-move') {
+    Object.assign(d, shiftRange(orig, cx - dragStart[0]))
+  } else if (h.kind === 'hist-line') {
+    return                                         // a rule places the cut — only its window drags
   } else if (h.kind === 'quad-arm') {
     const arms = orig.arms!.map(a => [a[0], a[1]] as [number, number]); arms[h.ai] = [cx, cy]
     // an arm swung past its neighbour would swap two populations' regions — hold it at the last good spot
@@ -468,7 +571,8 @@ function onEditMove(e: MouseEvent) { applyEdit(evtPx(e)); draw() }
 function onEditUp(e: MouseEvent) {
   window.removeEventListener('mousemove', onEditMove); window.removeEventListener('mouseup', onEditUp)
   // a click on a grab zone is not an edit: re-storing the same gate would add an undo step for nothing
-  const moved = !editDownPx || !isClickNotDrag(editDownPx, evtPx(e))
+  // a rule bisector's line grabs (for its double-click) but has nothing to drag — the rule places it
+  const moved = editHandle?.kind !== 'hist-line' && (!editDownPx || !isClickNotDrag(editDownPx, evtPx(e)))
   if (editPath && draft.value && moved) emit('edit', { path: editPath, gate: draft.value })
   if (!moved) { draft.value = null; editPath = null; draw() }
   editDownPx = null
@@ -493,8 +597,8 @@ function onDown(e: MouseEvent) {
     const h = hitTest(evtPx(e), true); if (h) startEdit(h, evtPx(e))
     return
   }
-  if (props.mode === 'rectangle') return startRectDrag(drawPx(e))
-  if (props.mode !== 'off') return                // polygon / slice / quadrant: placed on click
+  if (props.mode === 'rectangle' || props.mode === 'range') return startRectDrag(drawPx(e))
+  if (props.mode !== 'off') return                // polygon / slice / quadrant / bisector: placed on click
   const h = hover.value ?? hitTest(evtPx(e))      // off mode → begin editing
   if (h) startEdit(h, evtPx(e))
 }
@@ -508,12 +612,12 @@ function onMove(e: MouseEvent) {
     if (shiftEdit.value) { shiftEdit.value = false; hover.value = null; cursor.value = 'crosshair'; draw() }
     if (dragging) return                          // a rectangle drag is tracked on the window (onDrawMove)
     cur = drawPx(e)
-    if (props.mode === 'rectangle') return
+    if (props.mode === 'rectangle' || props.mode === 'range') return
     return draw()
   }
 }
 // the quadrant tool's crosshair follows the cursor only while it is over the plot
-function onLeave() { if (props.mode === 'quadrant' && cur) { cur = null; draw() } }
+function onLeave() { if ((props.mode === 'quadrant' || props.mode === 'bisector') && cur) { cur = null; draw() } }
 // the drag is tracked on the WINDOW, so it keeps following a cursor that leaves the plot (the point is
 // pinned to the border) and a release out there still commits the gate
 function startRectDrag(p: [number, number]) {
@@ -535,13 +639,24 @@ function onUp() {
     if (isClickNotDrag(from, to)) { draw(); return }
     const [ax, ay] = pxToData(from[0], from[1]); const [bx, by] = pxToData(to[0], to[1])
     emit('draw', { kind: 'rectangle', x_min: Math.min(ax, bx), x_max: Math.max(ax, bx), y_min: Math.min(ay, by), y_max: Math.max(ay, by) })
+  } else if (props.mode === 'range' && dragging && start && cur) {
+    dragging = false
+    const from = start, to = cur
+    start = cur = null
+    // only the sideways travel counts: a range has no height
+    if (isClickNotDrag([from[0], 0], [to[0], 0])) { draw(); return }
+    const a = pxToData(from[0], from[1])[0], b = pxToData(to[0], to[1])[0]
+    emit('draw', { kind: 'range', lo: Math.min(a, b), hi: Math.max(a, b) })
   }
 }
 function onClick(e: MouseEvent) {
   if (e.shiftKey) return                          // Shift+click is an edit grab (onDown), not a vertex
   if (props.mode === 'polygon' || props.mode === 'slice') placeVertex(drawPx(e))
   else if (props.mode === 'quadrant') placeQuadrant(drawPx(e))
+  else if (props.mode === 'bisector') placeBisector(drawPx(e))
 }
+// a bisector is one click: its cut
+function placeBisector(p: [number, number]) { emit('draw', { kind: 'bisector', cut: pxToData(p[0], p[1])[0] }) }
 // a quadrant is one click: its centre, arms along the axes out to the border
 function placeQuadrant(p: [number, number]) {
   const c = pxToData(p[0], p[1]) as [number, number]
@@ -557,9 +672,14 @@ function placeVertex(p: [number, number]) {
 function onDblClick(e: MouseEvent) {
   if (props.mode === 'polygon') return finishPolygon()
   if (props.mode === 'slice') return finishSlice()
-  // off mode: insert a vertex on the nearest polygon edge — or slice segment — under the cursor
+  // off mode: insert a vertex on the nearest polygon edge — or slice segment — under the cursor; on a
+  // bisector's cut, switch it between a fixed cut and following the valley
   const p = evtPx(e); const h = hitTest(p)
-  if (h && h.kind === 'poly-edge') {
+  const fixedEnd = h?.kind === 'hist-handle' && ['lo', 'hi', 'cut'].includes(h.part) ? h.part as 'lo' | 'hi' | 'cut' : null
+  if (h && (h.kind === 'hist-line' || fixedEnd)) {
+    const end = h.kind === 'hist-line' ? h.end : fixedEnd!
+    const entry = gateOf(h.path); if (entry) emit('edit', { path: h.path, gate: toggleRule(clone(entry.gate), viewBox(), end) })
+  } else if (h && h.kind === 'poly-edge') {
     const entry = gateOf(h.path); if (!entry?.gate.vertices) return
     const d = clone(entry.gate); const [dx, dy] = pxToData(p[0], p[1])
     d.vertices!.splice(h.ei + 1, 0, [dx, dy]); emit('edit', { path: h.path, gate: d })
@@ -619,12 +739,13 @@ function inReachBand(e: MouseEvent): boolean {
 function onBandDown(e: MouseEvent) {
   if (!inReachBand(e)) return
   e.preventDefault()                              // no text selection off the tick labels
-  if (props.mode === 'rectangle') startRectDrag(drawPx(e))
+  if (props.mode === 'rectangle' || props.mode === 'range') startRectDrag(drawPx(e))
 }
 function onBandClick(e: MouseEvent) {
   if (!inReachBand(e)) return
   if (props.mode === 'polygon' || props.mode === 'slice') placeVertex(drawPx(e))
   else if (props.mode === 'quadrant') placeQuadrant(drawPx(e))
+  else if (props.mode === 'bisector') placeBisector(drawPx(e))
 }
 function onBandDblClick(e: MouseEvent) {
   if (!inReachBand(e)) return

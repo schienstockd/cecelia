@@ -125,7 +125,8 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
 export apply_transform, invert_transform, transform_spec, transform_from_spec
 export transform_kind, transform_collapses, effective_transform
-export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group
+export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
+       RangeGate, BisectorGate, ValleyRule, valley_cut
 export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
@@ -291,7 +292,7 @@ export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
 export chain_from_history, chain_preflight, history_params_table, board_export_provenance, board_designs, gate_file_edits
-export methods_report, methods_ai_phrase, history_params_csv
+export methods_report, methods_ai_phrase, history_params_csv, methods_measure_phrase, methods_pop_phrase
 export chain_run_ro_crate, chain_run_ro_crate_files, chain_run_ro_crate_zip, write_stored_zip, crc32_ieee
 export chain_node, make_chain
 
@@ -333,6 +334,7 @@ include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")
 include("gating/split_gates.jl")
+include("gating/hist_gates.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
@@ -519,6 +521,8 @@ include("hpc/job.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("analysis_export_provenance.jl")   # after ai/lineage.jl (`_parse_tkey`) and tasks/chain.jl
+include("ai/methods_text.jl")          # a step as a sentence: `methodsText`, value phrases, references
+include("ai/methods_populations.jl")   # how the populations were defined, for the Methods report
 include("ai/methods_report.jl")   # after analysis_export_provenance.jl: the draft Methods section
 include("stored_zip.jl")          # a stored-method ZIP writer (the RO-Crate download)
 include("ai/ro_crate.jl")         # after ai/methods_report.jl: a chain run as a Workflow Run Crate

@@ -413,8 +413,20 @@ returns a `Plot.plot()` options object; takes the Plot module as a param so it c
 and `frontend/src/components/plots/PlotChart.vue` (lazy-imports Plot, injects width/height, re-renders
 on ResizeObserver, exposes `toImageURL` for PNG/SVG export). Distribution charts use a **manual linear
 x scale with one integer position per series** — the box (`xlo/xhi` around index `i`) and the beeswarm
-points (`swarmOffsets` around the same `i`) share that one scale, so points are *guaranteed* to sit on
+points (`pointOffsets` around the same `i`) share that one scale, so points are *guaranteed* to sit on
 their box (the Vega bug, gone by construction). Axis tick labels are horizontal (no diagonal text).
+
+**Point layout.** Every summary chart that draws raw dots — the box overlay, the strip chart, the
+SuperPlot cells — places them with ONE function, `plots/pointLayout.ts` (`pointOffsets`; the
+**Offset** option: sina / random / none, default sina; a plot saved with the old `beeswarm` reads as
+sina). Sina (Sidiropoulos et al. 2018, doi:10.1080/10618600.2017.1366914): the cloud's width at a
+value follows a histogram density (≈√n bins, interpolated), the densest value fills the half-width;
+inside a bin the dots take evenly spaced slots handed out in a stable pseudo-random order. **Never in
+value order**: the server sends points sorted, and the beeswarm this replaced spread each value row
+0, +1, −1, +2… in that order, so a row's offset grew with its value — a V per row, chevrons down the
+box at thousands of points. The even slots keep a few image means tidy (an isolated value on the
+centre line, a close pair either side). Pure in the values, so screen and every export match
+(`PlotChart.toImageURL` rebuilds through the same builder). ~14 ms for 50 000 points, ~63 ms for 200 000.
 
 **Legend & sizing.** The colour scale carries **no `legend`** — Plot's inline legend wraps the svg in
 a `<figure>` whose swatch `<div>` sits above the svg and eats height, which clipped the bottom x-axis
@@ -682,7 +694,7 @@ each. An image with no replicate stays its own unit. The test and its findings t
 `statUnit` reads as the replicate (resolved at read, never written to `ui`), the Datapoint control
 offers it by name ("mouse"), and a canvas still on the untouched compare default switches once to the
 design's group (`designCompareApply`, the `designApplied` view-state flag); a bullseye in the compare
-row says so. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`. With the replicate as the unit, the box and strip charts are SuperPlots (Lord et al. 2020, doi:10.1083/jcb.202001064): each dot is a replicate's mean, larger, in the replicate's colour, and the cells it summarises sit beneath it, small and faint, in the same colour — one colour per replicate across groups (`plots/superplot.ts`; the server sends `pointUnits` / `cellPoints` / `cellUnits`, `_superplot!` in `plot_data.jl`). The cells are laid out as a sina cloud (`sinaOffsets`: a stable pseudo-random offset scaled by the density at the value; Sidiropoulos et al. 2018, doi:10.1080/10618600.2017.1366914), not the beeswarm the points use — a beeswarm on hundreds of sorted cells per value row draws V-shaped stripes — and clipped to the frame, so a cell beyond the axis (fitted to boxes and means) is cut; Y max shows it. The means are drawn near-opaque over them. **SuperPlot** in the Points options switches the cell layer off (`VisProps.superplot`, absent = on); off, the means take the series colour again and Colour data returns. The row shows only when the response carries cells (`PlotKind.superplot` in `plots/plotControls.ts`). The export caption's "cells beneath" and the n tooltip follow what is drawn (`cellsBeneath`), not the unit alone. The test runs on the means. Every export of the plot (PDF, board SVG, a downloaded image, the MCP plot image) carries one line under the chart: the n, what a point is and what the test ran on — "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse means" (`plotCaption` → `PlotChart.toImageURL(type, caption)` → `svgWithCaption`). Nothing when each point is a cell or track.
+row says so. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`. With the replicate as the unit, the box and strip charts are SuperPlots (Lord et al. 2020, doi:10.1083/jcb.202001064): each dot is a replicate's mean, larger, in the replicate's colour, and the cells it summarises sit beneath it, small and faint, in the same colour — one colour per replicate across groups (`plots/superplot.ts`; the server sends `pointUnits` / `cellPoints` / `cellUnits`, `_superplot!` in `plot_data.jl`). The cells are laid out as a sina cloud (`sinaOffsets`, *Point layout*) whatever the Offset is set to, and clipped to the frame. The measure axis's auto top covers the cells' 95th percentile (`superplotCellTop`), not just the boxes and means: fitted to the means it cut the cloud flat and hid most fast cells, while covering every cell squashes the boxes. The stats brackets sit above that top, not inside the cloud (`drawnExtent`). When cells still lie past the drawn top, the panel footer says so (`superplotCellsCut` → `superplotClipNote`, a PlotNotice); Y max overrides the top and silences it, and with the layer off the axis fits the means again. The means are drawn near-opaque over them. **SuperPlot** in the Points options switches the cell layer off (`VisProps.superplot`, absent = on); off, the means take the series colour again and Colour data returns. The row shows only when the response carries cells (`PlotKind.superplot` in `plots/plotControls.ts`). The export caption's "cells beneath" and the n tooltip follow what is drawn (`cellsBeneath`), not the unit alone. The test runs on the means. Every export of the plot (PDF, board SVG, a downloaded image, the MCP plot image) carries one line under the chart: the n, what a point is and what the test ran on — "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse means" (`plotCaption` → `PlotChart.toImageURL(type, caption)` → `svgWithCaption`). Nothing when each point is a cell or track.
 
 **Grouped by image attribute, the test runs within each population.** With `attr_map` the boxes are
 population × attribute group (× `groupBy` level), so `_summary_agg` tests through `_stats_within_pops`:
@@ -876,6 +888,12 @@ docs/TODO.md.)
    types) — reuse the categorical/numeric detection (`_is_categorical_col`-style).
 2. **Raw values (downsampled)** for box/violin/strip: a `rawPoints` option returning ≤N/group sampled
    values (cap **~1500/group**, decision A) — payload stays bounded; note when sampling truncated.
+   The box and strip charts send `maxPoints` from the **Subsample** toggle (Points section): on (the
+   default) → `SUBSAMPLE_POINTS` = 500 per series, off → `0` = every point (`maxPointsFor`,
+   `plots/plot.ts`). Drawing, not layout, is the cost: ~8 µs a dot in Chromium's SVG against ~0.3 µs
+   for the sina offsets, so 8 × 1500 points took ~100 ms a redraw and 8 × 500 ~25 ms. The stride keeps
+   the distribution's shape; box stats, `n` and the group tests use every value either way. Violin
+   keeps the 1500 default (its density is built from these points).
 3. **Bar error metrics**: return `sd`, `sem`, `ciLo`/`ciHi` (compute all; panel picks).
 4. **Violin density** is computed **client-side** (a Gaussian KDE in `plot.ts`, Silverman bandwidth)
    from the downsampled raw points (the `points` chart type) — no separate server density endpoint.
@@ -896,10 +914,9 @@ docs/TODO.md.)
 2. **Observable Plot** engine (§0); theme_classic look out of the box; one builder per chart type;
    group-on-X via a manual linear scale; error-bar + pooled-label fixes; non-negative floor on
    whiskers/error bars; horizontal axis labels.
-3. `rawPoints` (downsampled, cap 1500) → **strip/beeswarm** chart + a **deterministic beeswarm**
-   overlay on the **boxplot** (`swarmOffsets` in `plot.ts`: bin-by-value rows, spread normalised so
-   the densest row fills the box half-width; points sit on the box by construction and don't reshuffle
-   on resize); user-selectable **bar error metric** (SD / SEM / 95% CI).
+3. `rawPoints` (downsampled, cap 1500) → **strip/beeswarm** chart + a **deterministic sina**
+   overlay on the **boxplot** (`plots/pointLayout.ts`, → *Point layout*; points sit on the box by construction and
+   don't reshuffle on resize); user-selectable **bar error metric** (SD / SEM / 95% CI).
 4. **violin** (client-side Gaussian KDE from raw points, mirrored `areaX` ribbon) + **stacked /
    100%-stacked** categorical (and grouped via Plot facet).
 5. **export** per plot — CSV (the shown aggregated data, `plotDataToCsv`), PNG (2× raster), SVG
@@ -916,7 +933,7 @@ docs/TODO.md.)
    with a middle ellipsis — full label on hover — `plots/axisLabelFit.ts`; the flipped chart's y
    labels shorten past the same 240 px cap `yLabelMargin` reserves),
    **facet** (small multiples per series), Y-range override; jitter type
-   (beeswarm/random/none), colour-data, point size/opacity; **palette** (**`Cecelia`** house palette, Okabe-Ito, Tol bright/
+   (sina/random/none — *Point layout*), colour-data, point size/opacity; **palette** (**`Cecelia`** house palette, Okabe-Ito, Tol bright/
    muted/light, `distinct`, user list); title, X/Y axis labels, font size. All builder ink is
    `currentColor` so the scheme flips with one `style.color` (plots follow the app's colour scheme on
    screen — `composables/usePlotDark.ts` — and every export is light; there is no per-plot theme). The `Cecelia` palette

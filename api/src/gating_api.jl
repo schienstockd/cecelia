@@ -899,6 +899,10 @@ function _gate_edges(gates)
         elseif get(pj, "kind", "") == "quadrant"
             # the centre only: an arm's stored point just gives its direction, it is not an edge
             push!(xs, pj["centre"][1]); push!(ys, pj["centre"][2])
+        elseif get(pj, "kind", "") == "range"
+            push!(xs, pj["lo"], pj["hi"])          # 1D: the histogram's y is counts, not a gate axis
+        elseif get(pj, "kind", "") == "bisector"
+            push!(xs, pj["cut"])
         else
             for v in get(pj, "vertices", ())
                 push!(xs, v[1]); push!(ys, v[2])
@@ -911,13 +915,23 @@ end
 # The child gates of `pop` drawn on this (x, y) pair, re-projected into the display transforms — each
 # a `project_gate` outline plus its `path` and `colour`. Gates on another channel pair are left out.
 # Shared by plotmeta (the browser plot) and the gate-plot image (`gating_views_api.jl`).
-function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt)
+#
+# `parent_raw` = the displayed population's RAW values on the plot's x channel, when the caller has them:
+# a rule gate (a valley-following bisector or range end) is shown where its rule cuts on those cells — the
+# same cells `recompute!` resolves it on — and says whether each rule found a valley (`rule_flags`).
+function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw = nothing)
     gates = Dict{String,Any}[]
     for cpath in direct_children(m, pop)
         p = m.pops[cpath]
         p.gate === nothing && continue
-        pj = project_gate(p.gate, x, y, xt, yt)
+        g, flags = p.gate, nothing
+        if Cecelia.needs_parent_data(g) && parent_raw !== nothing && g.x_channel == x
+            flags = Cecelia.rule_flags(g, parent_raw)
+            g = Cecelia.resolve_gate(g, parent_raw)
+        end
+        pj = project_gate(g, x, y, xt, yt)
         pj === nothing && continue
+        flags === nothing || merge!(pj, flags)
         pj["path"] = cpath; pj["colour"] = p.colour
         push!(gates, pj)
     end
@@ -989,7 +1003,8 @@ function api_gating_plotmeta(req::HTTP.Request)
             zticks = _axis_ticks(zt, invert_transform(zt, e[1]), invert_transform(zt, e[2]); n = 3)
         end
     end
-    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
+    rxp, ryp = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = pin)
+    xv, yv = Float32.(apply_transform(xt, rxp)), Float32.(apply_transform(yt, ryp))
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
     mode = n > density_threshold ? "density" : "scatter"
@@ -1007,7 +1022,8 @@ function api_gating_plotmeta(req::HTTP.Request)
     # Child gates of the displayed population, re-projected into the EFFECTIVE display transform so
     # their outlines land on the dots even when a gate was drawn under a different transform (the client
     # has no transform math). Colour/path travel so the client renders directly. Membership is untouched.
-    gates = _child_gate_outlines(load_pop_tree(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt)
+    gates = _child_gate_outlines(load_pop_tree(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt;
+                                 parent_raw = rxp)
     # Autoscale to the child gates: a gate edge drawn just beyond the data cloud would otherwise fall
     # outside the axes and be un-grabbable, so grow the display extent to it and re-derive the raw tick
     # range so ticks span the whole axis. Only the side an edge exceeds moves, and only for an edge
@@ -1354,7 +1370,12 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         "unique across population types so a population can be selected unambiguously. Choose another name.")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
-        gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(_gate_spec_auto(body["gate"], img, vn, pt)) : nothing
+        # a spec that is no gate (a 1D gate on two channels, crossed quadrant arms) is the caller's 400
+        gate = try
+            haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(_gate_spec_auto(body["gate"], img, vn, pt)) : nothing
+        catch e
+            return _gerr(400, sprint(showerror, e))
+        end
         flt = get(body, "filter", nothing)
         bl = get(body, "boolean", nothing)      # Decision 16: a set operation over other pops
         path = try
@@ -1381,10 +1402,10 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
 end
 
 # ── POST /api/gating/pop/add-split — every region of a split gate, as one change ───────────────────
-# { projectUid, imageUid, valueName, popType, parent?, gate:{kind: slice|quadrant, x_channel, y_channel,
-#   x_transform, y_transform, vertices | centre + arms}, pops:[{name, colour, region}, …] }
-# → the pop tree, like /pop/add. `region` is the side (1 left of the line's direction, -1 right) or the
-# quadrant (1–4). Every region is required exactly once, so the populations tile the plane; they share a
+# { projectUid, imageUid, valueName, popType, parent?, gate:{kind: slice|quadrant|bisector, x_channel, y_channel,
+#   x_transform, y_transform, vertices | centre + arms | cut + rule?}, pops:[{name, colour, region}, …] }
+# → the pop tree, like /pop/add. `region` is the side (slice: 1 left of the line's direction, -1 right;
+# bisector: 1 above the cut, -1 at or below) or the quadrant (1–4). Every region is required exactly once, so the populations tile the plane; they share a
 # fresh `group` id, which `set_gate!` follows to move them together (app/src/gating/split_gates.jl). One
 # request = one undo step; any refusal (a taken name, a bad gate) writes nothing.
 function api_gating_pop_add_split(body_bytes::Vector{UInt8})
@@ -1392,8 +1413,8 @@ function api_gating_pop_add_split(body_bytes::Vector{UInt8})
     spec = get(body, "gate", nothing); pops = get(body, "pops", nothing)
     (spec isa AbstractDict && pops isa AbstractVector) || return _gerr(400, "gate and pops required")
     kind = lowercase(string(get(spec, "kind", "")))
-    regions = kind == "slice" ? [1, -1] : kind == "quadrant" ? [1, 2, 3, 4] :
-              return _gerr(400, "gate.kind must be \"slice\" or \"quadrant\"")
+    regions = kind in ("slice", "bisector") ? [1, -1] : kind == "quadrant" ? [1, 2, 3, 4] :
+              return _gerr(400, "gate.kind must be \"slice\", \"quadrant\" or \"bisector\"")
     got = Int[]
     for p in pops
         (p isa AbstractDict && haskey(p, "name") && get(p, "region", nothing) isa Integer) ||
@@ -1416,7 +1437,7 @@ function api_gating_pop_add_split(body_bytes::Vector{UInt8})
             for p in pops
                 d = Dict{String,Any}(String(k) => v for (k, v) in base)
                 d["group"] = group
-                d[kind == "slice" ? "side" : "quadrant"] = Int(p["region"])
+                d[kind == "quadrant" ? "quadrant" : "side"] = Int(p["region"])
                 add_pop!(m, String(p["name"]); parent = parent, gate = gate_from_spec(d),
                          colour = _wstr(p, "colour", "#ffffff"), show = true)
             end
@@ -1445,11 +1466,30 @@ function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
     name, parent, colour, path, err = _claude_new_pop(body); err === nothing || return err
     gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
     gerr === nothing || return _gerr(422, gerr)
+    # a split (slice / quadrant / bisector) is one population per region, named `name+` / `name-` (or
+    # `name++` … for a quadrant), linked by a fresh group — all added, or none
+    split = gate isa Cecelia.SplitGate || gate isa BisectorGate
+    regions = split ? [(name * suf, r) for (suf, r) in _proposed_regions(gate)] : [(name, 0)]
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = "flow")
-        refusal = _claude_place_refusal(m, img, vn, parent, path, name); refusal === nothing || return refusal
-        add_pop!(m, name; parent = parent, gate = gate, colour = colour, show = true, created_by = author_stamp())
-        _claude_gate_reply(m, img, body, vn, path)
+        for (n, _) in regions
+            refusal = _claude_place_refusal(m, img, vn, parent, pop_path(parent, n), n)
+            refusal === nothing || return refusal
+        end
+        group = gen_uid()
+        for (n, r) in regions
+            g = if split
+                d = gate_spec(gate); d["group"] = group
+                d[gate isa QuadrantGate ? "quadrant" : "side"] = r
+                gate_from_spec(d)
+            else
+                gate
+            end
+            add_pop!(m, n; parent = parent, gate = g, colour = colour, show = true, created_by = author_stamp())
+        end
+        split || return _claude_gate_reply(m, img, body, vn, path)
+        _claude_gate_reply(m, img, body, vn, pop_path(parent, first(regions)[1]);
+                           regions = [pop_path(parent, n) for (n, _) in regions])
     end
 end
 
@@ -2025,7 +2065,9 @@ end
 # The reply every own-gate write gives: the population's counts on the map just written — or, for a
 # `dryRun`, on the map in hand, which is never saved. One recompute on the edited map either way, so a
 # preview and the write it previews report the same numbers.
-function _claude_gate_reply(m::PopulationTree, img::CciaImage, body, vn, path::AbstractString)
+# `regions`: a split's populations — each with its count, beside the first region's full reply.
+function _claude_gate_reply(m::PopulationTree, img::CciaImage, body, vn, path::AbstractString;
+                            regions::Vector{String} = String[])
     dry = _wbool(body, "dryRun", false)
     if !dry
         saved = _persist_and_broadcast!(m, img, body, vn, "flow")
@@ -2034,7 +2076,9 @@ function _claude_gate_reply(m::PopulationTree, img::CciaImage, body, vn, path::A
     recompute!(m, pop_membership_fetch(img, vn, "flow"))
     p = m.pops[String(path)]
     s = pop_stats(m, path)
-    200, JSON3.write((; ok = true, dryRun = dry, path, valueName = vn,
+    reg = [(; path = r, count = pop_stats(m, r).count, pctParent = round(pop_stats(m, r).pct_parent; digits = 2))
+           for r in regions]
+    200, JSON3.write((; ok = true, dryRun = dry, path, valueName = vn, regions = reg,
                         parent = is_root(p.parent) ? "root" : p.parent,
                         count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
                         pctParent = round(s.pct_parent; digits = 2),
@@ -2058,11 +2102,51 @@ function api_gating_pop_set_own_gate(body_bytes::Vector{UInt8})
         sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
         combos, refusal = _own_combinations(m, path, sub); refusal === nothing || return refusal
         refusal = _unread_subtree(img, vn, [sub; combos]); refusal === nothing || return refusal
-        m.pops[String(path)].gate === nothing && return _gerr(422, "\"$path\" is not a gate")
+        cur = m.pops[String(path)].gate
+        cur === nothing && return _gerr(422, "\"$path\" is not a gate")
+        gate, refusal = _keep_split_region(cur, gate, path); refusal === nothing || return refusal
         set_gate!(m, String(path), gate)
         stamp_edit!(m, path)
         _claude_gate_reply(m, img, body, vn, path)
     end
+end
+
+# A split region (a slice / quadrant / bisector half) moved by set-own-gate keeps its region and group
+# (`with_divider`, as `set_gate!` moves its siblings), so the regions still tile the parent. Its names
+# (`+`/`-`, `++`…) were worked out from the divider's orientation (`_proposed_regions`), so a divider
+# re-sent the other way round (a slice's vertices reversed, a quadrant's arms from another start) is turned
+# back first — each name keeps the cells it describes. Another kind, or swapped axes, is refused: delete the
+# split and add the new gate. → (gate, nothing) or (nothing, 422).
+function _keep_split_region(cur::Gate, gate::Gate, path)
+    split(g) = g isa Cecelia.SplitGate || g isa BisectorGate
+    split(cur) || split(gate) || return (gate, nothing)
+    kind = gate_spec(cur)["kind"]
+    refuse(why) = (nothing, _gerr(422, "\"$path\" is one region of a $kind split; $why, or delete the split and add the new gate"))
+    gate_spec(gate)["kind"] == kind || return refuse("move it as a $kind")
+    (gate.x_channel, gate.y_channel) == (cur.x_channel, cur.y_channel) ||
+        return refuse("keep its axes ($(cur.x_channel), $(cur.y_channel))")
+    d = gate_spec(gate); d["group"] = Cecelia.gate_group(cur)
+    _reorient_divider!(d, gate_spec(cur))
+    (Cecelia.with_divider(cur, gate_from_spec(d)), nothing)
+end
+
+# A re-sent divider spec `d` turned to run the way the stored one `c` did, so each region index keeps its
+# side: a slice reversed when its chord points against the stored chord; a quadrant's arms rotated so arm 1
+# is the one nearest the stored arm 1 (by angle about each centre). By geometry, not by the `+`/`-` naming
+# rule — a small move across that rule's 45° switch must not swap the halves.
+function _reorient_divider!(d::AbstractDict, c::AbstractDict)
+    if get(d, "kind", "") == "slice"
+        chord(vs) = (vs[end][1] - vs[1][1], vs[end][2] - vs[1][2])
+        (u, w) = (chord(d["vertices"]), chord(c["vertices"]))
+        u[1] * w[1] + u[2] * w[2] < 0 && (d["vertices"] = reverse(d["vertices"]))
+    elseif get(d, "kind", "") == "quadrant"
+        ang(spec, a) = atan(a[2] - spec["centre"][2], a[1] - spec["centre"][1])
+        gap(t, s) = abs(mod(t - s + π, 2π) - π)
+        target = ang(c, c["arms"][1])
+        k = argmin([gap(ang(d, d["arms"][i]), target) for i in 1:4])
+        d["arms"] = circshift(d["arms"], -(k - 1))
+    end
+    d
 end
 
 # ── POST /api/gating/pop/delete-own — remove a population Claude made, with its subtree ──
@@ -2115,11 +2199,13 @@ end
 # is checked here, not their range. A transform is accepted in either key spelling the API speaks —
 # the plot routes' `cof` and the stored spec's `cofactor` — so a gate_plot reply can be passed back as is.
 function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,Nothing}}
-    spec isa AbstractDict || return (nothing, "gate required: {kind: rectangle|polygon, x_channel, y_channel, …}")
+    spec isa AbstractDict || return (nothing, "gate required: {kind: rectangle|polygon|range|bisector|slice|quadrant, x_channel, y_channel, …}")
     g(k) = get(spec, k, nothing)
     kind = lowercase(string(something(g("kind"), "")))
-    kind in ("rectangle", "polygon") || return (nothing, "gate.kind must be \"rectangle\" or \"polygon\"")
-    xc = g("x_channel"); yc = g("y_channel")
+    kind in _PROPOSED_KINDS ||
+        return (nothing, "gate.kind must be one of " * join(("\"$k\"" for k in _PROPOSED_KINDS), ", "))
+    one_d = kind in ("range", "bisector")
+    xc = g("x_channel"); yc = one_d ? something(g("y_channel"), xc) : g("y_channel")   # 1D: one channel
     (xc isa AbstractString && yc isa AbstractString && !isempty(xc) && !isempty(yc)) ||
         return (nothing, "gate.x_channel and gate.y_channel required")
     lp = label_props(img; value_name = vn)
@@ -2139,18 +2225,88 @@ function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,N
         (g("x_min") < g("x_max") && g("y_min") < g("y_max")) ||
             return (nothing, "a rectangle needs x_min < x_max and y_min < y_max")
         for k in ks; full[k] = float(g(k)); end
-    else
+    elseif kind == "polygon"
         vs = g("vertices")
         (vs isa AbstractVector && length(vs) >= 3) || return (nothing, "a polygon needs at least 3 vertices [[x, y], …]")
         all(v -> v isa AbstractVector && length(v) == 2 && all(finite_num, v), vs) ||
             return (nothing, "every polygon vertex must be [x, y] with finite numbers")
         full["vertices"] = [[float(v[1]), float(v[2])] for v in vs]
+    else
+        err = _proposed_extra_geometry!(full, kind, g, finite_num)
+        err === nothing || return (nothing, err)
     end
     try
         (gate_from_spec(full), nothing)
     catch e
         (nothing, "not a valid gate: " * sprint(showerror, e))
     end
+end
+
+const _PROPOSED_KINDS = ("rectangle", "polygon", "range", "bisector", "slice", "quadrant")
+
+# The geometry of a proposed 1D or split gate, checked and copied into `full` → nothing, or why not.
+# A split proposal describes its divider; the regions are added from it (`api_gating_pop_add_gate`).
+function _proposed_extra_geometry!(full, kind, g, finite_num)
+    pt(v) = v isa AbstractVector && length(v) == 2 && all(finite_num, v)
+    function rule!(key)
+        r = g(key); r === nothing && return nothing
+        (r isa AbstractDict && finite_num(get(r, "lo", nothing)) && finite_num(get(r, "hi", nothing))) ||
+            return "gate.$key must be {\"kind\": \"valley\", \"lo\": a, \"hi\": b} (a search window, transformed)"
+        full[key] = Dict{String,Any}("kind" => "valley", "lo" => float(r["lo"]), "hi" => float(r["hi"]),
+                                     "adjust" => float(something(get(r, "adjust", nothing), 1.0)))
+        nothing
+    end
+    if kind == "range"
+        (finite_num(g("lo")) && finite_num(g("hi")) && g("lo") < g("hi")) || return "a range needs finite lo < hi"
+        full["lo"], full["hi"] = float(g("lo")), float(g("hi"))
+        e = rule!("lo_rule"); e === nothing || return e
+        return rule!("hi_rule")
+    elseif kind == "bisector"
+        finite_num(g("cut")) || return "a bisector needs a finite cut"
+        full["cut"] = float(g("cut"))
+        return rule!("rule")
+    elseif kind == "slice"
+        vs = g("vertices")
+        (vs isa AbstractVector && length(vs) >= 2 && all(pt, vs)) ||
+            return "a slice needs at least 2 vertices [[x, y], …] with finite numbers"
+        full["vertices"] = [[float(v[1]), float(v[2])] for v in vs]
+    else                                                    # quadrant
+        pt(g("centre")) || return "a quadrant needs a finite centre [x, y]"
+        c = float.(g("centre"))
+        arms = g("arms")
+        arms === nothing && (arms = [[c[1] + 1, c[2]], [c[1], c[2] + 1], [c[1] - 1, c[2]], [c[1], c[2] - 1]])
+        (arms isa AbstractVector && length(arms) == 4 && all(pt, arms)) ||
+            return "a quadrant's arms are 4 points [[x, y], …], counter-clockwise (omit them for the axes)"
+        full["centre"] = c; full["arms"] = [[float(a[1]), float(a[2])] for a in arms]
+    end
+    nothing
+end
+
+# A proposed split's regions: each (name suffix, region). A slice's `+` is the side toward higher values
+# (as the GUI names it, `positiveSide` in plots/splitGeometry.ts); a quadrant's sector is named x-sign then
+# y-sign by the direction halfway between its two arms (so arms listed from any start name right; axis
+# arms give sectors 1–4 = ++, -+, --, +-). Arms that leave two sectors the same signs → `1`…`4`.
+function _proposed_regions(gate::Gate)
+    gate isa QuadrantGate && return _quadrant_regions(gate)
+    pos = 1
+    if gate isa SliceGate
+        (x0, y0), (x1, y1) = first(gate.vertices), last(gate.vertices)
+        dx, dy = x1 - x0, y1 - y0
+        pos = abs(dx) >= abs(dy) ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? -1 : 1)
+    end
+    [("+", pos), ("-", -pos)]
+end
+
+function _quadrant_regions(g::QuadrantGate)
+    (cx, cy) = g.centre
+    θ = [atan(a[2] - cy, a[1] - cx) for a in g.arms]
+    sgn(t) = t >= 0 ? "+" : "-"
+    names = map(1:4) do q
+        mid = θ[q] + mod(θ[mod1(q + 1, 4)] - θ[q], 2π) / 2     # counter-clockwise from arm q to arm q+1
+        sgn(cos(mid)) * sgn(sin(mid))
+    end
+    allunique(names) || (names = string.(1:4))
+    [(names[q], q) for q in 1:4]
 end
 
 # A whole gate spec with any unparameterised logicle / asinh axis filled from the channel's data — the

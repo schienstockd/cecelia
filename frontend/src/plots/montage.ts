@@ -72,7 +72,8 @@ export function effSpec(used: string | undefined, requested: TransformSpec, repo
 // A gate outline the server projected into the current display transform (display coords), canonical
 // orientation. Transposed for the mirror tile like points/extents.
 export type SrvGate = { path: string; colour: string } & Pick<GateSpec,
-  'kind' | 'x_min' | 'x_max' | 'y_min' | 'y_max' | 'vertices' | 'side' | 'centre' | 'arms' | 'quadrant' | 'group'>
+  'kind' | 'x_min' | 'x_max' | 'y_min' | 'y_max' | 'vertices' | 'side' | 'centre' | 'arms' | 'quadrant' | 'group' |
+  'lo' | 'hi' | 'cut' | 'rule' | 'rule_ok' | 'lo_rule' | 'hi_rule' | 'lo_rule_ok' | 'hi_rule_ok'>
 export function transposeGate(g: SrvGate): SrvGate {
   if (isSplitGate(g)) return transposeSplit(g)
   return g.kind === 'rectangle'

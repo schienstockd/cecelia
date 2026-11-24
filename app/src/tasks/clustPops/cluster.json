@@ -3,6 +3,7 @@
   "fun_name": "clustPops.cluster",
   "label": "Cluster cells",
   "citations": ["10.1186/s13059-017-1382-0", "10.1038/s41598-019-41695-z"],
+  "methodsText": ["{popsToCluster} cells were clustered by Leiden (resolution {resolution}) on {clusterMeasures}."],
   "purpose": "Group cells into phenotypes from many measures at once",
   "useWhen": [
     "Finding cell types without drawing gates two channels at a time",
