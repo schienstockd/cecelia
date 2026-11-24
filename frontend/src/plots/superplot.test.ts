@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { replicateOf, superplotColours } from './superplot'
-import { buildPlotOptions } from './plot'
+import { replicateOf, superplotClipNote, superplotColours } from './superplot'
+import { buildPlotOptions, superplotCellsCut } from './plot'
 import type { PlotDataResponse, PlotSeries } from './types'
 
 const PAL = ['#a', '#b', '#c']
@@ -93,5 +93,67 @@ describe('SuperPlot toggle', () => {
     const big = { ...box, series: [{ ...box.series[0], cellPoints: sorted, cellUnits: sorted.map(() => 'M1 | A') }] } as PlotDataResponse
     const cells = cellMark(big).marks.find(m => m.mark === 'dot' && m.a[0].length === 400)!
     expect(stripeScore((cells.a[0] as { xj: number }[]).map(d => d.xj))).toBeLessThan(0.3)
+  })
+})
+
+// The measure axis was fitted to the boxes and means, so the cell cloud above them was cut flat and
+// most fast cells vanished (on real speed data 28% of cells sat above the axis). It now runs to the
+// cells' 95th percentile; Y max still wins, and with the layer off it goes back to the means.
+describe('SuperPlot measure axis', () => {
+  // the means reach 11, the cells run up to 30
+  const cells = Array.from({ length: 200 }, (_, i) => 5 + 25 * (i / 199) ** 2)
+  const one = { ...box.series[0], upper: 11, points: [9, 11], pointUnits: ['M1 | A', 'M2 | A'],
+                cellPoints: cells, cellUnits: cells.map((_, i) => (i % 2 ? 'M1 | A' : 'M2 | A')) }
+  const r = { ...box, series: [one] } as PlotDataResponse
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const opts = (vis: object = {}, rr: PlotDataResponse = r): any => buildPlotOptions(PlotStub, rr, {
+    chartType: 'boxplot', fontSize: 11, legend: false, plotWidth: 400, plotHeight: 320, nonNegative: true,
+    colorOf: () => '#888', jitter: 'none', pointSize: 3, pointOpacity: 0.8, yMin: '', yMax: '', ...vis } as never)
+  const above = (top: number) => cells.filter(v => v > top).length / cells.length
+  it('the auto top covers 95% of the cells, not all of them', () => {
+    const top = opts().y.domain[1]
+    expect(above(top)).toBeLessThanOrEqual(0.05)
+    expect(above(top)).toBeGreaterThan(0)                    // not every cell: the boxes keep the axis
+  })
+  it('the strip chart too', () => {
+    expect(above(opts({ chartType: 'strip' }).y.domain[1])).toBeLessThanOrEqual(0.05)
+  })
+  it('Y max wins', () => {
+    expect(opts({ yMax: '15' }).y.domain[1]).toBe(15)
+  })
+  it('SuperPlot off: the axis fits the means again', () => {
+    expect(opts({ superplot: false }).y.domain[1]).toBeLessThan(12)
+  })
+  it('the stats brackets sit above the cells the axis shows, not inside the cloud', () => {
+    const two = { ...r, series: [{ ...one, uID: 'A' }, { ...one, uID: 'B' }],
+                  comparisons: { groups: ['A', 'B'], pValue: 0.01, significance: '*' } } as never
+    // the bracket: the rule pushed up by a pixel offset (dy) from its anchor
+    const rules = opts({ statsEnabled: true }, two).marks
+      .filter((m: { mark: string; a: [unknown, { dy?: number }] }) => m.mark === 'ruleY' && m.a[1]?.dy != null)
+    expect(rules).toHaveLength(1)
+    // anchored at the cells' 95th percentile, not the means' 11
+    expect(above(rules[0].a[0][0])).toBeLessThanOrEqual(0.05)
+  })
+  const cut = (vis: object = {}, rr: PlotDataResponse = r) => superplotCellsCut(rr, {
+    chartType: 'boxplot', yMin: '', yMax: '', nonNegative: true, ...vis } as never)
+  it('the panel says cells are above the axis, when they are', () => {
+    expect(cut()).toBe(true)
+    expect(superplotClipNote(cut())?.text).toBe('Cells above axis')
+  })
+  it('no notice when Y max is the cut, the layer is off, or the chart draws no cells', () => {
+    expect(cut({ yMax: '50' })).toBe(false)
+    expect(cut({ superplot: false })).toBe(false)
+    expect(cut({ chartType: 'violin' })).toBe(false)
+    expect(superplotClipNote(false)).toBeNull()
+  })
+  it('no notice when the boxes, not the cells, set the top', () => {
+    const tall = { ...r, series: [{ ...one, upper: 40 }] } as PlotDataResponse
+    expect(cut({}, tall)).toBe(false)
+  })
+  it('no notice when the headroom already shows the cells past the 95th percentile', () => {
+    // p95 of 1…20 is 19.05; +5% headroom on [0, 19.05] reaches 20, so the top cell is drawn
+    const v = Array.from({ length: 20 }, (_, i) => i + 1)
+    const close = { ...r, series: [{ ...one, cellPoints: v, cellUnits: v.map(() => 'M1 | A') }] } as PlotDataResponse
+    expect(cut({}, close)).toBe(false)
   })
 })
