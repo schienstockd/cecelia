@@ -609,6 +609,13 @@ include(joinpath(@__DIR__, "suite", "bf2raw_series_subdir.jl"))
 # so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "typed_params.jl"))
+# segment.afCells: per-cell AF correction — dye groups, params, QC findings, registration
+include(joinpath(@__DIR__, "suite", "af_cells.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_dapi.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_exclude.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_percycle.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_registered.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_dna.jl"))
 # ── Boundary types + ratchet testsets ───────────────────────────────
 # Four sections pinning type / convention boundaries across the code base: label_props
 # boundary types (add_obs type refusals), typed params ratchet (every _run_task reads

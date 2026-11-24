@@ -32,6 +32,16 @@ opened = "2026-11-18"
 status = "open"
 synthetic = false
 
+[needs.multiplex-cells-dyes]
+properties = ["cells", "still", "marker-names", "multiplex", "real"]
+technology = "widefield"
+why = "Per-cell AF correction (segment.afCells) reads each channel's dye from a cyclic run's acquisition record and corrects real cells; its end-to-end test has no multiplex cell table to run on."
+waiting = ["app/test/suite/af_cells.jl → afCells end to end on a cyclic multiplex cell table"]
+budget = "labelProps table + ccid.json (with meta.acquisition.channels) only, no image store; a few thousand cells, under the 1 MB per-file cap"
+opened = "2026-11-24"
+status = "open"
+synthetic = false
+
 [needs.cells-with-image-store]
 properties = ["cells", "movie", "calibrated", "image-store", "label-store", "real"]
 why = "The cell-cards filmstrip and the gating cells-image route only ever run their empty / 404 branch: no fixture has cells AND the pixels they were segmented from."

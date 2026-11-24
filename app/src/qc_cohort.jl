@@ -53,6 +53,7 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "segment.coastal"            => ["nCells"],
     "segment.importLabels"       => ["nCells"],
     "segment.measureLabels"      => ["nCells"],
+    "segment.afCells"            => ["nCorrected", "sameDyeAfter"],
     # optical-flow training: one model per image, so the cohort question is whether a movie trained
     # like its peers. `finalLoss` is only comparable within a set trained at the same weights and
     # epochs — which is the normal case, since one parameter set per set is the rule — and

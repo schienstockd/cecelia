@@ -41,6 +41,8 @@ function _spec_path(::MeasureLabels)
     joinpath(@__DIR__, "segment", "measure_labels.json")
 end
 
+_spec_path(::AfCells) = joinpath(@__DIR__, "segment", "af_cells.json")
+
 function _spec_path(::Branching)
     joinpath(@__DIR__, "segment", "branching.json")
 end
@@ -272,6 +274,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "opticalFlow.train"                 => TrainFlowModel(),
         "opticalFlow.trainSupportDenoise"   => TrainSupportDenoise(),
         "segment.measureLabels"             => MeasureLabels(),
+        "segment.afCells"                   => AfCells(),
         "segment.branching"                 => Branching(),
         "segment.ridges"                    => Ridges(),
         "gate.manual_gate"                  => ManualGate(),
