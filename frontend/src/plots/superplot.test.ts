@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { replicateOf, sinaOffsets, superplotClipNote, superplotColours } from './superplot'
+import { replicateOf, superplotClipNote, superplotColours } from './superplot'
 import { buildPlotOptions, superplotCellsCut } from './plot'
 import type { PlotDataResponse, PlotSeries } from './types'
 
@@ -73,25 +73,10 @@ function stripeScore(off: number[]): number {
   return sxy / Math.sqrt(sxx * syy)
 }
 
-describe('SuperPlot cell layout (sina)', () => {
-  it('sorted cells form a cloud, not stripes', () => {
-    expect(stripeScore(sinaOffsets(sorted, 0.3))).toBeLessThan(0.3)
-  })
-  it('stays inside ±halfWidth, wide where cells are dense, narrow in the sparse tail', () => {
-    const off = sinaOffsets(sorted, 0.3)
-    expect(Math.max(...off.map(Math.abs))).toBeLessThanOrEqual(0.3)
-    const spread = (lo: number, hi: number) => Math.max(...off.filter((_, i) => sorted[i] >= lo && sorted[i] < hi).map(Math.abs))
-    expect(spread(9.5, 10.5)).toBeGreaterThan(2 * spread(0, 6))     // the core vs the bottom tail
-  })
-  it('the same cell lands in the same place on every draw', () => {
-    expect(sinaOffsets(sorted, 0.3)).toEqual(sinaOffsets(sorted, 0.3))
-  })
-})
-
 describe('SuperPlot toggle', () => {
   const cellMark = (r: PlotDataResponse, vis: object = {}) => buildPlotOptions(PlotStub, r, {
     chartType: 'boxplot', fontSize: 11, legend: false, plotWidth: 400, plotHeight: 320,
-    colorOf: () => '#888', jitter: 'beeswarm', pointSize: 3, pointOpacity: 0.8, ...vis,
+    colorOf: () => '#888', jitter: 'sina', pointSize: 3, pointOpacity: 0.8, ...vis,
   } as never) as unknown as { marks: Array<{ mark: string; a: [unknown[], Record<string, unknown>] }> }
   const cellsOf = (vis: object = {}) => cellMark(box, vis).marks.filter(m => m.mark === 'dot' && m.a[0].length === 6)
   it('on (and on a plot saved before the toggle): the cells are drawn, clipped to the frame', () => {
