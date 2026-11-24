@@ -27,6 +27,27 @@ const titles = (i: Parameters<typeof measureGroups>[0]) => measureGroups(i).map(
 const group = (i: Parameters<typeof measureGroups>[0], t: string) =>
   measureGroups(i).find(g => g.title === t)?.cols
 
+describe('measureGroups — AF-corrected channels (segment.afCells)', () => {
+  // the server lists `af_` columns among `channels` too: Julia `channel_columns` matches any prefix
+  const AF = { ...FLOW, columns: [...FLOW.columns, 'af_mean_intensity_1', 'af_mean_intensity_2'],
+               channels: [...FLOW.channels, 'af_mean_intensity_1', 'af_mean_intensity_2'] }
+
+  it('gets its own heading right after the measured channels', () => {
+    expect(titles(AF).slice(0, 3)).toEqual(['Morphology', 'Channels', 'AF-corrected channels'])
+    expect(group(AF, 'AF-corrected channels')).toEqual(['af_mean_intensity_1', 'af_mean_intensity_2'])
+  })
+
+  it('never mixes a corrected column into Channels', () => {
+    expect(group(AF, 'Channels')).toEqual(FLOW.channels)
+  })
+
+  it('leaves other prefixes (a nuclear store) under Channels', () => {
+    const NUC = { ...FLOW, columns: [...FLOW.columns, 'nuc_mean_intensity_0'] }
+    expect(group(NUC, 'Channels')).toContain('nuc_mean_intensity_0')
+    expect(titles(NUC)).not.toContain('AF-corrected channels')
+  })
+})
+
 describe('measureGroups — the flow axis picker', () => {
   it('splits morphology from channels, spatial last', () => {
     expect(titles(FLOW)).toEqual(['Morphology', 'Channels', 'Spatial / Time',

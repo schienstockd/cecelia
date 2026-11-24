@@ -213,6 +213,47 @@ Additional columns (trimesh-based):
 |---|---|
 | `mean_intensity_{c}` or `median_intensity_{c}` | Per-channel intensity for channel index `c` (base labels) |
 | `{ltype}_mean_intensity_{c}` | Intensity within secondary label type (e.g. `nuc_mean_intensity_0`) |
+| `af_{measure}_intensity_{c}` | Autofluorescence-corrected copy of channel `c` (`segment.afCells`), shown as `af_<channel>` — see below |
+
+### Autofluorescence-corrected intensities — `af_{measure}_intensity_{c}`
+
+`segment.afCells` (Segment → Measure, *Correct autofluorescence (per cell)*) is for cyclic multiplex
+panels (PhenoCycler, IBEX, CODEX). Every marker read through one fluorophore carries that cell's
+autofluorescence in the fluorophore's band, so markers on one dye rise and fall together. The task
+estimates each cell's background per dye from the lower quartile of its OTHER markers on that dye (the
+minimum when there are two, so one co-expressed partner cannot set it) and writes a
+corrected copy of every channel on a dye with ≥ 3 markers as a feature column. The measured columns stay.
+
+- **Columns.** `af_` + the table's own measure (`af_mean_intensity_41`). The channel-name resolver treats
+  `af` like any prefix, so pickers, task params and stored feature lists name it `af_CD4`. Pickers list
+  them under their own heading, *AF-corrected channels* (`measureGroups.ts`). Gates store raw columns as
+  always. Units are the measured intensity units and the correction is a linear subtraction (AF adds
+  photons), so a positive keeps its specific signal whatever its cell's autofluorescence; only AF above
+  the cleanest 2 % of cells is removed. The per-marker slope is fitted on the half of the cells nearest
+  the fit, so up to half the table can be positive without flattening it.
+- **Which channels share a dye.** `dye` (default) reads each channel's `dyePreset` from the acquisition
+  record (else its emission filter) — the PhenoCycler reader records it per channel. `order` puts channel
+  markers by position, the k-th with the k ± *Markers per cycle*-th, for a file with no record. *Nuclear
+  stains* are taken out first, so a leading, per-cycle or mid-stack stain never shifts the cycle; leaving
+  a marker as measured doesn't either. Empty, they are found by name (DAPI, Hoechst, DRAQn, SYTOX,
+  nuc-/nuc_, `DNA_n`, also after a prefix like `Ch1_DAPI`) and the run log names what it picked. In `dye` mode a nuclear stain on its own dye has
+  < 3 channels and is left alone.
+- **Scanner AF subtraction does not cover it.** The validation data had `afSubtracted` on every channel
+  and still carried it; unlike the image-level AF correction this task does not skip those channels.
+- **Re-measuring drops the columns.** `segment.measureLabels` rewrites the table and the correction
+  composite carries obs only, so re-run this task after either. A re-run clears every `af_` column first.
+- **QC.** `sameDyeBefore` / `sameDyeAfter`: mean Spearman between markers on one dye. A warning when no
+  dye has 3 markers, or when less than half of the shared signal went (the grouping is probably wrong).
+
+**Validation** (HuBMAP intestine PhenoCycler, one image, 60 markers, 152,689 cells): same-dye correlation
+0.41 → 0.09 (other-dye 0.24 → 0.06). Exclusive pairs stopped co-varying (CD4–MUC2 0.72 → 0.17, CD3–CDX2
+0.36 → −0.44), and inside the cells a pooled clustering had called "Low signal", CD4–CD8 went 0.80 → 0.12.
+It also takes some real co-expression with it — CYTOKERATIN–CDX2 0.88 → 0.82, CD38–CD138 0.63 → 0.24
+— which is why the measured columns stay beside it. A first version subtracted in arcsinh space and
+reached 0.02, but that divided at the bright end (the same positive read half as bright on a high-AF
+cell); `test_result_review_af_units.py` pins it. Removing a spatial background instead (10th percentile
+of the 300 nearest cells), or smoothing the per-cell estimate over 25 µm, left 0.42 / 0.32: the
+autofluorescence follows cell types, not a field across the tissue.
 
 ---
 

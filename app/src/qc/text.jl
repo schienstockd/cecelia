@@ -400,6 +400,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
 
     # cell contacts (spatialAnalysis.cellContacts / contactsMeshes): one column set per target, so a
     # target that resolved no cells is skipped rather than failing the run. Its refs go in `detail`.
+    # per-cell autofluorescence correction (segment.afCells `af_cells_qc_findings`)
+    "afcells.nothing_to_correct" => (
+        short = "No channels corrected",
+        long  = "No dye carries 3 or more markers — check the channel grouping, or the panel has too few cycles."),
+    "afcells.little_removed" => (
+        short = "Markers on one dye still move together",
+        long  = "The grouping may not match the dyes — check the acquisition record or set the channel order."),
+
     "contact.no_cells" => (
         short = "No A cells",
         long  = "Population A resolved no cells — check its gate, or pick another population."),

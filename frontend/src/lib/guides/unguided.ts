@@ -125,6 +125,18 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Record a hand-check on second-harmonic (SHG) data in the docs')],
   }) },
+  { id: 'af-cells', title: 'Per-cell autofluorescence correction', group: 'Data', maturity: covering(['segment.afCells'], {
+    tier: 'experimental', testedOn: 'One PhenoCycler intestine image (HuBMAP), plus synthetic',
+    handCheck: 'docs/DATAMODEL.md → Autofluorescence-corrected intensities',
+    evidence: [
+      { path: 'python/cecelia/tests/test_cell_af_utils.py', test: 'test_removes_the_signal_shared_within_a_dye',
+        failsIf: 'markers on one dye still move together after correction' },
+      { path: 'python/cecelia/tests/test_cell_af_utils.py', test: 'test_true_positives_stay_above_negatives',
+        failsIf: 'the correction removes a marker’s real positives' },
+    ],
+    next: [todo('End-to-end on a committed multiplex cell table (NEEDS multiplex-cells-dyes)'),
+           todo('A guide once gating and clustering on af_ columns are checked by eye')],
+  }) },
   { id: 'ridges', title: 'Ridge segmentation', group: 'Data', maturity: covering(['segment.ridges', 'segment.ridgesMeasure'], {
     tier: 'experimental', testedOn: 'Synthetic',
     evidence: [
