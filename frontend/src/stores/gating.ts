@@ -337,7 +337,7 @@ export function createGatingStore(initialPopType: string) {
       authoredLabelsVersion.value = d.authoredLabelsVersion ?? null
       currentLatestLabelsVersion.value = d.currentLatestLabelsVersion ?? null
     } catch (e) {
-      log.error(`Gating pop tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Gating population tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
     }
   }
 

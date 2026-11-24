@@ -198,7 +198,7 @@ useVisualPanel(
       <span class="cc-toolbar-sep" />
       <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <div class="panel-ctrl">
-      <label class="ax-row"><span class="ax-lbl">pop</span>
+      <label class="ax-row"><span class="ax-lbl">population</span>
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to compare; its gates are shown'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
       </label>
@@ -279,7 +279,8 @@ useVisualPanel(
 /* axis controls now live in the auto-hide overlay (#actions) — full line below the icon tools */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
-.ax-lbl { width: 2.6rem; color: var(--cc-text-dim); flex-shrink: 0; }
+/* wide enough for the longest row label ("population") so the rows' controls line up */
+.ax-lbl { width: 4.2rem; white-space: nowrap; color: var(--cc-text-dim); flex-shrink: 0; }
 .ax-chan { width: 12rem; flex: none; }
 .tsel { width: 5.5rem; flex-shrink: 0; }
 /* the amber marker is the shared .cc-auto-override utility (style.css) */

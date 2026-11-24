@@ -35,7 +35,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
 
-// the colour drawn — a still shows Pops for a stored Track clusters (`effectiveMaskColour`)
+// the colour drawn — a still shows Populations for a stored Track clusters (`effectiveMaskColour`)
 const shownColour = computed(() => effectiveMaskColour(settings.viewerMaskColour, props.timecourse))
 // A select, not chips: the choices outgrew the rail's width (as the Tracks section's Colour by)
 const colourOptions = computed(() => maskColourOptions(props.timecourse, shownColour.value))

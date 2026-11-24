@@ -306,7 +306,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
                            filter_measure = "branch-type",
                            filter_fun = "eq", filter_values = bt)
     end
-    isempty(branch_types) || on_log("[INFO] Auto-created $(length(branch_types)) branch-type filter pop(s).")
+    isempty(branch_types) || on_log("[INFO] Auto-created $(length(branch_types)) branch-type filter population(s).")
 
     Dict{String,Any}("outputValueName" => p.outputValueName,
                      "branchLabelFile" => branch_zarr,

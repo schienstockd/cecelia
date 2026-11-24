@@ -57,7 +57,7 @@ export const gatePopulationsGuide: GuideDef = {
       text: 'X and Y take any channel intensity or shape measure the segmentation carried.',
       bullets: [
         'The transform beside each axis is usually what makes a blob resolve into groups.',
-        '"pop" is the population you are looking at — new gates land under it.',
+        '"population" is the one you are looking at — new gates land under it.',
       ],
     },
     {

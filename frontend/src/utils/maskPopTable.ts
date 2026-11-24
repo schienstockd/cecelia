@@ -25,7 +25,7 @@
 //    config, for the viewer's look and a batch alike.
 //  - **Track clusters with a colour-by** — the clusters SELECT, the column SHADES (the points' rule,
 //    `buildPointBufferLayers`): a shown cluster's cells by value, every other cell `NO_VALUE_HEX`
-//    (`trackclustMaskLayer` given values; the movie's `colourLabels` on its trackclust mask). *Pops*
+//    (`trackclustMaskLayer` given values; the movie's `colourLabels` on its trackclust mask). *Populations*
 //    deliberately keeps its pop colours whatever the colour-by — that is the choice for "pops on the
 //    mask, values on the dots".
 
@@ -43,7 +43,7 @@ export const isMaskColour = (v: unknown): v is MaskColour => MASK_COLOURS.includ
 
 /** The *Colour* the mask is drawn in: the stored choice, except *Track clusters* on a still — the
  *  choice is one setting for every image, and a still has no tracks, so it would grey out every cell
- *  (carried over from a time-lapse opened before). *Pops* there instead; the setting is left alone. */
+ *  (carried over from a time-lapse opened before). *Populations* there instead; the setting is left alone. */
 export function effectiveMaskColour(stored: MaskColour, timecourse: boolean): MaskColour {
   return stored === 'trackclust' && !timecourse ? 'pops' : stored
 }
@@ -54,7 +54,7 @@ export function maskColourOptions(timecourse: boolean, current: MaskColour):
   { value: MaskColour; label: string; tip: string }[] {
   return [
     { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
-    { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
+    { value: 'pops', label: 'Populations', tip: 'Each cell by its deepest shown population' },
     ...(timecourse || current === 'trackclust'
       ? [{ value: 'trackclust' as const, label: 'Track clusters', tip: 'Each tracked cell by its track cluster' }] : []),
     { value: 'colourBy', label: 'Colour by', tip: 'Each cell by the colour-by measure' },
@@ -62,12 +62,12 @@ export function maskColourOptions(timecourse: boolean, current: MaskColour):
 }
 
 /** The movie config's mask keys for a *Colour* choice — what `mask_pop_scope` / `movie_mask` read.
- *  `popsOn`: some cell pop type is drawn (with none, *Pops* keeps the palette, as the viewer does);
+ *  `popsOn`: some cell pop type is drawn (with none, *Populations* keeps the palette, as the viewer does);
  *  `colourBy`: the column (none = *Colour by* keeps the palette). `maskPopTypes` is always written, so
  *  a look patched over an older one never inherits its track clusters. */
 export function maskColourKeys(c: MaskColour, popsOn: boolean, colourBy: string):
   { maskAllCells: boolean; maskPopTypes: string[]; colourLabels: boolean } {
-  // track clusters take the colour-by (the clusters select, the column shades); *Pops* does not
+  // track clusters take the colour-by (the clusters select, the column shades); *Populations* does not
   if (c === 'trackclust') return { maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: !!colourBy }
   if (c === 'pops' && popsOn) return { maskAllCells: false, maskPopTypes: [], colourLabels: false }
   return { maskAllCells: true, maskPopTypes: [], colourLabels: c === 'colourBy' && !!colourBy }
