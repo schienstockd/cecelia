@@ -499,6 +499,19 @@ function _clust_run_at(props_path::AbstractString, suffixes, family)
     out
 end
 
+# Per run: the params it was made with and, for a refine run, what it refines and why it is stale —
+# `{suffix => {params, refines?: {pop, run}, stale?: reason}}`. The cluster page draws the run tree and
+# each level's resolution from it (docs/todo/CLUSTER_REFINE_PLAN.md). Lineage is cell clusters only.
+function _clust_runs(img::CciaImage, vn::AbstractString, props_path::AbstractString, suffixes, family, pop_type)
+    out = Dict{String,Any}()
+    m = pop_type == "clust" ? load_pop_tree(img; value_name = vn, pop_type = "clust", backfill_save = false) : nothing
+    for s in suffixes
+        run = cluster_run_info(img, vn, props_path, s; family = family, m = m)
+        run === nothing || (out[s] = run)
+    end
+    out
+end
+
 function _clust_feature_labels(props_path::AbstractString, suffixes, family)
     out = Dict{String,Any}()
     for s in suffixes
@@ -578,7 +591,7 @@ function api_gating_channels(req::HTTP.Request)
             columns = String[], channels = String[], channelNames = String[],
             channelNameVersions = Dict{String,Any}(), obsColumns = String[], temporalColumns = String[],
             cellMeasures = String[], trackAggregates = String[], clusterSuffixes = String[],
-            clusterFeatures = Dict{String,Any}(), clusterMembers = Dict{String,Any}(),
+            clusterFeatures = Dict{String,Any}(), clusterMembers = Dict{String,Any}(), clusterRuns = Dict{String,Any}(),
             valueNames = String[], valueName = vn, popType = get(q, "popType", "flow")))
     end
     # track gating: the gateable axes are the per-track properties — motility (the track table's
@@ -672,6 +685,7 @@ function api_gating_channels(req::HTTP.Request)
             clusterFeatures = _clust_features(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
             clusterMembers  = tmem,         # uIDs clustered together (partOf) that still carry the run
             clusterRunAt    = _clust_run_at(tpath, tsfx, tfam),   # when each run ran — a cluster pop's staleness
+            clusterRuns     = _clust_runs(img, scope_vn, tpath, tsfx, tfam, pt),   # params per run (no lineage)
             clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
             clusterAxes     = _clust_axes(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn),
                                           own_uid = img.uid),     # diffusion axis names (track runs)
@@ -741,6 +755,7 @@ function api_gating_channels(req::HTTP.Request)
         clusterFeatures = _clust_features(cpath, csfx, cfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
         clusterMembers  = cmem,         # uIDs clustered together (partOf) that still carry the run
         clusterRunAt    = _clust_run_at(cpath, csfx, cfam),   # when each run ran — a cluster pop's staleness
+        clusterRuns     = _clust_runs(img, scope_vn, cpath, csfx, cfam, cpt),   # params + refine lineage per run
         clusterFeatureLabels = _clust_feature_labels(cpath, csfx, cfam),
         clusterIds      = _cluster_ids(get(q, "projectUid", ""), cpath, scope_vn, csfx, cmem, false, cpt),
         valueNames = versioned_keys(img.label_props),
@@ -1357,13 +1372,31 @@ function _gating_post(body_bytes::Vector{UInt8})
     (img, vn, pt, body, nothing)
 end
 
+# Where a population added with no `parent` goes → (parent, nothing) or (nothing, the refusal): under the
+# population a refine run refines when the new population picks from that run (CLUSTER_REFINE_PLAN
+# Decision 4), else the root. 404 when this image lacks that population — the GUI replays one add to every
+# image of the run, and a root-level copy here would leave the paths out of step (as add-cluster-pops).
+function _default_pop_parent(img, vn, pt, flt)
+    fm = flt isa AbstractDict ? get(flt, "measure", nothing) : nothing
+    prefix = Cecelia._cluster_measure_prefix(pt)
+    (pt == "clust" && fm isa AbstractString && startswith(fm, prefix)) || return (ROOT, nothing)
+    run = fm[ncodeunits(prefix)+1:end]
+    src = refine_source_pop(img, vn, run)
+    src === nothing && return (ROOT, nothing)
+    has_pop(load_pop_tree(img; value_name = vn, pop_type = pt, backfill_save = false), src) && return (src, nothing)
+    (nothing, _gerr(404, "Run $run refines $src, which this image does not have — re-run the refine on images that do"))
+end
+
 function api_gating_pop_add(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "name") || return _gerr(400, "name required")
     # name-uniqueness guard: reject a name already used by a DIFFERENT pop type in this segmentation, so
     # the mixed-type module picker (which resolves a pop by path alone) is never ambiguous.
     _name = String(body["name"])
-    _parent = _wstr(body, "parent", ROOT)
+    # no parent sent: a refine run's cluster population goes under the population the run refines
+    _parent, perr = haskey(body, "parent") ? (_wstr(body, "parent", ROOT), nothing) :
+                    _default_pop_parent(img, vn, pt, get(body, "filter", nothing))
+    perr === nothing || return perr
     _intended = pop_path(is_root(_parent) ? ROOT : _parent, _name)
     _conflict = pop_name_conflict(img, vn, _intended; pop_type = pt)
     _conflict === nothing || return _gerr(400,
@@ -1380,7 +1413,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         flt = get(body, "filter", nothing)
         bl = get(body, "boolean", nothing)      # Decision 16: a set operation over other pops
         path = try
-            add_pop!(m, String(body["name"]); parent = _wstr(body, "parent", ROOT),
+            add_pop!(m, String(body["name"]); parent = _parent,
                      gate = gate, colour = _wstr(body, "colour", "#ffffff"),
                      show = _wbool(body, "show", true),
                      filter_measure = flt === nothing ? nothing : get(flt, "measure", nothing),
@@ -1616,7 +1649,8 @@ end
 #
 # Grouping is what cluster populations are FOR: a run gives tens of clusters, and a population is several
 # of them ("clusters 2, 5 and 9 are all T cells"). So one request carries the whole grouping — every group a
-# root-level cluster population (a filter `{prefix}{run} in [ids]`, the shape the manager's ticks write),
+# cluster population (a filter `{prefix}{run} in [ids]`, the shape the manager's ticks write) at the root,
+# or under the population the run refines for a refine run (CLUSTER_REFINE_PLAN Decision 4),
 # stamped `createdBy` and with the run's `at` (`stamp_cluster_run!`). Written to EVERY image of the run
 # (`partOf`) on the same segmentation, as the cluster page's set-wide replay does, so the run's pages agree.
 # All or nothing: 404 no such run, 409 a name that is taken (`pop_exists` / `pop_name_conflict`) or a
@@ -1635,8 +1669,15 @@ function api_gating_pop_add_cluster_pops(body_bytes::Vector{UInt8})
     dry = _wbool(body, "dryRun", false)
     _with_pop_tree_lock() do
         maps = [(u, ti, load_pop_tree(ti; value_name = vn, pop_type = pt)) for (u, ti) in targets]
+        # a refine run's groups go under the population it refines (CLUSTER_REFINE_PLAN Decision 4)
+        # — its recorded path, so an image (the anchor too) without it is refused below, never rooted
+        src = pt == "clust" ? refine_source_pop(maps[1][2], vn, run) : nothing
+        parent = something(src, ROOT)
+        groups = [merge(gr, (; path = pop_path(parent, gr.name))) for gr in groups]
         # every image's map is checked before any is changed — all or nothing
         for (u, ti, m) in maps
+            (is_root(parent) || has_pop(m, parent)) || return _gerr(404,
+                "Run $run refines $parent, which image $u does not have — re-run the refine on images that do")
             held = cluster_id_owners(m, run)
             for gr in groups
                 refusal = _cluster_name_refusal(m, ti, vn, pt, gr.path, u); refusal === nothing || return refusal
@@ -1648,7 +1689,7 @@ function api_gating_pop_add_cluster_pops(body_bytes::Vector{UInt8})
                    for (i, gr) in enumerate(groups)]
         for (u, ti, m) in maps
             for (gr, colour) in zip(groups, colours)
-                add_pop!(m, gr.name; colour = colour, show = true, created_by = stamp,
+                add_pop!(m, gr.name; parent = parent, colour = colour, show = true, created_by = stamp,
                          filter_measure = measure, filter_fun = "in", filter_values = gr.clusters)
                 stamp_cluster_run!(m.pops[gr.path], ti, vn)
             end
