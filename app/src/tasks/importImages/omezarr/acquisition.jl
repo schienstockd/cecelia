@@ -61,6 +61,9 @@ function _read_acquisition_settings(src_path::AbstractString, run_dir::AbstractS
     end
 end
 
+"""Whether `img`'s planes run the reverse of its `ori_path` file's (`ORI_Z_REVERSED_KEY`)."""
+_ori_z_reversed(img)::Bool = get(img.meta, ORI_Z_REVERSED_KEY, false) === true
+
 """Which image of its source file `img` is (`meta.ori_series`, the series picker's index), 0 when unrecorded."""
 _source_series(img)::Int = (s = get(img.meta, "ori_series", nothing); s isa Real ? Int(s) : 0)
 
@@ -103,15 +106,19 @@ function _acquisition_describes_store(settings::AbstractDict, zarr_meta::Abstrac
 end
 
 """
-    _recover_acquisition_settings!(zarr_meta, src_path, run_dir; series, on_log) -> Bool
+    _recover_acquisition_settings!(zarr_meta, src_path, run_dir; series, z_reversed, on_log) -> Bool
 
 Put the source's acquisition settings into `zarr_meta["acquisition"]` when they describe this store
 (`_acquisition_describes_store`), with `timelapse.acquired` set when the store has fewer frames than
 the source planned; otherwise record why not in `zarr_meta["acquisitionMissing"]`
-(`ACQUISITION_MISSING`). Only ADDS: a value already there is kept. Returns whether it filled settings.
+(`ACQUISITION_MISSING`). `z_reversed`: this store's planes run the reverse of the file's (it was made
+from a Z-flipped version, `ORI_Z_REVERSED_KEY`), so the settings are mirrored (`_mirror_acquisition_z!`)
+— the count check can't see a reversed axis. Only ADDS: a value already there is kept. Returns whether
+it filled settings.
 """
 function _recover_acquisition_settings!(zarr_meta::Dict{String,Any}, src_path::AbstractString,
                                         run_dir::AbstractString; series::Integer = 0,
+                                        z_reversed::Bool = false,
                                         on_log::Function = _ -> nothing)::Bool
     haskey(zarr_meta, "acquisition") && return false
     settings, reason = _read_acquisition_settings(src_path, run_dir; series = series, on_log = on_log)
@@ -119,7 +126,7 @@ function _recover_acquisition_settings!(zarr_meta::Dict{String,Any}, src_path::A
         zarr_meta["acquisitionMissing"] = _acquisition_missing(reason, src_path)
         return false
     end
-    if !_acquisition_describes_store(settings, zarr_meta)
+    if !_acquisition_describes_store(settings, zarr_meta) || (z_reversed && !_mirror_acquisition_z!(settings))
         on_log("[INFO] Source acquisition settings not attached: the source's channels or z-planes " *
                "differ from this image's")
         zarr_meta["acquisitionMissing"] = _acquisition_missing("other-stack", src_path)
@@ -143,13 +150,14 @@ The resync side of `_recover_acquisition_settings!`: images imported before sett
 from the source file. Skipped when ccid already has them from this reader version (the read is a scan
 of the source); settings from an older reader are re-read and replace the stored ones. A
 registered stack's `ori_path` is only the REFERENCE cycle's file, and an image with no `ori_path` has no
-source: both get their reason instead. A crop takes its SOURCE IMAGE's settings (`crop_acquisition`)
-when that image has them. Other derived images (projection, resample) are caught by the count check.
+source: both get their reason instead. A crop, copy or bin takes its SOURCE IMAGE's settings
+(`_resync_derived_acquisition!`) when that image has them. Other derived images (projection,
+resample) are caught by the count check.
 """
 function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     stored = get(img.meta, "acquisition", nothing)
     _repair_registered_orders!(zarr_meta, img, stored) && return
-    (isnothing(stored) || _acquisition_outdated(stored)) && _resync_crop_acquisition!(zarr_meta, img) && return
+    (isnothing(stored) || _acquisition_outdated(stored)) && _resync_derived_acquisition!(zarr_meta, img) && return
     if !isnothing(stored)
         _acquisition_outdated(stored) || return
         # Re-read into a scratch dict: if the source is gone now, the older settings stay and no
@@ -157,7 +165,8 @@ function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
         src = string(get(img.meta, "ori_path", ""))
         isempty(src) && return
         fresh = Dict{String,Any}(k => v for (k, v) in zarr_meta if k in ("SizeC", "SizeZ", "SizeT"))
-        _recover_acquisition_settings!(fresh, src, task_run_dir(img._dir); series = _source_series(img)) &&
+        _recover_acquisition_settings!(fresh, src, task_run_dir(img._dir); series = _source_series(img),
+                                       z_reversed = _ori_z_reversed(img)) &&
             (zarr_meta["acquisition"] = fresh["acquisition"])
         return
     end
@@ -167,7 +176,8 @@ function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     elseif isempty(src)
         zarr_meta["acquisitionMissing"] = _acquisition_missing("no-source", src)
     else
-        _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir); series = _source_series(img))
+        _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir); series = _source_series(img),
+                                       z_reversed = _ori_z_reversed(img))
     end
 end
 

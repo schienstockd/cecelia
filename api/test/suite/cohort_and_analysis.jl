@@ -250,20 +250,19 @@ end
         @test _mr("?projectUid=$(proj.uid)")[1] == 400                     # no scope
         @test _mr("?projectUid=nope&setUid=$(s.uid)")[1] == 404
         @test _mr("?projectUid=$(proj.uid)&runId=nope")[1] == 404          # no such chain run
-        @test _mr("?projectUid=$(proj.uid)&imageUids=$(img.uid)&pops=notjson")[1] == 400
         st, body = _mr("?projectUid=$(proj.uid)&setUid=$(s.uid)")
         @test st == 200
         d = JSON3.read(body)
         @test startswith(String(d.markdown), "> **Draft.**") && d.scope.kind == "set"
         @test length(d.table) == 1 && d.table[1].task == "importImages.omezarr"
-        # the board scope: the same query the board's Parameters CSV sends, plus its name
-        q = "?projectUid=$(proj.uid)&imageUids=$(img.uid)&pops=" * HTTP.escapeuri("[\"live::B/qc\"]") * "&clusterRuns=%5B%5D&board=Fig1"
-        st, body = _mr(q)
+        # a list of images that is exactly a set's reads as that set — the board's Methods sends its images
+        st, body = _mr("?projectUid=$(proj.uid)&imageUids=$(img.uid)")
         @test st == 200
         b = JSON3.read(body)
-        @test b.scope.kind == "board" && occursin("analysis board \"Fig1\"", String(b.markdown))
+        @test b.scope.kind == "set" && b.scope.label == "Set \"set-A\""
+        @test b.markdown == d.markdown
         # same request, same text
-        @test _mr(q)[2] == body
+        @test _mr("?projectUid=$(proj.uid)&imageUids=$(img.uid)")[2] == body
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

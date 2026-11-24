@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tileGrid, tileCell, fitSquare, MIN_TILE_W, MIN_TILE_H } from './tileGrid'
+import { tileGrid, tileCell, fitSquare, fixedGrid, MIN_TILE_W, MIN_TILE_H } from './tileGrid'
 
 // A wide workspace, the case the bug was reported on: the gating pages on a 16:9 screen.
 const W = 1600, H = 800
@@ -223,5 +223,17 @@ describe('fitSquare — the panel’s own last word', () => {
 
   it('holds the floor rather than collapsing in a cramped cell', () => {
     expect(fitSquare({ w: 120, h: 120 }, 90)).toEqual({ w: MIN_TILE_H, h: MIN_TILE_H + 90 })
+  })
+})
+
+describe('fixedGrid', () => {
+  it('keeps the given cell size and wraps at the width', () => {
+    const g = fixedGrid(5, 400, 300, 1300)        // 8 + 3·408 = 1232 ≤ 1300 < 8 + 4·408
+    expect({ cols: g.cols, rows: g.rows, w: g.w, h: g.h }).toEqual({ cols: 3, rows: 2, w: 400, h: 300 })
+    expect(tileCell(3, g)).toEqual({ x: 8, y: 8 + 308 })
+  })
+  it('never fewer than one column, never more than the panels', () => {
+    expect(fixedGrid(3, 400, 300, 100).cols).toBe(1)
+    expect(fixedGrid(2, 400, 300, Infinity).cols).toBe(2)
   })
 })

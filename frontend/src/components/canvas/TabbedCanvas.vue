@@ -27,6 +27,8 @@ import { useSettingsStore } from '../../stores/settings'
 import LayoutCanvas from './LayoutCanvas.vue'
 import BoardRecordModal from './BoardRecordModal.vue'
 import MethodsReportModal from '../MethodsReportModal.vue'
+import BoardLegendsModal from './BoardLegendsModal.vue'
+import { boardLegendsMarkdown } from '../../utils/panelLegend'
 import type { MethodsScope } from '../../utils/methodsReport'
 import ConfirmButton from '../ConfirmButton.vue'
 import CcToggle from '../CcToggle.vue'
@@ -121,6 +123,7 @@ function onDrop(targetId: number) {
 type CapturedPage = { aspect: number; slots: { rect: { x: number; y: number; w: number; h: number }; png: string | null; svg?: string | null; name?: string; csv?: string | null }[] }
 const layoutRef = useTemplateRef<{ capturePage: (vector?: boolean) => Promise<CapturedPage>
   collectCsvs: () => Promise<{ name: string; csv: string | null }[]>
+  collectLegends: () => string[]
   paramsScope: () => BoardParamsScope
   paramsSnapshot: () => ParamsSnapshot | null }>('layoutRef')
 // ONE export pass for the whole board — a single spinner, a single walk over the tabs. Figure and CSV
@@ -213,16 +216,26 @@ function exportBoard(kind: string) {
   }
   if (kind === 'params') return exportParams()
   if (kind === 'methods') return openMethods()
+  if (kind === 'legends') return openLegends()
   const sel = map[kind]
   if (sel) runExport(sel[0], sel[1])
 }
 
-// The ACTIVE board's draft Methods (`GET /api/analysis/methods`): the same scope as its Parameters CSV.
+// The active board's figure legends, one per filled panel, from what each panel draws now.
+const legendsMd = ref('')
+function openLegends() {
+  const ls = layoutRef.value?.collectLegends() ?? []
+  if (!ls.length) { log.info('Nothing on this board yet.', { source: 'analysis' }); return }
+  legendsMd.value = boardLegendsMarkdown(activeTitle.value || 'Board', ls)
+}
+
+// The draft Methods for the board's images (`GET /api/analysis/methods`) — the dataset's, which the
+// server names as their set when they are one; not cut to the board's panels (a Methods section is
+// per dataset, a panel gets a legend).
 const methodsScope = ref<MethodsScope | null>(null)
 function openMethods() {
-  const scope = layoutRef.value?.paramsScope()
-  if (!scope || !props.imageUids.length) { log.info('Nothing on this board yet.', { source: 'analysis' }); return }
-  methodsScope.value = { kind: 'board', imageUids: [...props.imageUids], scope, board: activeTitle.value }
+  if (!props.imageUids.length) { log.info('No images on this board yet.', { source: 'analysis' }); return }
+  methodsScope.value = { kind: 'images', imageUids: [...props.imageUids] }
 }
 
 // The ACTIVE board's parameter table: the steps behind its plots, cut from the run history of the
@@ -304,16 +317,18 @@ async function exportParams() {
         <option value="svg+csv">SVG + CSV</option>
         <option value="csv">CSV only</option>
         <option value="params">Parameters (CSV)</option>
+        <option value="legends">Legends</option>
         <option value="methods">Methods (draft)</option>
       </select>
       <!-- opens LEFT (into the page): this is the rightmost control, a bottom tooltip would clip the edge -->
-      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF raster, SVG vector, CSV data; Parameters, Methods = the steps behind this board'" />
+      <i class="tab-info pi pi-info-circle" v-tooltip.left="'Figures, data, legends, or how the data were made'" />
     </div>
 
     <!-- only the active board is mounted; keyed by its canvas key so a tab switch re-binds the layout -->
     <LayoutCanvas ref="layoutRef" :key="activeKey" :canvas-key="activeKey" :module="module" :image-uids="imageUids" />
     <MethodsReportModal v-if="methodsScope" :project-uid="projectUid" :scope="methodsScope" :name="activeTitle || 'board'"
                         @close="methodsScope = null" />
+    <BoardLegendsModal v-if="legendsMd" :markdown="legendsMd" :name="activeTitle || 'board'" @close="legendsMd = ''" />
     <BoardRecordModal v-if="recordOpen" :project-uid="projectUid" :load-current="loadCurrentRecord" @close="recordOpen = false" />
   </div>
 </template>

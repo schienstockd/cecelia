@@ -120,11 +120,17 @@ draw) — see `_history_scope`.
 
 `task_ids` cuts it to the run-log entries of those task ids (`nothing` = every run): a chain run's
 table is the runs its nodes made (`methods_report`), not whatever ran on its images since.
+
+`usage_runs` (a set's Methods) marks each row's `usage`: `""` part of the analysis, `"redone"` or
+`"trial"` (`_history_usage`; the runs are the cluster runs current populations filter on, which keep
+their step however few images it covered). Every row also carries `spread` — the `conflicts` as data,
+flat key → `[(value, n images)]`, most images first — for text that states the spread in words.
 """
 function history_params_table(proj::CciaProject, image_uids::Vector{String};
                               pops::Union{Nothing,AbstractVector} = nothing,
                               cluster_runs::AbstractVector = String[],
-                              task_ids::Union{Nothing,AbstractVector} = nothing)::Vector{Dict{String,Any}}
+                              task_ids::Union{Nothing,AbstractVector} = nothing,
+                              usage_runs = nothing)::Vector{Dict{String,Any}}
     leaves = Dict{String,Any}()
     leaves_of(fn) = get!(() -> _history_leaves(fn), leaves, fn)
     # a named run may have rotated into the run-log archive; the whole history is read only then
@@ -142,6 +148,9 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
     append!(groups, [(k, v, true) for (k, v) in held])
     sort!(groups; by = g -> minimum(r.at for r in values(g[2])))
     groups = [(g..., "") for g in groups]
+    # set scope: which steps the analysis moved past (`_history_usage`), "" = part of it
+    usage = usage_runs === nothing ? Dict{Int,String}() : _history_usage(groups, leaves_of, N, usage_runs)
+    groups = [(g..., get(usage, i, "")) for (i, g) in enumerate(groups)]
     unmade = Tuple{String,String}[]
     if pops !== nothing
         runs = _hp_cluster_runs(proj, image_uids, [_parse_tkey(string(k)) for k in pops], String.(cluster_runs))
@@ -154,18 +163,21 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
             t.popType == "labels" || push!(v, t.pop)
         end
         relation, unmade = _history_scope(groups, leaves_of, shown, runs)
-        groups = [(g[1:3]..., relation[i]) for (i, g) in enumerate(groups) if haskey(relation, i)]
+        groups = [(g[1:3]..., relation[i], g[5]) for (i, g) in enumerate(groups) if haskey(relation, i)]
     end
-    for ((fn, _), by_img, is_held, relation) in groups
+    for ((fn, _), by_img, is_held, relation, use) in groups
         defaults = _history_param_defaults(fn)
         spec = try _task_spec(_task_from_fun_name(fn)) catch; nothing end
         out_name, _ = _history_output(fn, first(values(by_img)).params, leaves_of(fn))
         flats = [_hp_flat(r.params, defaults, leaves_of(fn)) for r in values(by_img)]
-        changed = String[]; conflicts = String[]
+        changed = String[]; conflicts = String[]; spread = Dict{String,Any}()
         for k in sort!(unique(vcat((collect(keys(f)) for f in flats)...)))
-            k == "valueName" && continue                       # shown as the output
-            is_bookkeeping_param(k) && continue
             l = get(something(leaves_of(fn), Dict{String,_HistoryLeaf}()), k, nothing)
+            # the version a step wrote is shown as the output; the one it read is a setting, and
+            # only worth a column when the images disagree on it
+            in_version = k == "valueName" && l !== nothing && l.type == "valueNameSelection" && !l.writes
+            k == "valueName" && !in_version && continue
+            is_bookkeeping_param(k) && continue
             # a crop box is drawn per image; its coordinates mean nothing in a table
             (l !== nothing && l.type == "imagePicker") && (push!(changed, "$k=(set per image)"); continue)
             vals = [haskey(f, k) ? f[k][1] : nothing for f in flats]
@@ -177,12 +189,14 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
                 counts[kk] = (v, get(counts, kk, (v, 0))[2] + 1)
             end
             if length(counts) == 1
+                in_version && continue
                 v = first(vals)
                 same = dflt === missing ? _hp_empty(v) : _hp_key(v) == _hp_key(dflt)
                 same || push!(changed, "$k=$(_hp_show(v))")
             else
-                spread = sort!(collect(values(counts)); by = x -> -x[2])
-                push!(conflicts, "$k: " * join(("$(_hp_show(v)) ($n)" for (v, n) in spread), " | "))
+                vs = sort!(collect(values(counts)); by = x -> (-x[2], _hp_key(x[1])))   # most images first, then by value
+                spread[k] = [(v, n) for (v, n) in vs]
+                push!(conflicts, "$k: " * join(("$(_hp_show(v)) ($n)" for (v, n) in vs), " | "))
             end
         end
         note = is_held ? get(why_of, (fn, first(keys(by_img))), "") : ""
@@ -191,7 +205,7 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
             "output" => out_name, "images" => "$(length(by_img))/$N",
             "lastRun" => maximum(r.at for r in values(by_img)),
             "changedFromDefault" => join(changed, "; "), "conflicts" => join(conflicts, "; "),
-            "note" => note, "relation" => relation, "cite" => _hp_cite(fn, [r.params for r in values(by_img)]),
+            "spread" => spread, "note" => note, "relation" => relation, "usage" => use, "cite" => _hp_cite(fn, [r.params for r in values(by_img)]),
             # the run-log task ids of the runs this row reports (one per image's latest run; a chain
             # record or an entry from before task ids were logged has none) — the export provenance
             "taskIds" => sort!(unique(String[r.taskId for r in values(by_img) if !isempty(r.taskId)]))))

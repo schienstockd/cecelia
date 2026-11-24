@@ -57,6 +57,12 @@
                                measure="live.track.speed", granularity=:track,
                                raw_points=true, max_points=10)
         @test length(bx["series"][1]["points"]) == min(ntr, 10)
+        # max_points=0 → every point (the box/strip Subsample toggle switched off sends maxPoints 0)
+        bxall = plot_summary_data(img, "live", ["B/_tracked"], "boxplot";
+                                  measure="live.track.speed", granularity=:track,
+                                  raw_points=true, max_points=0)
+        @test length(bxall["series"][1]["points"]) == bxall["series"][1]["n"] == ntr
+        @test bxall["series"][1]["median"] == bx["series"][1]["median"]   # the cap never moves the stats
         pts = plot_summary_data(img, "live", ["B/_tracked"], "points";
                                 measure="live.track.speed", granularity=:track, max_points=10)
         @test pts["chartType"] == "points" && length(pts["series"][1]["points"]) == min(ntr, 10)

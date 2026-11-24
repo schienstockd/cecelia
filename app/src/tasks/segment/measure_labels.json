@@ -2,6 +2,7 @@
   "task": "measureLabels",
   "fun_name": "segment.measureLabels",
   "label": "Measure labels",
+  "methodsText": ["Shape and intensity measures were extracted for each cell from the {intensityValueName} image", {"showIf": {"extendedMeasures": true}, "text": ", including extended shape measures"}, "."],
   "purpose": "Measure each label's shape and channel intensities into the cell table",
   "useWhen": [
     "Labels with no measures yet, e.g. after a bare segmentation run",
