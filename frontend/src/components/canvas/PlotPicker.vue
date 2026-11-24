@@ -7,8 +7,9 @@
   Two looks, one switch (`settings.plotPickerPreviews`, also in Preferences → Plots):
     • previews on  — the KINDS of plot in a column on the left, each with its chart shape
       (PlotKindSketch — every "Compare groups" plot opens as a box plot, so the shape is drawn once
-      there), and the picked kind's plots beside it, a card each with what it is about (PlotSketch: a
-      cell, a track, two images) and the question it answers. Hovering a kind shows its plots (after a
+      there), and the picked kind's plots beside it under the kind's one-line blurb, a card each with
+      what it is about (PlotSketch: a cell, a track, two images) and the question it answers — in the
+      card, never a tooltip, so nothing hovers over the next card or column. Hovering a kind shows its plots (after a
       short pause, so crossing the column on the way to a card doesn't flip it), clicking pins it.
       Typing shows every match beside the column, and the hovered card's kind lights up in it; a host
       with one kind only drops the column;
@@ -49,6 +50,7 @@ const searching = computed(() => !!query.value.trim())
 const showKinds = computed(() => allGroups.value.length > 1)
 const activeKind = computed(() =>
   searching.value ? null : allGroups.value.find(g => g.id === picked.value)?.id ?? allGroups.value[0]?.id ?? null)
+const activeGroup = computed(() => allGroups.value.find(g => g.id === activeKind.value) ?? null)
 // the cards beside the column: every match while searching, else the active kind's plots
 const cardGroups = computed(() =>
   searching.value ? groups.value : groups.value.filter(g => g.id === activeKind.value))
@@ -112,16 +114,18 @@ function leaveKind() { clearTimeout(hoverTimer) }
         <nav v-if="showKinds" class="pp-kinds">
           <button v-for="g in allGroups" :key="g.id" type="button" class="pp-kind"
                   :class="{ 'pp-kind-on': activeKind === g.id || (searching && hoveredCard === g.id) }"
-                  v-tooltip.right="g.blurb" @click="showKind(g.id)" @mouseenter="hoverKind(g.id)" @mouseleave="leaveKind">
+                  @click="showKind(g.id)" @mouseenter="hoverKind(g.id)" @mouseleave="leaveKind">
             <PlotKindSketch :category="g.id" />
             <span class="pp-card-label">{{ g.label }}</span>
           </button>
         </nav>
         <div class="pp-cards">
+          <!-- the kind's blurb heads its plots: a tip on the kind would cover the cards beside it -->
+          <div v-if="showKinds && activeGroup" class="cc-muted cc-fs-2xs pp-blurb">{{ activeGroup.blurb }}</div>
           <section v-for="g in cardGroups" :key="g.id" class="pp-section">
             <div v-if="searching" class="cc-eyebrow cc-fs-2xs pp-section-head">{{ g.label }}</div>
             <button v-for="o in g.options" :key="o.value" type="button" class="pp-card"
-                    v-tooltip.bottom="o.answers ?? ''" @click="pick(o)"
+                    @click="pick(o)"
                     @mouseenter="hoveredCard = o.category" @mouseleave="hoveredCard = null">
               <PlotSketch :kind="o.sketch" />
               <span class="pp-card-text">
@@ -170,6 +174,7 @@ function leaveKind() { clearTimeout(hoverTimer) }
 
 .pp-cards { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 0.4rem; }
 .pp-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
+.pp-blurb { padding: 0.1rem 0.2rem 0.35rem; }
 .pp-section + .pp-section { margin-top: 0.5rem; }
 .pp-section-head { grid-column: 1 / -1; padding: 0.3rem 0.2rem 0.1rem; }
 .pp-card { display: flex; gap: 0.4rem; align-items: center; text-align: left; padding: 0.25rem 0.35rem;
@@ -179,7 +184,7 @@ function leaveKind() { clearTimeout(hoverTimer) }
 .pp-card-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .pp-card-label { font-size: var(--cc-fs-sm); font-weight: 600; }
 .pp-card-answers { color: var(--cc-text-dim); line-height: 1.25;
-                   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+                   display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 .pp-list { overflow-y: auto; }
 </style>
