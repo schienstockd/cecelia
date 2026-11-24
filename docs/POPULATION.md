@@ -805,6 +805,12 @@ after fixing a gate. The GET cohort route computes the same answer without writi
   re-appended after its new parent). Exposed as `POST /api/gating/pop/move` and the population
   manager's ⋯ → *Move under…*; before it existed the only way to change a pop's parent was to delete
   the branch and redraw every gate in it.
+- **A selection moves or deletes in one mutation** — `move_pops!(m, paths, newparent)` and
+  `del_pops!(m, paths)` (the manager's multi-selection, `pop/move` / `pop/delete` with `paths`): one
+  save, one broadcast, one undo step, not N requests each rewriting the sidecar. `selection_roots`
+  drops a selected pop whose ancestor is also selected — it moves or goes with that ancestor. A move is
+  all-or-nothing: a target inside any selected subtree (a cycle), a taken target path, or two selected
+  pops with one name landing under one parent refuses the whole selection before anything moves.
 - **Time-agnostic**: gate eval is identical on timecourse segmentations (gates pooled
   cell-instances across timepoints) — no special code.
 - **A gate's SHAPE can be changed without deleting the population.** `set_gate!` takes any `Gate`

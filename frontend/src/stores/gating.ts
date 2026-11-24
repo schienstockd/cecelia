@@ -408,6 +408,11 @@ export function createGatingStore(initialPopType: string) {
   // Re-parent a population, subtree and all. The gate is untouched; its MEMBERSHIP is not — a pop is
   // its own gate ∩ its parent's, so lifting `/qc/B` out to root re-derives it against all cells.
   const movePop    = (path: string, parent: string)  => _post('/api/gating/pop/move', { path, parent })
+  // A multi-selection (the manager's ctrl/shift-click) in ONE request — one save, one broadcast, one
+  // undo step — not one request per population each rewriting the tree. A selected child of a selected
+  // parent rides with the parent; a refused selection changes nothing (`move_pops!` / `del_pops!`).
+  const movePops   = (paths: string[], parent: string) => _post('/api/gating/pop/move', { paths, parent })
+  const deletePops = (paths: string[])                 => _post('/api/gating/pop/delete', { paths })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
   // the user has checked a stale cluster population's clusters against the run as it is now (the stale icon)
   const confirmClusterRun = (path: string) => _post('/api/gating/pop/update', { path, runChecked: true })
@@ -544,7 +549,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
     renamePop, updatePop, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,

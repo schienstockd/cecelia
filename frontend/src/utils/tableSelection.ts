@@ -70,6 +70,27 @@ export function rangeSelection(
   return [...new Set([...base, ...range])]
 }
 
+/** Modifier state of a click in a file-manager list. `toggle` = the click landed on the row's own
+ *  checkbox, which toggles like a ctrl-click. */
+export interface PickMods { shift: boolean; additive: boolean; toggle?: boolean }
+
+/**
+ * The selection after a CLICK in a file-manager list — what every file browser does, so nobody has to
+ * learn it: a plain click selects that row only, ctrl/⌘-click (or its checkbox) toggles one, and
+ * shift-click selects the range from the anchor (the last row clicked without shift), adding to the
+ * selection when ctrl/⌘ is held too. The anchor stays put across shift-clicks, as in a file browser.
+ * One rule for `SelectionTable` and the population manager's list, so the two cannot pick differently.
+ */
+export function fileManagerPick(
+  orderedIds: string[], selectedIds: string[], anchorId: string | null, id: string,
+  mods: PickMods, disabledIds: string[] = [],
+): { selected: string[]; anchor: string | null } {
+  if (mods.shift && anchorId)
+    return { selected: rangeSelection(orderedIds, anchorId, id, disabledIds, mods.additive ? selectedIds : []),
+             anchor: anchorId }
+  return { selected: mods.additive || mods.toggle ? toggleOneSelection(id, selectedIds) : [id], anchor: id }
+}
+
 /**
  * Pixels to scroll this frame while a drag-select is held near the edge of its scroll box — negative
  * up, positive down, 0 away from the edges. Speed ramps linearly from 0 at `edge` px inside the box to
