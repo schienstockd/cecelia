@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { allSelected, someSelected, toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep } from './tableSelection'
+import { allSelected, someSelected, toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep,
+         fileManagerPick } from './tableSelection'
 
 describe('allSelected', () => {
   it('is true only when every selectable row is chosen', () => {
@@ -91,5 +92,26 @@ describe('edgeScrollStep', () => {
   it('a short box still has a dead middle', () => {
     expect(edgeScrollStep(30, 0, 60)).toBe(0)
     expect(edgeScrollStep(59, 0, 60)).toBeGreaterThan(0)
+  })
+})
+
+describe('fileManagerPick', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const plain = { shift: false, additive: false }
+  it('a plain click selects that row only and becomes the anchor', () => {
+    expect(fileManagerPick(ids, ['a', 'b'], 'a', 'c', plain)).toEqual({ selected: ['c'], anchor: 'c' })
+  })
+  it('ctrl/⌘-click (or the row checkbox) toggles one row and moves the anchor', () => {
+    expect(fileManagerPick(ids, ['a'], 'a', 'c', { shift: false, additive: true })).toEqual({ selected: ['a', 'c'], anchor: 'c' })
+    expect(fileManagerPick(ids, ['a', 'c'], 'a', 'c', { ...plain, toggle: true })).toEqual({ selected: ['a'], anchor: 'c' })
+  })
+  it('shift-click REPLACES with the range from the anchor, which stays put', () => {
+    expect(fileManagerPick(ids, ['d'], 'b', 'd', { shift: true, additive: false })).toEqual({ selected: ['b', 'c', 'd'], anchor: 'b' })
+  })
+  it('ctrl+shift-click ADDS the range', () => {
+    expect(fileManagerPick(ids, ['a'], 'c', 'd', { shift: true, additive: true })).toEqual({ selected: ['a', 'c', 'd'], anchor: 'c' })
+  })
+  it('shift-click with no anchor yet acts as a plain click', () => {
+    expect(fileManagerPick(ids, [], null, 'b', { shift: true, additive: false })).toEqual({ selected: ['b'], anchor: 'b' })
   })
 })

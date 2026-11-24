@@ -217,6 +217,66 @@ function del_children!(m::PopulationTree, path::AbstractString)
     _del_paths!(m, Set(descendants(m, String(path))))
 end
 
+"""
+    selection_roots(m, paths) -> Vector{String}
+
+The populations a bulk action on `paths` acts on directly, in map order: duplicates dropped, and
+every path whose ancestor is also selected dropped too — it travels with (moves with, or is deleted
+with) that ancestor, so acting on it separately would double-apply. Errors on an unknown path.
+"""
+function selection_roots(m::PopulationTree, paths)::Vector{String}
+    sel = unique(String[String(p) for p in paths])
+    isempty(sel) && error("no populations given")
+    for p in sel
+        has_pop(m, p) || error("not found: $p")
+    end
+    [p for p in m.order if p in sel && !any(a -> startswith(p, a * "/"), sel)]
+end
+
+"""
+    move_pops!(m, paths, newparent) -> Vector{String}
+
+Re-parent several populations under `newparent` in one mutation — `move_pop!` for a selection. A
+selected population whose ancestor is also selected keeps its place under that ancestor (the subtree
+moves whole). Everything is checked BEFORE anything moves, so a refused selection leaves the map as it
+was: a target inside any selected subtree (a cycle), a target path already taken, or two selected
+populations with the same name landing under the same parent. Returns the new path of each moved root,
+in map order (one already under `newparent` stays and is returned as is).
+"""
+function move_pops!(m::PopulationTree, paths, newparent::AbstractString)::Vector{String}
+    roots = selection_roots(m, paths)
+    newparent = is_root(newparent) ? ROOT : String(newparent)
+    (newparent == ROOT || has_pop(m, newparent)) || error("move_pops!: parent not found: $newparent")
+    for r in roots
+        (newparent == r || startswith(newparent, r * "/")) &&
+            error("cannot move \"$(pop_name(r))\" into itself or one of its own descendants")
+    end
+    landing = Dict{String,String}()
+    for r in roots
+        m.pops[r].parent == newparent && continue
+        np = pop_path(newparent, m.pops[r].name)
+        has_pop(m, np) && error("target exists: $np")
+        haskey(landing, np) && error("\"$(landing[np])\" and \"$r\" would both land at $np — rename one first")
+        landing[np] = r
+    end
+    [move_pop!(m, r, newparent) for r in roots]
+end
+
+"""
+    del_pops!(m, paths)
+
+Delete several populations (each with its subtree) in one mutation — `del_pop!` for a selection. A
+selected child of a selected parent is simply part of the parent's cascade. Errors on an unknown path
+before deleting anything.
+"""
+function del_pops!(m::PopulationTree, paths)
+    _del_paths!(m, Set(pops_with_subtrees(m, paths)))
+end
+
+"""Every population in `paths` plus all their descendants, deduplicated (what `del_pops!` removes)."""
+pops_with_subtrees(m::PopulationTree, paths)::Vector{String} =
+    unique(reduce(vcat, ([r; descendants(m, r)] for r in selection_roots(m, paths)); init = String[]))
+
 function _del_paths!(m::PopulationTree, targets::Set{String})
     for t in targets
         # drop the reverse-lookup entry first so `uid_index` never points at a deleted path, then

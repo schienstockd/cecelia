@@ -272,6 +272,65 @@ end
     @test Set(pop_paths(load_pop_tree(td, "B"))) == Set(["/qc", "/qc/B", "/qc/B/mem+"])
 end
 
+# ── Bulk move / delete: a multi-selection in the population manager ──────────
+# One mutation for the whole selection (one save, one undo step), all-or-nothing on a refusal, and a
+# selected child of a selected parent rides along with the parent rather than being acted on twice.
+@testset "move_pops! / del_pops! act on a selection" begin
+    g() = RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0)
+    function tree()
+        m = PopulationTree(pop_type="flow", value_name="B")
+        for (n, par) in [("qc", ROOT), ("A", ROOT), ("A1", "/A"), ("B", ROOT), ("C", "/qc"),
+                         ("D", ROOT), ("X", "/A"), ("X", "/D")]
+            add_pop!(m, n; parent=par, gate=g())
+        end
+        m
+    end
+
+    # A and B under qc; A1 travels with A — it is NOT lifted out to /qc/A1
+    m = tree()
+    @test move_pops!(m, ["/A", "/B", "/A/A1"], "/qc") == ["/qc/A", "/qc/B"]
+    @test Set(pop_paths(m)) == Set(["/qc", "/qc/A", "/qc/A/A1", "/qc/A/X", "/qc/B", "/qc/C", "/D", "/D/X"])
+    @test pop_at(m, "/qc/A/A1").parent == "/qc/A"
+
+    # one already under the target is left where it is and still answered
+    m = tree()
+    @test move_pops!(m, ["/qc/C", "/B"], "/qc") == ["/qc/B", "/qc/C"]      # in map order
+
+    # to the top level, from two different parents
+    m = tree()
+    @test move_pops!(m, ["/qc/C", "/A/A1"], ROOT) == ["/A1", "/C"]
+    @test pop_at(m, "/A1").parent == ROOT && pop_at(m, "/C").parent == ROOT
+
+    # refusals leave the map untouched — checked BEFORE anything moves, so a selection whose first
+    # member could move (qc, earlier in map order) still moves nothing: under one of the selection's
+    # own descendants (a cycle), or under a selected population itself …
+    m = tree(); before = copy(pop_paths(m))
+    @test_throws ErrorException move_pops!(m, ["/qc", "/A"], "/A/A1")
+    @test pop_paths(m) == before
+    @test_throws ErrorException move_pops!(m, ["/qc", "/A"], "/A")
+    @test pop_paths(m) == before
+    @test_throws ErrorException move_pops!(m, ["/qc"], "/nope")    # … an unknown parent
+    # … onto a taken path (/qc/C exists, so a root-level C can't join it — and B doesn't move either)
+    add_pop!(m, "C"; parent=ROOT, gate=g())
+    @test_throws ErrorException move_pops!(m, ["/B", "/C"], "/qc")
+    @test pop_paths(m) == [before; "/C"]
+    # … two selected pops with the same name landing under one parent
+    @test_throws ErrorException move_pops!(m, ["/A/X", "/D/X"], ROOT)
+    # … an unknown path, or an empty selection
+    @test_throws ErrorException move_pops!(m, ["/B", "/nope"], "/qc")
+    @test_throws ErrorException move_pops!(m, String[], "/qc")
+    @test pop_paths(m) == [before; "/C"]
+
+    # delete a parent with its child selected too, plus an unrelated pop: one cascade, no double delete
+    m = tree()
+    del_pops!(m, ["/A/A1", "/A", "/B"])
+    @test Set(pop_paths(m)) == Set(["/qc", "/qc/C", "/D", "/D/X"])
+    m = tree(); before = copy(pop_paths(m))
+    @test_throws ErrorException del_pops!(m, ["/B", "/nope"])
+    @test pop_paths(m) == before                              # nothing deleted on a bad selection
+    @test Set(pops_with_subtrees(m, ["/A", "/A/X"])) == Set(["/A", "/A/A1", "/A/X"])
+end
+
 # ── Pop UIDs — the stable id every outside reference (obs columns, external notes) points at ─────
 # Reintroduces the R version's `popID` (MULTI_POP_TRACKING_PLAN.md Decision 0). Path is the DISPLAY
 # identity (what the UI shows); UID is the DURABLE one that outlives a rename. Two invariants matter

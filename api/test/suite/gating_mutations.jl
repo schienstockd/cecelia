@@ -79,6 +79,82 @@
   end
 end
 
+# ── pop/move + pop/delete on a multi-selection (`paths`) ─────────────────────────────────────────
+# The population manager's multi-select: ONE request per action, so one save, one broadcast and one
+# undo step for the whole selection — not N requests each rewriting the document. Refusals (a cycle,
+# a combined pop that would be orphaned, an unknown path) leave the on-disk document untouched.
+@testset "API: pop/move + pop/delete take a multi-selection" begin
+  fx = fixture_for(:cells)
+  if fx === nothing
+    @test_skip "cell-table fixture missing"
+  else
+    # a temp copy: a plain (non-derived) fixture comes back as the committed directory itself
+    dir = mktempdir()
+    cp(fx.project, joinpath(dir, basename(fx.project)))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        puid, uid, vn = basename(fx.project), fx.uid, fx.value_name
+        base = Dict{String,Any}("projectUid" => puid, "imageUid" => uid,
+                                "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        # the tree's SHAPE is what is under test, so the gate's columns needn't exist in the table
+        gate(xmax) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "c1", "y_channel" => "c2",
+                                      "x_min" => 0.0, "x_max" => xmax, "y_min" => 0.0, "y_max" => 1.0)
+        tree() = load_pop_tree(_gating_image(puid, uid)[1]; value_name = vn, pop_type = "flow")
+        pre = Set(pop_paths(tree()))                       # whatever the fixture already has stays out of it
+        onDisk() = setdiff(Set(pop_paths(tree())), pre)
+        undoDepth() = length(_history_for(_history_key(puid, uid, vn, "flow")).undo)
+
+        for (n, par) in [("qc", "root"), ("A", "root"), ("A1", "/A"), ("B", "root"), ("C", "root")]
+            post(api_gating_pop_add, Dict{String,Any}("name" => n, "parent" => par, "gate" => gate(1.0)))
+        end
+        post(api_gating_pop_add, Dict{String,Any}("name" => "AorC", "boolean" =>
+             Dict{String,Any}("op" => "or", "pops" => ["/A", "/C"])))
+        all0 = Set(["/qc", "/A", "/A/A1", "/B", "/C", "/AorC"])
+        @test onDisk() == all0
+
+        # move A (with A1 also selected — it rides along) and B under qc: one request, one undo step
+        d0 = undoDepth()
+        st, b = post(api_gating_pop_move, Dict{String,Any}("paths" => ["/A", "/A/A1", "/B"], "parent" => "/qc"))
+        @test st == 200
+        @test String.(JSON3.read(b).paths) == ["/qc/A", "/qc/B"]
+        @test onDisk() == Set(["/qc", "/qc/A", "/qc/A/A1", "/qc/B", "/C", "/AorC"])
+        @test undoDepth() == d0 + 1
+        # the combined pop's term followed the move (references are paths)
+        @test pop_at(tree(), "/AorC").boolean_pops == ["/qc/A", "/C"]
+        st, _ = post(api_gating_undo, Dict{String,Any}())
+        @test st == 200 && onDisk() == all0                     # the whole selection comes back at once
+
+        # refused: under one of the selection's own descendants; an unknown path; an empty list
+        st, _ = post(api_gating_pop_move, Dict{String,Any}("paths" => ["/B", "/A"], "parent" => "/A/A1"))
+        @test st == 400
+        st, _ = post(api_gating_pop_move, Dict{String,Any}("paths" => ["/B", "/nope"], "parent" => "/qc"))
+        @test st == 404
+        st, _ = post(api_gating_pop_move, Dict{String,Any}("paths" => [], "parent" => "/qc"))
+        @test st == 400
+        @test onDisk() == all0
+
+        # delete: refused while a combined pop that stays would lose a term …
+        st, b = post(api_gating_pop_delete, Dict{String,Any}("paths" => ["/A", "/B"]))
+        @test st == 400 && occursin("AorC", String(JSON3.read(b).error))
+        @test onDisk() == all0
+        # … allowed when the combined pop goes too; a parent + its selected child is one cascade
+        d0 = undoDepth()
+        st, _ = post(api_gating_pop_delete, Dict{String,Any}("paths" => ["/A/A1", "/A", "/B", "/AorC"]))
+        @test st == 200 && onDisk() == Set(["/qc", "/C"])
+        @test undoDepth() == d0 + 1
+        # childrenOnly is a one-population action
+        st, _ = post(api_gating_pop_delete, Dict{String,Any}("paths" => ["/qc", "/C"], "childrenOnly" => true))
+        @test st == 400 && onDisk() == Set(["/qc", "/C"])
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
+
 # ── COLOUR BY a third measure ────────────────────────────────────────────────────
 # The dots keep their positions and gain a value: `plotdata?z=…` answers TRIPLES instead of pairs,
 # read in one pass so `z[i]` is the same cell as `(x[i], y[i])`. A stride slip here mis-colours every

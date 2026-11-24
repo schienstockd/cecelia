@@ -2237,26 +2237,44 @@ end
 # `childrenOnly: true` deletes the subtree UNDER `path` and keeps the population itself — the
 # "prune what I gated off this" action in the manager's row menu. One request (so one undo step),
 # not one delete per child.
+# `paths: [...]` (instead of `path`) deletes a multi-selection the same way: one load, one save, one
+# undo step. A selected child of a selected parent is part of the parent's cascade (`del_pops!`).
+# `childrenOnly` takes ONE path: "everything below" a selection that holds a parent and its child is
+# ambiguous (keep the child, or prune it with the parent's subtree?).
 function api_gating_pop_delete(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
-    haskey(body, "path") || return _gerr(400, "path required")
+    _paths, perr = _body_paths(body); perr === nothing || return perr
+    _children_only = _wbool(body, "childrenOnly", false)
+    (_children_only && length(_paths) > 1) && return _gerr(400, "childrenOnly takes one path")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
-        _path = String(body["path"])
-        _children_only = _wbool(body, "childrenOnly", false)
+        for p in _paths
+            has_pop(m, p) || return _pop_not_found(m, p)
+        end
         # A boolean pop (Decision 16) references pops by PATH, so deleting one it combines would leave
         # it silently pointing at nothing (empty membership + a server warning nobody reads). Refuse
         # and name the dependants instead — rename/move rewrite references, only delete can orphan them.
-        _going = _children_only ? descendants(m, _path) : [_path; descendants(m, _path)]
+        _going = _children_only ? descendants(m, _paths[1]) : pops_with_subtrees(m, _paths)
         _deps = boolean_dependents(m, _going)
         isempty(_deps) || return _gerr(400,
             "Can't delete: " * join(["\"$(pop_name(d))\" combines $(join([pop_name(r) for r in rs], ", "))"
                                     for (d, rs) in _deps], "; ") *
             ". Edit or delete the combined population$(length(_deps) > 1 ? "s" : "") first.")
-        _children_only ? del_children!(m, _path) : del_pop!(m, _path)
+        _children_only ? del_children!(m, _paths[1]) : del_pops!(m, _paths)
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
+end
+
+# The populations a mutation acts on: `paths` (a multi-selection) or the single `path` → (paths, err).
+function _body_paths(body)
+    if haskey(body, "paths")
+        ps = body["paths"]
+        (ps isa AbstractVector && !isempty(ps) && all(p -> p isa AbstractString, ps)) ||
+            return String[], _gerr(400, "paths must be a non-empty list of population paths")
+        return unique(String[String(p) for p in ps]), nothing
+    end
+    haskey(body, "path") || return String[], _gerr(400, "path required")
+    String[String(body["path"])], nothing
 end
 
 function api_gating_pop_update(body_bytes::Vector{UInt8})
@@ -2341,33 +2359,40 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
     end
 end
 
-# POST /api/gating/pop/move  { …, path, parent }  → re-parent a population, subtree and all.
+# POST /api/gating/pop/move  { …, path | paths, parent }  → re-parent populations, subtrees and all.
 # The gate is unchanged; its MEMBERSHIP is not — a pop is its own gate ∩ its parent's, so this is how
 # a population gated under a QC gate is lifted out to all cells (or tucked under another gate) without
-# redrawing it and its children. `parent` is "root" for top level.
+# redrawing it and its children. `parent` is "root" for top level. `paths` moves a multi-selection in
+# ONE save and one undo step (`move_pops!`: all-or-nothing, a selected child rides with its selected
+# parent) → `paths` (each moved root's new path) and `path` (the first, for single-path callers).
 function api_gating_pop_move(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
-    (haskey(body, "path") && haskey(body, "parent")) || return _gerr(400, "path and parent required")
-    _path   = String(body["path"])
+    haskey(body, "parent") || return _gerr(400, "path and parent required")
+    _paths, perr = _body_paths(body); perr === nothing || return perr
     _parent = String(body["parent"])
-    # the move changes the pop's PATH, so it needs the same cross-pop-type uniqueness guard a rename
-    # does (the mixed-type module picker resolves a population by path alone).
-    _newpath = pop_path(is_root(_parent) ? ROOT : _parent, pop_name(_path))
-    _conflict = pop_name_conflict(img, vn, _newpath; pop_type = pt)
-    _conflict === nothing || return _gerr(400,
-        "A $_conflict population already exists at \"$_newpath\" in this segmentation — names must be " *
-        "unique across population types so a population can be selected unambiguously. Rename it first.")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
-        has_pop(m, _path) || return _pop_not_found(m, _path)
-        stamp_edit!(m, _path)
-        newpath = try
-            move_pop!(m, _path, _parent)
+        for p in _paths
+            has_pop(m, p) || return _pop_not_found(m, p)
+        end
+        roots = selection_roots(m, _paths)
+        # the move changes each pop's PATH, so it needs the same cross-pop-type uniqueness guard a
+        # rename does (the mixed-type module picker resolves a population by path alone).
+        for r in roots
+            _newpath = pop_path(is_root(_parent) ? ROOT : _parent, pop_name(r))
+            _conflict = pop_name_conflict(img, vn, _newpath; pop_type = pt)
+            _conflict === nothing || return _gerr(400,
+                "A $_conflict population already exists at \"$_newpath\" in this segmentation — names must be " *
+                "unique across population types so a population can be selected unambiguously. Rename it first.")
+        end
+        foreach(r -> stamp_edit!(m, r), roots)
+        newpaths = try
+            move_pops!(m, roots, _parent)
         catch e
             return _gerr(400, sprint(showerror, e))
         end
         r = _persist_and_broadcast!(m, img, body, vn, pt)
-        200, JSON3.write((; r..., path = newpath))
+        200, JSON3.write((; r..., path = first(newpaths), paths = newpaths))
     end
 end
 
