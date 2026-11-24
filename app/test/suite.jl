@@ -262,6 +262,9 @@ include(joinpath(@__DIR__, "suite", "labelprops.jl"))
 # EOF conflicts on every append. The extracted file loads inside this file's aggregating
 # testset scope, so any helpers defined earlier in suite.jl are still in scope (lexical).
 include(joinpath(@__DIR__, "suite", "gating.jl"))
+include(joinpath(@__DIR__, "suite", "split_gates.jl"))
+include(joinpath(@__DIR__, "suite", "hist_gates.jl"))
+include(joinpath(@__DIR__, "suite", "valley_outlier.jl"))
 # ── Population types + cluster/region + spatial obs testsets ─────────────
 # 10 sections covering GATING_POP_TYPES, img_has_value_name, clust/trackclust pop types,
 # region pop type (spatial regions), contact_matrix, region pop auto-share, bare
@@ -337,6 +340,7 @@ include(joinpath(@__DIR__, "suite", "pop_plot_cols.jl"))
 # file's aggregating testset scope, so any helpers defined earlier in suite.jl are still
 # in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "resolve_labels.jl"))
+include(joinpath(@__DIR__, "suite", "gating_stamp_large_map.jl"))   # RESULT-REVIEW result-9e123c3f
 
 # ── summary-plot aggregation (server-side; pop_df → bins / freq counts) ────
 # ── plot_summary_data + motion + uns + anisotropy testsets ─────────────
@@ -389,6 +393,8 @@ include(joinpath(@__DIR__, "suite", "acq_camera_unlisted.jl"))   # RESULT-REVIEW
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 # the experiment design record + grid (experiment_design.jl): one design per set, history, placement
 include(joinpath(@__DIR__, "suite", "experiment_design.jl"))
+# where a set's images came from (data_source.jl): record, precedence, import suggestions, derived images
+include(joinpath(@__DIR__, "suite", "data_source.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))

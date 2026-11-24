@@ -105,7 +105,7 @@ interface PanelState {
 // sample from the logical canvas via CANVAS_ZOOM_KEY-injected 1/zoom).
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PanelState>(
@@ -468,14 +468,16 @@ function duplicatePanel(src: { id: number; state: PanelState }) {
 
 // "Show series": explode this panel by measurement — one duplicate per selected measure, so all the
 // track measurements (speed, displacement, straightness, …) are visible side by side instead of
-// flipping the single measure dropdown. Same deep-clone as duplicatePanel, overriding `measure`.
-function explodePanel(src: { state: PanelState }, measures: string[]) {
-  for (const m of measures) {
-    add()
-    const p = panels.value.at(-1)
-    if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis }, measure: m }
-  }
-  arrangeGrid(tileCols.value)   // tile them so the whole set is visible at once (the point of "show series")
+// flipping the single measure dropdown. Same deep-clone as duplicatePanel, overriding `measure`;
+// `duplicate(id, n)` gives every copy the source's size and lays the set out beside it — no Tile,
+// which would resize every plot (source included) to the grid cell.
+function explodePanel(src: { id: number; state: PanelState }, measures: string[]) {
+  if (!measures.length) return
+  const ids = duplicate(src.id, measures.length)
+  ids.forEach((id, i) => {
+    const p = panels.value.find(x => x.id === id)
+    if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis }, measure: measures[i] }
+  })
 }
 
 // useSummaryData prunes the GLOBAL selection when pops vanish; prune each panel's LOCAL selection here.
@@ -525,8 +527,8 @@ watch(segPops, () => {
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAllPanels" />
         <div class="cc-btn-group">

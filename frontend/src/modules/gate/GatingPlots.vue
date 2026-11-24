@@ -15,6 +15,7 @@
 -->
 <script setup lang="ts">
 import { scopeCopy, scopeSetter } from '../../utils/scopeSwitch'
+import { isHistGate, HIST_AXIS } from '../../plots/histGeometry'
 import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
@@ -139,7 +140,7 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // (GatePlotPanel / GatePairsPanel), so Tile hands out square cells.
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PlotState>(
@@ -429,7 +430,8 @@ function showDefiningPlot(pop: FlatPop) {
   p.state.kind = 'single'
   p.state.parent = pop.parent
   p.state.x = pop.gate.x_channel
-  p.state.y = pop.gate.y_channel
+  // a 1D gate (range / bisector) was drawn on its channel's histogram
+  p.state.y = isHistGate(pop.gate) ? HIST_AXIS : pop.gate.y_channel
   p.state.xt = pop.gate.x_transform.kind
   p.state.yt = pop.gate.y_transform.kind
   // an asinh gate opens at its own cofactor, so its outline and the dots sit where they were drawn
@@ -608,8 +610,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                 v-tooltip.bottom="`Clear Claude's highlighted ${isTrack ? 'tracks' : 'cells'} (Esc)`">
           Clear marks · {{ assistantMarkCount }}
         </button>
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">

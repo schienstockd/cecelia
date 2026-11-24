@@ -74,7 +74,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<ClusterPanelState>(
@@ -101,7 +101,7 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
   suffixes, labelMap, channelNames, clusterIds, clusterRunAt, featureOptions, hmmStateCols, hmmTransitionCols,
-  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes,
+  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes, allFeatures,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
   popType: computed(() => props.popType), suffix, g,
@@ -227,6 +227,7 @@ const ctxFor = (s: ClusterPanelState) => ({
   vis: panelVis(s),   // canvas styling (dark-theme etc.) — interactive views read it if they theme
   axes: clusterAxes.value[suffix.value] ?? null,   // the run's diffusion axis names (cluster map layout)
   nameMap: labelMap.value,
+  features: allFeatures.value,   // what the run clustered on — the map can be coloured by one
 })
 
 // the population row the manager treats as selected (clicking a row); cluster ticking is per-row,
@@ -321,8 +322,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           </select>
         </label>
         <PlotPicker :options="plotTypes" @pick="addKind" />
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">

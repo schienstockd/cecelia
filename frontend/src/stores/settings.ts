@@ -999,8 +999,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // subsequent write to a per-profile ref is coalesced into a PATCH through the canonical
   // write-behind scheduler.
   //
-  // Called from `main.ts`'s boot guard once setupRequired = false AND needsProfilePick = false —
-  // i.e. after any picker gate has resolved, so we hydrate the CORRECT profile.
+  // Called from `main.ts`'s boot guard once the setup and profile-picker gates have resolved (see
+  // the guard for which routes skip the picker), so we hydrate the CORRECT profile.
   //
   // Idempotent: calling twice is a no-op after the first.
   const profileHydrated = ref(false)

@@ -294,3 +294,41 @@ end
     @test grew == (true, false) && ext[2] == 10.3 && ext[1] ≈ -3.0 - 0.05 * 10.6
 end
 
+
+@testset "API: cluster map colourFeature values (per point, obs order)" begin
+    # `_cluster_map_values` feeds the UMAP's colour-by-feature: one value per obs row, read through the
+    # label_props view with the image's channel names. Expected values are read straight off the table.
+    function with_fixture(f, props...)
+        fx = fixture_for(props...)
+        fx === nothing && return @test_skip "fixture $(props) missing"
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dirname(fx.project)
+            img, err = _gating_image(basename(fx.project), fx.uid)
+            @test err === nothing
+            f(img, fx.value_name, fixture_table(fx))
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+    # an obs feature (tracked cells: speed) — finite where the table has it, NaN where it is missing
+    with_fixture(:cells, :tracked) do img, vn, path
+        df = label_props(path) |> v -> select_cols(v, ["live.cell.speed"]) |> as_df
+        n = size(df, 1)
+        got = _cluster_map_values(img, vn, path, "live.cell.speed", n)
+        @test length(got) == n
+        want = Float32[ismissing(v) ? NaN32 : Float32(v) for v in df[!, "live.cell.speed"]]
+        @test isequal(got, want)
+        @test any(isfinite, got)
+        # a column this segmentation lacks → all NaN, never an error
+        @test all(isnan, _cluster_map_values(img, vn, path, "no.such.column", n))
+    end
+    # a marker by channel NAME resolves to this segmentation's own raw intensity column
+    with_fixture(:cells, Symbol("marker-names")) do img, vn, path
+        chans = channel_names(img; value_name = vn)
+        raw = label_props(path) |> as_df
+        col = first(c for c in names(raw) if occursin("intensity_0", c))
+        got = _cluster_map_values(img, vn, path, String(chans[1]), size(raw, 1))
+        @test isequal(got, Float32.(raw[!, col]))
+    end
+end

@@ -84,7 +84,7 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
     end
 
     proj    = load_project(proj_uid)
-    set_idx = findfirst(s -> img.uid in s.image_uids, proj._sets)
+    set_idx = image_set_index(proj, img)
     if isnothing(set_idx)
         on_log("[ERROR] Could not find the set containing image $(img.uid)")
         return nothing
@@ -97,6 +97,7 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
         "resampleZ_order"             => p.order)
     merge!(resamp_meta, _resample_z_inherited_meta(src_meta))
     copy_source_meta!(resamp_meta, src_meta; z_flipped)
+    inherit_data_source!(resamp_meta, proj, img, s)
 
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "iso-z"), meta = resamp_meta, attr = img.attr)
 

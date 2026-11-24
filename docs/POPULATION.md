@@ -12,7 +12,7 @@ gating module. Gating is one way to *define* a population; the manager, the unif
 
 | type | membership defined by | data source | stored sidecar |
 |------|----------------------|-------------|----------------|
-| `flow` | gates (polygon, rectangle; later ellipse/quadrant/boolean) on cell measurements | gate strategy + H5AD | `gating/{vn}.json` |
+| `flow` | gates (rectangle, polygon, slice, quadrant) on cell measurements | gate strategy + H5AD | `gating/{vn}.json` |
 | `live` | tracking (btrack links cells across time) + optional track-measure filters | H5AD `.obs` (`track_id`) | none (derived off `flow`) |
 | `track` | gates on **per-track** properties (one point per track) | `track_props` (motility + on-read aggregates) | `gating/{vn}__tracks.json` |
 | `clust` | a filter on the **cell** cluster column (`filter_fun="in"` over `clusters.{suffix}`) | cell H5AD `.obs` column (clustPops) | `gating/{vn}__clust.json` |
@@ -608,14 +608,16 @@ now-deleted work branch — note that it needed the stamp for idempotency, becau
   `(uID, value_name, label, track_id)` — mirroring R popDT's merge cols — so `uID` (set-level
   pooling) and `track_id` participate only when those columns exist; `pop` is the value being
   collapsed, not part of the key. With `unique_labels=false` rows are kept per pop.
-- **Cache** keyed by the request signature (`hash` of pop_type/value_name/pops/pop_cols/flags)
-  **plus the on-disk mtimes of each involved value_name's `gating/{vn}.json` + `{vn}.h5ad`**,
-  stored on the image (`img._pop_df_cache`, runtime-only, not serialised). Because `pop_df`
-  reloads the map and reads the h5ad fresh every call, it always reflects the on-disk state — so
-  folding the mtimes into the key **auto-invalidates** the cache when a gate edit (rewrites the
-  map) or a re-track (rewrites the h5ad) lands. `flush_cache=true` is a manual override for
-  in-memory edits never written to disk. The accessor returns a copy, so callers can mutate the
-  result without corrupting the cache.
+- **Cache** — server-level (`_POP_DF_CACHE`, a `BoundedCache`): `init_object` builds a fresh image
+  per request, so a cache on the image never survived one. One slot per request (image dir +
+  pop_type/value_name/pops/pop_cols/flags) holding the frame and a **stamp** of what it was read from:
+  `_gating_inputs_stamp` per involved value_name (every gating map's SHA-256, the `{vn}*.json`
+  sidecars, the `{vn}.h5ad`'s mtime + size, the µm/px), the channel names, and the per-track /
+  per-branch tables when the read touches them. A gate edit or a re-track changes the stamp and the
+  slot is recomputed. Bounded to 64 frames and 1 GiB; a frame over the budget is returned, not kept.
+  `flush_cache=true` is a manual override for in-memory edits never written to disk; a `map_hook`
+  read bypasses the cache. The accessor returns a copy, so callers can mutate the result without
+  corrupting the cache.
 - **Set level** (later): pool across images, add a `uID` column — image results `vcat`. The
   dedup key picks up `uID` automatically once present.
 
@@ -679,8 +681,8 @@ only, because its labels are cell labels and mean nothing on the per-track table
 *consumers* (the napari Points overlay): one `(path, name, colour, show, is_track, labels)` per
 **non-transient, non-empty** stored population of one segmentation — where `pop_df` returns a pooled
 cell frame, this returns the populations themselves with their member IDs and display metadata. It
-recomputes membership from the on-disk map + cell table and **caches on `img._pop_df_cache` under the
-same mtime-folded key trick** (`(value_name, pop_type, gating-map mtime, h5ad mtime)`), so a caller
+recomputes membership from the on-disk map + cell table and **caches at server level**
+(`_RESOLVE_POPS_CACHE`, stamped by `_gating_inputs_stamp` like `pop_df`'s cache), so a caller
 iterating every segmentation for a napari refresh only recomputes the one whose gate/h5ad changed. The
 transient napari-selection pop is excluded (it's the selection *source*). Cell pop_types only
 (`flow`/`clust`); track pops go through the Tracks overlay.
@@ -785,8 +787,8 @@ after fixing a gate. The GET cohort route computes the same answer without writi
 ## Gating engine
 
 - Lives in Julia; operates on H5AD read via `label_props`.
-- Gate types: rectangle, polygon first; abstract `Gate` so ellipse/quadrant/boolean slot
-  in. Vertices in transformed space.
+- Gate types: rectangle, polygon (`gates.jl`) and the split gates slice and quadrant
+  (`split_gates.jl`, below). Vertices in transformed space.
 - `recompute!`: walk the tree in topological order, child membership = parent ∩ child
   gate. Cache the measurement matrix per image. Synchronous, in-process (no task pool) —
   interactive latency.
@@ -814,6 +816,79 @@ after fixing a gate. The GET cohort route computes the same answer without writi
   **bounding box** — lossy and widening (the pop can only gain cells), so that direction arms
   before it fires. Both keep the channels and per-axis transforms, since the stored coords are
   already in transformed space.
+
+### Split gates — slice and quadrant
+
+A rectangle or polygon encloses ONE population. A **split gate** divides the whole plane, and every region
+is its own population — drawing one adds them all at once (`POST /api/gating/pop/add-split`, one undo step).
+
+- **Slice** — a dividing line of 2+ vertices (it may bend). Both ends run on to infinity, so the line splits
+  the plane in two: `side: 1` is the region LEFT of the line's direction, `side: -1` the right. The GUI
+  draws it with the slice tool (click vertices, double-click to end) and names the regions `name+` / `name-`;
+  `+` is the side toward higher values (above a line that runs more across than up, right of one that runs
+  more up than across — `positiveSide`, `plots/splitGeometry.ts`).
+- **Quadrant** — a centre and four arms listed counter-clockwise; region `quadrant: q` is the sector from
+  arm q to arm q+1. One click with the quadrant tool places the centre with arms along the axes, so
+  sectors 1–4 are `X+ Y+`, `X- Y+`, `X- Y-`, `X+ Y-` (named from the axis labels). Dragging an arm handle
+  tilts it — FlowJo's "spider" quadrant. An arm cannot be swung past its neighbour (the constructor
+  refuses arms that are not counter-clockwise; the editor holds the arm at its last good spot).
+
+Each region's population stores the SAME divider plus its own region, and the populations of one split
+share a `group` id. **`set_gate!` moves the whole group**: an edit of any member rewrites every sibling under
+the same parent with that `group` to the new divider, each keeping its region. So the regions always tile the
+plane: every cell with finite values on both axes is in exactly one; a NaN/Inf cell is in none (as for
+rectangle/polygon). The negative side is computed as "finite and not on the left", never as a second
+polygon, so the two sides of a slice are exact complements even when a bent line's extension crosses itself.
+
+**Axis swap.** A gate shown with its axes swapped is a mirror image: left becomes right, and
+counter-clockwise arms run clockwise. `project_gate` therefore reverses the arm list (to stay
+counter-clockwise) and mirrors the region (`side → -side`, `q → 4 - q` mod 4) — `mirror_region`; the
+client's `transposeSplit` and `orientGate` apply the same rule, and `set_gate!` carries a sibling's region
+across a swapped edit. Each axis transform is increasing, so a transform change never mirrors.
+
+Display: the divider is drawn once per group (in ink), each region's name at the centroid of its visible
+part; a split gate is never selected by a click inside it (its regions cover the whole plot) — its line
+moves it, its vertices / arm handles reshape it. A region is built by closing the divider round a box
+(`slice_left_polygon` / `quadrant_polygon` in Julia, the same in `splitGeometry.ts`); membership uses a box
+padded past every cell, display the view box. The MCP `add_gate` still draws rectangles and polygons only.
+
+### 1D gates — range and bisector, on a histogram
+
+Picking **histogram** at the top of a gate plot's Y picker makes it a 1D plot of the X channel: the
+browser asks for x = y = that channel and bins the values itself (`plots/histGeometry.ts`); highlighted
+populations are drawn as outlines in their colours on the same count scale (backgating on a histogram).
+Two tools draw on it (`app/src/gating/hist_gates.jl`):
+
+- **Range** — an interval `[lo, hi]`, one population (drag across the histogram).
+- **Bisector** — one `cut` splitting the axis: `side: 1` above it (`name+`), `side: -1` at or below it
+  (`name-`). The halves share a `group` like a slice's sides (added together through
+  `POST /api/gating/pop/add-split`, moved together by `set_gate!`), so every finite cell is in exactly one.
+
+A 1D gate stores its channel as both `x_channel` and `y_channel` (and its transform as both). The engine's
+two-channel plumbing — the columns `recompute!` fetches, the missing-column guard, plotmeta matching a gate
+to the plot — then carries it unchanged; it is shown only on its channel's histogram. `gate_from_spec`
+refuses a 1D spec naming two different channels.
+
+**Rule gating — the valley rule.** A bisector may carry `rule: {kind: "valley", lo, hi, adjust?}` instead
+of a fixed position: its cut is the most prominent valley of the PARENT's density whose position lies in
+`[lo, hi]` (gate coordinates), re-found on every image and whenever the parent's cells change — so a gate
+copied to a brighter image follows that image's dip. `valley_cut` is openCyto's `mindensity` idea (Finak
+et al. 2014, doi:10.1371/journal.pcbi.1003806), written from the paper (openCyto is AGPL): a binned
+Gaussian KDE with Silverman's bandwidth × `adjust`, on a grid over the 0.1–99.9 % range of the values
+∪ the window (one far outlier on a linear axis no longer coarsens it); valleys scored by prominence (the lower flanking peak
+minus the dip), and counted only when both sides are a population — the lower peak at least 5 % of the
+tallest and the dip at least 20 % below it. Without those two floors a lone population's sparse low tail
+read as a valley and lost ~1 % of its cells (checked on 8 PhenoCycler tissue images, 12 markers: the
+two-population markers — cytokeratin, a CD20+ tissue, CD68 in two tissues — cut in the dip; one-population
+markers now get no cut). With no valley in the window the stored `cut` stands and the outline carries
+`rule_ok: false` (drawn dashed). `recompute!` resolves the rule on `parent_mask` cells (`resolve_gate`);
+plotmeta resolves it on the same parent's values for the outline (`_child_gate_outlines(…; parent_raw)`).
+
+The window matters: a whole-axis window treats the pile of zero-intensity cells at the axis floor as a
+population. A new rule's window is a fifth of the view either side of the clicked cut
+(`defaultRuleWindow`); its ends drag on the plot, the cut itself does not (the rule places it).
+Double-clicking a bisector's cut switches it between a fixed cut and following the valley; off, the cut
+stays where the rule last put it.
 
 ## Undo / redo
 
@@ -901,8 +976,8 @@ per-pop CSV.
   - *show populations*: Julia resolves the in-scope segmentation(s) via `resolve_pops` (per-pop
     `value_name` + label IDs + colours); the viewer paints centroid points per (segmentation, pop).
     A blank scope shows ALL segmentations; a live gate edit scopes to the edited segmentation so it
-    stays cheap. `resolve_pops` is **cached** per `(value_name, pop_type, gating-map mtime, h5ad mtime)`
-    — same auto-invalidation trick as `pop_df` (`_pop_df_cache`), so an unchanged segmentation is free
+    stays cheap. `resolve_pops` is **cached** per `(image, value_name, pop_type)` under `_gating_inputs_stamp`
+    — same auto-invalidation as `pop_df` (`_POP_DF_CACHE`), so an unchanged segmentation is free
     even on a full refresh. The transient "Pick selection" pop is **excluded** here (it's the selection
     *source*; rendering it back would loop through the picker).
   - *cell selection (linked brushing)*: user picks a cell / draws a rectangle in the viewer →

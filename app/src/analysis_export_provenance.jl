@@ -47,10 +47,20 @@ function board_export_provenance(proj::CciaProject, image_uids::Vector{String};
         "ceceliaVersion" => (try cecelia_version() catch; "" end),
         "ceceliaCommit" => (try cecelia_commit() catch; "" end),
         "project" => Dict{String,Any}("uid" => proj.uid, "name" => proj.name),
-        "images" => Any[Dict{String,Any}("uid" => img.uid, "name" => img.name) for img in imgs],
+        "images" => Any[_provenance_image(proj, img) for img in imgs],
         "populations" => populations,
         "runs" => runs,
         "designs" => board_designs(proj, image_uids))
+end
+
+# One image in the record: uid, name, and where its data came from when that is recorded
+# (`data_source_reply`: the image's own source, else its set's), so a figure of someone else's images
+# carries their citation.
+function _provenance_image(proj::CciaProject, img::CciaImage)::Dict{String,Any}
+    d = Dict{String,Any}("uid" => img.uid, "name" => img.name)
+    src = data_source_reply(proj, img)
+    src === nothing || (d["dataSource"] = src)
+    d
 end
 
 """

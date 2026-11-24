@@ -92,6 +92,21 @@ end
     @test Cecelia._detect_motion_dims([Cecelia.Track(1, Float64.(0:11), P2)]).dims == 2
 end
 
+# the cached form: one slot per h5ad, recomputed when the file or the calibration it was scaled with
+# changes — a z step of 1 vs 20 µm is a different answer from the same file
+@testset "detect_motion_dims cache stamp" begin
+    fx = fixture_for(:cells, :movie, :tracked)
+    begin
+        p = joinpath(mktempdir(), "B.h5ad"); cp(fixture_table(fx), p)
+        a = Cecelia.detect_motion_dims(p, [1.0, 1.0, 1.0], 1.0)
+        @test Cecelia.detect_motion_dims(p, [1.0, 1.0, 1.0], 1.0) === a          # hit
+        st = Cecelia._MOTION_DIMS_CACHE.data[p][1]
+        Cecelia.detect_motion_dims(p, [20.0, 1.0, 1.0], 1.0)
+        @test Cecelia._MOTION_DIMS_CACHE.data[p][1] != st                        # same slot, new stamp
+        @test count(k -> k == p, Cecelia._MOTION_DIMS_CACHE.order) == 1
+    end
+end
+
 # ── uns reader: the anisotropy grid on the branch sidecar ─────────────────────────────────────
 # The one thing worth pinning here is the DIMENSION REVERSAL. HDF5 stores C-order, Julia reads
 # column-major, so a numpy (T, y, x, comp) array arrives as (comp, x, y, T) — every axis flipped,

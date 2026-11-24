@@ -91,7 +91,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     end
 
     proj    = load_project(proj_uid)
-    set_idx = findfirst(s -> img.uid in s.image_uids, proj._sets)
+    set_idx = image_set_index(proj, img)
     if isnothing(set_idx)
         on_log("[ERROR] Could not find the set containing image $(img.uid)")
         return nothing
@@ -101,6 +101,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     src_meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     bin_meta = _bin_meta(src_meta, img.uid, p, read_ome_metadata(String(im_path));
                          z_flipped = store_z_flipped(src_meta, string(filename)))
+    inherit_data_source!(bin_meta, proj, img, s)
 
     tag     = p.factorX == p.factorY ? "bin$(p.factorX)" : "bin$(p.factorX)x$(p.factorY)"
     new_img = add_image!(s; name = derived_image_name(proj, img.name, tag), meta = bin_meta, attr = img.attr)

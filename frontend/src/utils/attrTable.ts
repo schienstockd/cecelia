@@ -12,6 +12,7 @@
 
 import type { CciaImage } from '../stores/project'
 import { imageTableCsvRows } from './imageTable'
+import { attrCsvHeaders } from './attrFilter'
 
 // ── Parsing ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ function imageTableColumns(): string[] {
 const isImageTableColumn = (h: string) => imageTableColumns().includes(h) || /^Channel \d+$/.test(h)
 
 export interface AttrColumn { column: number; attr: string }
-export interface IgnoredColumn { header: string; why: 'key' | 'blank' | 'imageTable' | 'duplicate' }
+export interface IgnoredColumn { column: number; header: string; why: 'key' | 'blank' | 'imageTable' | 'duplicate' }
 
 /**
  * Each non-key column → the attribute it writes. Left out: the key, a blank header, a repeated header,
@@ -180,16 +181,16 @@ export function attrColumns(table: ParsedTable, keyColumn: number, images: reado
   const ignored: IgnoredColumn[] = []
   const seen = new Set<string>()
   table.header.forEach((header, column) => {
-    if (column === keyColumn) { ignored.push({ header, why: 'key' }); return }
-    if (!header) { ignored.push({ header, why: 'blank' }); return }
-    if (own && isImageTableColumn(header)) { ignored.push({ header, why: 'imageTable' }); return }
+    if (column === keyColumn) { ignored.push({ column, header, why: 'key' }); return }
+    if (!header) { ignored.push({ column, header, why: 'blank' }); return }
+    if (own && isImageTableColumn(header)) { ignored.push({ column, header, why: 'imageTable' }); return }
     let attr = header
     const m = /^attr_(.+)$/.exec(header)
     if (m && !existing.has(header)) {
       const bare = m[1].toLowerCase()
       if (lower.has(bare) || (own && imageTableColumns().some(c => c.toLowerCase() === bare))) attr = m[1]
     }
-    if (seen.has(attr)) { ignored.push({ header, why: 'duplicate' }); return }
+    if (seen.has(attr)) { ignored.push({ column, header, why: 'duplicate' }); return }
     seen.add(attr)
     attrs.push({ column, attr })
   })
@@ -312,3 +313,52 @@ export function planSummary(plan: ImportPlan): string {
 }
 
 export const KEY_KIND_LABEL: Record<KeyKind, string> = { name: 'Name', path: 'Path', uid: 'ID' }
+
+export const DELIMITER_LABEL: Record<Delimiter, string> = { ',': 'Comma', '\t': 'Tab', ';': 'Semicolon' }
+
+// ── How the table was read: one role per column ─────────────────────────────────────────────────────
+
+/** What a column of the pasted table does: names the image (`key`), writes an attribute, or is left out. */
+export type ColumnRole =
+  | { column: number; header: string; role: 'key' }
+  | { column: number; header: string; role: 'attr'; attr: string; isNew: boolean }
+  | { column: number; header: string; role: 'ignored'; why: IgnoredColumn['why'] }
+
+export const IGNORED_LABEL: Record<IgnoredColumn['why'], string> = {
+  key: 'image column', blank: 'no header', imageTable: 'image table column', duplicate: 'repeated header',
+}
+
+/** Each column of `table`, in order, with the role it plays when keyed by `keyColumn` — the "read as"
+ *  row above the raw table, so the user sees which column names the image and which become attributes. */
+export function columnRoles(table: ParsedTable, keyColumn: number, images: readonly TableImage[]): ColumnRole[] {
+  const { attrs, ignored } = attrColumns(table, keyColumn, images)
+  const existing = new Set(images.flatMap(i => Object.keys(i.attr ?? {})))
+  const byCol = new Map(attrs.map(a => [a.column, a.attr]))
+  const whyOf = new Map(ignored.map(i => [i.column, i.why]))
+  return table.header.map((header, column): ColumnRole => {
+    if (column === keyColumn) return { column, header, role: 'key' }
+    const attr = byCol.get(column)
+    if (attr !== undefined) return { column, header, role: 'attr', attr, isNew: !existing.has(attr) }
+    return { column, header, role: 'ignored', why: whyOf.get(column) ?? 'blank' }
+  })
+}
+
+// ── A template to fill in ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * The set as a fill-in table: a `Name` column with every image, then one column per attribute the images
+ * already have, holding their current values. Pasted into a spreadsheet, filled in and pasted back, it
+ * writes only what was changed (a blank cell leaves a value alone; an unchanged one is `same`).
+ */
+export function templateTable(images: readonly TableImage[]): { header: string[]; rows: string[][] } {
+  const keys = [...new Set(images.flatMap(i => Object.keys(i.attr ?? {})))]
+  // `Name` is the key's header; an attribute called `name` gets `attr_` (attrCsvHeaders), read back bare
+  const header = ['Name', ...attrCsvHeaders(keys, ['Name'])]
+  return { header, rows: images.map(i => [i.name, ...keys.map(k => i.attr?.[k] ?? '')]) }
+}
+
+/** A header + rows as delimited text, quoting a field that holds the delimiter, a quote or a line break. */
+export function toDelimited(t: { header: string[]; rows: string[][] }, delimiter: Delimiter): string {
+  const esc = (s: string) => s.includes(delimiter) || /["\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  return [t.header, ...t.rows].map(r => r.map(esc).join(delimiter)).join('\n') + '\n'
+}

@@ -49,7 +49,7 @@ _roc_ref(id) = Dict{String,Any}("@id" => id)
 _roc_refs(ids) = (r = [_roc_ref(i) for i in ids]; length(r) == 1 ? only(r) : r)
 # A local identifier from free text: `#` + the text with each path segment percent-encoded
 _roc_local(s::AbstractString) = "#" * join((HTTP.escapeuri(p) for p in split(s, '/')), "/")
-_roc_doi(d) = "https://doi.org/" * replace(strip(d), r"^(https?://(dx\.)?doi\.org/|doi:)"i => "")
+_roc_doi(d) = "https://doi.org/" * _bare_doi(strip(d))   # one DOI normaliser (data_source.jl)
 # A time in UTC as ISO 8601 with its offset (the validator's pattern wants `+hh:mm`). The run log writes
 # local wall-clock time with no zone (`_run_log_now`); it is read in this machine's zone at that
 # instant (`mktime`, DST included), which is the run's zone whenever the run and the export share a
@@ -300,6 +300,28 @@ function chain_run_ro_crate_files(proj::CciaProject, run_id::AbstractString;
     # every data entity the actions name hangs off the root (RO-Crate 1.1: data entities MUST be
     # reachable from the root through `hasPart`), after the four files actually in the crate
     data_ids = sort!([id for (id, e) in g.ents if startswith(id, "#") && get(e, "@type", "") in ("File", "Dataset")])
+    # where the images came from (data_source.jl): one entity per distinct source, cited by the root
+    src_ids = String[]
+    for uid in sort!(collect(keys(imgs)))
+        d = data_source(proj, imgs[uid])
+        d === nothing && continue
+        id = !isempty(d.doi) ? _roc_doi(d.doi) : !isempty(d.url) ? d.url :
+             _roc_local("source/" * string(hash(data_source_dict(d)); base = 16))
+        if !haskey(g.ents, id)
+            # a contextual entity, not a data entity: the images are not in the crate (hasPart lists
+            # only what is), so the source is cited (isBasedOn) rather than contained
+            e = Dict{String,Any}("@id" => id, "@type" => "CreativeWork",
+                                 "name" => isempty(d.citation) ? id : d.citation)
+            isempty(d.doi) || (e["identifier"] = _roc_doi(d.doi))
+            isempty(d.url) || (e["url"] = d.url)
+            desc = String[]
+            isempty(d.licence) || push!(desc, "Licence: $(d.licence).")
+            d.confirmed || push!(desc, "Suggested at import from the file path; not confirmed.")
+            isempty(desc) || (e["description"] = join(desc, " "))
+            _roc_add!(g, e)
+        end
+        id in src_ids || push!(src_ids, id)
+    end
     _roc_add!(g, Dict{String,Any}("@id" => "./", "@type" => "Dataset",
         "name" => "Chain run $(run.id): $(run.chain_name)",
         "description" => "Chain \"$(run.chain_name)\" (run $(run.id)) on $(length(run.image_uids)) images in Cecelia project " *
@@ -310,6 +332,7 @@ function chain_run_ro_crate_files(proj::CciaProject, run_id::AbstractString;
         "license" => _roc_ref("#license"),
         "conformsTo" => _roc_refs(first.(_ROC_PROFILES)),
         "mainEntity" => _roc_ref(RO_CRATE_TEMPLATE),
+        (isempty(src_ids) ? () : ("isBasedOn" => _roc_refs(src_ids),))...,
         (isempty(run.by) ? () : ("author" => _roc_ref(_roc_local("profile/" * run.by)),))...,
         "hasPart" => _roc_refs(vcat([RO_CRATE_TEMPLATE, RO_CRATE_METHODS, RO_CRATE_PARAMS], data_ids)),
         "mentions" => _roc_refs(vcat(run_action["@id"], node_actions))))

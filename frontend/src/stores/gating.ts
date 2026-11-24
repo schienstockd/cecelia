@@ -24,12 +24,23 @@ export interface TransformSpec {
   T?: number; W?: number; M?: number; A?: number; cofactor?: number; floor?: number
 }
 export interface GateSpec {
-  kind: 'rectangle' | 'polygon'
+  // slice / quadrant are SPLIT gates — one divider, one population per region (plots/splitGeometry.ts);
+  // range / bisector are 1D, on one channel's histogram: y_channel = x_channel (plots/histGeometry.ts)
+  kind: 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'
   x_channel: string; y_channel: string
   x_transform: TransformSpec; y_transform: TransformSpec
   x_min?: number; x_max?: number; y_min?: number; y_max?: number
-  vertices?: [number, number][]
+  vertices?: [number, number][]              // polygon outline · slice dividing line
+  side?: number                              // slice: 1 = left of the line's direction, -1 = right
+  centre?: [number, number]; arms?: [number, number][]; quadrant?: number   // quadrant: 4 CCW arms, sector 1–4
+  group?: string                             // split: the id the region populations share
+  lo?: number; hi?: number                   // range: the interval
+  cut?: number                               // bisector: the cut (side 1 = above it, -1 = at or below)
+  rule?: GateRule                            // bisector: cut at the parent's density valley instead
+  rule_ok?: boolean                          // server outline: the rule found a valley on this parent
 }
+// a bisector's rule: the deepest valley of the parent's density in [lo, hi] (gate coordinates)
+export interface GateRule { kind: 'valley'; lo: number; hi: number; adjust?: number }
 // one AND-ed condition of a compound filter (Decision 15)
 export interface FilterCondition { measure: string; fun: string; values: unknown }
 // a filter spec: the single measure/fun/values (back-compat) plus optional AND-ed `conditions`
@@ -381,6 +392,9 @@ export function createGatingStore(initialPopType: string) {
   const updateBooleanPop = (path: string, spec: BooleanSpec) =>
     _post('/api/gating/pop/update', { path, boolean: spec })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
+  // every region of a split gate (slice / quadrant) at once — one request, one undo step
+  const addSplit = (gate: GateSpec, parent: string, pops: { name: string; colour: string; region: number }[]) =>
+    _post('/api/gating/pop/add-split', { gate, parent, pops })
   // Step through the server's history. `_post` handles the response tree + flags like any other
   // mutation, so an undo lands on screen exactly the way the edit it reverses did. `mirrorUids` is
   // empty on the gating pages (it is the cluster pages' set-wide replay), so no mirroring here.
@@ -528,7 +542,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,

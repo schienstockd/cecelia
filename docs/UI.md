@@ -1794,6 +1794,16 @@ is the header.
   inner spacing (`Liver` / `liver`, `day 3` / `day  3`) are **reported, not merged** — the server merges
   only leading/trailing whitespace — across the table and the set's current values; so is a new column
   whose name differs only by case from an existing one.
+- **Before a table: the layout guide.** The empty dialog shows how to lay the table out — an example built
+  from the set's first three images (its own attributes as columns, or illustrative *Mouse* / *Treatment*
+  when it has none), with the role of each column marked, and four one-line rules. *Copy template* puts the
+  whole set on the clipboard tab-separated (a `Name` column + one column per existing attribute, current
+  values filled in — `templateTable` / `toDelimited`), ready to paste into a spreadsheet, fill and paste
+  back; *Download* gives the same as CSV. Pasted back unchanged it is a no-op.
+- **Read as.** Once parsed, the raw table's first four rows with each column's role over its header
+  (`columnRoles`): *Image · Name* for the key, the attribute it writes (*· new* when created), or *Not
+  used · reason* (struck through), plus the delimiter and row/column counts — Prism's import preview.
+  Clicking a column header makes it the image column (the *Match by* select does the same).
 - **Preview, then Apply.** A compact table of the matched rows (overwrites amber, the old value on hover)
   and one line each for: rows matching no image, images with no row, overwrites, case variants, new
   columns, unused columns. Apply creates the new columns on every image of the set (`attr/create`) and then
@@ -2058,7 +2068,7 @@ under perspective a flat plane foreshortens towards the edges, which is wrong fo
 on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
 range (↶ resets it to the whole stack); the **±** button at the end of the Z row swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
-**Side by side** (the header's panel icon, next to Back) puts the viewer on the right half of the screen; clicked again it goes back where it was. Dragged away by hand in between, the window is no longer side by side: the next click places it again, and the new spot becomes the way back. A page can place only a window the app opened, so the main window is snapped left by the user (Super+← / Win+←), where it folds its menu and panel to fit. `lib/popout.ts::toggleSideBySide`.
+**Side by side** (the header's panel icon, next to Back) puts the viewer on the right half of the screen; clicked again it goes back where it was. Dragged away by hand in between, the window is no longer side by side: the next click places it again, and the new spot becomes the way back. A page can place only a window the app opened, so the main window is snapped left by the user with the system's tiling keys (`snapKeys`: Super / Win / macOS Fn+Control + ←), where it folds its menu and panel to fit. On native Wayland the page can resize the viewer but not move it; when a placement doesn't land, a toast names the keys to snap it right. `lib/popout.ts::toggleSideBySide`.
 
 **How it looks** (`VwLookBox.vue`) holds what was the docked sidebar, floating top right under the overview, level with *On the image*, as tall as its content, and folding like it (WHAT is drawn there, HOW it looks here; GUI_LAYOUT_PLAN → *Narrow windows*). Its top row stays visible folded; the sections fold. **Controls:** one top row (GUI_LAYOUT_PLAN V3): **View / Select / Edit** as three icon-only segments
 (hand / pointer / pencil, the name leads each tooltip — worded chips wrapped 2D/3D onto a second row on a
@@ -2462,6 +2472,12 @@ renders — **Tile · Cascade · Close all** — emitting to `useCanvasPanels`' 
 differs, so only this group is shared. A host that drives `useCanvasPanels` but renders its own
 arrange buttons fails the *every canvas host offers Close all* testset — the point being that a bulk
 close a user asks for on one page has to appear on all of them.
+
+**Snap** (the magnet, beside Cascade; on by default) — while it is on, a dragged panel's edges snap to the other
+panels' (touching or lined up, only with a neighbour that overlaps on the other axis) and to the
+canvas's left/top edges, within `SNAP_PX` (`utils/panelSnap.ts::snapPosition`). Per canvas, persisted in
+its `shared` bag by `useFloatingCanvas`, which provides it to every `CanvasPanel` (`CANVAS_SNAP_KEY`;
+the drag reads the other `[data-snap-panel]` roots). Moves only — a resize does not snap.
 
 **Tile has two modes, because panels differ in whether they accept the size they are given**
 (`utils/tileGrid.ts`). Free-form panels (summary, cluster, flow) get `fill`: a near-square grid whose

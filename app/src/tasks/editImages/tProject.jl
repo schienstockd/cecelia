@@ -61,7 +61,7 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
     end
 
     proj    = load_project(proj_uid)
-    set_idx = findfirst(s -> img.uid in s.image_uids, proj._sets)
+    set_idx = image_set_index(proj, img)
     if isnothing(set_idx)
         on_log("[ERROR] Could not find the set containing image $(img.uid)")
         return nothing
@@ -76,6 +76,7 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
         "tproj_op"                => p.op)
     merge!(proj_meta, _tproj_inherited_meta(src_meta))
     copy_source_meta!(proj_meta, src_meta; z_flipped)
+    inherit_data_source!(proj_meta, proj, img, s)
 
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "t-$(p.op)"), meta = proj_meta, attr = img.attr)
 

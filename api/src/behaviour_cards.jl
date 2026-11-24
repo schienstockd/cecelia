@@ -234,6 +234,18 @@ function parse_card_seeds(data)::Dict{String,Int}
     out
 end
 
+"""
+    trace_point(t, x, y) -> Union{Tuple{Int,Float64,Float64}, Nothing}
+
+One `(t, x, y)` entry of a card's trace history, or `nothing` when any of the three is missing or
+not finite. Every card family builds its trace through this: a NaN centroid passed `isa Real`, so `t`
+threw on `Int(round(NaN))` and a NaN `x`/`y` reached the response as a bare `NaN` token, which is not
+JSON — either way the whole card request failed on one bad cell.
+"""
+trace_point(tt, xx, yy) =
+    (tt isa Real && xx isa Real && yy isa Real && isfinite(tt) && isfinite(xx) && isfinite(yy)) ?
+        (Int(round(Float64(tt))), Float64(xx), Float64(yy)) : nothing
+
 read_cards_sidecar(path::String) =
     isfile(path) ? (try JSON3.read(read(path, String), Dict{String,Any}); catch; nothing end) : nothing
 

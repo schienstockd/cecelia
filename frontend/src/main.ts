@@ -100,15 +100,17 @@ router.beforeEach(async (to) => {
   if (appCtl.setupRequired === false && to.path === '/setup') return '/'
   // Launch-time profile picker (USER_PROFILE_PLAN Phase 2). Only runs once setup is out of the way,
   // so a first-launch install never sees the picker before it has a projects dir. Popouts are exempt
-  // — a picker in a Task Manager popup would strand the popup with no way home.
-  if (appCtl.setupRequired === false && !popoutRouteOfWindow()) {
+  // — a picker in a Task Manager popup would strand the popup with no way home — and so is the
+  // headless board render: no one is there to pick, and it only reads, as the active profile.
+  if (appCtl.setupRequired === false && !popoutRouteOfWindow() && to.path !== '/board-render') {
     if (appCtl.needsProfilePick === true && to.path !== '/profile-picker') return '/profile-picker'
     if (appCtl.needsProfilePick === false && to.path === '/profile-picker') return '/'
   }
   // Hydrate per-profile settings once both gates have resolved (USER_PROFILE_PLAN Phase 4). Fires
   // on the FIRST navigation after picker completion (or straight through on a single-profile
-  // install). The store guards `hydrateFromProfile()` internally so a re-entry is a no-op.
-  if (appCtl.setupRequired === false && appCtl.needsProfilePick === false) {
+  // install). The store guards `hydrateFromProfile()` internally so a re-entry is a no-op. The board
+  // render skips the picker (above), so it hydrates as the active profile without one.
+  if (appCtl.setupRequired === false && (appCtl.needsProfilePick === false || to.path === '/board-render')) {
     void useSettingsStore().hydrateFromProfile()
   }
   // A popout window stays the view it was opened as. Its NAME says which one (lib/popout.ts) and the

@@ -13,7 +13,7 @@ import { computed, ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
 import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays, svgWithCaption } from '../../plots/export'
-import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
+import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks, yTickLabelPx } from '../../plots/overlays'
 import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import { slowPaint } from '../../utils/slowPaint'
@@ -59,6 +59,9 @@ let titleNode: HTMLElement | null = null
 // reservation was wrong, render ONCE more with the real number. Remembered across renders so a resize
 // starts from the last known height instead of flashing the estimate again.
 let legendH = 0
+// Same for the y tick labels' width: the y title sits left of them (plot.ts `fitAxisTitles`), and Plot
+// picks the ticks at render — measured, then folded into the same one corrective pass.
+let yTickW = 0
 // last set announced to the host — the emit is change-gated against it (see below). `null` until the
 // first render, so a REMOUNT always re-announces (the host keeps its own copy and would otherwise
 // stay on the previous chart's note).
@@ -71,7 +74,7 @@ async function render(pass = 0) {
   // build because the builder needs the width to decide whether the x tick labels fit their bands.
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
-  const buildOpts = { ...props.opts, darkTheme: plotDark.value, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const buildOpts = { ...props.opts, darkTheme: plotDark.value, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}), ...(yTickW > 0 ? { yTickPx: yTickW } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, buildOpts) as any : null
   node?.remove(); node = null
   legendNode?.remove(); legendNode = null
@@ -300,11 +303,15 @@ async function render(pass = 0) {
   // …now that the legend is in the document, measure it. One corrective re-render at most (`pass`),
   // so a legend whose height depends on the reserved margin can't oscillate.
   const measured = legendNode ? Math.ceil(legendNode.getBoundingClientRect().height) : 0
-  if (pass === 0 && measured > 0 && Math.abs(measured - legendH) > 1) {
-    legendH = measured
+  const tickW = yTickLabelPx(node)
+  const legendOff = measured > 0 && Math.abs(measured - legendH) > 1
+  const ticksOff = tickW > 0 && Math.abs(tickW - yTickW) > 1
+  if (measured === 0) legendH = 0                // legend gone (single series / toggled off)
+  if (tickW === 0) yTickW = 0                    // no y tick labels (a hidden axis)
+  if (pass === 0 && (legendOff || ticksOff)) {
+    if (legendOff) legendH = measured
+    if (ticksOff) yTickW = tickW
     await render(1)
-  } else if (measured === 0 && legendH !== 0) {
-    legendH = 0                                  // legend gone (single series / toggled off)
   }
 }
 
@@ -330,7 +337,7 @@ async function toImageURL(type: 'png' | 'svg', caption = ''): Promise<string | n
   const h = Math.max(140, host.value.clientHeight || 260)
   // the SAME build inputs as the on-screen render (width for the x-label fit, the measured legend band),
   // so the light copy has the on-screen layout and the measured overlays land where they belong
-  const opts = { ...props.opts, darkTheme: false, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const opts = { ...props.opts, darkTheme: false, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}), ...(yTickW > 0 ? { yTickPx: yTickW } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, opts) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!base) return null
   const off = Plot.plot({ ...base, width: w, height: h }) as SVGSVGElement

@@ -130,7 +130,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
     proj_dir = dirname(dirname(ref_img._dir))
     proj_uid = basename(proj_dir)
     proj    = load_project(proj_uid)
-    set_idx = findfirst(s -> ref_img.uid in s.image_uids, proj._sets)
+    set_idx = image_set_index(proj, ref_img)
     isnothing(set_idx) && (on_log("[ERROR] Could not find the set containing reference $(ref_img.uid)"); return nothing)
     s = proj._sets[set_idx]
 
@@ -142,6 +142,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         "register_do_affine_3d"   => p.doAffine3d)
     merge!(reg_meta, _register_inherited_meta(ref_meta, total_c))
     copy_source_meta!(reg_meta, ref_meta)
+    inherit_data_source!(reg_meta, proj, ref_img, s)
     acq = _register_acquisition(src_acqs, plan)
     isnothing(acq) || (reg_meta["acquisition"] = acq)
 

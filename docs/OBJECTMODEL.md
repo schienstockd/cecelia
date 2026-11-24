@@ -134,6 +134,14 @@ metadata dir, with a content hash (`experiment_design_hash`); the version is the
 grid (`experiment_design_grid`) is computed from `img.attr` on each read and never stored, so editing
 an attribute moves an image without touching the design. `docs/todo/EXPERIMENT_DESIGN_PLAN.md`.
 
+**Where a set's images came from** is `meta["data_source"]` (citation, doi, url, licence, repository,
+id, `by` import | user, `confirmed`), on the set and optionally on an image, where it overrides the
+set's. `data_source(proj, img)` resolves it (the image's own, else its set's); empty = unknown. Import
+pre-fills an unconfirmed one from a repository ID in the path (`suggest_data_source`). A derived image
+keeps it: the image's own rides `SOURCE_META_KEYS`, and one landing in another set gets the set's
+through `inherit_data_source!`; a moved image takes its new set's unless it has its own.
+`docs/todo/DATA_SOURCE_PLAN.md`.
+
 **The duplicate-name guard is in the model, not the UI.** `set_name_taken(proj, name; except)` is the
 one answer to "does another set already have this name", and **both** `add_set!` and `rename_set!`
 refuse unless `force = true`. It sits at this layer so it holds for a **REPL** caller — where a rename

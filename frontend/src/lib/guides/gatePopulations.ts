@@ -69,7 +69,7 @@ export const gatePopulationsGuide: GuideDef = {
       // `gate` first-use hint that carried the polygon half was dropped when the module-page hints
       // went (docs/UI.md → First-use hints). A canvas shows neither, so if this sentence loses one,
       // nothing else in the app has it.
-      text: 'Choose a gate shape, then draw on the plot — drag for a rectangle, click to place polygon points.',
+      text: 'Choose a gate shape, then draw — drag a rectangle or range, click polygon or slice points, a quadrant centre or a bisector cut.',
       bullets: ['Hold Shift to adjust a gate you already drew.'],
       // The name box only exists once a gate has been drawn — so its appearance IS the signal that
       // the user managed it, with no state to plumb.

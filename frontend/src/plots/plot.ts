@@ -15,7 +15,7 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import { replicateOf, superplotColours } from './superplot'
+import { replicateOf, sinaOffsets, superplotColours, superplotOn } from './superplot'
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
@@ -23,7 +23,7 @@ import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElb
 import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
-import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
+import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER, AXIS_TITLE_STYLE, TICK_PAD_PX, yTitleRoomPx } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
 import { trackLabelPath } from '../utils/popName'
@@ -131,6 +131,7 @@ export interface VisProps {
   pointSize: number                          // raw-point radius (beeswarm / strip / box overlay)
   pointOpacity: number                       // raw-point opacity (R alphaInput)
   colorData: boolean                         // colour points by series (else single grey) (R colorData)
+  superplot?: boolean                        // draw the cells under replicate means (plots/superplot.ts); absent = on
   // statistics / legend
   legend: boolean                            // show the colour legend
   // OUTER width PlotChart renders at, in px. Needed to decide whether the x tick labels fit their
@@ -146,6 +147,10 @@ export interface VisProps {
   // the node and re-renders once with the real number; until then `legendTopPad` falls back to an
   // estimate. See legendTopPad.
   legendHeight?: number
+  // MEASURED width of the widest y tick label, in px (`yTickLabelPx`, plots/overlays.ts) — the y title
+  // sits left of the tick labels, so the left margin is sized from it. Same two-pass policy as
+  // `legendHeight`; absent → the chart's own margin is taken as the tick labels' room. See fitAxisTitles.
+  yTickPx?: number
   // layout / scale
   logScale: boolean                          // log measure axis (R scaleLog10)
   grid: boolean                              // show gridlines (R noGrid inverted; default off = classic)
@@ -311,7 +316,7 @@ const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, serie
   facetMode(v) === 'image' ? (s.uID ?? '') : seriesKey
 
 export const defaultVis = (): VisProps => ({
-  jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
+  jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true, superplot: true,
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, facetBy: 'none',
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
@@ -461,6 +466,28 @@ export function fitCellTitles<T extends { t: string }>(rows: readonly T[], inner
 const facetLabels = (r: PlotDataResponse, o: BuildOpts, keyOf: (s: PlotSeries) => string) =>
   [...new Set(r.series.map(s => facetKeyOf(o, s, keyOf(s))))]
 
+/**
+ * Axis titles in Prism's layout (`AXIS_TITLE_STYLE`): the y title rotated, centred on the frame, LEFT
+ * of the tick labels; the x title centred under the axis; no direction arrows. Plot's default put the
+ * y title horizontally in the top margin ("↑ speed"), where wide tick labels ran into it and the legend
+ * overlay sits, and it read differently from the x title.
+ *
+ * The left margin is the tick labels + their tick and padding + the title's room. The tick labels'
+ * width is measured on the previous render (`o.yTickPx`); on the first pass the chart's own margin —
+ * sized for its tick labels alone — stands in for it.
+ */
+export function fitAxisTitles<T extends Record<string, unknown> | null>(opts: T, o: { fontSize?: number; yTickPx?: number }): T {
+  if (!opts) return opts
+  const o2 = opts as Record<string, unknown>
+  for (const k of ['x', 'y'] as const) o2[k] = { ...(o2[k] ?? {}) as object, ...AXIS_TITLE_STYLE }
+  const y = o2.y as Record<string, unknown>
+  if (y.axis === null || y.label === null || y.label === '') return opts
+  const base = Number(o2.marginLeft ?? THEME.marginLeft)
+  const tickRoom = o.yTickPx != null && o.yTickPx > 0 ? 3 + o.yTickPx + TICK_PAD_PX : base
+  o2.marginLeft = Math.max(base, tickRoom + yTitleRoomPx(o.fontSize || 11))
+  return opts
+}
+
 const THEME = {
   style: { background: PAPER, color: PAPER_INK, fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
@@ -589,12 +616,12 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   if (!r) return null
   // matrix/heatmap is a pooled grid (cells, not series) — its own builder + theme, returned early so
   // none of the per-series colour-scale / measure-axis post-processing below applies.
-  if (o.chartType === 'heatmap') return buildHeatmap(Plot, r, o)
+  if (o.chartType === 'heatmap') return fitAxisTitles(buildHeatmap(Plot, r, o), o)
   // the HMM state-count comparison: curves of fit against K from the runs' fit records, no series
-  if (o.chartType === 'elbow') return buildHmmElbow(Plot, r, o)
+  if (o.chartType === 'elbow') return fitAxisTitles(buildHmmElbow(Plot, r, o), o)
   // time series (measure/count over an ordered column, e.g. t) → a geom_smooth line, not thousands
   // of bars/boxes.
-  if (o.trend && r.groupBy) return buildTrendLine(Plot, r, o)
+  if (o.trend && r.groupBy) return fitAxisTitles(buildTrendLine(Plot, r, o), o)
   if (!r.series.length) return null
   // Faceting BY IMAGE moves the image out of the series key and onto the panel header, so what is
   // left — segmentation / population / group — becomes the colour and position INSIDE each panel.
@@ -734,6 +761,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // carries the axes/box/median/mean/whiskers; box fills come from the (palette) colour scale.
   const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   opts.style = { ...(opts.style as object ?? {}), fontSize: `${o.fontSize || 11}px`, color: fg, background: bg }
+
+  // the y title's room on the left — before anything below reads the margins (facet headers, stats band)
+  fitAxisTitles(opts, o)
 
   // legend reflects the DISTINCT colours drawn (deduped) — PlotChart reads `_legend` for the overlay.
   // A stacked chart's fill is the CATEGORY, so its legend is the category scale the builder set.
@@ -1384,16 +1414,18 @@ function superplotCellRows(series: readonly PlotSeries[], keyOf: (s: PlotSeries)
     const vals = s.cellPoints ?? []
     if (i === undefined || !vals.length) continue
     const units = s.cellUnits ?? []
-    const off = offsetsFor(o, vals, halfWidth)
+    const off = sinaOffsets(vals, halfWidth)                  // density-shaped cloud, not a swarm
     vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
                                        fill: colours.get(replicateOf(units[k] ?? '')) ?? 'currentColor' }))
   }
   return rows
 }
-// small, faint, no outline: the spread between cells, under the means that carry the test
+// small, faint, no outline: the spread between cells, under the means that carry the test. Clipped to
+// the frame: the axis is fitted to the boxes and means, so a fast outlier cell is cut, not drawn
+// over the legend (Y max shows it).
 function superplotCellMarks(Plot: PlotModule, cells: SpCellRow[], o: BuildOpts, a: ReturnType<typeof axM>, f: object) {
-  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(1, o.pointSize * 0.6),
-                                           fill: 'fill', fillOpacity: 0.35, ...f })] : []
+  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(0.8, o.pointSize * 0.5),
+                                           fill: 'fill', fillOpacity: Math.min(0.3, o.pointOpacity), clip: true, ...f })] : []
 }
 
 // coord_flip (R): when rotated, the series (position) axis is Y and the MEASURE axis is X; otherwise
@@ -1576,7 +1608,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const pts: Array<{ series: string; fkey: string; xj: number; value: number; unitFill?: string;
                      pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
   // SuperPlot: the dots are replicate means, coloured by replicate, with their cells underneath
-  const sp = superplotColours(r.series, POPULATION_PALETTE)
+  const sp = superplotOn(r.series, o.superplot) ? superplotColours(r.series, POPULATION_PALETTE) : null
   const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.26) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
@@ -1655,7 +1687,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : o.pointOpacity
+    : sp ? 0.9 : o.pointOpacity                              // a replicate mean must read over its cells
   const ptStrokeWidth = activeIds
     ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
     : 0.5
@@ -1752,7 +1784,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   type PtRow = { series: string; fkey: string; xj: number; value: number; unitFill?: string;
                  pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
   const rows: PtRow[] = []
-  const sp = superplotColours(r.series, POPULATION_PALETTE)                       // SuperPlot: means over their cells
+  const sp = superplotOn(r.series, o.superplot) ? superplotColours(r.series, POPULATION_PALETTE) : null  // SuperPlot: means over their cells
   const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.42) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
@@ -1788,7 +1820,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const ptFill = sp ? ((d: PtRow) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
   const ptFillOpacity = activeIds
     ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : o.pointOpacity
+    : sp ? 0.9 : o.pointOpacity                              // a replicate mean must read over its cells
   const ptStrokeWidth = activeIds
     ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
     : 0.5

@@ -45,7 +45,7 @@ _gate_canon(x) = JSON3.write(x)
 # What a population's OWN record says about its cells (no parent, no identity, no ornaments).
 function _pop_own_defn(p::Population)::Dict{String,Any}
     d = Dict{String,Any}()
-    p.gate === nothing || (d["gate"] = gate_spec(p.gate))
+    p.gate === nothing || (d["gate"] = gate_shape_spec(p.gate))   # a split gate's `group` id is not its shape
     if p.filter_measure !== nothing || p.filter_conditions !== nothing
         d["filter"] = Dict{String,Any}(
             "measure" => p.filter_measure,

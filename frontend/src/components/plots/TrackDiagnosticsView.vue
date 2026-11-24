@@ -69,6 +69,7 @@ import {
 } from '../../plots/trackGroups'
 import type { SeriesTarget } from '../../plots/types'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import { AXIS_TITLE_STYLE, yTitleRoomPx } from '../../plots/axisLabelFit'
 import { usePlotDark } from '../../composables/usePlotDark'
 import { TRACK_TONE } from '../../plots/fixedColours'
 
@@ -206,9 +207,9 @@ async function render() {
   const { ink: fg, ground: bg } = plotTheme(dark)
   const facet = split.value
   const grid = facetGrid(facet ? groups.value.length : 1)
-  // MT leaves room for the y-axis label, which Plot draws ABOVE the top tick — at 10 it rode up
-  // into the findings row
-  const ML = 54, MB = 36, MT = 22, MR = 12
+  // the facet grid is sized from the margins, so the rotated y title's room is part of ML, not added
+  // by `fitAxisTitles` afterwards (docs/PLOTS.md → *Axis titles*)
+  const ML = 54 + yTitleRoomPx(11), MB = 36, MT = 12, MR = 12
   const box = facetBox({ cols: grid.cols, rows: grid.rows,
                          w: Math.max(220, host.value.clientWidth || 360),
                          h: Math.max(160, host.value.clientHeight || 240),
@@ -225,8 +226,8 @@ async function render() {
   const fill = TRACK_TONE.measured
 
   const marks: unknown[] = []
-  let xOpts: Record<string, unknown> = { label: xLabel, grid: true }
-  let yOpts: Record<string, unknown> = { label: yLabel, grid: true }
+  let xOpts: Record<string, unknown> = { label: xLabel, grid: true, ...AXIS_TITLE_STYLE }
+  let yOpts: Record<string, unknown> = { label: yLabel, grid: true, ...AXIS_TITLE_STYLE }
 
   if (m === 'msd' || m === 'acor') {
     const pts = diagCurveRows(d, m)

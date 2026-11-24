@@ -129,7 +129,8 @@ describe('buildPlotOptions — facet headers', () => {
     const opts = build({ facetBy: 'series', rotateXLabel: false })
     const inner = 400 - opts.marginLeft - opts.marginRight
     const w = (s: string) => s.length * 11 * 0.55   // the builder's metric without a DOM
-    expect(w(opts.fx.tickFormat(path(1)))).toBeLessThanOrEqual(inner / 7.9 - 6)
+    // one band (8 facets, inner padding 0.1, 6 px gap), never under the 3-character floor
+    expect(w(opts.fx.tickFormat(path(1)))).toBeLessThanOrEqual(Math.max(11 * 3, inner / 7.9 - 6))
   })
   it('leaves headers alone when they fit', () => {
     const opts = build({ facetBy: 'series', rotateXLabel: false, plotWidth: 20000 })

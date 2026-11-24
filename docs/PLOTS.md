@@ -446,6 +446,23 @@ wrong is what made legends look arbitrary. Two rules, both in one place:
    has the browser's own wrap and spacing and stays editable. The light export is built with the same
    `plotWidth` + measured `legendHeight` as the screen, so the overlay lands in the band reserved for it.
 
+**Axis titles — Prism's layout.** `fitAxisTitles` (`plots/plot.ts`), applied to every builder's
+output: the y title is rotated and centred on the frame, left of the tick labels; the x title is centred
+under the axis; no direction arrows. Plot's default put the y title horizontally in the top margin
+("↑ speed"), where wide tick labels ran into it and the legend overlay sits, and it read differently
+from the x title. The left margin is the title line + a gap + the tick labels' width + Plot's tick
+gutter. Plot picks the ticks at render, so their width is **measured** (`yTickLabelPx`,
+`plots/overlays.ts`) and folded into the same one corrective pass as the legend (`yTickPx`); the first
+pass takes the chart's own margin as the tick labels' room. Pinned in Chromium by
+`plots/axisTitle.browser.test.ts`.
+
+The panels that call `Plot.plot` themselves take the same layout: FlowTraining and the HMM states /
+transitions panels route their options through `fitAxisTitles` (first pass only, no measurement); the
+track paths / diagnostics views size a facet grid from their margins, so they spread
+`AXIS_TITLE_STYLE` into the axes and add `yTitleRoomPx` to their left-margin constant
+(`plots/axisLabelFit.ts`). `plots/axisTitleCoverage.test.ts` fails a new `Plot.plot` caller that uses
+neither.
+
 **When colour is the only identity.** Grouped frequency bars (x axis hidden inside each facet), the
 histogram and the stacked charts have no per-series position label, so colour + legend is the only way to
 tell series apart (`COLOUR_IS_IDENTITY`, `plots/plot.ts`). Under the `standard` palette two series of one
@@ -665,7 +682,7 @@ each. An image with no replicate stays its own unit. The test and its findings t
 `statUnit` reads as the replicate (resolved at read, never written to `ui`), the Datapoint control
 offers it by name ("mouse"), and a canvas still on the untouched compare default switches once to the
 design's group (`designCompareApply`, the `designApplied` view-state flag); a bullseye in the compare
-row says so. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`. With the replicate as the unit, the box and strip charts are SuperPlots (Lord et al. 2020, doi:10.1083/jcb.202001064): each dot is a replicate's mean, larger, in the replicate's colour, and the cells it summarises sit beneath it, small and faint, in the same colour — one colour per replicate across groups (`plots/superplot.ts`; the server sends `pointUnits` / `cellPoints` / `cellUnits`, `_superplot!` in `plot_data.jl`). The test runs on the means. Every export of the plot (PDF, board SVG, a downloaded image, the MCP plot image) carries one line under the chart: the n, what a point is and what the test ran on — "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse means" (`plotCaption` → `PlotChart.toImageURL(type, caption)` → `svgWithCaption`). Nothing when each point is a cell or track.
+row says so. The footer states the n drawn when each point is an image or a replicate ("n = 5 vs 3 mice", worded as the design dialog's sketch; `unitCountLabel`, `utils/statUnitState.ts`), from each series' `n`. With the replicate as the unit, the box and strip charts are SuperPlots (Lord et al. 2020, doi:10.1083/jcb.202001064): each dot is a replicate's mean, larger, in the replicate's colour, and the cells it summarises sit beneath it, small and faint, in the same colour — one colour per replicate across groups (`plots/superplot.ts`; the server sends `pointUnits` / `cellPoints` / `cellUnits`, `_superplot!` in `plot_data.jl`). The cells are laid out as a sina cloud (`sinaOffsets`: a stable pseudo-random offset scaled by the density at the value; Sidiropoulos et al. 2018, doi:10.1080/10618600.2017.1366914), not the beeswarm the points use — a beeswarm on hundreds of sorted cells per value row draws V-shaped stripes — and clipped to the frame, so a cell beyond the axis (fitted to boxes and means) is cut; Y max shows it. The means are drawn near-opaque over them. **SuperPlot** in the Points options switches the cell layer off (`VisProps.superplot`, absent = on); off, the means take the series colour again and Colour data returns. The row shows only when the response carries cells (`PlotKind.superplot` in `plots/plotControls.ts`). The export caption's "cells beneath" and the n tooltip follow what is drawn (`cellsBeneath`), not the unit alone. The test runs on the means. Every export of the plot (PDF, board SVG, a downloaded image, the MCP plot image) carries one line under the chart: the n, what a point is and what the test ran on — "n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse means" (`plotCaption` → `PlotChart.toImageURL(type, caption)` → `svgWithCaption`). Nothing when each point is a cell or track.
 
 **Grouped by image attribute, the test runs within each population.** With `attr_map` the boxes are
 population × attribute group (× `groupBy` level), so `_summary_agg` tests through `_stats_within_pops`:

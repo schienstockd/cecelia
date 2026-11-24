@@ -1,17 +1,26 @@
-"""Cecelia overview for the README: design first, every step recorded, what you can ask.
+"""Cecelia overview for the README: recipes, design first, every step recorded, what the record gives you.
 
     python3 make_readme_overview.py ../../../frontend/public/readme-structure.svg
 
-Three panels, pictograms over words:
+A recipe strip over three panels, pictograms over words:
+  Recipes for your data: four of the written recipes (lib/guides/recipes.ts), each with its example.
+     Live cells and structures is left out (intravital with a second segmentation). Unnumbered: a
+     recipe is suggested from the images, after the design. One is shown picked, and panel 2's
+     subtitle says the loop follows it: a recipe suggests the next step (utils/setRecipe.ts); it does
+     not fill the design. No connector: it would cross heading 2 or the sidekicks.
+     Any Bio-Formats file is converted to OME-Zarr at import.
   1. Design first: the set's design as the app's design sketch draws it (DesignSketch.vue: one row per
      group, one ring per replicate, a dot per image inside it), the question, the expectation, or
      "exploratory".
   2. Every step is recorded: images -> segment -> populations -> analyse -> claim check around one
-     record (settings, version, who, when, design; chains replay it). Each step carries its check
+     record (settings, version, who, when, design). Each step carries its check
      (ok / look here), and the claim check points back at the design it is checked against. Kiwi and
      Claude Code sit beside it as optional sidekicks, drawn with the app's own schematics
      (ClaudeWaysIn.vue) and accents (--cc-kiwi, --cc-claude).
-  3. What you can ask: gate, cluster, track, lens, regions, per replicate.
+  3. What the record gives you, each a feature that exists: trace a number back to its settings
+     (analysis lineage), replay the steps on new images (chains), flag outputs an upstream re-run
+     made out of date (lib/staleOutputs.ts), write it up as a Methods draft plus the
+     parameter table (app/src/ai/methods_report.jl, #2440) - even for an exploratory set.
 
 The design numbers are an example layout (5 vs 3 replicates), not a dataset. Pictograms are drawn,
 not data; seeds are fixed so the file is stable between runs.
@@ -236,7 +245,7 @@ CC_FIG = ('<rect stroke="#c9c6bd" fill="#fafaf7" x="2" y="12" width="44" height=
 # ---------------------------------------------------------------- panels
 def design_panel():
     head(40, 64, 1, "Design first")
-    rect(40, 96, 490, 640, OLIVE, r=24)
+    rect(40, 96, 490, 664, OLIVE, r=24)
 
     def rep(x, y, n, r=28):
         circle(x, y, r, "#ffffff", stroke=ACC, sw=4.5)
@@ -257,19 +266,21 @@ def design_panel():
     text(70, 458, "Question", size=24, weight="700")
     text(70, 496, "Does it differ between A and B?", size=28)
     text(70, 560, "Expected", size=24, weight="700")
-    x = 70
-    for lab, on in [("not sure", False), ("no difference", True), ("higher in A", False)]:
-        w = 24 + len(lab) * 10.5
-        rect(x, 578, w, 44, ACC if on else "#ffffff", stroke=ACC if on else "#cfccc2", r=22, sw=2)
-        text(x + w / 2, 607, lab, size=20, fill="#ffffff" if on else DIM, anchor="middle",
-             weight="600" if on else "normal")
-        x += w + 10
-    rect(70, 660, 190, 46, "#fffdf5", stroke=DIM, r=23, dash=True, sw=2)
-    text(165, 690, "or: exploratory", size=21, fill=DIM, anchor="middle")
-
+    for row, pills in enumerate([[("not sure", False), ("no difference", True)],   # DesignQuestionFields.vue
+                                 [("higher in A", False), ("lower in A", False)]]):
+        x, y = 70, 578 + row * 54
+        for lab, on in pills:
+            w = 24 + len(lab) * 10.5
+            rect(x, y, w, 44, ACC if on else "#ffffff", stroke=ACC if on else "#cfccc2", r=22, sw=2)
+            text(x + w / 2, y + 29, lab, size=20, fill="#ffffff" if on else DIM, anchor="middle",
+                 weight="600" if on else "normal")
+            x += w + 10
+    rect(70, 694, 190, 46, "#fffdf5", stroke=DIM, r=23, dash=True, sw=2)
+    text(165, 724, "or: exploratory", size=21, fill=DIM, anchor="middle")
 
 def loop_panel():
     head(580, 64, 2, "Every step is recorded")
+    text(648, 98, "following the Few-marker recipe · it suggests the next step", size=19, fill=DIM, italic=True)
     cx, cy, R = 925, 440, 235
     rad = [math.radians(a) for a in (-90, -18, 54, 126, 198)]
     for i in range(4):   # wider gaps where an arc would run into a step's label
@@ -284,9 +295,8 @@ def loop_panel():
     for t in range(4):
         rect(cx - 33 + t * 18, cy - 66, 12, 17, style.NEUTRAL, r=2.5)
     text(cx, cy - 16, "Record", size=30, weight="700", anchor="middle")
-    text(cx, cy + 10, "settings · version", size=17, fill=DIM, anchor="middle")
-    text(cx, cy + 30, "who · when · design", size=17, fill=DIM, anchor="middle")
-    text(cx, cy + 54, "↻ chains replay it", size=16, weight="700", fill=DIM, anchor="middle")
+    text(cx, cy + 14, "settings · version", size=17, fill=DIM, anchor="middle")
+    text(cx, cy + 38, "who · when · design", size=17, fill=DIM, anchor="middle")
     steps = [("Images", pic_images, 1.12, 22, 20, OK), ("Segment", pic_segment, 1.25, 15, 25, OK),
              ("Populations", pic_cluster, 1.45, 18, 22, OK), ("Analyse", pic_lens, 1.35, 20, 26, OK),
              ("Claim check", pic_claim, 1.3, 22, 16, LOOK)]
@@ -297,6 +307,9 @@ def loop_panel():
         group(x - sz / 2 + ox, y - sz / 2 + oy, k, fn)
         text(x, y + sz / 2 + 34, lab, size=28, weight="700", anchor="middle")
         badge(x + sz / 2 - 4, y - sz / 2 + 4, state)
+        if fn is pic_claim:   # the review's verdict, in the app's words (claim review `supports`)
+            text(x, y + sz / 2 - 14, "descriptive only", size=18, weight="600", fill="#b07a1c",
+                 anchor="middle", italic=True)
     path(f"M532,140 C650,140 700,{cy-R} {cx-94},{cy-R}", sw=4)                       # design → images
     clx, cly = cx + R * math.cos(rad[4]), cy + R * math.sin(rad[4])
     path(f"M{clx-20},{cly-92} C{clx-40},250 600,250 534,250", dash=True, sw=3.5)    # claim → design
@@ -327,23 +340,151 @@ def side_panel():
     text(sx, ly + 84, "warn, never block", size=20, fill=DIM, italic=True)
 
 
-def tools_panel():
+def card(x, y, w=40, h=50, lines=3):   # the record, drawn as a small sheet
+    rect(x, y, w, h, "#ffffff", stroke=DIM, r=5, sw=2.5)
+    for i in range(lines):
+        add(f'<line x1="{x+8}" y1="{y+14+i*11}" x2="{x+w-8-(i%2)*8}" y2="{y+14+i*11}" stroke="{style.NEUTRAL}" '
+            'stroke-width="3" stroke-linecap="round"/>')
+
+
+def chip(x, y, c, s=26):
+    rect(x - s / 2, y - s / 2, s, s, c, r=6)
+
+
+def ben_trace(ix, iy):   # a dot on a plot, traced back to the record that made it
+    add(f'<path d="M{ix-6},{iy-52} V{iy+4} H{ix+60}" fill="none" stroke="{DIM}" stroke-width="2.5"/>')
+    for dx, dy in [(8, -10), (18, -26), (30, -16), (42, -38), (50, -24)]:
+        circle(ix + dx, iy + dy, 5, style.NEUTRAL)
+    circle(ix + 30, iy - 16, 8, TOL[1], stroke="#fff", sw=2.5)
+    path(f"M{ix+24},{iy-6} C{ix+10},{iy+40} {ix-30},{iy+40} {ix-38},{iy+12}", dash=True, sw=2.5)
+    card(ix - 62, iy - 44)
+
+
+def ben_replay(ix, iy):   # the recorded steps, run again on new images
+    for k, c in enumerate(TOL[:3]):
+        chip(ix - 40 + k * 40, iy - 34, c)
+        if k < 2:
+            path(f"M{ix-40+k*40+15},{iy-34} H{ix-40+k*40+24}", sw=2.5)
+    path(f"M{ix+52},{iy-26} C{ix+70},{iy+6} {ix+40},{iy+30} {ix+18},{iy+30}", sw=3)
+    for k in range(3):
+        rect(ix - 52 + k * 7, iy + 12 - k * 7, 44, 38, "#ffffff", stroke=DIM, r=4, sw=2)
+    for dx, dy in [(-38, 32), (-26, 26), (-20, 38)]:
+        circle(ix + dx + 14, iy + dy - 8, 4.5, TOL[4])
+
+
+def ben_stale(ix, iy):   # segmentation redone: the clusters made from the old one are flagged
+    ix -= 6
+    rect(ix - 66, iy - 24, 52, 52, DARK, r=6)
+    for k, (dx, dy) in enumerate([(-54, -12), (-36, -14), (-48, 6), (-28, 4), (-40, 18)]):
+        circle(ix + dx, iy + dy, 6.5, "none", stroke=TOL[k % 5], sw=2.5)
+    circle(ix - 16, iy - 24, 12, TOL[0], stroke="#fff", sw=3)
+    text(ix - 16, iy - 17, "↻", size=17, weight="800", fill="#fff", anchor="middle")
+    path(f"M{ix-8},{iy+2} H{ix+10}", sw=2.5)
+    rect(ix + 14, iy - 24, 52, 52, "#ffffff", stroke=DIM, r=6, sw=2)
+    for k, (dx, dy) in enumerate([(24, -12), (30, -6), (26, -2), (48, -12), (54, -8), (50, -4),
+                                  (36, 14), (42, 18), (46, 12)]):
+        circle(ix + dx, iy + dy, 3.5, TOL[k // 3 + 1])
+    badge(ix + 64, iy - 24, LOOK, 12)
+
+
+def ben_methods(ix, iy):   # the record printed: a Methods draft and its parameter table
+    rect(ix - 62, iy - 50, 66, 86, "#ffffff", stroke=DIM, r=5, sw=2.5)
+    add(f'<line x1="{ix-52}" y1="{iy-34}" x2="{ix-22}" y2="{iy-34}" stroke="{INK}" stroke-width="5" '
+        'stroke-linecap="round"/>')
+    for i in range(5):
+        add(f'<line x1="{ix-52}" y1="{iy-18+i*11}" x2="{ix-6-(i%3)*9}" y2="{iy-18+i*11}" '
+            f'stroke="{style.NEUTRAL}" stroke-width="3" stroke-linecap="round"/>')
+    tx, ty, cw, rh = ix - 6, iy - 4, 20, 14   # parameter table, overlapping the sheet
+    rect(tx, ty, cw * 3, rh * 4, "#ffffff", stroke=DIM, r=4, sw=2.5)
+    rect(tx, ty, cw * 3, rh, TOL[0], r=4)
+    for c in (1, 2):
+        add(f'<line x1="{tx+c*cw}" y1="{ty}" x2="{tx+c*cw}" y2="{ty+rh*4}" stroke="{DIM}" stroke-width="1.5"/>')
+    for r_ in (2, 3):
+        add(f'<line x1="{tx}" y1="{ty+r_*rh}" x2="{tx+cw*3}" y2="{ty+r_*rh}" stroke="{DIM}" stroke-width="1.5"/>')
+
+
+def benefits_panel():
     gy = 836
-    head(40, gy, 3, "What you can ask")
-    tiles = [("gate", pic_gate, 1.45), ("cluster", pic_cluster, 1.45), ("track", pic_tracks, 1.45),
-             ("lens", pic_lens, 1.4), ("regions", pic_regions, 1.4), ("per replicate", pic_superplot, 1.4)]
-    tw, th = 250, 168
-    for i, (lab, fn, k) in enumerate(tiles):
-        x = 40 + i * (tw + 20)
-        rect(x, gy + 28, tw, th, "#ffffff", stroke=CARD_EDGE, r=16, sw=2)
-        group(x + (tw - 100 * k) / 2, gy + 28 + (th - 96 * k) / 2, k, fn)
-        text(x + tw / 2, gy + th + 64, lab, size=24, weight="700", anchor="middle")
+    head(40, gy, 3, "What the record gives you")
+    tiles = [("Trace", ben_trace, "any number back", "to its settings"),
+             ("Replay", ben_replay, "the same steps", "on new images"),
+             ("Out of date", ben_stale, "segment again, and", "old clusters warn"),
+             ("Write it up", ben_methods, "Methods draft +", "parameter table")]
+    tw, th = 385, 196
+    for i, (title, fn, l1, l2) in enumerate(tiles):
+        x, y = 40 + i * (tw + 20), gy + 28
+        rect(x, y, tw, th, "#ffffff", stroke=CARD_EDGE, r=16, sw=2)
+        group(x + 96, y + th / 2 + 6, 1.1 if fn is ben_stale else 1.3, fn)
+        text(x + 192, y + 72, title, size=28, weight="700")
+        text(x + 192, y + 110, l1, size=20, fill=DIM)
+        text(x + 192, y + 138, l2, size=20, fill=DIM)
 
 
+# ---------------------------------------------------------------- recipes (lib/guides/recipes.ts)
+def _tracks(x, y, cells_, w=2.2):
+    for cx_, cy_, c, tr in cells_:
+        d = "M" + " L".join(f"{x+a},{y+b}" for a, b in tr) + f" L{x+cx_},{y+cy_}"
+        add(f'<path d="{d}" fill="none" stroke="{c}" stroke-width="{w}" opacity="0.75"/>')
+        circle(x + cx_, y + cy_, 6, c)
+
+
+def rec_few(x, y):   # a fixed section, a handful of markers
+    rect(x, y, 110, 90, DARK, r=6)
+    for px, py, rr in cells(11, 16, x + 4, y + 4, 102, 82, 6, 10):
+        circle(px, py, rr, TOL[int(px * 7 + py) % 3], op=0.9)
+
+
+def rec_multiplex(x, y):   # many markers on one section
+    rect(x, y, 110, 90, DARK, r=6)
+    for k, (px, py, rr) in enumerate(cells(12, 46, x + 3, y + 3, 104, 84, 3.5, 5.5)):
+        circle(px, py, rr, TOL[k % 6])
+
+
+def rec_intravital(x, y):   # cells moving in tissue
+    rect(x, y, 110, 90, DARK, r=6)
+    for px, py, rr in cells(13, 18, x + 4, y + 4, 102, 82, 5, 8):
+        circle(px, py, rr, "#3a3d44")
+    _tracks(x, y, [(34, 34, TOL[1], [(10, 60), (18, 48), (26, 40)]),
+                   (78, 30, TOL[4], [(98, 12), (90, 20), (84, 26)]),
+                   (64, 70, TOL[3], [(36, 80), (46, 76), (56, 74)])])
+
+
+def rec_invitro(x, y):   # cells migrating in a dish
+    rect(x, y, 110, 90, "#e9e7e0", r=6)
+    circle(x + 55, y + 45, 40, "#f6f5f0", stroke=style.NEUTRAL, sw=2)
+    _tracks(x, y, [(40, 32, TOL[0], [(24, 50), (30, 42), (34, 36)]),
+                   (74, 40, TOL[0], [(60, 22), (66, 28), (70, 34)]),
+                   (56, 66, TOL[0], [(82, 70), (72, 70), (64, 68)])], w=2)
+
+
+def recipes_panel():
+    text(40, 64, "Recipes for your data", size=36, weight="700")   # no number: not a step
+    text(1640, 64, "any Bio-Formats file → OME-Zarr", size=22, fill=DIM, anchor="end", italic=True)
+    tiles = [("Few-marker", "tissue", "confocal", rec_few),
+             ("Multiplex", "tissue", "IBEX, PhenoCycler", rec_multiplex),
+             ("Intravital", "timelapse", "multiphoton", rec_intravital),
+             ("In vitro", "migration", "cells in a dish", rec_invitro)]
+    tw, th = (1600 - 3 * 16) / 4, 132
+    for i, (t1, t2, eg, fn) in enumerate(tiles):
+        x, y = 40 + i * (tw + 16), 96
+        picked = i == 0   # the set's recipe; the loop below follows it
+        rect(x, y, tw, th, "#ffffff", stroke=INK if picked else CARD_EDGE, r=16, sw=3.5 if picked else 2)
+        if picked:
+            badge(x + tw - 6, y + 6, OK, 15)
+        fn(x + 16, y + 21)
+        text(x + 144, y + 62, f"{t1} {t2}", size=24, weight="700")
+        text(x + 144, y + 94, eg, size=19, fill=DIM)
+
+
+DY = 248   # the recipe strip sits above the three panels
+recipes_panel()
+add(f'<g transform="translate(0,{DY})">')
 design_panel()
 loop_panel()
 side_panel()
-tools_panel()
+benefits_panel()
+add("</g>")
+H += DY
 svg_head = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
             f'font-family="{FONT}">',
             '<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" '

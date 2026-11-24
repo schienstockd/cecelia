@@ -820,7 +820,7 @@ function moveTo(target: string) {
             <!-- rectangle ⇄ polygon on the SAME population (no delete-and-redraw). Widening
                  (poly → rect) arms first; the label names the shape you get. Armed items keep their
                  label (the menu never resizes under the cursor); the armed tooltip says what happens. -->
-            <ConfirmButton v-if="actionsPop.gate && !readonly && !actionsPop.transient"
+            <ConfirmButton v-if="actionsPop.gate && convertTo(actionsPop) && !readonly && !actionsPop.transient"
                            :needs-confirm="actionsPop.gate.kind === 'polygon'"
                            @confirm="runAction(() => convertGate(actionsPop!))" v-slot="{ armed, press }">
               <button class="cc-actions-item" :class="{ armed }" @click.stop="press"

@@ -25,6 +25,7 @@
  * "consecutive" a tolerance question.
  */
 
+import { niceStep } from '../utils/niceStep'
 import type { TrackPathMap } from './trackPaths'
 import type { TrackIssue } from '../lib/trackCorrection'
 
@@ -533,9 +534,7 @@ export function schemeCsvRows(lanes: readonly Lane[]): Record<string, unknown>[]
 export function frameTicks(t0: number, t1: number, target = 8): number[] {
   const span = t1 - t0
   if (!(span > 0) || target < 1) return [t0]
-  const raw = span / target
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)))
-  const step = [1, 2, 5, 10].find(m => m * mag >= raw)! * mag
+  const step = niceStep(span / target)
   const out: number[] = []
   for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) out.push(t)
   if (!out.length || out[0] !== t0) out.unshift(t0)

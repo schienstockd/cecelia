@@ -390,7 +390,7 @@ const clustG = provideGatingStore(clustPopType.value)
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, clusterRunAt: clustRunAt, validUids: clustValidUids,
         featureOptions: clustFeatureOptions, labelMap: clustNameMap, channelNames: clustChannelNames,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
-        clusterAxes: clustAxes } =
+        clusterAxes: clustAxes, allFeatures: clustAllFeatures } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
                       popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot, g: clustG })
 
@@ -459,6 +459,7 @@ function ctxFor(c: SlotContent, i: number) {
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
     axes: clustAxes.value[clustSuffix.value] ?? null, nameMap: clustNameMap.value,
+    features: clustAllFeatures.value,   // what the run clustered on — the map can be coloured by one
   }
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
   if (railOf(c) === 'flowModels') return { ...base, model: panelFlowModel(c) }
