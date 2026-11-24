@@ -92,6 +92,9 @@ _rename_gate(g::SliceGate, f)     = SliceGate(f(g.x_channel), f(g.y_channel), g.
                                               g.vertices, g.side, g.group)
 _rename_gate(g::QuadrantGate, f)  = QuadrantGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
                                                  g.centre, g.arms, g.quadrant, g.group)
+_rename_gate(g::RangeGate, f)     = RangeGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform, g.lo, g.hi)
+_rename_gate(g::BisectorGate, f)  = BisectorGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
+                                                 g.cut, g.side, g.group, g.rule)
 
 """
     rename_pop_columns(m, rename::AbstractDict) -> PopulationTree
@@ -205,8 +208,11 @@ function recompute!(m::PopulationTree, fetch_cols::Function)
         elseif p.gate !== nothing
             # a gate whose axis column is absent from the fetched frame → no members, not a crash. See
             # the filter case below for the rationale (missing column ≠ hard 500).
+            # a rule gate (a valley-following bisector) is first resolved on its PARENT's cells
             (p.gate.x_channel in cols && p.gate.y_channel in cols) ?
-                parent_mask .& inside(p.gate, df[!, p.gate.x_channel], df[!, p.gate.y_channel]) :
+                parent_mask .& inside(needs_parent_data(p.gate) ?
+                                          resolve_gate(p.gate, df[parent_mask, p.gate.x_channel]) : p.gate,
+                                      df[!, p.gate.x_channel], df[!, p.gate.y_channel]) :
                 _missing_col_mask(n, path, string(p.gate.x_channel, " / ", p.gate.y_channel))
         elseif p.filter_conditions !== nothing
             # compound filter (Decision 15): AND every condition's mask. A missing column degrades the

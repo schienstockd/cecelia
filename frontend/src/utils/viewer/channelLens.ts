@@ -17,6 +17,7 @@
 //   3. Readout and lens both on: two pointer tools fighting over one pointer. `pointerToolChips`
 //      keeps them exclusive — the one just switched on wins.
 
+import { niceStep } from '../niceStep'
 import type { OrbitCamera, ViewerChannel, ViewerLens, ViewerMeta } from '../volumeViewer'
 import { cameraViewL0 } from '../viewerPick'
 import { zPlaneOf } from '../viewerOverlays'
@@ -33,12 +34,6 @@ export const LENS_RADIUS_MAX = 400
 /** Rim width, CSS px — a hairline that still reads on a bright image. Shared with the movie host. */
 export const LENS_RIM_PX: number = SHADER_CONSTANTS.LENS_RIM_PX
 
-/** 1, 2 or 5 × 10^k: the round number at or above `x`. */
-function niceStep(x: number): number {
-  if (!(x > 0) || !Number.isFinite(x)) return 1
-  const p = 10 ** Math.floor(Math.log10(x)), f = x / p
-  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p
-}
 
 /** The radius slider for one image, µm: from 1% to half of the image's short side, starting at a
  *  tenth of it — capped at a tissue scale (`LENS_UM_CAPS`), so a whole slide does not get a slider

@@ -186,7 +186,10 @@ export function splitLabelPoint(g: GateSpec, box: Box): Pt | null {
  *  (Members on one plot share its orientation, so there is no mirror here; the server does the same
  *  move for real on release, `set_gate!`.) */
 export function withDivider(g: GateSpec, template: GateSpec): GateSpec {
-  if (!isSplitGate(g) || g.kind !== template.kind || !g.group || g.group !== template.group) return g
+  if (!g.group || g.kind !== template.kind || g.group !== template.group) return g
+  // a bisector's two halves share one cut (and its rule) — the 1D split (plots/histGeometry.ts)
+  if (g.kind === 'bisector') return { ...g, cut: template.cut, rule: template.rule }
+  if (!isSplitGate(g)) return g
   return g.kind === 'slice' ? { ...g, vertices: template.vertices }
                             : { ...g, centre: template.centre, arms: template.arms }
 }
