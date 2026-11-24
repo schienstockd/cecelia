@@ -173,10 +173,10 @@ function api_analysis_board_provenance(req::HTTP.Request)
     200, JSON3.write(rec)
 end
 
-# GET /api/analysis/methods?projectUid&(runId | setUid | imageUids=a,b[&pops=[…]&clusterRuns=[…]&board=])
-# → {markdown, table, scope}: the draft Methods section (`methods_report`, app/src/ai/methods_report.jl).
-# One generator, three scopes: a chain run, a set (or image list), a board (its populations + cluster
-# run, the same query as the board's Parameters CSV). Read-only.
+# GET /api/analysis/methods?projectUid&(runId | setUid | imageUids=a,b)
+# → {markdown, table, csv, scope}: the draft Methods section (`methods_report`, app/src/ai/methods_report.jl).
+# One generator, two scopes: a chain run, or a set (a list of images reads as its set when it is one —
+# the board's Methods sends its images). Read-only.
 function api_analysis_methods(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     uid  = get(q, "projectUid", "")
@@ -184,14 +184,9 @@ function api_analysis_methods(req::HTTP.Request)
     uids = _query_list(q, "imageUids")
     (isempty(uid) || (isempty(rid) && isempty(sid) && isempty(uids))) &&
         return 400, JSON3.write((; error="projectUid and one of runId, setUid or imageUids required"))
-    list(k) = (v = get(q, k, nothing); v === nothing ? nothing : String.(JSON3.read(v, Vector{String})))
-    pops, runs = try (list("pops"), list("clusterRuns")) catch
-        return 400, JSON3.write((; error="pops and clusterRuns must be JSON arrays of strings"))
-    end
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
     r = try
-        methods_report(proj; run_id = rid, set_uid = sid, image_uids = uids, pops,
-                       cluster_runs = something(runs, String[]), board = get(q, "board", ""))
+        methods_report(proj; run_id = rid, set_uid = sid, image_uids = uids)
     catch e
         return 404, JSON3.write((; error=sprint(showerror, e)))
     end

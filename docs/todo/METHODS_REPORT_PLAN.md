@@ -1,14 +1,16 @@
 # Methods report — a draft Methods paragraph from what the project already records
 
 **Status:** P1–P3 built (2026-11-21) — generator, route, board Export entry + chain Live entry, MCP
-`get_methods_report`. How it works now: `docs/ANALYSIS.md` → *Methods report*. Open questions answered
-with defaults the maintainer can change: button = the board's `⤓ Export` (plus the chain Live view); scope
-= set, board and chain run (GALAXY_LESSONS_PLAN L1); format = Markdown + the parameter CSV; paired-terminal
-suggestions = ceiling accepted and stated in the text. Not done: a `methodsText` template on every task
-spec (the field exists and is honoured; no built-in task has one, so a missing one is not a test failure),
-DOCX, board figures in the report. Prompted by the Janelia *AI in Microscopy* guide
-(ch. 3 §3.6–3.8: "Document models, prompts, and validation in methods"; ch. 11: data "with clear
-provenance"), and by the model stamps that landed in #1826.
+`get_methods_report`. **P4 built (2026-11-23)** — the board-scoped draft read as a cluttered run log
+(14 numbered steps, half of them trial runs on one image; citations repeated; internal params), so:
+scope is the **dataset** (a set, or a board's images read as their set), not the board — a Methods
+section is per experiment, what a panel shows goes in its legend; trial and redone runs are left out by
+rule (`_history_usage`) and named in one sentence; every step is prose from its task's `methodsText`
+(15 built-in templates); one numbered reference list from Crossref-generated lines; a *Populations*
+paragraph from the gating sidecars; the modal renders the Markdown. How it works now: `docs/ANALYSIS.md`
+→ *Methods report*. **Open:** P5 board **legends** (one per panel: what it plots, the populations, the
+summary level, n and the test — extending `plotCaption`); DOCX. Paired-terminal suggestions: ceiling
+accepted and stated in the text.
 
 ## The ask
 

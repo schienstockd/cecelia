@@ -3,6 +3,7 @@
   "fun_name": "clustRegions.cluster",
   "label": "Cluster regions",
   "citations": ["10.1016/j.celrep.2020.107523", { "doi": "10.1038/s41598-019-41695-z", "showIf": { "clusterMethod": "leiden" } }],
+  "methodsText": ["Regions were clustered", {"showIf": {"clusterMethod": "leiden"}, "text": " by Leiden (resolution {resolution})"}, {"showIf": {"clusterMethod": "kmeans"}, "text": " by k-means ({numClusters} regions)"}, " on the local composition of {basisPops} cells", {"showIf": {"pooling": "frame"}, "text": ", per frame"}, {"showIf": {"pooling": "track"}, "text": ", pooled over each whole track"}, {"showIf": {"pooling": "movie"}, "text": ", pooled over the whole movie"}, "."],
   "purpose": "Group cells into regions by the mix of cell types around them",
   "useWhen": [
     "Finding tissue niches from neighbourhood composition",

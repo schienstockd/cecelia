@@ -64,6 +64,8 @@ import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import type { PanelHit } from '../../utils/panelSelectionHit'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 import { PAPER } from '../../plots/fixedColours'
+import { columnLetters } from '../../utils/gridOverlay'
+import { summaryLegend, viewLegend, type SummaryLegendFacts } from '../../utils/panelLegend'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -502,7 +504,7 @@ function labelFor(c: SlotContent): string {
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
 // pull the summary plot's aggregated CSV. Both panel types expose exportImage(); summary also getCsv().
-type SummaryRef = { getCsv(): string | null | Promise<string | null>; getStatsCsv?(): string; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null>; isBusy?(): boolean }
+type SummaryRef = { getCsv(): string | null | Promise<string | null>; getStatsCsv?(): string; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null>; isBusy?(): boolean; legendFacts?(): SummaryLegendFacts | null }
 type ExportRef = { exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null>; isBusy?(): boolean }
 const summaryRefs = new Map<number, SummaryRef>()
 const interactiveRefs = new Map<number, ExportRef>()
@@ -573,6 +575,22 @@ async function collectCsvs(): Promise<{ name: string; csv: string | null }[]> {
   }
   return out
 }
+// One figure legend per filled slot, lettered in slot order (`utils/panelLegend.ts`): a summary panel
+// from what it draws (`legendFacts`), any other view from its label, label set and populations.
+function collectLegends(): string[] {
+  const out: string[] = []
+  entry.value.contents.forEach((c, i) => {
+    if (!c) return
+    const letter = columnLetters(out.length)
+    const title = typeof st(c).vis === 'object' ? ((st(c).vis as { title?: string }).title || undefined) : undefined
+    const facts = c.kind === 'summary' ? summaryRefs.get(i)?.legendFacts?.() : null
+    const valueName = typeof st(c).valueName === 'string' ? st(c).valueName as string : undefined
+    out.push(facts ? summaryLegend(letter, facts)
+                   : viewLegend(letter, { label: labelFor(c), title, valueName,
+                     pops: railOf(c) === 'pops' ? panelSel(c).map(k => k.split('::').pop() ?? k) : [] }))
+  })
+  return out
+}
 // What this board shows, for the parameter table (`boardParamsScope`): each slot's rail + resolved
 // selection, and the board's one cluster run.
 function paramsScope(): BoardParamsScope {
@@ -608,7 +626,7 @@ const snapshotter = debouncedLatest<void>(async (_arg, isCurrent) => {
 watch(() => snapKeyNow().key, () => snapshotter.schedule(), { immediate: true })
 onBeforeUnmount(() => snapshotter.cancel())
 
-defineExpose({ capturePage, collectCsvs, paramsScope, paramsSnapshot: () => entry.value.paramsSnapshot ?? null })
+defineExpose({ capturePage, collectCsvs, collectLegends, paramsScope, paramsSnapshot: () => entry.value.paramsSnapshot ?? null })
 
 // ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
 // LayoutCanvas is a GRID canvas — docked CanvasPanels skip `setGeom`, so the composable's default

@@ -541,18 +541,27 @@ compare against, so nothing is flagged.
 
 ## Methods report — a draft Methods section
 
-`⤓ Export` → **Methods (draft)** opens `MethodsReportModal` on the active board's draft Methods: the text,
-**Copy**, a `.md` download and the parameter table as CSV. The chain page's Live view has the same modal
-for the run it shows (**Methods** beside the run id, with **RO-Crate** next to it — *RO-Crate export* below). Claude reads the same text through the MCP tool
-`get_methods_report` (Kiwi too). One generator behind all three — `methods_report`
+`⤓ Export` → **Methods (draft)** opens `MethodsReportModal` on the Methods for the board's images — the
+dataset's, which the server names as their set when they are exactly one set's. Not cut to the board's
+panels: a Methods section is per dataset, and a panel's own description (what it plots, n, the test)
+belongs in its legend. The modal renders the text (`renderMarkdown`, sanitised: population and image
+names in it are the user's) with **Copy** (the Markdown), a `.md` download and the parameter table as
+CSV. The chain page's Live view has the same modal for the run it shows (**Methods** beside the run id,
+with **RO-Crate** next to it — *RO-Crate export* below). Claude reads the same text through the MCP tool
+`get_methods_report` (Kiwi too). One generator behind all of them — `methods_report`
 (`app/src/ai/methods_report.jl`), served by `GET /api/analysis/methods`. Read-only: nothing is written,
 the lab log included.
 
-**Scopes.** One text, three scopes, picked by the query:
+**Scopes.** One text, two scopes, picked by the query:
 
-- **board** — `imageUids` + `pops` + `clusterRuns` (the board's Parameters CSV query) + `board` (the tab
-  name): the steps behind the plots, then each population, marked when Claude drew it;
-- **set** — `setUid` (or a bare `imageUids` list): every step that ran on its images;
+- **set** — `setUid`, or an `imageUids` list (named as its set when it is one): the analysis on the
+  images. A set's history holds the analysis and the tries on the way to it, so each table row carries
+  `usage` (`_history_usage`, `app/src/tasks/chain/history_scope.jl`): `redone` — a later run of the same
+  task re-made everything it made on every image it ran on; `trial` — nothing in the analysis reads it,
+  and it ran on part of the set or is a sweep version whose sibling was read (an HMM sweep where the
+  clustering read `movement_3`). A run that made a population still defined on the images (the cluster
+  run a region population filters on) is the analysis however few images it covered. The left-out runs
+  are one sentence (*Also run, not part of this analysis*) and stay in the CSV (`in_methods`);
 - **chain run** — `runId`: the run's images, the runs its nodes made (`history_params_table(…; task_ids)`,
   so later runs on the same images stay out), a table with one row per node — its parameters as the
   run recorded them (`node_params`, only those that differ from the spec default), status across images
@@ -562,27 +571,54 @@ the lab log included.
   node whose entries were never logged shows blank times.
 
 **What the text says, and from where.** Deterministic (no clock, sorted lists), so the same record gives
-the same text. It opens with a draft banner. Each step is one numbered sentence built from its
-`history_params_table` row: task label, output, `n/N` images, the parameters changed from default, the
-images' disagreements and the row's note. A task spec may carry an optional `methodsText` with `{param}`
-slots (`docs/MODULES.md`); when every slot has a value, and the images agree on it, it replaces the
-generic sentence. No built-in task
-has one yet. Under a step:
+the same text. It opens with a draft banner and a line naming the scope, the image count and the Cecelia
+version (`ceceliaVersion`, plus `ceceliaCommit` when entries carry it). Then prose, one paragraph per
+section — *Image processing and segmentation*, *Populations*, *Tracking and behaviour*, *Clustering*,
+*Spatial analysis*, *Other analysis* (by task category, `_MR_SECTIONS`):
 
-- **Started by Claude (model)** — from the run-log `author` stamp (`via: claude` or `kiwi`). The model is
-  the recorded one; a stamp without it reads **model not recorded**, never a guess. Chain templates
-  (`createdBy` / `updatedBy`), board tabs (`createdBy`) and populations (`created_by`, plus "then edited
-  by hand" when a person's `updated_by` follows) are listed under *AI assistance* the same way. Runs from
-  before author stamps are counted as such.
-- **Cite** — a row's `cite` (task citation DOIs), when the table carries one. The Cecelia version comes
-  from the runs' `ceceliaVersion`, plus `ceceliaCommit` when entries carry it.
+- **A step** is its task's `methodsText` (`docs/MODULES.md`), filled from what it ran with
+  (`app/src/ai/methods_text.jl`): units from the param label, select option labels, channel and
+  population names, measure columns in words (`methods_measure_phrase`). Where the images disagree on a
+  slot the spread is stated ("gBT-uGFP (9 images) or OTI-uGFP (7 images)"; a list per image points to
+  the table), never one image's value as the method. A task with no template, or a slot the record
+  cannot fill, gets a plain sentence from its changed parameters. In brackets: how many images when not
+  all, and **started by Claude (model)** from the run-log `author` stamp. A step that read populations
+  no longer defined on the images (renamed or removed since) says so — the basis is not reproducible.
+- **Populations** (`app/src/ai/methods_populations.jl`): the gating tree from the stored sidecars — each
+  population, its parent and the two measures it was gated on, named through each image's own channels
+  (a gate stores the raw column, and channel order can differ between images); combinations as what
+  they combine; cluster and region populations as the clusters of which run they group.
+- **Citations** are `[n]` into one numbered *References* list, in the order the text cites them. A DOI's
+  line comes from `app/src/ai/references.toml` (generated from Crossref; every DOI a task spec cites must
+  have an entry — a testset fails otherwise).
+- **AI assistance** lists what Claude drew or started: populations (`created_by`, plus "then edited by
+  hand" when a person's `updated_by` follows), steps, chain templates, by recorded model — a stamp
+  without one reads **model not recorded**, never a guess. Runs from before author stamps are counted
+  as such.
 
 A step Claude suggested and a person then ran is stamped as that person's, so the text says the AI list
 can miss suggestions. That limit is accepted for now; attaching a session summary would be opt-in later.
 
 The parameter CSV is the server's (`history_params_csv`, the `csv` field of the response), so the CSV
 the modal downloads and the one in a chain run's RO-Crate are the same bytes. Its columns match the
-frontend's `historyParamsCsv`, which the history dialog and the board export still use.
+frontend's `historyParamsCsv`, which the history dialog and the board export still use, plus
+`in_methods` on a set (yes / no (redone later) / no (trial)).
+
+### Board legends — one per panel
+
+`⤓ Export` → **Legends** opens `BoardLegendsModal` on the active board's figure legends, one paragraph per
+filled panel, lettered in slot order (A, B, …), with **Copy** (Markdown) and a `.md` download. A legend
+says what its panel shows now; how the data were made is the Methods report's. Built in the browser
+from each panel's own state (`utils/panelLegend.ts`, collected by `LayoutCanvas.collectLegends`):
+
+- a **summary panel** (`SummaryPanel.legendFacts()`): its title (or plot type), the measure in words
+  (`measureWords`, the twin of the report's `methods_measure_phrase`), the populations
+  (`popDisplayLabels`), how many images it pools, what the chart draws, what a point is with n per
+  population (tracks or cells; at the image or replicate level the image mean and the count), and the
+  test it drew — or "No statistical test";
+- **any other view**: its label, label set and populations.
+
+The short form of the same facts is the caption line under an exported plot (`plotCaption`).
 
 ### RO-Crate export — a chain run for Zenodo and WorkflowHub
 

@@ -15,6 +15,8 @@
 const METHODS_DRAFT_BANNER = "**Draft.** Generated from the project record by Cecelia. " *
                              "Check every statement before you use it."
 const METHODS_MODEL_UNKNOWN = "model not recorded"
+# Cecelia's own paper, cited once beside the version (CITATION.cff)
+const CECELIA_DOI = "10.1038/s41467-025-57193-y"
 # A step Claude suggested and the user ran is stamped as the user's: the report can't see it.
 const METHODS_CEILING = "A step Claude suggested and a person then ran is stamped as that person's, " *
                         "so this list can miss suggestions."
@@ -74,93 +76,124 @@ function _mr_entries(proj::CciaProject, uids)
 end
 _mr_row_entries(row, ents) = [e for id in get(row, "taskIds", String[]) for (_, e) in get(ents, id, Tuple{String,Any}[])]
 
-# The spec's optional `methodsText` with `{key}` slots filled from the run's params over the spec
-# defaults; `nothing` (the generic sentence is used) when the spec has none, a slot has no value, or the
-# images disagree on a slot (`conflicts` — a sentence must not state one image's value as the method).
-function _mr_methods_text(fn::AbstractString, entries, conflicts::AbstractString = "")
-    spec = try _task_spec(_task_from_fun_name(String(fn))) catch; nothing end
-    spec isa AbstractDict || return nothing
-    tpl = get(spec, "methodsText", nothing)
-    tpl isa AbstractString && !isempty(tpl) || return nothing
-    vals = Dict{String,Any}(k => v for (k, v) in _history_param_defaults(String(fn)) if !(v isa NamedTuple))
-    done = sort([e for e in entries if run_entry_status(e) == "done"]; by = e -> _rl_str(e, "at"))
-    isempty(done) || merge!(vals, run_log_row(last(done)).params)
-    disputed = Set(String(strip(first(split(c, ":")))) for c in split(conflicts, "; ") if occursin(":", c))
-    out = tpl
-    for m in eachmatch(r"\{([A-Za-z0-9_]+)\}", tpl)
-        k = String(m.captures[1])
-        k in disputed && return nothing
-        haskey(vals, k) && !_hp_empty(vals[k]) || return nothing
-        out = replace(out, "{$k}" => _hp_show(vals[k]))
-    end
-    out
-end
-
-# One numbered step: the spec's `methodsText` when it has one, else the generic sentence.
-function _mr_step(i::Int, row, entries)::Vector{String}
-    task = string(get(row, "task", "")); step = string(get(row, "step", task))
-    out, imgs = string(get(row, "output", "")), string(get(row, "images", ""))
-    changed, note = string(get(row, "changedFromDefault", "")), string(get(row, "note", ""))
-    head = isempty(task) ? "**$step**" : "**$step** (`$task`)"
-    custom = isempty(task) ? nothing : _mr_methods_text(task, entries, string(get(row, "conflicts", "")))
-    s = if custom !== nothing
-        "$head: $custom" * (isempty(imgs) ? "" : " ($imgs images.)")
-    else
-        body = isempty(imgs) ? head : "$head was run on $imgs images"
-        isempty(out) || (body *= ", writing `$out`")
-        if !isempty(changed)
-            body *= ", with these parameters changed from their defaults: $changed"
-        elseif isempty(note) && !isempty(task)
-            body *= ", with default parameters"
-        end
-        body * "."
-    end
-    isempty(note) || (s *= " Note: $note.")
-    c = string(get(row, "conflicts", ""))
-    isempty(c) || (s *= " The images differ in: $c.")
-    lines = ["$i. $s"]
-    ai = methods_ai_phrase(_rl_get(e, "author", nothing) for e in entries)
-    isempty(ai) || push!(lines, "   - Started by $ai.")
-    cite = _mr_cite(row)
-    isempty(cite) || push!(lines, "   - Cite: $cite")
-    lines
-end
-
-# A row's `cite` (task citation DOIs, once the table carries them) as text — a list or a string
+# A row's `cite` (task citation DOIs) as text — a list or a string
 _mr_cite(row) = (c = get(row, "cite", ""); c isa AbstractVector ? join(string.(c), "; ") : string(something(c, "")))
 
-# A population's Claude stamp on the board's images, as a phrase ("" when nobody stamped it)
-function _mr_pop_ai(proj::CciaProject, uids, key::AbstractString)
-    t = _parse_tkey(key)
-    info = pop_type_info(t.popType)
-    (info === nothing || info.tree_type === nothing || isempty(t.pop)) && return ""
-    stamps = Any[]; edited = false
-    for uid in uids
-        img = try init_object(proj.uid, uid) catch; nothing end
-        img isa CciaImage || continue
-        m = try stored_pop_tree(img, t.valueName, string(info.tree_type)) catch; nothing end
-        (m === nothing || !has_pop(m, t.pop)) && continue
-        p = pop_at(m, t.pop)
-        p.created_by === nothing && continue
-        push!(stamps, p.created_by)
-        u = p.updated_by
-        edited |= u !== nothing && !haskey(_METHODS_AI_VIAS, _mr_str(u, "via"))
+# A step's notes worth a reader's time: what the record lacks. "never replayed" / "per-image geometry"
+# are about replaying a chain, not about the method.
+_mr_note_shown(note) = startswith(note, "parameters unknown") || startswith(note, "no recorded run")
+
+# Populations a step read that are no longer defined on the images (renamed or removed since), by name
+function _mr_missing_pops(fn::AbstractString, entries, defined::Set{String})::Vector{String}
+    isempty(defined) && return String[]
+    idx = _mr_param_index(fn)
+    vals = first(_mr_values(fn, entries, idx))
+    own = string(something(get(vals, "valueName", nothing), VERSIONED_DEFAULT_VAL))
+    out = String[]
+    for (k, p) in idx
+        (p isa AbstractDict && get(p, "type", "") == "popSelection") || continue
+        for ref in _mr_list(get(vals, k, nothing))
+            r = string(ref)
+            (_whole_pop(r) || any(seg -> startswith(seg, "_"), split(r, '/'))) && continue
+            ls, path = _split_pop_ref(r, own)
+            "$ls$path" in defined || push!(out, r)
+        end
     end
-    ai = methods_ai_phrase(stamps)
-    isempty(ai) ? "" : "drawn by $ai" * (edited ? ", then edited by hand" : "")
+    sort!(unique!(methods_pop_phrases(out)))          # named together, so two OTIs stay two
 end
 
-# The images a scope covers, and how the scope reads
-function _mr_scope(proj::CciaProject, image_uids, set_uid, pops, run)
+"""
+    _mr_step_sentence(row, entries, n, refs, defined, checks) -> String
+
+One analysis step as prose: its `methodsText` (else the plain sentence) — opened with "In k of N
+images," when it did not run on all — then who started it when Claude did, then its citations as `[i]`
+into `refs` (DOIs in first-cited order, appended to). A step that read populations no longer defined on
+the images adds a line to `checks` (the report's *Check before use*), not to the prose.
+"""
+function _mr_step_sentence(row, entries, n::Int, refs::Vector{String}, defined::Set{String},
+                           checks::Vector{String} = String[])::String
+    fn = string(get(row, "task", ""))
+    text = isempty(fn) ? nothing : _mr_methods_text(fn, entries, something(get(row, "spread", nothing), Dict{String,Any}()))
+    text === nothing && (text = _mr_plain_text(row))
+    extras = String[]
+    m = match(r"^(\d+)/(\d+)$", string(get(row, "images", "")))
+    if m !== nothing && m.captures[1] != m.captures[2]
+        first_word = first(split(text, r"[\s,]"; limit = 2))
+        rest = any(isuppercase, first_word[nextind(first_word, 1):end]) ? text : lowercase(text[1:1]) * text[nextind(text, 1):end]
+        text = "In $(m.captures[1]) of $(m.captures[2]) images, $rest"
+    end
+    ai = methods_ai_phrase(_rl_get(e, "author", nothing) for e in entries)
+    isempty(ai) || push!(extras, "started by $ai")
+    nums = Int[]
+    for d in split(_mr_cite(row), "; ")
+        d = strip(d); isempty(d) && continue
+        i = findfirst(==(d), refs)
+        i === nothing && (push!(refs, String(d)); i = length(refs))
+        push!(nums, i)
+    end
+    body = endswith(text, ".") ? text[1:prevind(text, lastindex(text))] : text
+    s = body * (isempty(extras) ? "" : " ($(join(extras, "; ")))") * (isempty(nums) ? "" : " [$(join(nums, ", "))]") * "."
+    note = string(get(row, "note", ""))
+    _mr_note_shown(note) && (s *= " Note: $note.")
+    gone = isempty(fn) ? String[] : _mr_missing_pops(fn, entries, defined)
+    isempty(gone) || push!(checks, "*$(get(row, "step", fn))* ($(get(row, "images", ""))) read " *
+        "population$(length(gone) == 1 ? "" : "s") no longer defined on these images — $(_mr_join(gone)): " *
+        "renamed or removed since, so it cannot be rerun as recorded.")
+    s
+end
+
+# Which paragraph a step belongs in, by its task category
+const _MR_SECTIONS = [
+    "Image processing and segmentation" => ("importImages", "cleanupImages", "editImages", "segment", "gate"),
+    "Tracking and behaviour"            => ("tracking", "behaviour", "clustTracks"),
+    "Clustering"                        => ("clustPops",),
+    "Spatial analysis"                  => ("spatialAnalysis", "clustRegions"),
+]
+const _MR_OTHER_SECTION = "Other analysis"
+function _mr_section(fn::AbstractString)::String
+    cat = String(first(split(fn, "."; limit = 2)))
+    for (title, cats) in _MR_SECTIONS
+        cat in cats && return title
+    end
+    _MR_OTHER_SECTION
+end
+
+# The steps a set's Methods left out, as one sentence: label, how many, on how many images
+function _mr_passed_over(rows)::String
+    groups = Dict{Tuple{String,String},Vector{Int}}()
+    order = Tuple{String,String}[]
+    for r in rows
+        k = (string(get(r, "step", get(r, "task", ""))), string(get(r, "usage", "")))
+        haskey(groups, k) || push!(order, k)
+        m = match(r"^(\d+)/", string(get(r, "images", "")))
+        push!(get!(Vector{Int}, groups, k), m === nothing ? 0 : parse(Int, m.captures[1]))
+    end
+    parts = map(order) do (label, use)
+        ns = groups[(label, use)]
+        lo, hi = extrema(ns)
+        imgs = lo == hi ? "$lo image$(lo == 1 ? "" : "s")" : "$(lo)–$(hi) images"
+        "$label$(length(ns) > 1 ? " ×$(length(ns))" : "")$(use == "redone" ? ", later redone" : "") " *
+        "($imgs$(length(ns) > 1 ? " each" : ""))"
+    end
+    "$(join(parts, "; ")). Their parameters are in the supplementary table."
+end
+
+# The images a scope covers, and how the scope reads. A list of images that is exactly one set's is
+# that set (the board's Methods sends its images).
+function _mr_scope(proj::CciaProject, image_uids, set_uid, run)
     if run !== nothing
-        return run.image_uids, "chain run `$(run.id)` (\"$(run.chain_name)\")"
+        return run.image_uids, "Chain run `$(run.id)` (\"$(run.chain_name)\")"
     elseif !isempty(set_uid)
         s = findfirst(st -> st.uid == set_uid, sets(proj))
         s === nothing && error("set not found: $set_uid")
         st = sets(proj)[s]
-        return String[i.uid for i in images(st)], "set \"$(st.name)\""
+        return String[i.uid for i in images(st)], "Set \"$(st.name)\""
     end
-    String.(image_uids), pops === nothing ? "selected images" : "analysis board"
+    uids = String.(image_uids)
+    for st in sets(proj)
+        Set(i.uid for i in images(st)) == Set(uids) && return uids, "Set \"$(st.name)\""
+    end
+    uids, "Selected images"
 end
 
 # ── the parameter table as CSV ──
@@ -170,9 +203,12 @@ end
 # the CSV a user downloads and the one in the crate are the same bytes.
 const _MR_CSV_COLS = [("step", "step"), ("task", "task"), ("output", "output"), ("relation", "relation"),
                       ("images", "images"), ("last_run", "lastRun"), ("changed_from_default", "changedFromDefault"),
-                      ("differs_between_images", "conflicts"), ("note", "note")]
+                      ("differs_between_images", "conflicts"), ("note", "note"), ("in_methods", "usage")]
 _mr_csv_cell(v) = (s = v === nothing ? "" : string(v);
                    occursin(r"[\",\n]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s)
+
+# a row's `usage` as the CSV says it: in the Methods text, or why not
+_mr_usage_cell(u) = (u = string(something(u, "")); isempty(u) ? "yes" : u == "redone" ? "no (redone later)" : "no (trial)")
 
 """
     history_params_csv(table) -> String
@@ -183,118 +219,113 @@ only when some row carries one (a board-scoped table).
 function history_params_csv(table::AbstractVector)::String
     isempty(table) && return ""
     scoped = any(r -> !isempty(string(something(get(r, "relation", ""), ""))), table)
-    cols = [c for c in _MR_CSV_COLS if scoped || c[1] != "relation"]
+    has(k) = any(r -> !isempty(string(something(get(r, k, ""), ""))), table)
+    cols = [c for c in _MR_CSV_COLS if (c[1] != "relation" || scoped) && (c[1] != "in_methods" || has("usage"))]
     lines = [join(first.(cols), ",")]
     for r in table
-        push!(lines, join((_mr_csv_cell(get(r, k, "")) for (_, k) in cols), ","))
+        push!(lines, join((_mr_csv_cell(k == "usage" ? _mr_usage_cell(get(r, k, "")) : get(r, k, "")) for (_, k) in cols), ","))
     end
     join(lines, "\n")
 end
 
 """
-    methods_report(proj; image_uids, set_uid, pops, cluster_runs, run_id, board) -> Dict
+    methods_report(proj; image_uids, set_uid, run_id) -> Dict
 
-A draft Methods section, `{markdown, table, csv, scope}`. Three scopes, one text:
+A draft Methods section, `{markdown, table, csv, scope}`. Two scopes, one text:
 
-- **set** — `set_uid` (or a list of `image_uids`): every step that ran on its images;
-- **board** — `image_uids` + `pops` (board population keys) + `cluster_runs` (`"popType:suffix"`),
-  as the board's Parameters CSV takes them; `board` names the tab, for its creator stamp;
+- **set** — `set_uid` (or a list of `image_uids`, which reads as its set when it is one): the analysis
+  on its images, in prose. Steps the analysis moved past — redone later, or trials (`_history_usage`)
+  — are one sentence and stay in the table (`usage`);
 - **chain run** — `run_id`: the run's images, the runs its nodes made (`history_params_table` cut to
   their task ids), each node's status and timing (the run log's `at`/`finishedAt`, joined by task id),
   and the cohort QC last checked on its sets.
 
-`table` is the parameter table the text is written from (`history_params_table` rows, `cite` included
-when the rows carry it), `csv` that table as CSV (`history_params_csv`). Deterministic: no clock, no randomness, every list sorted. Read-only.
+Both: each step is its task's `methodsText` (`ai/methods_text.jl`), grouped into paragraphs by
+category, with `[n]` citations into one reference list (`ai/references.toml`); how the populations
+were defined (`ai/methods_populations.jl`); what Claude drew or started, by recorded model.
+`table` is the parameter table the text is written from, `csv` that table as CSV
+(`history_params_csv`). Deterministic: no clock, no randomness, every list sorted. Read-only.
 """
 function methods_report(proj::CciaProject; image_uids::AbstractVector = String[],
-                        set_uid::AbstractString = "", pops::Union{Nothing,AbstractVector} = nothing,
-                        cluster_runs::AbstractVector = String[], run_id::AbstractString = "",
-                        board::AbstractString = "")::Dict{String,Any}
+                        set_uid::AbstractString = "", run_id::AbstractString = "")::Dict{String,Any}
     run = isempty(run_id) ? nothing : load_chain_run(proj, String(run_id))
-    uids, scope = _mr_scope(proj, image_uids, set_uid, pops, run)
-    run === nothing && pops !== nothing && !isempty(board) && (scope = "analysis board \"$board\"")
+    uids, scope = _mr_scope(proj, image_uids, set_uid, run)
     isempty(uids) && error("no images in scope")
+    n = length(uids)
+    pops = _mr_population_index(proj, uids)
     task_ids = run === nothing ? nothing :
         sort!(unique(String[st.task_id for m in values(run.image_states) for st in values(m) if st.task_id !== nothing]))
     table = run !== nothing ? history_params_table(proj, uids; task_ids) :
-            pops !== nothing ? history_params_table(proj, uids; pops = String.(pops), cluster_runs = String.(cluster_runs)) :
-            history_params_table(proj, uids)
+            history_params_table(proj, uids; usage_runs = _mr_pop_runs(proj, uids, pops))
     ents = _mr_entries(proj, uids)
     names = Dict{String,String}()
     for uid in uids
         img = try init_object(proj.uid, uid) catch; nothing end
         names[uid] = img isa CciaImage ? img.name : uid
     end
+    analysis = [r for r in table if isempty(string(get(r, "usage", "")))]
+    passed   = [r for r in table if !isempty(string(get(r, "usage", "")))]
 
-    md = String["> " * METHODS_DRAFT_BANNER, "", "## Methods (draft)", ""]
-    push!(md, "Scope: $scope, $(length(uids)) image$(length(uids) == 1 ? "" : "s") in project \"$(proj.name)\".", "")
-
-    # ── steps ──
-    push!(md, "### Image analysis", "")
     used = [e for row in table for e in _mr_row_entries(row, ents)]
     versions = sort!(unique(String[_rl_str(e, "ceceliaVersion") for e in used if !isempty(_rl_str(e, "ceceliaVersion"))]))
     commits  = sort!(unique(String[_rl_str(e, "ceceliaCommit") for e in used if !isempty(_rl_str(e, "ceceliaCommit"))]))
     sw = isempty(versions) ? "Cecelia (version not recorded on these runs)" :
          "Cecelia $(join(versions, ", "))" * (isempty(commits) ? "" : " (commit $(join(commits, ", ")))")
-    if isempty(table)
-        push!(md, "No recorded step ran on these images.", "")
-    else
-        push!(md, "Images were processed in $sw, in this order:", "")
-        for (i, row) in enumerate(table)
-            append!(md, _mr_step(i, row, _mr_row_entries(row, ents)))
-        end
-        push!(md, "")
+
+    md = String["> " * METHODS_DRAFT_BANNER, "", "## Methods (draft)", "",
+                "*$scope: $n image$(n == 1 ? "" : "s"), project \"$(proj.name)\". $sw [1].*", ""]
+
+    # ── the analysis, one paragraph per section; the populations after processing ──
+    refs = String[CECELIA_DOI]          # the software itself, cited once in the line above
+    checks = String[]
+    head = length(md)
+    defined = Set("$(e.value_name)$(e.path)" for e in pops)
+    pop_lines, ai_lines = _mr_populations(pops, n)
+    isempty(analysis) && push!(md, "No recorded step ran on these images.", "")
+    titles = vcat(first(_MR_SECTIONS[1]), "Populations", [first(s) for s in _MR_SECTIONS[2:end]], _MR_OTHER_SECTION)
+    # sentences in reading order, so the references number as the text cites them
+    for title in titles
+        body = title == "Populations" ? pop_lines :
+               [_mr_step_sentence(row, _mr_row_entries(row, ents), n, refs, defined, checks)
+                for row in analysis if _mr_section(string(get(row, "task", ""))) == title]
+        isempty(body) && continue
+        push!(md, "### $title", "", join(body, title == "Populations" ? "\n\n" : " "), "")
     end
 
-    ai_lines = String[]
-    for (i, row) in enumerate(table)
+    # what the record says the reader must look at before using the text — under the banner, once each
+    isempty(checks) || splice!(md, head+1:head, ["**Check before use:**", "", ("- " .* unique(checks))..., ""])
+
+    for row in analysis
         ai = methods_ai_phrase(_rl_get(e, "author", nothing) for e in _mr_row_entries(row, ents))
-        isempty(ai) || push!(ai_lines, "- Step $i ($(get(row, "step", ""))): started by $ai.")
-    end
-
-    # ── board: what it shows ──
-    if pops !== nothing
-        push!(md, "### Populations", "")
-        isempty(pops) && push!(md, "The board shows no population.")
-        for k in sort!(unique(String.(pops)))
-            t = _parse_tkey(k)
-            ai = _mr_pop_ai(proj, uids, k)
-            push!(md, "- `$(t.valueName)$(t.pop)` ($(t.popType))" * (isempty(ai) ? "" : ": $ai"))
-            isempty(ai) || push!(ai_lines, "- Population `$(t.valueName)$(t.pop)`: $ai.")
-        end
-        for r in sort!(unique(String.(cluster_runs)))
-            push!(md, "- Cluster run `$r`")
-        end
-        push!(md, "")
-        if !isempty(board)
-            doc = read_boards_doc(boards_doc_path(proj))
-            for t in doc.tabs
-                (t isa AbstractDict && _mr_str(t, "name") == board) || continue
-                ai = methods_ai_phrase([get(t, :createdBy, get(t, "createdBy", nothing))])
-                isempty(ai) || push!(ai_lines, "- Board \"$board\": created by $ai.")
-            end
-        end
+        isempty(ai) || push!(ai_lines, "- Step *$(get(row, "step", ""))*: started by $ai.")
     end
 
     # ── chain run: nodes, status, timing, cohort QC ──
     run === nothing || append!(md, _mr_chain(proj, run, ents, names, ai_lines))
 
+    isempty(passed) || push!(md, "### Also run, not part of this analysis", "",
+                             "Left out: runs a later run redid, and runs on part of the set that nothing in the " *
+                             "analysis read. " * _mr_passed_over(passed), "")
+
     # ── AI assistance ──
     push!(md, "### AI assistance", "")
-    isempty(ai_lines) ? push!(md, "No step, population or board in this record is stamped as made by Claude.") :
+    isempty(ai_lines) ? push!(md, "No step or population in this record is stamped as made by Claude.") :
                         append!(md, ai_lines)
     unstamped = count(e -> _rl_get(e, "author", nothing) === nothing, used)
     unstamped > 0 && push!(md, "", "$unstamped run$(unstamped == 1 ? "" : "s") predate author stamps: who started them is not recorded.")
     push!(md, "", METHODS_CEILING, "")
 
-    # ── software + table ──
-    cites = sort!(unique(String[_mr_cite(r) for r in table if !isempty(_mr_cite(r))]))
-    push!(md, "### Software", "", "- $sw.")
-    isempty(cites) || push!(md, "- Cite: $(join(cites, "; ")).")
-    push!(md, "", "The supplementary parameter table (CSV) lists the same $(length(table)) step$(length(table) == 1 ? "" : "s").")
+    # ── references + table ──
+    if !isempty(refs)
+        push!(md, "### References", "")
+        append!(md, ["$i. $(methods_reference_line(d))" for (i, d) in enumerate(refs)])
+        push!(md, "")
+    end
+    push!(md, "*Supplementary table (CSV): all $(length(table)) recorded step$(length(table) == 1 ? "" : "s") " *
+              "with every parameter changed from its default$(isempty(passed) ? "" : ", including the runs under *Also run*").*")
 
     Dict{String,Any}("markdown" => join(md, "\n") * "\n", "table" => table, "csv" => history_params_csv(table),
-                     "scope" => Dict{String,Any}("kind" => run !== nothing ? "chainRun" : pops !== nothing ? "board" : "set",
+                     "scope" => Dict{String,Any}("kind" => run !== nothing ? "chainRun" : "set",
                                                  "label" => scope, "imageUids" => uids))
 end
 

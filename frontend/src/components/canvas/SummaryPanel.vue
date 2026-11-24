@@ -58,6 +58,7 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
 import ClaimStrip from './ClaimStrip.vue'
 import { DEFAULT_STAT_UNIT, plotCaption, unitCountLabel, type StatUnit } from '../../utils/statUnitState'
+import type { SummaryLegendFacts } from '../../utils/panelLegend'
 import { replicateNoun } from '../../utils/experimentDesign'
 
 const props = defineProps<{
@@ -994,7 +995,21 @@ async function exportSvg(): Promise<string | null> {
 // on the axis-label / legend gutter; SummaryPanel is Observable Plot rendered edge-to-edge inside
 // `.sp-body`, so we honour `scale('x')/'y')` the same way ClusterHeatmapPanel does.
 const summaryFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
-defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg,
+// The facts a figure legend states (`utils/panelLegend.ts`), from what the panel draws now; null before
+// the first draw. The test is the one drawn — none when stats are off or the plot cannot compare.
+function legendFacts(): SummaryLegendFacts | null {
+  const r = result.value
+  if (!r) return null
+  return {
+    plot: props.spec.label, title: vis.value.title || undefined,
+    measure: measure.value && props.spec.dataSource.measureLabels?.[measure.value] ? measureLabel(measure.value) : (measure.value || props.spec.label),
+    chart: chartType.value,
+    series: r.series.map(s => ({ pop: s.pop, uID: s.uID, n: s.n ?? s.points?.length ?? 0 })),
+    pointKind: r.pointIdKind, statUnit: canStatUnit.value ? statUnit.value : 'individual', imageAgg: imageAgg.value,
+    unitNoun: unitNoun.value, test: vis.value.statsEnabled ? (r.comparisons?.methodNote ?? '') : '',
+  }
+}
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, legendFacts,
                isBusy: () => loading.value, getFrame: (): Frame => summaryFrame })
 
 // Register this panel as PNG-exportable so the canvas Share compositor can request its plot
