@@ -265,6 +265,9 @@ include(joinpath(@__DIR__, "suite", "gating.jl"))
 include(joinpath(@__DIR__, "suite", "split_gates.jl"))
 include(joinpath(@__DIR__, "suite", "hist_gates.jl"))
 include(joinpath(@__DIR__, "suite", "valley_outlier.jl"))
+include(joinpath(@__DIR__, "suite", "range_ends_overlap.jl"))
+include(joinpath(@__DIR__, "suite", "range_ends_fixed_end.jl"))
+include(joinpath(@__DIR__, "suite", "range_ends_flags.jl"))
 # ── Population types + cluster/region + spatial obs testsets ─────────────
 # 10 sections covering GATING_POP_TYPES, img_has_value_name, clust/trackclust pop types,
 # region pop type (spatial regions), contact_matrix, region pop auto-share, bare

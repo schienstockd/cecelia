@@ -38,6 +38,8 @@ export interface GateSpec {
   cut?: number                               // bisector: the cut (side 1 = above it, -1 = at or below)
   rule?: GateRule                            // bisector: cut at the parent's density valley instead
   rule_ok?: boolean                          // server outline: the rule found a valley on this parent
+  lo_rule?: GateRule; hi_rule?: GateRule     // range: an end that follows its own valley
+  lo_rule_ok?: boolean; hi_rule_ok?: boolean // server outline: that end's rule found a valley
 }
 // a bisector's rule: the deepest valley of the parent's density in [lo, hi] (gate coordinates)
 export interface GateRule { kind: 'valley'; lo: number; hi: number; adjust?: number }
