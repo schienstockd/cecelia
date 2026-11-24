@@ -5,8 +5,9 @@
 > **Outcome:** run 2026-11-24 against `origin/main` e703aa12; the plan above is the output. Nothing
 > built yet. One premise had moved: the brief treats hints as new, but a first-use hint system
 > (`ONBOARDING_PLAN.md` P4) was built and its hints retired on 2026-08-13 (`HintCallout` remains, unused), and `docs/UI.md` →
-> *First-use hints* sets the bar a hint must clear. The plan keeps that bar, with hints fired only on
-> live signals, and asks the maintainer whether to amend its wording.
+> *First-use hints* sets the bar a hint must clear. Decided 2026-11-25: clarity first. Each hidden
+> gesture gets a visible surface; that rule replaces the bar, and the hint system is built only if a
+> re-score leaves more than five targets invisible.
 
 # CONTEXTUAL_HINTS_AUDIT_PROMPT
 

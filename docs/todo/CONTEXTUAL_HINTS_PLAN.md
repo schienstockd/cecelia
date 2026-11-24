@@ -1,9 +1,18 @@
 # Contextual hints: how a user finds out a hidden gesture exists
 
 **Status:** **planning** (2026-11-24, `origin/main` e703aa12). Audit and plan only, nothing built.
+**Decided 2026-11-25: clarity first.** Each hidden gesture gets a visible surface (§3, §4) before any
+hint system. The hint system (§5–§7) is kept as a costed fallback, built only if the re-score in §8
+P3 leaves more than five targets that a visible surface cannot fix.
 **Brief:** [`docs/archive/CONTEXTUAL_HINTS_AUDIT_PROMPT.md`](../archive/CONTEXTUAL_HINTS_AUDIT_PROMPT.md).
 Read its banner: one premise had moved. **Sibling:** [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md)
 (density, cutting, buried checks). This plan does not repeat it.
+
+**Why clarity first.** Most of the audit's findings are GUI defects, not missing hints: two bugs, a key
+legend that is defined and never rendered, missing shortcut rows, empty states that do not name the
+gesture. A hint on an unclear control papers over it, and hints go stale (the last set was retired).
+The hint system costs a registry, a store, a signal in every gesture handler, caps, an opt-out and a
+staleness test. That is worth it for a dozen hints, not for three.
 
 **The premise that moved.** The brief asks for a hint system as if none had existed. One was built
 and its hints were retired on 2026-08-13 (ONBOARDING_PLAN P4). The renderer, `HintCallout.vue`, and
@@ -14,10 +23,15 @@ and its hints were retired on 2026-08-13 (ONBOARDING_PLAN P4). The renderer, `Hi
 > check could answer. Never pipeline ordering, and never a prerequisite.
 
 The old hints failed because each one was a static sentence fired on first visit, whatever the state.
-This plan keeps that bar and changes the trigger: **a hint names a hidden gesture or bulk action, and
-fires on a live signal from what the user just did.** Every target below meets the bar. Ordering and
-check prompts (for example "check acquisition after import") stay with the clarity plan's checks
-cluster and pre-run checkpoint.
+This plan replaces that bar with a rule about the GUI itself (P1 writes it into `docs/UI.md`, where
+the pre-commit convention check enforces it):
+
+> **Every gesture or bulk action has a visible surface:** a label, a menu entry, an inline gesture
+> line, or a row in a shortcuts table. A tooltip alone is not one. Ordering and prerequisites are
+> state questions, answered by live checks, never by a hint.
+
+Ordering and check prompts (for example "check acquisition after import") stay with the clarity
+plan's checks cluster and pre-run checkpoint.
 
 ## 1. Existing coverage
 
@@ -46,6 +60,7 @@ The rest are labelled buttons with a clear tooltip.
 V = visibility, S = self-explanation, St = stakes, F = frequency (0–3 each). P = (V+S)×(St+F).
 **LW** = a manual long way: a repeated action that a bulk control or gesture does in one step.
 Verdict: **hint**, **GUI** (fix in the GUI, §4), **fine**, or **gap** (the shortcut does not exist).
+Since the clarity-first decision, a **hint** row is answered by its visible surface in §3 first.
 
 | # | Page | Element | Where | Revealed by | V S St F | P | Verdict |
 |---|---|---|---|---|---|---|---|
@@ -90,11 +105,51 @@ Verdict: **hint**, **GUI** (fix in the GUI, §4), **fine**, or **gap** (the shor
 | 39 | Gate | A viewer selection shows as a transient pop with no "save as population"; the long way is redrawing it as a gate | `PopulationManager.vue:864-869` | — | — | — | **gap** · LW |
 | 40 | Blackboard / Animation | No "mark all" on section verdicts; no row-wide toggle across keyframes | `SectionVerdict.vue:59-60`; `AnimationTimeline.vue:160-176` | — | — | — | **gap** · LW |
 
-## 3. Top hint targets
+## 3. A visible surface for each hint target
 
-Registry entries, ready to paste into `lib/hints.ts` (§5). The first seven are the first slice; P2 rows
-follow. Trigger kinds are explained in §5. Each signal named here is one call at the code that already
-handles the gesture.
+The hint rows from §2. Each gets the cheapest visible surface; the §5 registry entry stays as the
+fallback if the surface does not work.
+
+**One primitive for the gesture line.** Rows #1, #3, #12 and §4 #4 all add an inline gesture line.
+The only one today is a local span, `.gate-hint` with `<kbd>` (`GatePlotPanel.vue:600`). P2 starts by
+extracting it into a shared `GestureLine` (muted, 2xs, `<kbd>` for keys) with a row in
+`docs/ui/PRIMITIVES.md`, so the pages do not hand-roll four variants.
+
+| # | Target | Visible surface | Where |
+|---|---|---|---|
+| 1 | Image-table multi-pick | A selection line in the table foot: "1 selected · Ctrl-click adds, Shift-click a range, drag sweeps" | `SelectionTable.vue`, `ImageTable.vue` |
+| 7 | Select flagged | With flagged rows, the ⚠ header icon becomes a labelled button "Select N flagged" | `ImageTable.vue:646-651` |
+| 6 | Copy task settings | The micro icon becomes a labelled button "Copy from…" in the Parameters heading | `TaskRunner.vue:1114-1116` |
+| 14 | Copy gating to the set | Label "Copy" → "Copy to set…" | `GatingPlots.vue:631` |
+| 3 | Edit a gate in place | When a gate is selected, the existing inline gesture line reads "drag to move · double-click an edge adds a point · right-click a point deletes it" | `GatePlotPanel.vue:600` |
+| 12 | Plot lasso | An inline gesture line in the plot's hover controls: "drag lassoes · Shift-drag a rectangle" | `PlotChart.vue`, `CanvasPanel.vue` |
+| 2 | Claim check | A word label "Claim" on the icon. Surfacing it out of the auto-hidden footer is clarity P3 (*surface the checks*) | `ClaimStrip.vue:121-127` |
+| 5 | Viewer Shift/Alt-click | Rows in the viewer `SHORTCUTS` table, and the Select entry of the mode menu says "Shift adds · Alt toggles" | `ViewerWindow.vue:3530-3537, 3887-3899` |
+| 15 | Pop ⋯ menu | Show ⋯ on the selected row, not only on hover | `PopulationManager.vue:790-839` |
+| 16, 22, 26, 28 | Compare, Sweep, fill from view, From table | Already labelled; fine | — |
+
+## 4. Fix in the GUI
+
+| # | Fix | Where |
+|---|---|---|
+| 37 | **Wrong copy:** the channel-name tooltip promises a click that does nothing. Make the name toggle visibility or drop the tip | `VwChannelsSection.vue:174-175` |
+| 38 | **Silent no-op:** Duplicate with a full board. Disable it with "No free slot — add a row in ⚙" | `LayoutCanvas.vue:296-297` |
+| 13 | Render `KEY_HINT` in the Join/Split/Remove/Add tooltips ("Join (l)"), and have a blocked Join say "Shift-click a second lane" | `trackSchemeKeymap.ts:81`; `lib/trackCorrection.ts:289` |
+| 17, 29 | Add the missing rows to the viewer `SHORTCUTS` table: Alt+wheel (lens size), click (pin lens), Esc (clear ruler), Shift+drag in Measure, Shift+wheel in 3D with a z-window, the ROI keys | `ViewerWindow.vue:3887-3899` |
+| — | Check the Shortcuts popover when the side panel is folded: it anchors to `keysBtn` inside `VwLookBox` (inferred, not run) | `ViewerWindow.vue:7217` |
+| 4 | Cockpit empty state names the gesture: "Select mode in the viewer; Shift-click adds a cell." | `CorrectionCockpit.vue:658-659` |
+| 8 | With nothing selected, label the buttons "Assign to all N" | `MetadataPanel.vue:399-402, 454-458` |
+| 10 | The dimmed page's tip says "Not in this set's recipe" | `AppSidebar.vue:130` |
+| 11 | Empty chain canvas: "Drag a step here from the left · drag between dots to connect" | `ChainModule.vue:1960-1962` |
+| 19 | Live node tooltip: "Click to resume from here" | `ChainModule.vue:524-533` |
+| 9, 39, 40 | Missing bulk actions (exclude a selection, save a viewer selection as a population, mark all sections, a row toggle across keyframes). Feature decisions, not hints | as listed in §2 |
+
+## 5. Deferred: hint registry
+
+**Built only if §8 P3 says so.** In §5–§7, "P1" and "P2" mean the hint system's own first slice and
+expansion, not §8's phases. `claim-check` is dropped (decision 2). Registry entries, ready to paste
+into `lib/hints.ts` (§6). The first seven were the first slice; P2 rows follow. Trigger kinds are
+explained in §6. Each signal named here is one call at the code that already handles the gesture.
 
 ```ts
 // ── P1: first slice (image-table pages, Gate, board) ──
@@ -165,23 +220,7 @@ handles the gesture.
 rows. Some failures are not hint targets at all: the acquisition check after import is ordering, and
 is clarity slice 7's job; the stats finding on a plot is clarity P2's `PlotNotice`.
 
-## 4. Fix in the GUI instead (for the clarity plan)
-
-| # | Fix | Where |
-|---|---|---|
-| 37 | **Wrong copy:** the channel-name tooltip promises a click that does nothing. Make the name toggle visibility or drop the tip | `VwChannelsSection.vue:174-175` |
-| 38 | **Silent no-op:** Duplicate with a full board. Disable it with "No free slot — add a row in ⚙" | `LayoutCanvas.vue:296-297` |
-| 13 | Render `KEY_HINT` in the Join/Split/Remove/Add tooltips ("Join (l)"), and have a blocked Join say "Shift-click a second lane" | `trackSchemeKeymap.ts:81`; `lib/trackCorrection.ts:289` |
-| 17, 29 | Add the missing rows to the viewer `SHORTCUTS` table: Alt+wheel (lens size), click (pin lens), Esc (clear ruler), Shift+drag in Measure, Shift+wheel in 3D with a z-window, the ROI keys | `ViewerWindow.vue:3887-3899` |
-| — | Check the Shortcuts popover when the side panel is folded: it anchors to `keysBtn` inside `VwLookBox` (inferred, not run) | `ViewerWindow.vue:7217` |
-| 4 | Cockpit empty state names the gesture: "Select mode in the viewer; Shift-click adds a cell." | `CorrectionCockpit.vue:658-659` |
-| 8 | With nothing selected, label the buttons "Assign to all N" | `MetadataPanel.vue:399-402, 454-458` |
-| 10 | The dimmed page's tip says "Not in this set's recipe" | `AppSidebar.vue:130` |
-| 11 | Empty chain canvas: "Drag a step here from the left · drag between dots to connect" | `ChainModule.vue:1960-1962` |
-| 19 | Live node tooltip: "Click to resume from here" | `ChainModule.vue:524-533` |
-| 9, 39, 40 | Missing bulk actions (exclude a selection, save a viewer selection as a population, mark all sections, a row toggle across keyframes). Feature decisions, not hints | as listed in §2 |
-
-## 5. System design
+## 6. Deferred: system design
 
 **Smallest system: one registry, one store, one variant of an existing bubble.** No new positioning,
 anchor scheme or storage.
@@ -189,10 +228,10 @@ anchor scheme or storage.
 | Piece | Reuses | New |
 |---|---|---|
 | Registry `lib/hints.ts` | the `data-guide` anchor scheme (`utils/guideAnchor.ts`) | `HintDef {id, page, anchor, trigger, retire, text}`; adding a hint = one entry |
-| Signals | — | `hintSignal(name, ctx?)`: one line in the handler that already runs the gesture (for example `GateOverlay` vertex insert → `hintSignal('gate.vertexEdit')`). This is also the feature link (§6) |
+| Signals | — | `hintSignal(name, ctx?)`: one line in the handler that already runs the gesture (for example `GateOverlay` vertex insert → `hintSignal('gate.vertexEdit')`). This is also the feature link (§7) |
 | Manager `stores/hints.ts` | `profileStorage` (per profile, mirrored to `settings.toml`) | keeps a short ring buffer of signals, evaluates triggers, enforces caps, retires on use |
 | Bubble | `PointerBubble.vue`: placement, reachability, z-layers, the anchor poll | a `hint` variant with **Got it** and **Don't show tips**; no pulse under `prefers-reduced-motion` |
-| Retired | — | **`HintCallout.vue` and `ModuleLayout`'s `hint` / `hint-key` props are deleted in P1**, so there is one hint renderer. An inline banner above a panel is the shape the retired set had; a hint here sits at the control it names |
+| Retired | — | **`HintCallout.vue` and `ModuleLayout`'s `hint` / `hint-key` props are deleted in §8 P2** (dead code either way), so there is at most one hint renderer. An inline banner above a panel is the shape the retired set had; a hint here sits at the control it names |
 
 **Triggers**, in order of preference:
 1. **Signal**: N of a signal within T seconds, optionally with a `when` predicate the store already
@@ -237,7 +276,7 @@ the shortest true sentence about a gesture, which is also what Claude needs when
 I…". P3 exports the registry to `get_guide` (generated JSON, the way `user-docs` is generated), so Kiwi
 quotes it rather than writing new help text. That is not part of P1.
 
-## 6. Keeping hints current
+## 7. Deferred: keeping hints current
 
 | Mechanism | Cost | Decision |
 |---|---|---|
@@ -256,32 +295,33 @@ which this replaces once built):
 > action (modifier, double-click, right-click, key, drag) that the label cannot carry; fire it on a
 > signal, never on page visit. Ordering and prerequisites are never hints.
 
-## 7. Phasing
+## 8. Phasing
 
-- **P1 (one PR):** registry, store, `PointerBubble` variant, both tests, the Preferences toggle and
-  reset, `HintCallout` and its props deleted, and the 7 first-slice hints (image-table pages, Gate, board). Also 4 new `data-guide` ids
-  (`images.selectFlagged`, `task.copySettings`, `gate.copy`, `plot.claim`) and about 12 `hintSignal`
-  call sites. Look before merge: trigger each hint by hand once.
-- **GUI fixes (separate small PRs, clarity plan):** the §4 rows. #37 and #38 are bugs and can go first.
-- **P2:** the six expansion hints, including the viewer-window mount.
-- **P3, only if P1 earns it:** the `get_guide` export and the text-drift lint after replay.
+- **P1 (small PR):** the two bugs, #37 (channel tooltip promises a click that does nothing) and #38
+  (Duplicate silently does nothing on a full board), and the visible-surface rule into `docs/UI.md` →
+  *First-use hints*, replacing the "no other surface" bar.
+- **P2 (small PRs, a page or two each):** first the shared `GestureLine` (§3), then the §3 visible
+  surfaces and the §4 fixes. Delete
+  `HintCallout.vue` and `ModuleLayout`'s `hint` / `hint-key` props (zero callers). Look before merge:
+  each new line or label on the real page.
+- **P3, re-score:** re-walk the §2 hint rows against the shipped GUI. Build the §5–§7 hint system only
+  if **more than five** targets are still invisible after their visible surface; fewer than that get
+  a better surface instead. If built, it ships with the §7 tests and the agent rule, and P3 of the old
+  phasing (the `get_guide` export, the text-drift lint after replay) follows only if it earns it.
+- **Feature decisions, not this plan:** the §2 gaps (#9, #39, #40).
 
-## 8. Risks and open questions
+## 9. Risks and decisions
 
-- **Annoyance.** The caps above and signal-only triggers are the defence. The remaining risk is a
-  trigger that fires on deliberate behaviour (someone who really does want to click three rows one
-  at a time). Every hint is one-shot, so the worst case is one dismissed line.
-- **Measuring.** There is no UI telemetry and this adds none. Each hint's `cc.hint.<id>` value records
-  `shown → retired`, meaning the feature was used after the hint. A developer-only line in Settings
-  can list shown, dismissed and used-after counts for the active profile, which a tester can read out.
-  This is weak evidence on purpose, consistent with GUI_CLARITY open question 2.
-- **What never gets a hint:** ordering, prerequisites, QC or check results, anything with a visible
-  label that a clearer word would fix, and AI controls while AI is off.
+- **Clutter.** Visible surfaces add words. Each is one short line, shown where the gesture happens
+  (a selection line only with a selection, the gate line only with a gate selected), so the page at
+  rest does not grow. `docs/UI.md`'s brief-copy rule applies.
+- **The rule over-reaching.** "A tooltip alone is not a surface" could demand labels on every icon.
+  The rule covers gestures and bulk actions (modifier, double-click, right-click, key, drag, act on
+  many), not ordinary buttons, whose tooltip names them.
+- **If the hint system is built:** annoyance and measurement are covered by the §6 caps; there is no
+  UI telemetry, and a hint's `cc.hint.<id>` record (`shown → retired`) is the only evidence.
 
-**Decisions for the maintainer:**
-1. **Amend the `docs/UI.md` bar** from "no other surface" to "a hidden gesture or bulk action, fired
-   on a live signal"? *Recommended: yes.* It keeps the reason the old set was retired (static text
-   blind to state) and lets the long-way hints in.
-2. **The claim beacon** is the only hint that fires without a wrong gesture behind it. Keep it, or
-   leave claims to the clarity plan's signposting (audit row 10: "a short word label")?
-   *Recommended:* the word label if clarity builds it; the beacon only if it doesn't.
+**Decided 2026-11-25:**
+1. **The `docs/UI.md` bar** is replaced by the visible-surface rule above (P1), not loosened to allow
+   signal-fired hints.
+2. **Claim check** gets a word label (§3 #2), and surfacing it belongs to clarity P3. No beacon.
