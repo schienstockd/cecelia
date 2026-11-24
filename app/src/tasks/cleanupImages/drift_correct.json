@@ -2,6 +2,8 @@
   "task": "driftCorrect",
   "fun_name": "cleanupImages.driftCorrect",
   "label": "Drift correction",
+  "citations": [{"doi": "10.7717/peerj.453", "showIf": {"driftEstimator": ["multiLag", "chain"]}}, {"doi": "10.3389/fninf.2013.00045", "showIf": {"driftEstimator": "sitkRigid"}}],
+  "methodsText": ["Stage drift was corrected on {driftChannel}", {"showIf": {"driftEstimator": "multiLag"}, "text": " by phase cross-correlation between frames up to {driftMaxLag} frames apart"}, {"showIf": {"driftEstimator": "chain"}, "text": " by phase cross-correlation between consecutive frames"}, {"showIf": {"driftEstimator": "sitkRigid"}, "text": " by rigid registration in SimpleITK (rotation capped at {driftMaxAngle} per frame)"}, ", and the drift trajectory was smoothed (σ = {driftSmoothSigma})."],
   "purpose": "Remove whole-frame drift between timepoints",
   "useWhen": [
     "Tissue shifts as a whole from frame to frame",

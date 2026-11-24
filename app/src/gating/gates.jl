@@ -132,7 +132,8 @@ function gate_from_spec(spec::AbstractDict)::Gate
         # 1D: one channel, named as both x and y (hist_gates.jl) — a different y can't be one axis
         xc = g("x_channel"); yc = something(g("y_channel"), xc)
         string(yc) == string(xc) || error("a $kind gate is on one channel: x_channel and y_channel must match")
-        kind == "range" ? RangeGate(xc, g("lo"), g("hi"); x_transform = xt) :
+        kind == "range" ? RangeGate(xc, g("lo"), g("hi"); x_transform = xt,
+                                    lo_rule = rule_from_spec(g("lo_rule")), hi_rule = rule_from_spec(g("hi_rule"))) :
             BisectorGate(xc, g("cut"); side = Int(something(g("side"), 1)), group = string(something(g("group"), "")),
                          rule = rule_from_spec(g("rule")), x_transform = xt)
     else

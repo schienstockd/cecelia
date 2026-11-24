@@ -69,3 +69,11 @@ export function pixelSizeUm(n: number | null | undefined, unit: string | null | 
   if (n == null || !Number.isFinite(n)) return null
   return n * (unit ? (UM_PER[unit.trim().toLowerCase()] ?? 1) : 1)
 }
+
+/** µm per `unit`, strictly: 1 when no unit is recorded, null for a unit we don't know — the backend's
+ *  `length_unit_um`. Use it where a wrong factor would print a confident wrong length (tissue size);
+ *  `pixelSizeUm` keeps its ×1 fallback for its existing callers. */
+export function lengthUnitUm(unit: string | null | undefined): number | null {
+  if (!unit || !unit.trim()) return 1
+  return UM_PER[unit.trim().toLowerCase()] ?? null
+}

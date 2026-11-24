@@ -1,7 +1,7 @@
 import { computed, unref, watch, type Ref } from 'vue'
 import { useCanvasPanelsStore } from '../stores/canvasPanels'
 import type { ArrangeCmd } from './useFloatingPanel'
-import { tileGrid, tileCell } from '../utils/tileGrid'
+import { tileGrid, tileCell, fixedGrid, TILE_GAP } from '../utils/tileGrid'
 import { contentBox } from './useCanvasWorkspace'
 
 /** One panel on a canvas: a stable id, an optional Tile/Cascade command, and opaque per-panel
@@ -59,15 +59,31 @@ export function useCanvasPanels<S>(
     e.activeId = id
     return id
   }
-  // Duplicate: a new panel at the SOURCE's size, nudged down-right so both stay visible. Seeds the
-  // copy's persisted geometry before it mounts — CanvasPanel restores position + size from it —
-  // because a bare `add()` lands at the default size and the user has to resize the copy to compare.
-  // The host still copies the panel's `state` (its shape is the host's concern).
-  function duplicate(srcId: number): number {
-    const id = add()
+  // Duplicate: new panels at the SOURCE's size — ONE path for every "spawn plots from this plot"
+  // action. Seeds each copy's persisted geometry before it mounts (CanvasPanel restores position +
+  // size from it), because a bare `add()` lands at the default size and the user has to resize the
+  // copies to compare them. The host still copies the panel's `state` (its shape is the host's concern).
+  //  • `count` 1 (Duplicate): the copy is nudged down-right so both stay visible.
+  //  • `count` > 1 (Show series): the source and its copies form a grid of source-sized cells that
+  //    starts at the source and wraps at the workspace edge (`fixedGrid` + Tile's `tileCell`), so the
+  //    set sits side by side rather than piled at one offset. Other panels are left where they are.
+  // A source with no saved geometry (never mounted) leaves the copies at the default placement.
+  function duplicate(srcId: number): number
+  function duplicate(srcId: number, count: number): number[]
+  function duplicate(srcId: number, count?: number): number | number[] {
+    const n = Math.max(1, count ?? 1)
+    const ids = Array.from({ length: n }, () => add())
     const g = store.getGeom(`${keyRef.value}:${srcId}`)
-    if (g) store.setGeom(`${keyRef.value}:${id}`, { ...g, x: g.x + DUP_OFFSET, y: g.y + DUP_OFFSET })
-    return id
+    if (g) {
+      const ox = g.x - TILE_GAP, oy = g.y - TILE_GAP   // grid origin: the source is cell 0
+      const box = tileBoxNow()
+      const grid = fixedGrid(n + 1, g.w, g.h, box ? box.w - ox : Infinity, TILE_GAP)
+      ids.forEach((id, i) => {
+        const at = n === 1 ? { x: g.x + DUP_OFFSET, y: g.y + DUP_OFFSET } : tileCell(i + 1, grid)
+        store.setGeom(`${keyRef.value}:${id}`, n === 1 ? { ...g, ...at } : { ...g, x: ox + at.x, y: oy + at.y })
+      })
+    }
+    return count === undefined ? ids[0] : ids
   }
   function remove(id: number) {
     const e = cur()
@@ -86,6 +102,9 @@ export function useCanvasPanels<S>(
     e.panels = []
     e.activeId = 0
   }
+  // the box Tile (and a series' wrap) lays out in — see `opts.tileBox`
+  const tileBoxNow = () => opts.tileBox?.() ??
+    (canvasRef.value ? { w: canvasRef.value.clientWidth, h: canvasRef.value.clientHeight } : null)
   // Cascade ("windowed"): stagger overlapping windows at a default size
   function arrangeCascade() {
     const e = cur()
@@ -98,8 +117,7 @@ export function useCanvasPanels<S>(
   function arrangeGrid(cols?: number) {
     const e = cur()
     const n = e.panels.length
-    const box = opts.tileBox?.() ??
-      (canvasRef.value && { w: canvasRef.value.clientWidth, h: canvasRef.value.clientHeight })
+    const box = tileBoxNow()
     if (!box || !n) return
     const g = tileGrid(n, box.w, box.h,
       { mode: opts.squareCells ? 'square' : 'fill', cols: cols && cols > 0 ? cols : undefined })

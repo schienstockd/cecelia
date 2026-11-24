@@ -2,6 +2,7 @@
   "task": "bayesianTrackMeasures",
   "fun_name": "tracking.bayesian_track_measures",
   "label": "Bayesian track + measures",
+  "methodsText": ["{popsToTrack} cells were tracked with btrack (maximum search radius {maxSearchRadius}, gaps of up to {maxLost} frames, tracks of at least {minTimepoints} timepoints), and speed, displacement, straightness and shape measures were computed for each track."],
   "purpose": "Run Bayesian tracking, then Track measures",
   "useWhen": [
     "The usual way to track: tracks arrive with speed, angle and displacement",

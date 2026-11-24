@@ -102,10 +102,14 @@ end
         c = get(spec, "citations", nothing)
         c === nothing && continue
         n += 1
-        # every entry parses: a bare DOI, or a conditional one whose `when` the spec's own params satisfy
-        show_all = Dict{String,Any}(String(k) => (v isa AbstractVector ? first(v) : v)
-                                    for e in c if e isa AbstractDict for (k, v) in e["showIf"])
-        @test length(Cecelia.task_citations(spec, show_all)) == length(c)
+        # every entry parses: a bare DOI, or a conditional one its OWN `showIf` satisfies — entries for
+        # different settings of one select (drift: scikit-image vs SimpleITK) never hold together
+        for e in c
+            when = e isa AbstractDict ? Dict{String,Any}(String(k) => (v isa AbstractVector ? first(v) : v)
+                                                         for (k, v) in e["showIf"]) : Dict{String,Any}()
+            one = merge(spec, Dict{String,Any}("citations" => [e]))
+            @test (f, length(Cecelia.task_citations(one, when))) == (f, 1)
+        end
     end
     @test n >= 10
 end

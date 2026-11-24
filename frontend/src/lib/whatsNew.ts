@@ -14,8 +14,7 @@
 // the update brings, and keeps the release notes (or the merged PRs) as its body. `statsAnnotation` is a typed slot but rendered as
 // a placeholder until STATS_ANNOTATIONS_PLAN.md lands content.
 import { computed, ref, type ComputedRef } from 'vue'
-import { marked } from 'marked'
-import { sanitizeHtml } from '../utils/sanitizeHtml'
+import { renderMarkdown } from '../utils/sanitizeHtml'
 import { useAppControlStore, type MergedPr } from '../stores/appControl'
 
 export type WhatNewKind = 'update' | 'tip' | 'fix' | 'about'
@@ -79,15 +78,8 @@ export function closeWhatsNew() {
   viewedTipIndex.value = null
 }
 
-marked.setOptions({ gfm: true, breaks: false })
-
-/** Render markdown → sanitised HTML for `v-html` in `WhatNewCard`. Sync helper (marked has a sync
- *  API). Sanitised: the body is a GitHub release's, whose generated notes carry contributors' PR titles. */
-export function renderMarkdown(md: string | undefined | null): string {
-  if (!md) return ''
-  try { return sanitizeHtml(marked.parse(md, { async: false }) as string) }
-  catch { return '' }
-}
+// `renderMarkdown` lives with the sanitiser (utils/sanitizeHtml.ts); re-exported for WhatNewCard.
+export { renderMarkdown }
 
 /** One feature an update brings, written by hand in that feature's PR: the PR's number, its title and
  *  one line, and the in-app shot (user-docs/shots/in-app.ts) that shows it. Newest first. */

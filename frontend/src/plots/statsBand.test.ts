@@ -99,7 +99,7 @@ for (const [w, h] of [[260, 180], [540, 420]]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const b: any = buildPlotOptions(PlotStub, box, {
       chartType: 'boxplot', legend: true, byImage: false, palette: 'standard', userColors: '', fontSize: 11,
-      jitter: 'beeswarm', pointSize: 2, pointOpacity: 1, colorData: true, logScale: false, grid: false,
+      jitter: 'sina', pointSize: 2, pointOpacity: 1, colorData: true, logScale: false, grid: false,
       rotateXLabel: false, rotate: false, yMin: '', yMax: '', nonNegative: true,
       statsEnabled: true, statsShowNs: false, statsUseLetters: false, statsUseStars: false,
       colorOf: () => '#888', plotWidth: w, plotHeight: h,
@@ -148,7 +148,7 @@ describe('compact letters within each population', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const b: any = buildPlotOptions(PlotStub, r, {
       chartType: 'boxplot', legend: true, byImage: true, palette: 'standard', userColors: '', fontSize: 11,
-      jitter: 'beeswarm', pointSize: 2, pointOpacity: 1, colorData: true, logScale: false, grid: false,
+      jitter: 'sina', pointSize: 2, pointOpacity: 1, colorData: true, logScale: false, grid: false,
       rotateXLabel: false, rotate: false, yMin: '', yMax: '', nonNegative: true,
       statsEnabled: true, statsShowNs: false, statsUseLetters: true, statsUseStars: false,
       colorOf: (s: { pop: string }) => colours[s.pop], plotWidth: 400, plotHeight: 300,

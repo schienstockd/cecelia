@@ -249,7 +249,7 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     end
 
     commit_state!(img) do raw
-        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version)
+        versioned_filepath_write!(raw, out_value_name, store_rel; as_new_version = as_new_version, from = string(filename))
     end
 
     Dict{String,Any}("valueName" => out_value_name, "filename" => store_rel)

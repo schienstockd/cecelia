@@ -567,12 +567,31 @@ or TS change needed to promote a task from coming-soon to shipped.
 Wired through `frontend/src/utils/taskGating.ts` → `taskGatingReason` short-circuits `comingSoon`
 before the `requires` checks; the picker + Run button read the same predicate.
 
-### `methodsText` — optional: the step's sentence in a Methods report
+### `methodsText` — the step's sentence in a Methods report
 
-A one-sentence template with `{param}` slots, e.g. `"cells were segmented with Cellpose ({model})."`.
-The draft Methods report (`docs/ANALYSIS.md` → *Methods report*) uses it for this task's step when every
-slot has a value — the run's params over the spec defaults — and falls back to the generic sentence
-(task label, output, non-default params) otherwise. Optional: no built-in task carries one yet.
+The step as a Methods section states it, with `{param}` slots (a param KEY; inside a repeatable group
+the first entry speaks for it). A string, or a list of fragments joined in order where a fragment
+`{"text": …, "showIf": {…}}` is kept only when its `showIf` holds for the run's params (the form's own
+evaluator), so one template covers every setting of a select:
+
+```json
+"methodsText": [
+  "Stage drift was corrected on {driftChannel}",
+  { "showIf": { "driftEstimator": "multiLag" }, "text": " by phase cross-correlation between frames up to {driftMaxLag} frames apart" },
+  { "showIf": { "driftEstimator": "sitkRigid" }, "text": " by rigid registration in SimpleITK" },
+  "."
+]
+```
+
+Values are filled from the run's params over the spec defaults and read as a reader says them
+(`app/src/ai/methods_text.jl`): a number takes the unit in its label's brackets (`"Radius (µm)"` → 50 µm),
+a select its option label, a channel/population/measure picker the names in words. Write the plural —
+"{maxLost} frames" — and a value of 1 reads "1 frame". Where the images disagree on a slot the report
+states the spread itself. A step whose template cannot be filled falls back to a plain sentence from its
+changed parameters. Write one for every task a Methods section would mention: the
+`every built-in methodsText names real params` testset checks each slot and `showIf` key is a param of
+the task. Add the task's `citations` with it (and a Crossref-generated line in
+`app/src/ai/references.toml` for a new DOI). `docs/ANALYSIS.md` → *Methods report*.
 
 ### `sweep` — run the task once per value of one param
 
