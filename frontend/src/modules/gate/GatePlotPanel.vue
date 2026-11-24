@@ -14,10 +14,16 @@
   A third measure can be painted onto the dots as COLOUR (FlowJo's colour-by-parameter) — pick it in
   the `colour` row. It replaces the density pseudocolour in points mode and brings a colour bar;
   the ramp's range comes from the whole dataset, so it doesn't re-map as you walk the tree.
+
+  `histogram` at the top of the Y picker makes it a 1D plot of the X channel (the server is asked for
+  x = y = that channel; the client bins it, plots/histGeometry.ts), drawn with the 1D tools: range and
+  bisector, a bisector optionally following the density valley. docs/POPULATION.md → 1D gates.
 -->
 <script setup lang="ts">
 import { axisQ, outlineToGate, type SrvGate } from '../../plots/montage'
 import { isSplitGate, sliceRegions, quadrantRegions } from '../../plots/splitGeometry'
+import { histCounts, countTicks, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
+import CcToggle from '../../components/CcToggle.vue'
 import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
@@ -76,7 +82,11 @@ const axisDefaultTransform = (col: string): Kind => g.defaultTransformFor(col)
 // axis <select>'s v-model setter; loading a saved gate mutates ui.x/ui.xt directly (GatingPlots
 // openPop), so a gate keeps the transform it was drawn in.
 const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v; props.ui.xt = axisDefaultTransform(v) } })
-const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v; props.ui.yt = axisDefaultTransform(v) } })
+const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v; if (v !== HIST) props.ui.yt = axisDefaultTransform(v) } })
+// `histogram` on the Y picker: a 1D plot of X. The server reads x = y = X (`yAxis`), in X's transform.
+const HIST = HIST_AXIS
+const isHist = computed(() => yChan.value === HIST)
+const yAxis = computed(() => isHist.value ? xChan.value : yChan.value)
 const xt = computed<Kind>({ get: () => props.ui.xt ?? axisDefaultTransform(xChan.value), set: v => { props.ui.xt = v } })
 const yt = computed<Kind>({ get: () => props.ui.yt ?? axisDefaultTransform(yChan.value), set: v => { props.ui.yt = v } })
 // COLOUR BY (optional third measure). Same measure list and same transform default as an axis — a
@@ -88,15 +98,23 @@ const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'poi
 // displayed population is owned by GatingPlots (per-panel) so the manager can highlight it
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 // draw tool is transient interaction state (not persisted): reopening a plot shouldn't leave a tool armed
-const mode = ref<'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant'>('off')
+const mode = ref<'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'>('off')
 // draw-tool selector: 'off' maps to the ChipSelect empty selection ('' via allowEmpty — re-clicking
-// the armed tool disarms it back to 'off', preserving the old per-button toggle behaviour).
-const DRAW_MODES: ChipOption[] = [
+// the armed tool disarms it back to 'off', preserving the old per-button toggle behaviour). The tools
+// are the plot's kind: 1D on a histogram, 2D otherwise.
+function drawModes(hist: boolean): ChipOption[] {
+  return hist ? [
+  { value: 'range',    label: '', icon: 'pi pi-arrows-h',      tip: 'Range gate: drag across the histogram' },
+  { value: 'bisector', label: '', icon: 'pi pi-pause',         tip: 'Bisector: click the cut → + and −' },
+  ] : [
   { value: 'rectangle', label: '', icon: 'pi pi-stop',      tip: 'Rectangle gate' },
   { value: 'polygon',   label: '', icon: 'pi pi-share-alt', tip: 'Polygon gate (click vertices, double-click to close)' },
   { value: 'slice',     label: '', icon: 'pi pi-chart-line', tip: 'Slice: draw a dividing line → + and − (double-click to end)' },
   { value: 'quadrant',  label: '', icon: 'pi pi-th-large',   tip: 'Quadrant: click the centre → four populations' },
-]
+  ]
+}
+// a tool of the other kind is disarmed when the plot switches between 1D and 2D
+watch(isHist, () => { mode.value = 'off' })
 // pop-colour overlay is driven by the populations checked for THIS panel in the manager
 const showPops = computed(() => (props.highlight?.length ?? 0) > 0)
 
@@ -138,13 +156,13 @@ const prefSpec = (k: Kind, cof?: number): TransformSpec =>
 // mean of the measure per cell). Contour rings and the outlier tail describe a distribution, not
 // per-cell values, so there is nothing to colour there — and the third column stays off the wire.
 const colourOn = computed(() =>
-  !!zChan.value && (renderMode.value === 'points' || renderMode.value === 'binned'))
+  !isHist.value && !!zChan.value && (renderMode.value === 'points' || renderMode.value === 'binned'))
 // query for a given population on given axis transforms. `zk` adds the colour-by measure (a third
 // value per point); the child-POP overlays never ask for it — they're drawn in the pop's own colour.
 function plotQ(pop: string, xs: TransformSpec, ys: TransformSpec, zs?: TransformSpec) {
   const z0 = props.axisFromZero ? 1 : 0
   return `projectUid=${g.projectUid()}&imageUid=${g.imageUid}&valueName=${g.valueName}&popType=${g.popType}` +
-    `&x=${encodeURIComponent(xChan.value)}&y=${encodeURIComponent(yChan.value)}` +
+    `&x=${encodeURIComponent(xChan.value)}&y=${encodeURIComponent(yAxis.value)}` +
     `&pop=${encodeURIComponent(pop)}${axisQ('x', xs)}${axisQ('y', ys)}&x0=${z0}&y0=${z0}&autoLinear=1` +
     (zs && colourOn.value ? `&z=${encodeURIComponent(zChan.value)}${axisQ('z', zs)}` : '')
 }
@@ -152,7 +170,8 @@ function plotQ(pop: string, xs: TransformSpec, ys: TransformSpec, zs?: Transform
 // and reports it as usedX/usedY/usedZ (a non-linear transform that would collapse a bounded/0–1
 // measure → linear).
 const metaQ = computed(() => plotQ(parent.value, prefSpec(xt.value, props.ui.xcof),
-                                    prefSpec(yt.value, props.ui.ycof), prefSpec(zt.value, props.ui.zcof)))
+                                    isHist.value ? prefSpec(xt.value, props.ui.xcof) : prefSpec(yt.value, props.ui.ycof),
+                                    prefSpec(zt.value, props.ui.zcof)))
 
 // The transform the server actually USED for each axis (from plotmeta). It differs from the preferred
 // xt/yt when the measure's range can't use it (auto-linearised): the axis select then shows this and
@@ -198,7 +217,20 @@ const cofTip = (axis: 'x' | 'y') => props.ui[`${axis}cof`] ? 'asinh cofactor —
 const serverGates = ref<SrvGate[]>([])
 const currentGates = computed(() => serverGates.value.map(s => ({
   path: s.path, colour: s.colour,
-  gate: outlineToGate(s, xChan.value, yChan.value, effXs.value, effYs.value) })))
+  gate: outlineToGate(s, xChan.value, yAxis.value, effXs.value, effYs.value) })))
+
+// The histogram (1D mode): the shown population's X values and each highlighted pop's, binned over the
+// X view — the count axis replaces Y (extent, ticks), so the bars and the axis agree.
+const hist = computed(() => {
+  if (!isHist.value || !points.value) return null
+  const { xMin, xMax } = viewExtents.value
+  return { lo: xMin, hi: xMax, base: histCounts(points.value, xMin, xMax),
+           layers: popLayers.value.map(l => ({ colour: l.colour, counts: histCounts(l.points, xMin, xMax) })) }
+})
+const histMax = computed(() => Math.max(1, ...(hist.value?.base ?? [])))
+const cellExtents = computed(() => isHist.value ? { ...extents.value, yMin: 0, yMax: histMax.value * 1.08 } : extents.value)
+const cellViewExtents = computed(() => isHist.value ? { ...viewExtents.value, yMin: 0, yMax: histMax.value * 1.08 } : viewExtents.value)
+const cellYTicks = computed(() => isHist.value ? countTicks(histMax.value) : yTicks.value)
 
 async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
@@ -335,8 +367,9 @@ async function loadPopLayers() {
 function onDraw(geom: Partial<GateSpec>) {
   // stamp the EFFECTIVE transform (what the axis is actually displayed in), not the preference — the
   // geometry was drawn in that space, so this is what membership must test against.
-  pending.value = { ...geom, x_channel: xChan.value, y_channel: yChan.value,
+  pending.value = { ...geom, x_channel: xChan.value, y_channel: yAxis.value,
                     x_transform: effXs.value, y_transform: effYs.value }
+  pendingRule.value = false
   // keep the draw tool armed (rectangle/polygon) so you can gate repeatedly without re-selecting it.
   // To adjust a gate without disarming, hold Shift over the plot — GateOverlay grabs/moves/resizes the
   // gate under the cursor while armed (see its onDown/onMove); release Shift to keep drawing.
@@ -344,10 +377,14 @@ function onDraw(geom: Partial<GateSpec>) {
 }
 // A split gate (slice / quadrant) adds one population per region: a slice's from the typed name
 // (`name+`, `name-`), a quadrant's from the two axis labels. plots/splitGeometry.ts names them.
-const pendingSplit = computed(() => isSplitGate(pending.value))
+const pendingSplit = computed(() => isSplitGate(pending.value) || pending.value?.kind === 'bisector')
+// a new bisector: follow the parent's density valley instead of a fixed cut (a one-off choice made with
+// its name, like the name; double-click its cut later to switch)
+const pendingRule = ref(false)
 const splitRegions = computed(() => {
   const p = pending.value
   if (p?.kind === 'slice') return sliceRegions(newName.value.trim(), p.vertices ?? [])
+  if (p?.kind === 'bisector') return bisectorRegions(newName.value)
   if (p?.kind === 'quadrant') return quadrantRegions(g.colLabel(xChan.value), g.colLabel(yChan.value))
   return []
 })
@@ -361,7 +398,7 @@ const nameError = computed(() => {
   const taken = g.flat.map(p => p.name)
   if (pending.value?.kind === 'quadrant')
     return splitRegions.value.map(r => popNameError(r.name, taken)).find(e => e) ?? null
-  if (pending.value?.kind === 'slice' && newName.value.trim())
+  if ((pending.value?.kind === 'slice' || pending.value?.kind === 'bisector') && newName.value.trim())
     return popNameError(newName.value, taken) ?? splitRegions.value.map(r => popNameError(r.name, taken)).find(e => e) ?? null
   return popNameError(newName.value, taken)
 })
@@ -372,10 +409,15 @@ async function confirmGate() {
   let ok
   try {
     const n = g.flat.length
+    const gate = { ...pending.value } as GateSpec
+    if (gate.kind === 'bisector' && pendingRule.value) {
+      const [lo, hi] = defaultRuleWindow(gate.cut!, viewExtents.value)
+      gate.rule = { kind: 'valley', lo, hi }
+    }
     ok = pendingSplit.value
-      ? await g.addSplit(pending.value as GateSpec, parent.value,
+      ? await g.addSplit(gate, parent.value,
           splitRegions.value.map((r, i) => ({ ...r, colour: palette[(n + i) % palette.length] })))
-      : await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[n % palette.length])
+      : await g.addPop(newName.value.trim(), gate, parent.value, palette[n % palette.length])
   } finally { submitting.value = false }
   pending.value = null
   // await the outline so it's painted before we return; the childGateSig watcher fires too but
@@ -402,7 +444,7 @@ const cell = useTemplateRef<{
   exportSvg(bg?: string, light?: boolean): string
 }>('cell')
 function exportAs(kind: string) {
-  const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
+  const stem = (isHist.value ? `hist_${xChan.value}` : `gate_${xChan.value}_${yChan.value}`).replace(/[^\w.-]+/g, '_')
   if (kind === 'png') cell.value?.exportImage(PAPER, true).then(url => url && downloadDataUrl(`${stem}.png`, url))
   else if (kind === 'svg') {
     const svg = cell.value?.exportSvg(PAPER, true)
@@ -415,6 +457,14 @@ function exportAs(kind: string) {
 function buildCsv(): string {
   const pts = points.value; if (!pts) return ''
   const xName = g.colLabel(xChan.value) || 'x'
+  if (isHist.value) {                   // one value per event: the histogram's channel
+    const rows: Record<string, unknown>[] = []
+    const names = popDisplayLabels([parent.value, ...popLayers.value.map(pl => pl.path)])
+    const push = (arr: Float32Array, pop: string) => { for (let i = 0; i < arr.length; i += 2) rows.push({ [xName]: arr[i], population: pop }) }
+    push(pts, parent.value === 'root' ? 'root' : names.get(parent.value)!)
+    if (showPops.value) for (const pl of popLayers.value) push(pl.points, names.get(pl.path)!)
+    return rowsToCsv(rows)
+  }
   const yRaw = g.colLabel(yChan.value) || 'y'
   const yName = yRaw === xName ? `${yRaw} (y)` : yRaw
   // the colour-by measure is a real per-event column, so it belongs in the export too (blank for the
@@ -442,6 +492,8 @@ const axisGroups = computed(() => measureGroups({
   columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
 // The same groups for the searchable axis pickers — a multiplex panel lists 40+ channels per axis.
 const axisPickGroups = computed(() => measurePickGroups(axisGroups.value, c => g.colLabel(c)))
+const yPickGroups = computed(() =>
+  measurePickGroups(axisGroups.value, c => g.colLabel(c), [{ value: HIST, label: 'histogram' }]))
 const colourPickGroups = computed(() =>
   measurePickGroups(axisGroups.value, c => g.colLabel(c), [{ value: '', label: 'density' }]))
 
@@ -451,7 +503,7 @@ function ensureChannels() {
   // spatial/temporal axes are valid selections too — don't reset a persisted centroid_x/… axis
   const valid = groupedCols(axisGroups.value)
   if (!valid.includes(xChan.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
-  if (!valid.includes(yChan.value)) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
+  if (!valid.includes(yChan.value) && !isHist.value) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
 }
 // store readiness (channels/image/segmentation): pick default axes then load. `immediate` so the
 // first appearance fetches whether the store became ready BEFORE this panel mounted (values already
@@ -502,9 +554,9 @@ watch(() => props.reloadToken, fetchPlot)
          PLOT REGION (.panel-main) below these fixed controls, so the plot stays 1:1 with a visible
          x-axis and no blank space. All controls sit in #actions (one in-flow block). -->
     <template #actions>
-      <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
+      <RenderModeToggle v-if="!isHist" v-model="renderMode" :colour-by="!!zChan" />
       <span class="cc-toolbar-sep" />
-      <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES" data-guide="gate.drawTool"
+      <ChipSelect variant="segmented" allow-empty :options="drawModes(isHist)" data-guide="gate.drawTool"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
@@ -522,18 +574,18 @@ watch(() => props.reloadToken, fetchPlot)
           <i v-if="xOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(xOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
-          <SearchSelect class="ax-chan" v-model="yChan" :groups="axisPickGroups"
-                        :aria-label="'Measure on the Y axis'" v-tooltip.bottom="'Measure on the Y axis'" />
-          <select class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"
+          <SearchSelect class="ax-chan" v-model="yChan" :groups="yPickGroups"
+                        :aria-label="'Measure on the Y axis'" v-tooltip.bottom="'Measure on the Y axis, or a histogram of X'" />
+          <select v-if="!isHist" class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"
                   v-tooltip.bottom="overrideTooltip(yOverride, transformTip('y'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
-          <input v-if="effYt === 'asinh'" type="number" min="0" step="any" class="cc-input-xs cof"
+          <input v-if="effYt === 'asinh' && !isHist" type="number" min="0" step="any" class="cc-input-xs cof"
                  v-model="yCofDraft" aria-label="Y asinh cofactor"
                  :class="{ 'cof-auto': !ui.ycof }" v-tooltip.bottom="cofTip('y')"
                  @change="setCof('y', yCofDraft)" />
           <i v-if="yOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
-        <label class="ax-row cc-muted"><span class="ax-lbl">colour</span>
+        <label v-if="!isHist" class="ax-row cc-muted"><span class="ax-lbl">colour</span>
           <SearchSelect class="ax-chan" v-model="zChan" :groups="colourPickGroups"
                         aria-label="Colour the dots by"
                         v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'" />
@@ -560,11 +612,11 @@ watch(() => props.reloadToken, fetchPlot)
     </template>
     <GateScatterCell ref="cell" :points="points" :labels="pointLabels"
                      :image-uid="g.imageUid ?? ''" :value-name="g.valueName ?? ''" :pop-type="g.popType ?? ''"
-                     :extents="extents" :view-extents="viewExtents"
-                     :flip-y="isImageYAxis(yChan)"
-                     :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
+                     :extents="cellExtents" :view-extents="cellViewExtents" :hist="hist"
+                     :flip-y="!isHist && isImageYAxis(yChan)"
+                     :x-ticks="xTicks" :y-ticks="cellYTicks" :gates="currentGates"
                      :x-label="axisLabelWithUnit(g.colLabel(xChan), xUnit)"
-                     :y-label="axisLabelWithUnit(g.colLabel(yChan), yUnit)"
+                     :y-label="isHist ? 'count' : axisLabelWithUnit(g.colLabel(yChan), yUnit)"
                      :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
                      :value-label="axisLabelWithUnit(g.colLabel(zChan), zUnit)"
                      :pop-layers="popLayers" :render-mode="renderMode" :show-pops="showPops"
@@ -583,9 +635,11 @@ watch(() => props.reloadToken, fetchPlot)
           <span class="panel-name-kind">new {{ pending.kind }}</span>
           <span v-if="pending.kind === 'quadrant'" class="cc-muted">{{ splitRegions.length }} populations</span>
           <input v-else v-model="newName" placeholder="name…" autofocus
-                 v-tooltip.top="pending.kind === 'slice' ? 'Gives name+ and name-' : 'Name for the new gate'"
+                 v-tooltip.top="pending.kind === 'slice' || pending.kind === 'bisector' ? 'Gives name+ and name-' : 'Name for the new gate'"
                  :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
                  @keyup.enter="confirmGate" @keyup.esc="pending = null" />
+          <CcToggle v-if="pending.kind === 'bisector'" v-model="pendingRule" label="valley"
+                    v-tooltip.top="'Cut at the density valley, found per image'" />
           <button class="cc-btn cc-btn-primary" :disabled="!!nameError || submitting" @click="confirmGate"
                   v-tooltip.top="pendingSplit && splitRegions.length ? splitRegions.map(r => r.name).join(' · ') : ''">Add</button>
           <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>

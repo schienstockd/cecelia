@@ -24,8 +24,9 @@ export interface TransformSpec {
   T?: number; W?: number; M?: number; A?: number; cofactor?: number; floor?: number
 }
 export interface GateSpec {
-  // slice / quadrant are SPLIT gates — one divider, one population per region (plots/splitGeometry.ts)
-  kind: 'rectangle' | 'polygon' | 'slice' | 'quadrant'
+  // slice / quadrant are SPLIT gates — one divider, one population per region (plots/splitGeometry.ts);
+  // range / bisector are 1D, on one channel's histogram: y_channel = x_channel (plots/histGeometry.ts)
+  kind: 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'
   x_channel: string; y_channel: string
   x_transform: TransformSpec; y_transform: TransformSpec
   x_min?: number; x_max?: number; y_min?: number; y_max?: number
@@ -33,7 +34,13 @@ export interface GateSpec {
   side?: number                              // slice: 1 = left of the line's direction, -1 = right
   centre?: [number, number]; arms?: [number, number][]; quadrant?: number   // quadrant: 4 CCW arms, sector 1–4
   group?: string                             // split: the id the region populations share
+  lo?: number; hi?: number                   // range: the interval
+  cut?: number                               // bisector: the cut (side 1 = above it, -1 = at or below)
+  rule?: GateRule                            // bisector: cut at the parent's density valley instead
+  rule_ok?: boolean                          // server outline: the rule found a valley on this parent
 }
+// a bisector's rule: the deepest valley of the parent's density in [lo, hi] (gate coordinates)
+export interface GateRule { kind: 'valley'; lo: number; hi: number; adjust?: number }
 // one AND-ed condition of a compound filter (Decision 15)
 export interface FilterCondition { measure: string; fun: string; values: unknown }
 // a filter spec: the single measure/fun/values (back-compat) plus optional AND-ed `conditions`

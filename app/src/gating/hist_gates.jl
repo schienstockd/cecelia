@@ -1,0 +1,250 @@
+# ── 1D gates: drawn on one channel's histogram ────────────────────────────────
+#
+#   RangeGate     an interval [lo, hi] — one population.
+#   BisectorGate  one cut that splits the axis in two: `side = +1` is above the cut (the `+` population),
+#                 `side = -1` at or below it. Both halves share a `group`, like a slice's two sides, so
+#                 moving the cut of one moves the other (`set_gate!`) and every finite cell lands in
+#                 exactly one of them.
+#
+# A 1D gate stores its channel as BOTH `x_channel` and `y_channel` (and its transform as both): the
+# engine's two-channel plumbing — the columns it fetches, the missing-column guard, plotmeta matching a
+# gate to a plot — then carries it unchanged, and it is drawn on the histogram, whose plot asks for
+# x = y = that channel. Geometry is in TRANSFORMED coordinates, like every gate.
+#
+# A bisector may carry a RULE instead of a fixed position: `ValleyRule(lo, hi)` cuts at the deepest
+# valley of the parent's density between lo and hi, re-found on every image (and whenever the parent's
+# cells change). The stored `cut` is then only the fallback for a parent with no valley in the window.
+# docs/POPULATION.md → 1D gates.
+
+using Statistics: quantile, std
+
+"""Cut at the most prominent density valley between `lo` and `hi` (transformed units). `adjust` scales
+the kernel bandwidth (> 1 smooths more)."""
+struct ValleyRule
+    lo::Float64
+    hi::Float64
+    adjust::Float64
+end
+function ValleyRule(lo::Real, hi::Real; adjust::Real = 1.0)
+    (isfinite(lo) && isfinite(hi)) || error("a valley rule's window must be finite")
+    adjust > 0 || error("a valley rule's adjust must be positive")
+    a, b = minmax(float(lo), float(hi))
+    ValleyRule(a, b, float(adjust))
+end
+
+struct RangeGate <: Gate
+    x_channel::String
+    y_channel::String                   # == x_channel
+    x_transform::AxisTransform
+    y_transform::AxisTransform          # == x_transform
+    lo::Float64
+    hi::Float64
+end
+
+function RangeGate(channel, lo, hi; x_transform::AxisTransform = LinearTransform())
+    (isfinite(lo) && isfinite(hi)) || error("a range gate's ends must be finite")
+    a, b = minmax(float(lo), float(hi))
+    RangeGate(String(channel), String(channel), x_transform, x_transform, a, b)
+end
+
+struct BisectorGate <: Gate
+    x_channel::String
+    y_channel::String                   # == x_channel
+    x_transform::AxisTransform
+    y_transform::AxisTransform          # == x_transform
+    cut::Float64                        # the cut, or a rule's fallback
+    side::Int                           # +1 above the cut, -1 at or below it
+    group::String
+    rule::Union{Nothing,ValleyRule}
+end
+
+function BisectorGate(channel, cut; side::Integer = 1, group::AbstractString = "",
+                      rule::Union{Nothing,ValleyRule} = nothing,
+                      x_transform::AxisTransform = LinearTransform())
+    isfinite(cut) || error("a bisector's cut must be finite")
+    side in (1, -1) || error("a bisector's side must be 1 or -1")
+    BisectorGate(String(channel), String(channel), x_transform, x_transform, float(cut), Int(side),
+                 String(group), rule)
+end
+
+const HistGate = Union{RangeGate,BisectorGate}
+
+# ── Membership ────────────────────────────────────────────────────────────────
+# `y_raw` is the same column as `x_raw` (the gate names its channel twice); only x is read.
+function inside(g::RangeGate, x_raw::AbstractVector, ::AbstractVector)::BitVector
+    out = BitVector(undef, length(x_raw))
+    @inbounds for i in eachindex(x_raw)
+        v = apply_transform(g.x_transform, float(x_raw[i]))
+        out[i] = (v >= g.lo) & (v <= g.hi)
+    end
+    out
+end
+
+function inside(g::BisectorGate, x_raw::AbstractVector, ::AbstractVector)::BitVector
+    out = BitVector(undef, length(x_raw))
+    @inbounds for i in eachindex(x_raw)
+        v = apply_transform(g.x_transform, float(x_raw[i]))
+        out[i] = isfinite(v) && (g.side == 1 ? v > g.cut : v <= g.cut)
+    end
+    out
+end
+
+# ── Rules: resolved against the parent's cells ────────────────────────────────
+"""Whether `g`'s membership depends on the parent's distribution (a rule), so the caller must
+`resolve_gate` it with the parent's values first."""
+needs_parent_data(::Gate) = false
+needs_parent_data(g::BisectorGate) = g.rule !== nothing
+
+"""The rule's cut on these RAW parent values, or `nothing` (no rule, or no valley in its window)."""
+resolve_cut(::Gate, raw) = nothing
+function resolve_cut(g::BisectorGate, raw::AbstractVector)
+    g.rule === nothing && return nothing
+    valley_cut(apply_transform(g.x_transform, raw), g.rule.lo, g.rule.hi; adjust = g.rule.adjust)
+end
+
+"""`g` with its rule applied to the RAW parent values: a bisector's cut moves to the valley; with no
+valley in the window (or no rule) the stored cut stands. Any other gate is returned as is."""
+resolve_gate(g::Gate, raw) = g
+function resolve_gate(g::BisectorGate, raw::AbstractVector)
+    c = resolve_cut(g, raw)
+    c === nothing ? g : BisectorGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, c, g.side, g.group, g.rule)
+end
+
+const VALLEY_GRID = 512        # density evaluation points, at least (more when the span needs them)
+const VALLEY_GRID_MAX = 1 << 16
+const VALLEY_RANGE_Q = 0.001   # the grid spans these quantiles (∪ the window), not the extremes
+const VALLEY_MIN_CELLS = 20    # fewer finite values than this → no density, no valley
+const VALLEY_MIN_PEAK = 0.05   # the smaller of the two peaks, as a fraction of the tallest
+const VALLEY_MIN_DEPTH = 0.2   # the dip below the smaller peak, as a fraction of it
+
+"""
+    valley_cut(v, lo, hi; adjust = 1.0) -> Union{Float64,Nothing}
+
+The cut between two populations on one axis: the most prominent valley of a Gaussian kernel density of
+the finite values `v` whose position lies in [lo, hi]. Prominence = the lower of the highest density on
+either side of it minus the density at it — so a ripple in a sparse tail, however low, loses to the dip
+between two real peaks. A dip only counts when both sides are a population: the lower side's peak at
+least 5 % of the tallest, and the dip at least 20 % below that peak (`VALLEY_MIN_PEAK`/`_DEPTH`, set on
+multiplex tissue images where a lone population's sparse tail otherwise took ~1 % of its cells). A
+flat-bottomed valley (an empty gap between two clouds) cuts at its middle. `nothing` when no valley
+lies in the window (one population there) or there are too few values.
+
+The approach is openCyto's `mindensity` (Finak et al. 2014, PLoS Comput Biol 10:e1003806,
+doi:10.1371/journal.pcbi.1003806), written from that description — openCyto is AGPL, nothing is copied.
+Bandwidth: Silverman's rule of thumb, 0.9·min(sd, IQR/1.34)·n^(-1/5), times `adjust`; the density is a
+binned KDE (linear binning onto the grid, then the Gaussian kernel), exact enough for a cut and O(n).
+"""
+function valley_cut(v::AbstractVector, lo::Real, hi::Real; adjust::Real = 1.0)
+    x = Float64[a for a in v if isfinite(a)]
+    n = length(x)
+    n < VALLEY_MIN_CELLS && return nothing
+    xmin, xmax = extrema(x)
+    xmax > xmin || return nothing
+    q1, q3 = quantile(x, (0.25, 0.75))
+    sd = std(x)
+    spread = q3 > q1 ? min(sd, (q3 - q1) / 1.34) : sd
+    h = 0.9 * spread * n^(-1 / 5) * adjust
+    h > 0 || return nothing
+    # The grid spans the bulk of the data (0.1–99.9 %) and the window, inside the data — not the
+    # extremes: one debris object far out on a linear axis stretched a fixed grid until its spacing
+    # exceeded the bandwidth and the valley moved or vanished. It is also fine enough for the
+    # bandwidth wherever the window reaches (≥ 4 points per h, capped).
+    wlo, whi = minmax(float(lo), float(hi))
+    qa, qb = quantile(x, (VALLEY_RANGE_Q, 1 - VALLEY_RANGE_Q))
+    a = max(xmin, min(qa, wlo)) - 3h
+    b = min(xmax, max(qb, whi)) + 3h
+    G = clamp(ceil(Int, 4 * (b - a) / h), VALLEY_GRID, VALLEY_GRID_MAX)
+    d, a, dx = _binned_kde(x, a, b, h, G)
+    _most_prominent_valley(d, a, dx, wlo, whi)
+end
+
+# values outside [a, b] are left out (not piled onto the edge bins, which would make a false peak)
+function _binned_kde(x::Vector{Float64}, a::Float64, b::Float64, h::Float64, G::Int = VALLEY_GRID)
+    dx = (b - a) / (G - 1)
+    counts = zeros(G)
+    for xi in x
+        a <= xi <= b || continue
+        t = (xi - a) / dx
+        i = clamp(floor(Int, t), 0, G - 2)
+        f = t - i
+        counts[i+1] += 1 - f
+        counts[i+2] += f
+    end
+    r = ceil(Int, 4h / dx)
+    k = [exp(-0.5 * (j * dx / h)^2) for j in -r:r]
+    d = zeros(G)
+    @inbounds for i in 1:G, j in -r:r
+        0 < i + j <= G && (d[i] += counts[i+j] * k[j+r+1])
+    end
+    d, a, dx
+end
+
+# Valleys = runs of equal density lower than both neighbouring runs. Each is scored by its prominence;
+# the best one whose middle lies in [lo, hi] wins.
+function _most_prominent_valley(d::Vector{Float64}, a, dx, lo, hi)
+    G = length(d)
+    dmax = maximum(d)
+    tol = 1e-12 * dmax
+    runs = Tuple{Int,Int}[]                       # (first, last) index of each run of equal values
+    s = 1
+    for i in 2:G+1
+        if i > G || abs(d[i] - d[s]) > tol
+            push!(runs, (s, i - 1)); s = i
+        end
+    end
+    best, best_prom = nothing, 0.0
+    for k in 2:length(runs)-1
+        (s, e) = runs[k]
+        dv = d[s]
+        (d[runs[k-1][1]] > dv && d[runs[k+1][1]] > dv) || continue
+        pos = a + ((s + e) / 2 - 1) * dx
+        lo <= pos <= hi || continue
+        side_peak = min(maximum(view(d, 1:s)), maximum(view(d, e:G)))
+        # both sides must be a population: the lower flanking peak at least VALLEY_MIN_PEAK of the
+        # tallest, and the dip at least VALLEY_MIN_DEPTH below it — else it is a ripple in a tail or a
+        # shoulder, and one population has no valley
+        (side_peak >= VALLEY_MIN_PEAK * dmax && dv <= (1 - VALLEY_MIN_DEPTH) * side_peak) || continue
+        prom = side_peak - dv
+        if prom > best_prom
+            best, best_prom = pos, prom
+        end
+    end
+    best
+end
+
+# ── Group edits, spec, display ────────────────────────────────────────────────
+# One axis, so no swap can mirror it: a group member keeps its side as is.
+with_divider(g::BisectorGate, t::BisectorGate) =
+    BisectorGate(t.x_channel, t.y_channel, t.x_transform, t.y_transform, t.cut, g.side, t.group, t.rule)
+gate_group(g::BisectorGate) = g.group
+
+rule_spec(r::ValleyRule) = Dict{String,Any}("kind" => "valley", "lo" => r.lo, "hi" => r.hi, "adjust" => r.adjust)
+function rule_from_spec(spec)
+    spec === nothing && return nothing
+    g(k, default = nothing) = get(spec, k, get(spec, Symbol(k), default))
+    kind = lowercase(string(g("kind", "")))
+    kind == "valley" || error("Unknown gate rule: $kind")
+    ValleyRule(g("lo"), g("hi"); adjust = something(g("adjust"), 1.0))
+end
+
+function _hist_spec(g::HistGate, kind)
+    Dict{String,Any}("kind" => kind, "x_channel" => g.x_channel, "y_channel" => g.y_channel,
+                     "x_transform" => transform_spec(g.x_transform), "y_transform" => transform_spec(g.y_transform))
+end
+gate_spec(g::RangeGate) = merge(_hist_spec(g, "range"), Dict{String,Any}("lo" => g.lo, "hi" => g.hi))
+function gate_spec(g::BisectorGate)
+    d = merge(_hist_spec(g, "bisector"), Dict{String,Any}("cut" => g.cut, "side" => g.side, "group" => g.group))
+    g.rule === nothing || (d["rule"] = rule_spec(g.rule))
+    d
+end
+
+# `to_disp(v, v)[1]` = a stored value on the gate's axis → the plot's x display coordinate. A 1D gate
+# only matches a plot with x = y = its channel (the histogram), so there is no swap to honour.
+_projected(g::RangeGate, to_disp, swap) =
+    Dict{String,Any}("kind" => "range", "lo" => to_disp(g.lo, g.lo)[1], "hi" => to_disp(g.hi, g.hi)[1])
+function _projected(g::BisectorGate, to_disp, swap)
+    d = Dict{String,Any}("kind" => "bisector", "cut" => to_disp(g.cut, g.cut)[1], "side" => g.side, "group" => g.group)
+    g.rule === nothing || (d["rule"] = Dict{String,Any}("kind" => "valley",
+        "lo" => to_disp(g.rule.lo, g.rule.lo)[1], "hi" => to_disp(g.rule.hi, g.rule.hi)[1], "adjust" => g.rule.adjust))
+    d
+end

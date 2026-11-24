@@ -128,6 +128,13 @@ function gate_from_spec(spec::AbstractDict)::Gate
         QuadrantGate(g("x_channel"), g("y_channel"), g("centre"), g("arms");
                      quadrant = Int(something(g("quadrant"), 1)), group = string(something(g("group"), "")),
                      x_transform=xt, y_transform=yt)
+    elseif kind == "range" || kind == "bisector"
+        # 1D: one channel, named as both x and y (hist_gates.jl) — a different y can't be one axis
+        xc = g("x_channel"); yc = something(g("y_channel"), xc)
+        string(yc) == string(xc) || error("a $kind gate is on one channel: x_channel and y_channel must match")
+        kind == "range" ? RangeGate(xc, g("lo"), g("hi"); x_transform = xt) :
+            BisectorGate(xc, g("cut"); side = Int(something(g("side"), 1)), group = string(something(g("group"), "")),
+                         rule = rule_from_spec(g("rule")), x_transform = xt)
     else
         error("Unknown gate kind: $kind")
     end

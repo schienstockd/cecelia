@@ -8,7 +8,7 @@ import GateOverlay from './GateOverlay.vue'
 import type { GateSpec } from '../../stores/gating'
 import { frames, mountInto } from '../../test/browser/mount'
 
-type Mode = 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant'
+type Mode = 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'
 type Entry = { path: string; colour: string; gate: GateSpec }
 const SIZE = 200                                    // px; the data extent is 0–100 on both axes
 const base = { x_channel: 'x', y_channel: 'y', x_transform: { kind: 'linear' }, y_transform: { kind: 'linear' } } as const
@@ -90,5 +90,55 @@ describe('editing a split gate', () => {
     o.fire('mousemove', 80, 80)
     o.fire('mousedown', 80, 80); o.fire('mousemove', 90, 90, window); o.fire('mouseup', 90, 90, window)
     expect(o.edits).toHaveLength(0)
+  })
+})
+
+describe('1D tools (on a histogram)', () => {
+  const hb = { x_channel: 'x', y_channel: 'x', x_transform: { kind: 'linear' }, y_transform: { kind: 'linear' } } as const
+
+  it('a range is dragged across: only x counts, a click is no range', async () => {
+    const o = overlay('range'); await frames()
+    o.fire('mousedown', 20, 80); o.fire('mousemove', 60, 10, window); o.fire('mouseup', 60, 10, window)
+    expect(o.draws).toHaveLength(1)
+    expect(o.draws[0].kind).toBe('range')
+    expect(Math.abs(o.draws[0].lo! - 20) < 0.6 && Math.abs(o.draws[0].hi! - 60) < 0.6).toBe(true)
+    // straight up and down: no width, no range
+    o.fire('mousedown', 40, 10); o.fire('mousemove', 40, 90, window); o.fire('mouseup', 40, 90, window)
+    expect(o.draws).toHaveLength(1)
+  })
+
+  it('a bisector is one click: its cut', async () => {
+    const o = overlay('bisector'); await frames()
+    o.click(35, 70)
+    expect(o.draws).toHaveLength(1)
+    expect(o.draws[0].kind).toBe('bisector')
+    expect(Math.abs(o.draws[0].cut! - 35) < 0.6).toBe(true)
+  })
+
+  it('dragging a fixed cut moves it; a double-click switches it to follow the valley', async () => {
+    const half = (side: number): Entry => ({ path: `/c${side}`, colour: '#f00',
+      gate: { ...hb, kind: 'bisector', cut: 50, side, group: 'b' } })
+    const o = overlay('off', [half(1), half(-1)]); await frames()
+    o.fire('mousemove', 50, 20)                                 // anywhere along the line grabs it
+    o.fire('mousedown', 50, 20); o.fire('mousemove', 70, 60, window); o.fire('mouseup', 70, 60, window)
+    expect(o.edits).toHaveLength(1)
+    expect(Math.abs(o.edits[0].gate.cut! - 70) < 0.6).toBe(true)
+    o.fire('mousemove', 50, 40); o.fire('dblclick', 50, 40)
+    expect(o.edits).toHaveLength(2)
+    expect(o.edits[1].gate.rule).toEqual({ kind: 'valley', lo: 30, hi: 70 })   // a fifth of the view either side
+  })
+
+  it("a rule bisector's cut does not drag — the rule places it", async () => {
+    const g: Entry = { path: '/v', colour: '#f00',
+      gate: { ...hb, kind: 'bisector', cut: 50, side: 1, group: 'b', rule: { kind: 'valley', lo: 20, hi: 80 } } }
+    const o = overlay('off', [g]); await frames()
+    o.fire('mousemove', 50, 20); o.fire('mousedown', 50, 20)
+    o.fire('mousemove', 65, 20, window); o.fire('mouseup', 65, 20, window)
+    expect(o.edits).toHaveLength(0)
+    // its window end does
+    o.fire('mousemove', 80, 20); o.fire('mousedown', 80, 20)
+    o.fire('mousemove', 90, 20, window); o.fire('mouseup', 90, 20, window)
+    expect(o.edits).toHaveLength(1)
+    expect(Math.abs(o.edits[0].gate.rule!.hi - 90) < 0.6).toBe(true)
   })
 })

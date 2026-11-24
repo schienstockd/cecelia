@@ -852,6 +852,44 @@ moves it, its vertices / arm handles reshape it. A region is built by closing th
 (`slice_left_polygon` / `quadrant_polygon` in Julia, the same in `splitGeometry.ts`); membership uses a box
 padded past every cell, display the view box. The MCP `add_gate` still draws rectangles and polygons only.
 
+### 1D gates — range and bisector, on a histogram
+
+Picking **histogram** at the top of a gate plot's Y picker makes it a 1D plot of the X channel: the
+browser asks for x = y = that channel and bins the values itself (`plots/histGeometry.ts`); highlighted
+populations are drawn as outlines in their colours on the same count scale (backgating on a histogram).
+Two tools draw on it (`app/src/gating/hist_gates.jl`):
+
+- **Range** — an interval `[lo, hi]`, one population (drag across the histogram).
+- **Bisector** — one `cut` splitting the axis: `side: 1` above it (`name+`), `side: -1` at or below it
+  (`name-`). The halves share a `group` like a slice's sides (added together through
+  `POST /api/gating/pop/add-split`, moved together by `set_gate!`), so every finite cell is in exactly one.
+
+A 1D gate stores its channel as both `x_channel` and `y_channel` (and its transform as both). The engine's
+two-channel plumbing — the columns `recompute!` fetches, the missing-column guard, plotmeta matching a gate
+to the plot — then carries it unchanged; it is shown only on its channel's histogram. `gate_from_spec`
+refuses a 1D spec naming two different channels.
+
+**Rule gating — the valley rule.** A bisector may carry `rule: {kind: "valley", lo, hi, adjust?}` instead
+of a fixed position: its cut is the most prominent valley of the PARENT's density whose position lies in
+`[lo, hi]` (gate coordinates), re-found on every image and whenever the parent's cells change — so a gate
+copied to a brighter image follows that image's dip. `valley_cut` is openCyto's `mindensity` idea (Finak
+et al. 2014, doi:10.1371/journal.pcbi.1003806), written from the paper (openCyto is AGPL): a binned
+Gaussian KDE with Silverman's bandwidth × `adjust`, on a grid over the 0.1–99.9 % range of the values
+∪ the window (one far outlier on a linear axis no longer coarsens it); valleys scored by prominence (the lower flanking peak
+minus the dip), and counted only when both sides are a population — the lower peak at least 5 % of the
+tallest and the dip at least 20 % below it. Without those two floors a lone population's sparse low tail
+read as a valley and lost ~1 % of its cells (checked on 8 PhenoCycler tissue images, 12 markers: the
+two-population markers — cytokeratin, a CD20+ tissue, CD68 in two tissues — cut in the dip; one-population
+markers now get no cut). With no valley in the window the stored `cut` stands and the outline carries
+`rule_ok: false` (drawn dashed). `recompute!` resolves the rule on `parent_mask` cells (`resolve_gate`);
+plotmeta resolves it on the same parent's values for the outline (`_child_gate_outlines(…; parent_raw)`).
+
+The window matters: a whole-axis window treats the pile of zero-intensity cells at the axis floor as a
+population. A new rule's window is a fifth of the view either side of the clicked cut
+(`defaultRuleWindow`); its ends drag on the plot, the cut itself does not (the rule places it).
+Double-clicking a bisector's cut switches it between a fixed cut and following the valley; off, the cut
+stays where the rule last put it.
+
 ## Undo / redo
 
 **Server history is only for the hand-drawn pop types** — `flow` (cells) and `track` (tracks), i.e.
