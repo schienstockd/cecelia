@@ -47,6 +47,8 @@ export interface TileGrid {
  *  next one (the "plots overlap vertically" report). Keep these two in sync. */
 export const MIN_TILE_W = 340
 export const MIN_TILE_H = 320
+/** Gap between tiled cells (px) — the default for `tileGrid` and `fixedGrid`. */
+export const TILE_GAP = 8
 
 const cellW = (W: number, cols: number, gap: number) => (W - gap * (cols + 1)) / cols
 const cellH = (H: number, rows: number, gap: number) => (H - gap * (rows + 1)) / rows
@@ -93,7 +95,7 @@ export function tileGrid(
   // extend past the viewport and the canvas scrolls horizontally to reveal it. Clamped to [1, n].
   opts: { gap?: number; mode?: 'fill' | 'square'; cols?: number } = {},
 ): TileGrid {
-  const gap = opts.gap ?? 8
+  const gap = opts.gap ?? TILE_GAP
   const count = Math.max(1, Math.floor(n))
   const pinned = opts.cols && opts.cols > 0 ? Math.min(count, Math.floor(opts.cols)) : 0
   if (opts.mode === 'square') {
@@ -131,6 +133,17 @@ export function tileGrid(
   // floor (min-cell) and the computed cellH so a cramped viewport still uses the readable floor.
   const rawH = Math.floor(cellH(H, rows, gap))
   return finish(cols, rows, w, Math.max(MIN_TILE_H, Math.min(rawH, w)), gap)
+}
+
+/**
+ * A grid of FIXED-size cells (`w x h`) — as many across `W` as fit, rows flowing down. For panels that
+ * keep a size they already have instead of being handed one: "Show series" lays its copies out at the
+ * source plot's size (`useCanvasPanels.duplicate`). Place each panel with `tileCell`, like Tile.
+ */
+export function fixedGrid(n: number, w: number, h: number, W: number, gap = TILE_GAP): TileGrid {
+  const count = Math.max(1, Math.floor(n))
+  const cols = Math.min(count, colsAcross(W, w, gap))
+  return finish(cols, Math.ceil(count / cols), w, h, gap)
 }
 
 /** Top-left of panel `i`'s cell, row-major so the placement follows the panel order. */
