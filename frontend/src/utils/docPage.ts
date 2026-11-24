@@ -58,6 +58,9 @@ export interface ImageOpts {
   base: string
   /** Throw when the shot is not composed, instead of printing a placeholder line. */
   strict?: boolean
+  /** As wide as its table cell (`width="100%"`) instead of its composed width: a row of figures that
+   *  fills the page. */
+  fill?: boolean
 }
 
 /** A composed shot at the width it was composed for (`user-docs/images/images.json`, written by
@@ -70,7 +73,7 @@ export function docImage(set: ShotSet, x: Shot, alt: string, widths: Record<stri
     if (o.strict) throw new Error(`shot ${x.id} is not composed (pixi run doc-images)`)
     return `_Screenshot \`${x.id}\` not composed yet (pixi run doc-shots, then doc-images)._`
   }
-  const img = `<img src="${o.base}${imageFile(x, themes[0])}" width="${w}" alt="${esc(alt)}">`
+  const img = `<img src="${o.base}${imageFile(x, themes[0])}" width="${o.fill ? '100%' : w}" alt="${esc(alt)}">`
   const dark = themes.includes('dark') && themes[0] !== 'dark' ? `${o.base}${imageFile(x, 'dark')}` : null
   return dark ? `<picture><source media="(prefers-color-scheme: dark)" srcset="${dark}">${img}</picture>` : img
 }

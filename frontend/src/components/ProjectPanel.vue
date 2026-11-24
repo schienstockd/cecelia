@@ -795,7 +795,7 @@ function formatDate(iso: string | null): string {
 
 /* Owners popover contents — TeleportPopover supplies the surface + border, this is just padding
    and the chip list layout. */
-.owners-pop { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem 0.6rem; min-width: 160px; }
+.owners-pop { display: flex; flex-direction: column; gap: 0.35rem; min-width: 160px; }
 .owners-pop-list { max-width: 260px; }
 
 .open-badge {

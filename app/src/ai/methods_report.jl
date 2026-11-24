@@ -229,6 +229,44 @@ function history_params_csv(table::AbstractVector)::String
 end
 
 """
+    _mr_data_lines(proj, uids) -> Vector{String}
+
+The "Data" section: each distinct source of the images in scope (`data_source(proj, img)`, the image's
+own else its set's) with its DOI, licence and image count, an import suggestion marked unconfirmed, and
+the count with none. Empty when no image in scope records a source (the lab's own data).
+"""
+function _mr_data_lines(proj::CciaProject, uids)::Vector{String}
+    groups = Dict{String,Tuple{DataSource,Int}}()
+    unknown = 0
+    for uid in uids
+        img = try init_object(proj.uid, uid) catch; nothing end
+        d = img isa CciaImage ? data_source(proj, img) : nothing
+        if d === nothing
+            unknown += 1
+        else
+            k = string(hash(data_source_dict(d)))
+            groups[k] = (d, get(groups, k, (d, 0))[2] + 1)
+        end
+    end
+    isempty(groups) && return String[]
+    lines = String["### Data", ""]
+    for (d, n) in sort!(collect(values(groups)); by = g -> (g[1].citation, g[1].doi, g[1].url))
+        label = isempty(d.citation) ? (isempty(d.doi) ? d.url : "doi:$(d.doi)") : d.citation
+        extra = String[]
+        isempty(d.doi) || isempty(d.citation) || push!(extra, "doi:$(d.doi)")
+        isempty(d.url) || !isempty(d.doi) || push!(extra, d.url)
+        isempty(d.licence) || push!(extra, d.licence)
+        line = "- $label" * (isempty(extra) ? "" : " ($(join(extra, ", ")))") *
+               ": $n image$(n == 1 ? "" : "s")."
+        d.confirmed || (line *= " Suggested at import from the file path; not confirmed.")
+        push!(lines, line)
+    end
+    unknown > 0 && push!(lines, "- $unknown image$(unknown == 1 ? "" : "s"): data source not recorded.")
+    push!(lines, "")
+    lines
+end
+
+"""
     methods_report(proj; image_uids, set_uid, run_id) -> Dict
 
 A draft Methods section, `{markdown, table, csv, scope}`. Two scopes, one text:
@@ -279,6 +317,7 @@ function methods_report(proj::CciaProject; image_uids::AbstractVector = String[]
     refs = String[CECELIA_DOI]          # the software itself, cited once in the line above
     checks = String[]
     head = length(md)
+    append!(md, _mr_data_lines(proj, uids))          # where the images came from, when recorded
     defined = Set("$(e.value_name)$(e.path)" for e in pops)
     pop_lines, ai_lines = _mr_populations(pops, n)
     isempty(analysis) && push!(md, "No recorded step ran on these images.", "")

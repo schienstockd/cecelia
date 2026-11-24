@@ -1,5 +1,6 @@
 import type { GateSpec, TransformSpec } from '../stores/gating'
 import { largestSquareCols } from '../utils/tileGrid'
+import { isSplitGate, transposeSplit } from './splitGeometry'
 
 // ── Gate MONTAGE model ────────────────────────────────────────────────────────────────────────────
 // A montage is a grid of read-only gate scatters. Each tile renders ONE parent population's cells as a
@@ -70,14 +71,21 @@ export function effSpec(used: string | undefined, requested: TransformSpec, repo
 }
 // A gate outline the server projected into the current display transform (display coords), canonical
 // orientation. Transposed for the mirror tile like points/extents.
-export interface SrvGate {
-  path: string; colour: string; kind: 'rectangle' | 'polygon'
-  x_min?: number; x_max?: number; y_min?: number; y_max?: number; vertices?: [number, number][]
-}
+export type SrvGate = { path: string; colour: string } & Pick<GateSpec,
+  'kind' | 'x_min' | 'x_max' | 'y_min' | 'y_max' | 'vertices' | 'side' | 'centre' | 'arms' | 'quadrant' | 'group' |
+  'lo' | 'hi' | 'cut' | 'rule' | 'rule_ok'>
 export function transposeGate(g: SrvGate): SrvGate {
+  if (isSplitGate(g)) return transposeSplit(g)
   return g.kind === 'rectangle'
     ? { ...g, x_min: g.y_min, x_max: g.y_max, y_min: g.x_min, y_max: g.x_max }
     : { ...g, vertices: (g.vertices ?? []).map(([x, y]) => [y, x] as [number, number]) }
+}
+// A server outline → an editable gate on these axes: its geometry as projected, plus the plot's channels
+// and the transforms it is displayed in (a drag-edit is re-stored in that space).
+export function outlineToGate(s: SrvGate, x_channel: string, y_channel: string,
+                              x_transform: TransformSpec, y_transform: TransformSpec): GateSpec {
+  const { path: _p, colour: _c, ...geom } = s
+  return { ...geom, x_channel, y_channel, x_transform, y_transform }
 }
 
 // ── Transpose reuse ─────────────────────────────────────────────────────────────────────────────

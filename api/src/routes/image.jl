@@ -49,6 +49,9 @@ function api_images_register(body_bytes::Vector{UInt8})
 
         meta = Dict{String,Any}("ori_path" => abs_path, "createdBy" => author_stamp())
         isnothing(series) || (meta["ori_series"] = series)
+        # where the data came from, when the path names a known repository ID (a suggestion to confirm)
+        sug = suggest_data_source(abs_path)
+        isnothing(sug) || (meta["data_source"] = data_source_dict(sug))
         base_name = isnothing(name_override) ? splitext(basename(abs_path))[1] : name_override
 
         # No task subdirs are created here — each one is made by whoever writes into it (see
@@ -278,7 +281,9 @@ function api_images_meta(req::HTTP.Request)
 
     obj = init_object(project_uid, image_uid)
     obj isa CciaImage || return 404, JSON3.write((; error="Not an image: $image_uid"))
-    200, JSON3.write((; image=_image_payload(obj)))
+    # where the data came from: the image's own source, else its set's (data_source.jl)
+    src = data_source_reply(load_project(project_uid), obj)
+    200, JSON3.write((; image=merge(_image_payload(obj), (; dataSource = src))))
 end
 
 # GET /api/images?projectUid → a read-only listing of the project's sets + images (uid, name,

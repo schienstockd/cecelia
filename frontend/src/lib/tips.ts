@@ -38,7 +38,6 @@ export const TIPS: WhatNewCard[] = [
       'Run Segment → Cellpose on the right channel.',
       'Check the QC panel — it flags low counts, weird sizes, edge cells.',
     ],
-    shot: { id: 'app-outlines' },
     sketchAnimation: { id: 'segmentation' },
   },
   {
@@ -52,7 +51,6 @@ export const TIPS: WhatNewCard[] = [
       'Run Track → btrack; tune the config if links look wrong.',
       'Open in viewer — tracks show as trailing polylines.',
     ],
-    shot: { id: 'app-tracks' },
     sketchAnimation: { id: 'tracking' },
   },
   {
@@ -181,6 +179,30 @@ export const TIPS: WhatNewCard[] = [
       'Add a Tracks plot on the Track page or the Analysis board for a figure of the paths.',
     ],
     sketchAnimation: { id: 'viewer_tracks' },
+  },
+  {
+    id: 'tip-channel-lens',
+    kind: 'tip',
+    title: 'Channel lens + Find similar',
+    description: 'A circle on the pointer shows its own channels while the rest of the view stays quiet — read a 60-marker panel without losing the tissue. Pin it to count the populations under it; Find similar scores every cell 0–1 on how alike its neighbourhood is.',
+    steps: [
+      'In the viewer, switch on the lens beside Readout (2D).',
+      'Pick the lens channels; click the tissue to pin it.',
+      'Find similar needs a region clustering run; the view colours by the score.',
+    ],
+    sketchAnimation: { id: 'lens' },
+  },
+  {
+    id: 'tip-chain-from-history',
+    kind: 'tip',
+    title: 'Chain from past runs',
+    description: 'Tuned a few images by hand? Build a chain from what ran on them: retries are left out, and a gate step waits for you where the pipeline reads gated cells. Then run it on the rest of the set.',
+    steps: [
+      'On the Chains page, click From past runs.',
+      'Pick the set and the images you tried things on → Suggest.',
+      'Check the steps, Open in whiteboard, run it on the other images.',
+    ],
+    sketchAnimation: { id: 'chain_from_history' },
   },
   {
     id: 'tip-claude-mcp',

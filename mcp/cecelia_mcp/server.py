@@ -261,7 +261,10 @@ def get_image_info(project_uid: str, image_uid: str) -> dict:
     per channel exposureMs, gain, filterCube, illuminationIntensity; and when it was acquired. `cleanupFacts` is
     what was measured in the file at import, per channel: zero / clipped %, and where measured a
     `profile` of per-depth (`byZ`) and per-frame (`byT`) p50, p99, zero fraction and clipped count.
-    Read both against get_acquisition_knowledge. The user's note is not here: get_image_notes reads it
+    Read both against get_acquisition_knowledge. `dataSource` is where the data came from (citation,
+    doi, url, licence; `from` "image" or "set"; `confirmed` false = a suggestion import made from a
+    repository ID) or null when unknown: cite it for someone else's images, and never guess one when
+    it is null. The user's note is not here: get_image_notes reads it
     (one tool, so a turn that must not see the analyst's notes withholds just that one)."""
     img = _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
     return {k: v for k, v in img.items() if k != "note"} if isinstance(img, dict) else img
@@ -832,8 +835,12 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
       - `path`/`parent` give the tree (a pop's cells are its gate/filter/combination ∩ its parent).
       - `popType`: flow/track = gate-drawn; clust/trackclust/region = cluster pops; branch = filters on
         skeleton branches (e.g. `branch-type`).
-      - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
-        …geometry}` — the drawn gate on two channels. null for filter pops.
+      - `gate` (flow/track): `{kind: rectangle|polygon|slice|quadrant, x_channel, y_channel, x_transform,
+        y_transform, …geometry}` — the drawn gate on two channels. null for filter pops. slice / quadrant
+        are split gates: one divider (`vertices`, or `centre` + 4 `arms`), one pop per region (`side` ±1 /
+        `quadrant` 1–4), linked by `group`. range / bisector are 1D gates on ONE channel (x_channel =
+        y_channel): `lo`/`hi`, or a `cut` with `side` 1 above / -1 at-or-below; a bisector `rule`
+        `{kind: valley, lo, hi}` puts the cut at the parent's density valley in that window, per image.
       - `filter` (clust/trackclust/region/branch, and flow filter pops): `{measure, fun, values, default_all}`
         plus `conditions: [{measure, fun, values}, …]` when several rules are AND-ed (then `measure`/`fun`/
         `values` repeat only the first) — e.g. a cluster pop is `{measure: "clusters.movement", fun: "in",
@@ -2356,7 +2363,7 @@ def get_plot_image(project_uid: str, plot_id: str, max_side: int = 1600) -> list
 @_gui_tool
 def set_plot_view(project_uid: str, plot_id: str, settings: dict) -> dict:
     """CHANGE how one of the user's open plots is drawn — what its own controls change: a UMAP's
-    colouring (`colourBy`, `colourPops`, `colourAttr`), facets, layout; a summary chart's `chartType`,
+    colouring (`colourBy`, `colourPops`, `colourAttr`, `colourFeature`), facets, layout; a summary chart's `chartType`,
     `measure`, `statUnit` … Each name and value must be one `get_plot_image`'s `settings` lists for
     this plot (take one first); a multi setting takes the full list, e.g.
     `{"colourBy": "population", "colourPops": ["trackclust::B/movement/fast", …]}`.

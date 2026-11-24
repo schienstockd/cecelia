@@ -15,3 +15,9 @@ export function superplotColours(series: readonly PlotSeries[], palette: readonl
   const reps = series.flatMap(s => [...(s.pointUnits ?? []), ...(s.cellUnits ?? [])]).map(replicateOf)
   return categoryColours(reps, palette)
 }
+
+/** Is the SuperPlot layer drawn? The response carries cells AND the user has not switched it off
+ *  (`superplot` absent on a vis bag saved before the toggle existed = on). */
+export const superplotOn = (series: readonly PlotSeries[], enabled: boolean | undefined): boolean =>
+  enabled !== false && series.some(s => (s.cellPoints?.length ?? 0) > 0)
+

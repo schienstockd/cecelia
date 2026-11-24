@@ -64,7 +64,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
 
     # the task is handed only the image — recover the set that owns it so we can register a new image
     proj    = load_project(proj_uid)
-    set_idx = findfirst(s -> img.uid in s.image_uids, proj._sets)
+    set_idx = image_set_index(proj, img)
     if isnothing(set_idx)
         on_log("[ERROR] Could not find the set containing image $(img.uid)")
         return nothing
@@ -79,6 +79,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
         "zproj_op"                => p.op)
     merge!(proj_meta, _zproj_inherited_meta(src_meta))
     copy_source_meta!(proj_meta, src_meta)
+    inherit_data_source!(proj_meta, proj, img, s)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to set manifest)
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "z-$(p.op)"), meta = proj_meta, attr = img.attr)

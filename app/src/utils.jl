@@ -360,6 +360,84 @@ security says nothing about.
 """
 _file_sha256(path::AbstractString)::String = open(io -> bytes2hex(SHA.sha256(io)), path)
 
+# ── Server-lifetime caches ────────────────────────────────────────────────────────────────────────
+
+"""
+    BoundedCache(max; max_bytes = typemax(Int), nbytes = _ -> 0)
+    cached!(produce, cache, key; stamp = "", flush = false)
+    cache_get(cache, key, stamp) ; cache_put!(cache, key, stamp, value)
+
+THE server-lifetime in-memory cache: locked (handlers run on several threads), bounded to `max`
+entries — and, for a cache of large values, to `max_bytes` as measured by `nbytes(value)` — with the
+oldest-written evicted first. A value bigger than `max_bytes` on its own is returned but not kept.
+`key` names the slot; `stamp` is what the value was computed from — a hit needs the same stamp, and a
+new stamp REPLACES the slot instead of adding one, so a cache whose input keeps changing (a gate edit)
+still holds one entry per slot. A caller with everything in the key passes no stamp. `produce` runs
+OUTSIDE the lock: a slow computation on one key does not stall another; two threads missing on one key
+both compute and the later write wins. `flush` recomputes regardless — for an in-memory edit nothing
+on disk records. Values are shared, never copied: callers read them, never mutate them.
+
+`cached!` is the usual form. `cache_get` / `cache_put!` are its two halves, for a caller whose
+computation has several exits that each produce the value (`pop_df`).
+
+Why it exists at all: `init_object` builds a fresh `CciaImage` per request, so a cache held on the
+image object never survives one. The one exception is the standalone renderer
+(`api/src/image_render.jl`, `cached_render!`): it loads without `Cecelia`, so it keeps its own copy.
+"""
+struct BoundedCache
+    data::Dict{String,Tuple{String,Any,Int}}   # key => (stamp, value, bytes)
+    order::Vector{String}
+    max::Int
+    max_bytes::Int
+    nbytes::Function
+    total::Base.RefValue{Int}
+    lock::ReentrantLock
+end
+BoundedCache(max::Int; max_bytes::Int = typemax(Int), nbytes::Function = _ -> 0) =
+    BoundedCache(Dict{String,Tuple{String,Any,Int}}(), String[], max, max_bytes, nbytes, Ref(0),
+                 ReentrantLock())
+Base.length(c::BoundedCache) = lock(() -> length(c.data), c.lock)
+Base.haskey(c::BoundedCache, key::AbstractString) = lock(() -> haskey(c.data, key), c.lock)
+cache_bytes(c::BoundedCache) = lock(() -> c.total[], c.lock)
+
+function cache_get(c::BoundedCache, key::String, stamp::String)
+    hit = lock(() -> get(c.data, key, nothing), c.lock)
+    (hit !== nothing && hit[1] == stamp) ? Some(hit[2]) : nothing
+end
+
+function _cache_drop!(c::BoundedCache, key::String)
+    old = pop!(c.data, key, nothing)
+    old === nothing && return
+    c.total[] -= old[3]
+    filter!(!=(key), c.order)
+end
+
+function cache_put!(c::BoundedCache, key::String, stamp::String, v)
+    n = c.nbytes(v)::Int        # measured outside the lock
+    lock(c.lock) do
+        _cache_drop!(c, key)    # a stale slot goes even when the new value is too big to keep
+        n > c.max_bytes && return
+        push!(c.order, key)
+        c.data[key] = (stamp, v, n)
+        c.total[] += n
+        while length(c.order) > c.max || c.total[] > c.max_bytes
+            _cache_drop!(c, first(c.order))
+        end
+    end
+    v
+end
+
+"""A file's identity for a `BoundedCache` stamp: mtime + size, `"∅"` when absent."""
+file_stamp(p::AbstractString)::String = isfile(p) ? string(mtime(p), ":", filesize(p)) : "∅"
+
+function cached!(produce, c::BoundedCache, key::String; stamp::String = "", flush::Bool = false)
+    if !flush
+        hit = cache_get(c, key, stamp)
+        hit === nothing || return something(hit)
+    end
+    cache_put!(c, key, stamp, produce())
+end
+
 const SOURCE_FINGERPRINT_SAMPLE = 1 << 20   # bytes hashed from each end of the file
 
 """

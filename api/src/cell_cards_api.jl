@@ -105,9 +105,8 @@ function _cell_trace_history(med_img::CciaImage, value_name::String, pop_path::S
     for row in eachrow(hist_df)
         tid = row.track_id; ismissing(tid) && continue
         Int(round(Float64(tid))) == track_id || continue
-        tt = row.centroid_t; xx = row.centroid_x; yy = row.centroid_y
-        (tt isa Real && xx isa Real && yy isa Real) || continue
-        push!(hist, (Int(round(Float64(tt))), Float64(xx), Float64(yy)))
+        pt = trace_point(row.centroid_t, row.centroid_x, row.centroid_y)
+        pt === nothing || push!(hist, pt)
     end
     hist
 end

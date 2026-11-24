@@ -14,6 +14,8 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
+import { scopeCopy, scopeSetter } from '../../utils/scopeSwitch'
+import { isHistGate, HIST_AXIS } from '../../plots/histGeometry'
 import { isTrackFamily } from '../../plots/popTypeRegistry'
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
@@ -138,7 +140,7 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // (GatePlotPanel / GatePairsPanel), so Tile hands out square cells.
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, activePanel, shared,
+  panels, activeId, activePanel, shared, snap,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<PlotState>(
@@ -367,6 +369,12 @@ function toggleHighlight(path: string) {
     else gHL.value = toggle(gHL.value, path)
   } else if (activePanel.value) activePanel.value.state.hl = toggle(activePanel.value.state.hl, path)
 }
+// global → local keeps what's drawn: every plot's own copy starts from the committed global values
+const setScope = scopeSetter(scope, () => {
+  for (const p of panels.value) Object.assign(p.state, {
+    hl: scopeCopy(gHL.value), popSel: scopeCopy(trackPops.value), lineWidth: gLineWidth.value,
+    labels: gLabels.value, fromZero: gFromZero.value, dotSize: gDotSize.value })
+})
 function setLineWidth(v: number) { if (scope.value === 'global') gLineWidth.value = v; else if (activePanel.value) activePanel.value.state.lineWidth = v }
 function setDotSize(v: number) { if (scope.value === 'global') gDotSize.value = v; else if (activePanel.value) activePanel.value.state.dotSize = v }
 function setLabels(v: boolean)   { if (scope.value === 'global') gLabels.value = v;    else if (activePanel.value) activePanel.value.state.labels = v }
@@ -422,7 +430,8 @@ function showDefiningPlot(pop: FlatPop) {
   p.state.kind = 'single'
   p.state.parent = pop.parent
   p.state.x = pop.gate.x_channel
-  p.state.y = pop.gate.y_channel
+  // a 1D gate (range / bisector) was drawn on its channel's histogram
+  p.state.y = isHistGate(pop.gate) ? HIST_AXIS : pop.gate.y_channel
   p.state.xt = pop.gate.x_transform.kind
   p.state.yt = pop.gate.y_transform.kind
   // an asinh gate opens at its own cofactor, so its outline and the dots sit where they were drawn
@@ -601,8 +610,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                 v-tooltip.bottom="`Clear Claude's highlighted ${isTrack ? 'tracks' : 'cells'} (Esc)`">
           Clear marks · {{ assistantMarkCount }}
         </button>
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
@@ -719,13 +728,13 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
                         :tracks="isTrackFamily(activeFamily)" :groups="segPops" :selected="activePopSel" :scope="scope"
                         :single="activeSinglePop"
-                        @toggle="togglePop" @reorder="reorderPops" @update:scope="scope = $event" />
+                        @toggle="togglePop" @reorder="reorderPops" @update:scope="setScope" />
           <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                              :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                              :dot-size="activeDotSize"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
-                             @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
+                             @update:selected="onPickPop" @update:scope="setScope" @toggle-highlight="toggleHighlight"
                              @update:line-width="setLineWidth" @update:dot-size="setDotSize" @update:gate-labels="setLabels"
                              @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot"
                              @update:manualApply="manualApply = $event"

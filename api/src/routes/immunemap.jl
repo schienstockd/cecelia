@@ -141,6 +141,8 @@ function api_import_register_immunemap(body_bytes::Vector{UInt8})
             continue
         end
         meta = Dict{String,Any}("immunemap" => immunemap_image_meta(v, experiment))
+        sug = immunemap_data_source(meta["immunemap"])   # the experiment as the source, to confirm
+        isnothing(sug) || (meta["data_source"] = data_source_dict(sug))
         dt   = immunemap_declared_interval(v)
         isnothing(dt) || (meta["declaredTimeIncrement"] = dt)
         attr = immunemap_image_attrs(v, group_attrs)

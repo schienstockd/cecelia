@@ -1,4 +1,5 @@
 import type { GateSpec } from '../stores/gating'
+import { isSplitGate, transposeSplit } from './splitGeometry'
 
 // Orient a gate to a given plot axis pair. The gate matches if its two channels are the plot's two
 // channels in EITHER order (R: .flowMatchGatingParamsForPop, order-independent); when swapped,
@@ -10,6 +11,7 @@ export function orientGate(gate: GateSpec, xc: string, yc: string): GateSpec | n
   if (gate.x_channel === xc && gate.y_channel === yc) return gate
   if (gate.x_channel === yc && gate.y_channel === xc) {
     const base = { ...gate, x_channel: xc, y_channel: yc, x_transform: gate.y_transform, y_transform: gate.x_transform }
+    if (isSplitGate(gate)) return transposeSplit(base)
     return gate.kind === 'rectangle'
       ? { ...base, x_min: gate.y_min, x_max: gate.y_max, y_min: gate.x_min, y_max: gate.x_max }
       : { ...base, vertices: gate.vertices?.map(v => [v[1], v[0]] as [number, number]) }
@@ -27,11 +29,12 @@ export function orientGate(gate: GateSpec, xc: string, yc: string): GateSpec | n
 //  polygon   → rectangle the vertices' bounding box. LOSSY and WIDENING: the new gate is a
 //                        superset of the old one, so the population can only gain cells. The
 //                        caller is expected to confirm before spending that (PopulationManager).
-export const otherGateKind = (kind: GateSpec['kind']): GateSpec['kind'] =>
-  kind === 'rectangle' ? 'polygon' : 'rectangle'
+// A split gate (slice / quadrant) has no counterpart: its regions are several populations, not one shape.
+export const otherGateKind = (kind: GateSpec['kind']): GateSpec['kind'] | null =>
+  kind === 'rectangle' ? 'polygon' : kind === 'polygon' ? 'rectangle' : null
 
-export function convertGateKind(gate: GateSpec, to: GateSpec['kind'] = otherGateKind(gate.kind)): GateSpec | null {
-  if (to === gate.kind) return null
+export function convertGateKind(gate: GateSpec, to: GateSpec['kind'] | null = otherGateKind(gate.kind)): GateSpec | null {
+  if (!to || to === gate.kind || isSplitGate(gate) || isSplitGate({ kind: to })) return null
   const base = { x_channel: gate.x_channel, y_channel: gate.y_channel,
                  x_transform: gate.x_transform, y_transform: gate.y_transform }
   if (to === 'polygon') {

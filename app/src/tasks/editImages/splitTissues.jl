@@ -81,7 +81,7 @@ function _run_task(task::SplitTissues, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
     proj    = load_project(basename(proj_dir))
-    set_idx = isempty(p.toSetUid) ? findfirst(s -> img.uid in s.image_uids, proj._sets) :
+    set_idx = isempty(p.toSetUid) ? image_set_index(proj, img) :
                                     findfirst(s -> s.uid == p.toSetUid, proj._sets)
     if isnothing(set_idx)
         on_log(isempty(p.toSetUid) ? "[ERROR] Could not find the set containing image $(img.uid)" :
@@ -118,6 +118,7 @@ function _run_task(task::SplitTissues, img::CciaImage, params::Dict{String,Any};
         merge!(meta, _crop_inherited_meta(src_meta, bnt))
         merge!(meta, crop_acquisition(src_meta, bnt, src_counts))
         copy_source_meta!(meta, src_meta)
+        inherit_data_source!(meta, proj, img, s)
         new_img = add_image!(s; name = derived_image_name(proj, img.name,
                                                           split_tissue_suffix(p.nameSuffix, i, n)),
                              meta = meta, attr = img.attr)

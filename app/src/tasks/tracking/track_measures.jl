@@ -389,19 +389,18 @@ function _detect_motion_dims(tracks)::MotionDims
         "z signal ambiguous — kept 3D; review (Δz autocorr $(round(a_z,digits=2)))", metrics)
 end
 
-# Cached by the h5ad's mtime (re-tracking auto-invalidates) — so the run-form preflight and the task
-# share one cheap computation per file version. Reads only centroid + track_id (one pass).
-const _MOTION_DIMS_CACHE = Dict{String, MotionDims}()
-# Written from both the GET /api/tracking/motion-dims preflight AND the track_measures task, so
-# concurrent under `-t auto`. Serialise the check-and-fill to avoid an unlocked-Dict rehash race.
-const _MOTION_DIMS_CACHE_LOCK = ReentrantLock()
+# Cached per h5ad, stamped by its mtime + size and the calibration the tracks were scaled with (a
+# re-track or a changed µm/px or frame interval recomputes) — so the run-form preflight and the task
+# share one cheap computation per file version. Reads only centroid + track_id (one pass). Written
+# from both GET /api/tracking/motion-dims and the track_measures task, so it is the locked, bounded
+# `BoundedCache`, and the read runs outside the lock: one slow h5ad does not stall another request.
+const _MOTION_DIMS_CACHE = BoundedCache(64)
 function detect_motion_dims(props_path::AbstractString, pixel_res, time_step; flush::Bool=false)::MotionDims
-    key = "$(props_path)|$(isfile(props_path) ? mtime(props_path) : 0.0)"
-    lock(_MOTION_DIMS_CACHE_LOCK) do
-        (!flush && haskey(_MOTION_DIMS_CACHE, key)) && return _MOTION_DIMS_CACHE[key]
+    stamp = string(file_stamp(props_path), "|", pixel_res, "|", time_step)
+    cached!(_MOTION_DIMS_CACHE, String(props_path); stamp, flush) do
         tracks = [tr for (tr, _) in _load_tracks_with_labels(props_path, pixel_res, time_step)]
-        _MOTION_DIMS_CACHE[key] = _detect_motion_dims(tracks)
-    end
+        _detect_motion_dims(tracks)
+    end::MotionDims
 end
 
 # ── Main task entry point ──────────────────────────────────────────────────────

@@ -23,6 +23,7 @@
   rather than a population.
 -->
 <script setup lang="ts">
+import { scopeSetter } from '../../utils/scopeSwitch'
 import { computed, watch } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
@@ -55,7 +56,7 @@ const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
 // gating and summary canvases (useFloatingCanvas + FloatingCanvasHost).
 const {
   bindCanvas, bindZoom, workspaceStyle, hostStyle,
-  panels, activeId, shared, add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
+  panels, activeId, shared, snap, add, duplicate, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<FlowPanelState>(ckey, () => ({ kind: 'flowMetrics' }))
 
@@ -83,6 +84,8 @@ const panelModel = (st: FlowPanelState) =>
   scope.value === 'global' ? model.value : (st.model ?? model.value)
 const activeModel = computed(() =>
   scope.value === 'global' ? model.value : (activePanel.value?.state.model ?? model.value))
+// global → local keeps what's drawn: every plot's own model starts as the global one
+const setScope = scopeSetter(scope, () => { for (const p of panels.value) p.state.model = model.value })
 function setModel(v: string) {
   if (scope.value === 'global') model.value = v
   else if (activePanel.value) activePanel.value.state.model = v
@@ -122,8 +125,8 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
     <template v-else>
       <div class="cc-row cc-row-loose fp-bar">
         <PlotPicker :options="plotTypes" @pick="addKind" />
-        <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
-                              @update:cols="tileCols = $event"
+        <CanvasArrangeButtons :count="panels.length" :cols="tileCols" :snap="snap"
+                              @update:cols="tileCols = $event" @update:snap="snap = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"
                               @close-all="removeAll" />
         <div class="cc-btn-group">
@@ -150,7 +153,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
         <!-- outside the zoom layer, like the population manager: the vault stays full-size -->
         <template #overlay>
           <ModelVault v-if="showManager" :selected="activeModel" :scope="scope" :kind="vaultKind"
-                      @update:selected="setModel" @update:scope="scope = $event"
+                      @update:selected="setModel" @update:scope="setScope"
                       @update:kind="vaultKind = $event" />
         </template>
       </FloatingCanvasHost>

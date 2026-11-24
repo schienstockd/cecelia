@@ -291,7 +291,7 @@ useVisualPanel(
   border-radius: var(--cc-radius-sm); padding: 3px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .chan-btn.on { border-color: var(--cc-accent); }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
-.chan-pop { width: 15rem; max-width: 80vw; padding: 6px; }
+.chan-pop { width: 15rem; max-width: 80vw; }
 .chan-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px;
   color: var(--cc-text-dim); font-size: var(--cc-fs-xs); border-bottom: 1px solid var(--cc-border); }
 .chan-clear { background: none; border: none; color: var(--cc-accent); cursor: pointer; font-size: var(--cc-fs-xs); }

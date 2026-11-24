@@ -68,7 +68,9 @@ export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, rename_set!, set_recipe!,
        ExperimentDesign, experiment_design, experiment_design_from, experiment_design_dict, experiment_design_hash,
-       set_experiment_design!, rename_design_attr, experiment_design_history, experiment_design_version, experiment_design_grid, replicate_pairing, design_replicates, design_expect_phrase, set_name_taken, move_image!
+       set_experiment_design!, rename_design_attr,
+       DataSource, DataSourceBy, SOURCE_BY_IMPORT, SOURCE_BY_USER, data_source, data_source_from, data_source_dict,
+       data_source_reply, set_data_source!, set_image_data_source!, image_set, image_set_index, inherit_data_source!, suggest_data_source, immunemap_data_source, experiment_design_history, experiment_design_version, experiment_design_grid, replicate_pairing, design_replicates, design_expect_phrase, set_name_taken, move_image!
 export discard!, move_aside, discard_later, sweep_discarded!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes, img_defaulted_scale, run_scale_defaults,
        image_included, IMAGE_EXCLUDED_REASON, ImageRating, RATING_NONE, RATING_GOOD, RATING_CAUTION,
@@ -123,7 +125,8 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
 export apply_transform, invert_transform, transform_spec, transform_from_spec
 export transform_kind, transform_collapses, effective_transform
-export Gate, RectangleGate, PolygonGate
+export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
+       RangeGate, BisectorGate, ValleyRule, valley_cut
 export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
@@ -330,6 +333,8 @@ include("run_log.jl")
 include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")
+include("gating/split_gates.jl")
+include("gating/hist_gates.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
@@ -355,6 +360,7 @@ include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
 include("qc_gating.jl")   # after qc_cohort.jl — gating QC reuses its outlier test
 include("experiment_design.jl")   # after CciaSet/CciaProject — one design per set (EXPERIMENT_DESIGN_PLAN)
+include("data_source.jl")   # after CciaSet/CciaProject — where a set's images came from (DATA_SOURCE_PLAN)
 include("claim_checks.jl")   # after qc_cohort.jl — claim recital S0/S1 over a set
 include("acq_sampling.jl")   # pixel size / z-step / pinhole against the optics (acq_check.jl reads it)
 include("acq_check.jl")      # test-acquisition check over a set (reads meta only)

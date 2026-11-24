@@ -32,9 +32,11 @@ const props = defineProps<{
   count: number
   /** current Columns knob value (0 = Auto). Persisted by the host in its canvas `shared` bag. */
   cols?: number
+  /** Snap: dragged plots snap to each other and the canvas edges. Persisted by the host (`useFloatingCanvas`). */
+  snap?: boolean
 }>()
 
-const emit = defineEmits<{ tile: []; cascade: []; closeAll: []; 'update:cols': [number] }>()
+const emit = defineEmits<{ tile: []; cascade: []; closeAll: []; 'update:cols': [number]; 'update:snap': [boolean] }>()
 
 const plural = () => `${props.count} plot${props.count === 1 ? '' : 's'}`
 
@@ -72,6 +74,10 @@ function setCols(v: number) { emit('update:cols', v) }
     </TeleportPopover>
     <button class="cc-btn cc-btn-bare cc-btn-icon" type="button" v-tooltip.bottom="'Cascade windows'"
             @click="emit('cascade')"><i class="pi pi-clone" /></button>
+    <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': snap }" type="button"
+            :aria-pressed="!!snap" aria-label="Snap plots together" data-guide="canvas.snap"
+            v-tooltip.bottom="snap ? 'Snap on — dragged plots snap to each other and the edges' : 'Snap dragged plots to each other and the edges'"
+            @click="emit('update:snap', !snap)"><i class="pi pi-magnet" /></button>
     <ConfirmButton :needs-confirm="count > 0" @confirm="emit('closeAll')"
                    v-slot="{ armed, press }">
       <button class="cc-btn cc-btn-icon" :class="armed ? 'cc-btn-danger' : 'cc-btn-bare'" type="button" :disabled="!count"
@@ -87,7 +93,7 @@ function setCols(v: number) { emit('update:cols', v) }
 /* Columns popover — the popover itself owns surface/border/shadow/position (TeleportPopover); we only
    lay out the header + the row of chips inside. The row uses `.cc-row.cc-row-tight`; only the
    per-column min-width is scoped here so the seven column buttons line up as a chip strip. */
-.cab-opts { min-width: 12rem; display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.cab-opts { min-width: 12rem; display: flex; flex-direction: column; gap: 6px; }
 .cab-opts-hd { padding: 0 2px; }
 .cab-opts-row .cc-btn { min-width: 2rem; }
 </style>

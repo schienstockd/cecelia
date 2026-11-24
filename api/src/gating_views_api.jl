@@ -45,7 +45,8 @@ function api_gating_plot_image(req::HTTP.Request)
     rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
     xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
-    gates = _child_gate_outlines(m, pop, x, y, xt, yt)
+    gates = _child_gate_outlines(m, pop, x, y, xt, yt;
+                                 parent_raw = _plot_xy_raw(img, vn, pt, x, y, pop; labels_version = pin)[1])
     gx, gy = _gate_edges(gates)
     # ticks label the data range on an unpadded side, as plotmeta does (`_display_extent`)
     tick_range(t, (lo, hi), r, grew) = (grew[1] ? invert_transform(t, lo) : 0.0, grew[2] ? invert_transform(t, hi) : float(r[2]))
@@ -187,7 +188,9 @@ end
 function _labels_at_t(img, vn, t::Int)::Set{Int}
     df = as_df(label_props(img; value_name = vn) |> select_cols(["label", "centroid_t"]))
     "centroid_t" in names(df) || return Set{Int}(Int.(df.label))
-    Set{Int}(Int(l) for (l, ct) in zip(df.label, df.centroid_t) if round(Int, ct) == t)
+    # a cell with no finite `centroid_t` is on no frame (rounding a NaN throws)
+    Set{Int}(Int(l) for (l, ct) in zip(df.label, df.centroid_t)
+             if ct isa Real && isfinite(ct) && round(Int, ct) == t)
 end
 
 # ONE still of image `zp` at frame `t` in the saved viewer contrast — the cells view's and the example
@@ -364,7 +367,8 @@ function _example_picks(mode::AbstractString, n::Int, ins::AbstractVector{Bool},
 end
 
 # Each cell's distance to the gate's EDGE in the transformed plane, both axes scaled to the cells' own
-# 1–99 % range so neither axis dominates. Rectangle and polygon alike: the nearest edge segment.
+# 1–99 % range so neither axis dominates. Rectangle and polygon alike: the nearest edge segment; a split
+# gate's edge is its divider.
 function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector)::Vector{Float64}
     xt = Float64[apply_transform(g.x_transform, float(x)) for x in xraw]
     yt = Float64[apply_transform(g.y_transform, float(y)) for y in yraw]
@@ -374,9 +378,20 @@ function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector
         max(at(0.99) - at(0.01), eps())
     end
     sx = span(xt); sy = span(yt)
-    verts = g isa RectangleGate ?
-        [(g.x_min, g.y_min), (g.x_max, g.y_min), (g.x_max, g.y_max), (g.x_min, g.y_max)] : g.vertices
-    segs = [(verts[k], verts[k % length(verts) + 1]) for k in eachindex(verts)]
+    if g isa Cecelia.HistGate
+        # one axis: the distance to the nearest end / the cut (a rule's, on these — the parent's — cells)
+        g = Cecelia.resolve_gate(g, xraw)
+        ends = g isa RangeGate ? (g.lo, g.hi) : (g.cut,)
+        return [isfinite(v) ? minimum(abs(v - e) for e in ends) / sx : Inf for v in xt]
+    end
+    segs = if g isa Cecelia.SplitGate
+        # the divider, run out past the cells — a split gate's edge is its line / arms
+        Cecelia.divider_segments(g, Cecelia._plane_box(xt, yt, Cecelia._divider_points(g)))
+    else
+        verts = g isa RectangleGate ?
+            [(g.x_min, g.y_min), (g.x_max, g.y_min), (g.x_max, g.y_max), (g.x_min, g.y_max)] : g.vertices
+        [(verts[k], verts[k % length(verts) + 1]) for k in eachindex(verts)]
+    end
     map(eachindex(xt)) do i
         (isfinite(xt[i]) && isfinite(yt[i])) || return Inf
         px = xt[i] / sx; py = yt[i] / sy

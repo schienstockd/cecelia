@@ -9,10 +9,12 @@ import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import InlineNote from './InlineNote.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import {
-  detectKey, KEY_KIND_LABEL, parseTable, planImport, planSummary, planWrites,
-  type ImportPlan, type KeyKind, type TableImage, type TableKey,
+  columnRoles, DELIMITER_LABEL, detectKey, IGNORED_LABEL, KEY_KIND_LABEL, parseTable, planImport, planSummary,
+  planWrites, templateTable, toDelimited, type ImportPlan, type KeyKind, type TableImage, type TableKey,
 } from '../utils/attrTable'
 import { writeImportPlan } from '../utils/imageAttrApi'
+import { downloadText } from '../plots/export'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 
@@ -102,9 +104,41 @@ const notes = computed(() => {
   if (p.newAttrs.length) out.push({ short: `New: ${list(p.newAttrs, 6)}`, detail: 'Created on every image of the set' })
   const skipped = p.ignored.filter(i => i.why !== 'key')
   if (skipped.length) out.push({ short: `${skipped.length} column(s) not used`,
-    detail: list(skipped.map(i => `${i.header || '(blank)'}: ${{ blank: 'no header', imageTable: 'image table column', duplicate: 'repeated', key: '' }[i.why]}`)) })
+    detail: list(skipped.map(i => `${i.header || '(blank)'}: ${IGNORED_LABEL[i.why]}`)) })
   return out
 })
+
+// ── Before a table: how to lay one out, with the set's own images as the example ─────────────────────
+const template = computed(() => templateTable(props.images))
+// The example shows the set's first images and up to three of its attributes; a set with none yet gets two
+// illustrative columns, so the shape (one name column, one column per attribute) is still visible.
+const example = computed(() => {
+  const t = template.value
+  const imgs = t.rows.slice(0, 3)
+  if (t.header.length > 1) return { header: t.header.slice(0, 4), rows: imgs.map(r => r.slice(0, 4)), illustrative: false }
+  const fill = [['M1', 'PBS'], ['M1', 'anti-CD3'], ['M2', 'PBS']]
+  return { header: ['Name', 'Mouse', 'Treatment'], rows: imgs.map((r, i) => [r[0], ...fill[i]]), illustrative: true }
+})
+const { isCopied, copy } = useCopyFlash()
+// tab-separated: what a spreadsheet takes as cells on paste
+const copyTemplate = () => copy(toDelimited(template.value, '\t'))
+const downloadTemplate = () => downloadText('attributes.csv', toDelimited(template.value, ','), 'text/csv')
+
+// ── After a table: how it was read — each column's role over its first rows ─────────────────────────
+const RAW_ROWS = 4
+const roles = computed(() => table.value ? columnRoles(table.value, key.value.column, props.images) : [])
+function roleLabel(r: ReturnType<typeof columnRoles>[number]) {
+  if (r.role === 'key') return `Image · ${KEY_KIND_LABEL[key.value.kind]}`
+  if (r.role === 'attr') return r.isNew ? `${r.attr} · new` : r.attr
+  return `Not used · ${IGNORED_LABEL[r.why]}`
+}
+function roleTip(r: ReturnType<typeof columnRoles>[number]) {
+  if (r.role === 'key') return 'Names the image each row is for'
+  const pick = ' · click to match images by it'
+  if (r.role === 'attr') return (r.isNew ? 'Becomes a new attribute' : 'Writes this attribute') + pick
+  return 'Left out' + pick
+}
+function useAsKey(column: number) { if (column !== key.value.column) keyOverride.value = { ...key.value, column } }
 
 // ── Apply ─────────────────────────────────────────────────────────────────────────────────────────
 const busy = ref(false)
@@ -144,7 +178,56 @@ async function apply() {
         </div>
       </div>
 
+      <div v-if="!table" class="at-guide">
+        <div class="cc-row">
+          <span class="at-h">How to lay out the table</span>
+          <span class="at-spacer" />
+          <button class="cc-btn cc-btn-ghost cc-btn-dense" v-tooltip.bottom="'This set\'s images and attributes, to paste into a spreadsheet'"
+                  @click="copyTemplate">
+            <i :class="['pi', isCopied() ? 'pi-check' : 'pi-copy']" /> {{ isCopied() ? 'Copied' : 'Copy template' }}
+          </button>
+          <button class="cc-btn cc-btn-ghost cc-btn-dense" v-tooltip.bottom="'The same, as a CSV file'" @click="downloadTemplate">
+            <i class="pi pi-download" /> Download
+          </button>
+        </div>
+        <table class="at-raw">
+          <thead><tr>
+            <th v-for="(h, i) in example.header" :key="i"><span :class="['at-role', i ? 'at-role-attr' : 'at-role-key']">{{ i ? 'Attribute' : 'Image' }}</span>{{ h }}</th>
+          </tr></thead>
+          <tbody>
+            <tr v-for="(r, ri) in example.rows" :key="ri"><td v-for="(c, ci) in r" :key="ci" :class="{ 'cc-muted': example.illustrative && ci }">{{ c }}</td></tr>
+          </tbody>
+        </table>
+        <ul class="at-rules">
+          <li>First row: column names. Then one row per image.</li>
+          <li>One column names the image: its name (extension optional), original file path, or ID. Found automatically.</li>
+          <li>Every other column becomes an attribute, named by its header. A blank cell leaves the value as it is.</li>
+          <li>Comma, tab or semicolon separated. A range copied from Excel pastes as it is; save <code>.xlsx</code> as CSV first.</li>
+        </ul>
+      </div>
+
       <template v-if="table && plan">
+        <div class="cc-row">
+          <span class="at-h">Read as</span>
+          <span class="cc-readout cc-fs-xs">{{ DELIMITER_LABEL[table.delimiter] }}-separated · {{ table.rows.length }} row(s) · {{ table.header.length }} column(s)</span>
+        </div>
+        <div class="at-raw-wrap">
+          <table class="at-raw">
+            <thead><tr>
+              <th v-for="r in roles" :key="r.column" :class="{ 'at-ignored': r.role === 'ignored', 'at-pick': r.role !== 'key' }"
+                  v-tooltip.bottom="roleTip(r)" @click="useAsKey(r.column)">
+                <span :class="['at-role', `at-role-${r.role}`]">{{ roleLabel(r) }}</span>{{ r.header || `Column ${r.column + 1}` }}
+              </th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="(row, ri) in table.rows.slice(0, RAW_ROWS)" :key="ri">
+                <td v-for="r in roles" :key="r.column" :class="{ 'at-ignored': r.role === 'ignored' }">{{ row[r.column] }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="table.rows.length > RAW_ROWS" class="cc-muted cc-fs-xs">+{{ table.rows.length - RAW_ROWS }} more row(s)</div>
+        </div>
+
         <div class="cc-row">
           <span class="cc-muted">Match by</span>
           <select v-model="keyColumn" v-tooltip.bottom="'The column that names each image'">
@@ -154,6 +237,7 @@ async function apply() {
           <span class="cc-readout cc-fs-xs">{{ planSummary(plan) }}</span>
         </div>
 
+        <span class="at-h">Result</span>
         <div v-if="!plan.matched.length" class="cc-empty">No row matches an image — try another column</div>
         <div v-else class="at-table">
           <SelectionTable :columns="columns" :rows="rows" id-key="uid" selection-mode="none" density="compact">
@@ -188,4 +272,19 @@ async function apply() {
 .at-over { background: var(--cc-tint-amber); color: var(--cc-ink-amber); border-radius: var(--cc-radius-xs); padding: 0 3px; }
 .at-notes { display: flex; flex-direction: column; gap: 4px; }
 .at-spacer { flex: 1; }
+.at-h { font-weight: 600; }
+.at-guide { display: flex; flex-direction: column; gap: 6px; }
+.at-rules { margin: 0; padding-left: 18px; color: var(--cc-text-dim); }
+.at-rules li { margin: 1px 0; }
+.at-raw-wrap { overflow-x: auto; }
+.at-raw { border-collapse: collapse; font-size: var(--cc-fs-xs); }
+.at-raw th, .at-raw td { border: 1px solid var(--cc-border); padding: 2px 6px; text-align: left; white-space: nowrap;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.at-raw th { font-weight: 600; vertical-align: bottom; }
+.at-pick { cursor: pointer; }
+.at-ignored { color: var(--cc-text-dim); text-decoration: line-through; }
+.at-role { display: block; font-weight: 500; font-size: 0.9em; }
+.at-role-key { color: var(--cc-accent); }
+.at-role-attr { color: var(--cc-ink-green); }
+.at-role-ignored { color: var(--cc-text-dim); }
 </style>

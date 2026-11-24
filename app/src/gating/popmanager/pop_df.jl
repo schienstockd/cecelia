@@ -512,14 +512,14 @@ surface them. Generic over `_DERIVED_POPS`, so future reserved pops appear autom
 derived_pop_paths(pop_type::PopTypeArg)::Vector{String} =
     ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == _coerce_pop_type(pop_type)]
 
-# Cached by the gating sidecar's + the h5ad's mtimes, the same auto-invalidation `pop_df` keys on
-# (`_pop_df_mtime`): a saved gate edit or a re-tracked segmentation changes a stamp, anything else
-# reuses the answer. Worth caching because the picker asks on EVERY load and the answer costs a full
+# Cached by `_gating_inputs_stamp` (allow_list.jl) — every gating map's digest, the segmentation's
+# sidecars, the h5ad's mtime + size and the image's µm/px: a saved gate edit, a borrowed sibling map's
+# edit, a calibration edit or a re-tracked segmentation changes the stamp; anything else reuses the
+# answer. Worth caching because the picker asks on EVERY load and the answer costs a full
 # gate evaluation per tracked segmentation. Module-level, NOT on the image — `init_object` builds a
-# fresh `CciaImage` per request, so an object-held cache (`img._pop_df_cache`) never survives one.
-# Written from concurrent request handlers, hence the lock (mirrors `_MOTION_DIMS_CACHE`).
-const _TRACKED_PARENTS_CACHE = Dict{String,Set{String}}()
-const _TRACKED_PARENTS_LOCK  = ReentrantLock()
+# fresh `CciaImage` per request, so an object-held cache never survives one.
+# Locked and bounded by `BoundedCache` (utils.jl).
+const _TRACKED_PARENTS_CACHE = BoundedCache(256)   # small Set{String} values; one slot per segmentation × pop type
 
 """
     tracked_pop_parents(img; value_name, pop_type = "flow", flush = false) -> Set{String}
@@ -545,13 +545,10 @@ was never written to disk — the same override `pop_df`'s `flush_cache` is.
 function tracked_pop_parents(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing,
                              pop_type::PopTypeArg="flow", flush::Bool=false)::Set{String}
     vn = resolve_value_name(img, value_name)
-    gp = gating_path(img._dir, vn; pop_type=pop_type)
-    lp = img_label_props_path(img, vn)
-    key = string(pop_type, "|", gp, "@", _pop_df_mtime(gp), "|", lp, "@", _pop_df_mtime(lp))
-    lock(_TRACKED_PARENTS_LOCK) do
-        (!flush && haskey(_TRACKED_PARENTS_CACHE, key)) && return _TRACKED_PARENTS_CACHE[key]
-        _TRACKED_PARENTS_CACHE[key] = _tracked_pop_parents(img, vn, pop_type)
-    end
+    slot = string(pop_type, "|", img._dir, "|", vn)
+    cached!(_TRACKED_PARENTS_CACHE, slot; stamp = _gating_inputs_stamp(img, vn), flush) do
+        _tracked_pop_parents(img, vn, pop_type)
+    end::Set{String}
 end
 
 function _tracked_pop_parents(img::CciaImage, vn::AbstractString,

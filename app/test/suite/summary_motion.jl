@@ -57,6 +57,12 @@
                                measure="live.track.speed", granularity=:track,
                                raw_points=true, max_points=10)
         @test length(bx["series"][1]["points"]) == min(ntr, 10)
+        # max_points=0 → every point (the box/strip Subsample toggle switched off sends maxPoints 0)
+        bxall = plot_summary_data(img, "live", ["B/_tracked"], "boxplot";
+                                  measure="live.track.speed", granularity=:track,
+                                  raw_points=true, max_points=0)
+        @test length(bxall["series"][1]["points"]) == bxall["series"][1]["n"] == ntr
+        @test bxall["series"][1]["median"] == bx["series"][1]["median"]   # the cap never moves the stats
         pts = plot_summary_data(img, "live", ["B/_tracked"], "points";
                                 measure="live.track.speed", granularity=:track, max_points=10)
         @test pts["chartType"] == "points" && length(pts["series"][1]["points"]) == min(ntr, 10)
@@ -90,6 +96,21 @@ end
     # a 2D-only track set (no z column) is trivially 2D
     P2 = zeros(12, 2); for k in 1:11; P2[k+1, :] = P2[k, :] .+ [dy(k), dx(k)]; end
     @test Cecelia._detect_motion_dims([Cecelia.Track(1, Float64.(0:11), P2)]).dims == 2
+end
+
+# the cached form: one slot per h5ad, recomputed when the file or the calibration it was scaled with
+# changes — a z step of 1 vs 20 µm is a different answer from the same file
+@testset "detect_motion_dims cache stamp" begin
+    fx = fixture_for(:cells, :movie, :tracked)
+    begin
+        p = joinpath(mktempdir(), "B.h5ad"); cp(fixture_table(fx), p)
+        a = Cecelia.detect_motion_dims(p, [1.0, 1.0, 1.0], 1.0)
+        @test Cecelia.detect_motion_dims(p, [1.0, 1.0, 1.0], 1.0) === a          # hit
+        st = Cecelia._MOTION_DIMS_CACHE.data[p][1]
+        Cecelia.detect_motion_dims(p, [20.0, 1.0, 1.0], 1.0)
+        @test Cecelia._MOTION_DIMS_CACHE.data[p][1] != st                        # same slot, new stamp
+        @test count(k -> k == p, Cecelia._MOTION_DIMS_CACHE.order) == 1
+    end
 end
 
 # ── uns reader: the anisotropy grid on the branch sidecar ─────────────────────────────────────

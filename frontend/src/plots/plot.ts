@@ -15,7 +15,8 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import { replicateOf, superplotColours } from './superplot'
+import { replicateOf, superplotColours, superplotOn } from './superplot'
+import { pointOffsets, sinaOffsets, type PointLayout } from './pointLayout'
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
@@ -23,7 +24,7 @@ import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElb
 import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
-import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
+import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER, AXIS_TITLE_STYLE, TICK_PAD_PX, yTitleRoomPx } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
 import { trackLabelPath } from '../utils/popName'
@@ -127,10 +128,12 @@ export function distinctColors(n: number): string[] {
 // Ported from the old R plotCharts adjustments (plotHelpers.R) — grouped in the SeriesPicker Options.
 export interface VisProps {
   // points / data
-  jitter: 'beeswarm' | 'random' | 'none'   // data offset (R jitterType: quasirandom/random/none)
-  pointSize: number                          // raw-point radius (beeswarm / strip / box overlay)
+  jitter: PointLayout                        // data offset (plots/pointLayout.ts; a saved 'beeswarm' reads as sina)
+  pointSize: number                          // raw-point radius (strip / box overlay)
   pointOpacity: number                       // raw-point opacity (R alphaInput)
   colorData: boolean                         // colour points by series (else single grey) (R colorData)
+  superplot?: boolean                        // draw the cells under replicate means (plots/superplot.ts); absent = on
+  subsample?: boolean                        // box/strip: draw ≤ SUBSAMPLE_POINTS per series (`maxPointsFor`); absent = on
   // statistics / legend
   legend: boolean                            // show the colour legend
   // OUTER width PlotChart renders at, in px. Needed to decide whether the x tick labels fit their
@@ -146,6 +149,10 @@ export interface VisProps {
   // the node and re-renders once with the real number; until then `legendTopPad` falls back to an
   // estimate. See legendTopPad.
   legendHeight?: number
+  // MEASURED width of the widest y tick label, in px (`yTickLabelPx`, plots/overlays.ts) — the y title
+  // sits left of the tick labels, so the left margin is sized from it. Same two-pass policy as
+  // `legendHeight`; absent → the chart's own margin is taken as the tick labels' room. See fitAxisTitles.
+  yTickPx?: number
   // layout / scale
   logScale: boolean                          // log measure axis (R scaleLog10)
   grid: boolean                              // show gridlines (R noGrid inverted; default off = classic)
@@ -310,8 +317,17 @@ const facetSingle = (v: Pick<VisProps, 'facetBy' | 'facet'>) => facetMode(v) ===
 const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, seriesKey: string) =>
   facetMode(v) === 'image' ? (s.uID ?? '') : seriesKey
 
+/** Raw points per series the box/strip charts draw while Subsample is on. The server strides them
+ *  evenly over the sorted values (plot_data.jl `_downsample`), so the cloud keeps the distribution's
+ *  shape; box stats, n and the group tests always use every cell. Drawing is ~8 µs a dot (SVG). */
+export const SUBSAMPLE_POINTS = 500
+/** The `maxPoints` a plot_data request sends: box/strip follow Subsample (0 = every point); any other
+ *  chart sends none and keeps the server's default cap. */
+export const maxPointsFor = (c: ChartType, v: Pick<VisProps, 'subsample'>): number | undefined =>
+  c === 'boxplot' || c === 'strip' ? (v.subsample === false ? 0 : SUBSAMPLE_POINTS) : undefined
+
 export const defaultVis = (): VisProps => ({
-  jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
+  jitter: 'sina', pointSize: 2, pointOpacity: 0.5, colorData: true, superplot: true,
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, facetBy: 'none',
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
@@ -461,6 +477,28 @@ export function fitCellTitles<T extends { t: string }>(rows: readonly T[], inner
 const facetLabels = (r: PlotDataResponse, o: BuildOpts, keyOf: (s: PlotSeries) => string) =>
   [...new Set(r.series.map(s => facetKeyOf(o, s, keyOf(s))))]
 
+/**
+ * Axis titles in Prism's layout (`AXIS_TITLE_STYLE`): the y title rotated, centred on the frame, LEFT
+ * of the tick labels; the x title centred under the axis; no direction arrows. Plot's default put the
+ * y title horizontally in the top margin ("↑ speed"), where wide tick labels ran into it and the legend
+ * overlay sits, and it read differently from the x title.
+ *
+ * The left margin is the tick labels + their tick and padding + the title's room. The tick labels'
+ * width is measured on the previous render (`o.yTickPx`); on the first pass the chart's own margin —
+ * sized for its tick labels alone — stands in for it.
+ */
+export function fitAxisTitles<T extends Record<string, unknown> | null>(opts: T, o: { fontSize?: number; yTickPx?: number }): T {
+  if (!opts) return opts
+  const o2 = opts as Record<string, unknown>
+  for (const k of ['x', 'y'] as const) o2[k] = { ...(o2[k] ?? {}) as object, ...AXIS_TITLE_STYLE }
+  const y = o2.y as Record<string, unknown>
+  if (y.axis === null || y.label === null || y.label === '') return opts
+  const base = Number(o2.marginLeft ?? THEME.marginLeft)
+  const tickRoom = o.yTickPx != null && o.yTickPx > 0 ? 3 + o.yTickPx + TICK_PAD_PX : base
+  o2.marginLeft = Math.max(base, tickRoom + yTitleRoomPx(o.fontSize || 11))
+  return opts
+}
+
 const THEME = {
   style: { background: PAPER, color: PAPER_INK, fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
@@ -542,34 +580,6 @@ function kde(values: number[], gridN = 64): { v: number; d: number }[] {
   return out
 }
 
-// Deterministic beeswarm: bin points by value into rows (no overlap), spread each row symmetrically
-// about the series centre, and NORMALISE so the densest row exactly fills ±halfWidth — sparser rows
-// are proportionally narrower, giving a real swarm silhouette (wide where dense). Unlike random
-// jitter this is a true beeswarm AND stable across re-renders (no reshuffle/flicker on resize).
-// Returns x-offsets (in series-index units) parallel to `values`. Bin count scales with n (≈2√n,
-// clamped); we have no pixel scale in the builder, so this approximates the pixel-row packing a
-// force layout would do.
-function swarmOffsets(values: number[], halfWidth = 0.26, bins?: number): number[] {
-  const pts = values.map((v, i) => ({ v, i })).filter(p => Number.isFinite(p.v))
-  const out = new Array(values.length).fill(0)
-  const n = pts.length
-  if (n < 2) return out
-  const lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v))
-  const span = (hi - lo) || 1
-  const B = bins ?? Math.max(10, Math.min(60, Math.round(Math.sqrt(n) * 2)))
-  const rows = new Map<number, { v: number; i: number }[]>()
-  for (const p of pts) {
-    const b = Math.min(B - 1, Math.floor(((p.v - lo) / span) * B))
-    ;(rows.get(b) ?? rows.set(b, []).get(b)!).push(p)
-  }
-  let maxHalf = 1
-  for (const g of rows.values()) maxHalf = Math.max(maxHalf, Math.floor(g.length / 2))
-  const step = halfWidth / maxHalf                              // densest row fills ±halfWidth
-  for (const g of rows.values())
-    g.forEach((p, k) => { out[p.i] = (Math.ceil(k / 2) * (k % 2 === 1 ? 1 : -1)) * step }) // 0,+1,-1,+2,-2,…
-  return out
-}
-
 // numeric formatter for tooltips
 const fmt = (x: unknown) => (typeof x === 'number' && Number.isFinite(x)) ? (Math.abs(x) >= 1000 || (x !== 0 && Math.abs(x) < 0.01) ? x.toExponential(2) : x.toPrecision(4).replace(/\.?0+$/, '')) : ''
 
@@ -589,12 +599,12 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   if (!r) return null
   // matrix/heatmap is a pooled grid (cells, not series) — its own builder + theme, returned early so
   // none of the per-series colour-scale / measure-axis post-processing below applies.
-  if (o.chartType === 'heatmap') return buildHeatmap(Plot, r, o)
+  if (o.chartType === 'heatmap') return fitAxisTitles(buildHeatmap(Plot, r, o), o)
   // the HMM state-count comparison: curves of fit against K from the runs' fit records, no series
-  if (o.chartType === 'elbow') return buildHmmElbow(Plot, r, o)
+  if (o.chartType === 'elbow') return fitAxisTitles(buildHmmElbow(Plot, r, o), o)
   // time series (measure/count over an ordered column, e.g. t) → a geom_smooth line, not thousands
   // of bars/boxes.
-  if (o.trend && r.groupBy) return buildTrendLine(Plot, r, o)
+  if (o.trend && r.groupBy) return fitAxisTitles(buildTrendLine(Plot, r, o), o)
   if (!r.series.length) return null
   // Faceting BY IMAGE moves the image out of the series key and onto the panel header, so what is
   // left — segmentation / population / group — becomes the colour and position INSIDE each panel.
@@ -734,6 +744,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // carries the axes/box/median/mean/whiskers; box fills come from the (palette) colour scale.
   const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   opts.style = { ...(opts.style as object ?? {}), fontSize: `${o.fontSize || 11}px`, color: fg, background: bg }
+
+  // the y title's room on the left — before anything below reads the margins (facet headers, stats band)
+  fitAxisTitles(opts, o)
 
   // legend reflects the DISTINCT colours drawn (deduped) — PlotChart reads `_legend` for the overlay.
   // A stacked chart's fill is the CATEGORY, so its legend is the category scale the builder set.
@@ -1384,16 +1397,18 @@ function superplotCellRows(series: readonly PlotSeries[], keyOf: (s: PlotSeries)
     const vals = s.cellPoints ?? []
     if (i === undefined || !vals.length) continue
     const units = s.cellUnits ?? []
-    const off = offsetsFor(o, vals, halfWidth)
+    const off = sinaOffsets(vals, halfWidth)                  // always a cloud, whatever the point offset
     vals.forEach((v, k) => rows.push({ series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
                                        fill: colours.get(replicateOf(units[k] ?? '')) ?? 'currentColor' }))
   }
   return rows
 }
-// small, faint, no outline: the spread between cells, under the means that carry the test
+// small, faint, no outline: the spread between cells, under the means that carry the test. Clipped to
+// the frame: the axis is fitted to the boxes and means, so a fast outlier cell is cut, not drawn
+// over the legend (Y max shows it).
 function superplotCellMarks(Plot: PlotModule, cells: SpCellRow[], o: BuildOpts, a: ReturnType<typeof axM>, f: object) {
-  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(1, o.pointSize * 0.6),
-                                           fill: 'fill', fillOpacity: 0.35, ...f })] : []
+  return cells.length ? [Plot.dot(cells, { [a.pos]: 'xj', [a.meas]: 'value', r: Math.max(0.8, o.pointSize * 0.5),
+                                           fill: 'fill', fillOpacity: Math.min(0.3, o.pointOpacity), clip: true, ...f })] : []
 }
 
 // coord_flip (R): when rotated, the series (position) axis is Y and the MEASURE axis is X; otherwise
@@ -1403,15 +1418,6 @@ function axM(o: BuildOpts) {
   return o.rotate
     ? { pos: 'y', meas: 'x', posLo: 'y1', posHi: 'y2', measLo: 'x1', measHi: 'x2' as const }
     : { pos: 'x', meas: 'y', posLo: 'x1', posHi: 'x2', measLo: 'y1', measHi: 'y2' as const }
-}
-
-// per-point x-offset within a series — beeswarm (deterministic swarm), random (deterministic hash,
-// no resize reshuffle), or none (R jitterType: quasirandom/random/none).
-function offsetsFor(o: BuildOpts, vals: number[], halfWidth: number): number[] {
-  if (o.jitter === 'none') return vals.map(() => 0)
-  if (o.jitter === 'random')
-    return vals.map((_, i) => ((Math.abs(Math.sin((i + 1) * 12.9898) * 43758.5453) % 1) * 2 - 1) * halfWidth)
-  return swarmOffsets(vals, halfWidth)
 }
 
 // ── numeric: histogram (overlaid, translucent, shared bin edges) ──────────────────
@@ -1571,12 +1577,12 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
              lower: floor ? Math.max(0, s.lower as number) : s.lower, upper: s.upper, mean: s.mean, n: s.n,
              tip: `${k}\nmedian ${fmt(s.median)}\nq1 ${fmt(s.q1)}  q3 ${fmt(s.q3)}\nn ${s.n}` }
   })
-  // raw points overlaid as a beeswarm/jitter around the series index (sit ON the box, not beside it)
+  // raw points overlaid around the series index (sit ON the box, not beside it) — plots/pointLayout.ts
   const activeIds = o.brushActiveIds ?? null
   const pts: Array<{ series: string; fkey: string; xj: number; value: number; unitFill?: string;
                      pointId: number | null; pointUid: string; pointVn: string; pointPop: string }> = []
   // SuperPlot: the dots are replicate means, coloured by replicate, with their cells underneath
-  const sp = superplotColours(r.series, POPULATION_PALETTE)
+  const sp = superplotOn(r.series, o.superplot) ? superplotColours(r.series, POPULATION_PALETTE) : null
   const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.26) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
@@ -1584,7 +1590,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const pids = (s.pointIds ?? []) as number[]
     const puids = (s.pointUids ?? []) as string[]
     const units = (s.pointUnits ?? []) as string[]
-    const off = offsetsFor(o, vals, 0.26)                     // ≈ box half-width, points sit over the box
+    const off = pointOffsets(o.jitter, vals, 0.26)                     // ≈ box half-width, points sit over the box
     vals.forEach((v, k) => pts.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
       unitFill: sp ? sp.get(replicateOf(units[k] ?? '')) : undefined,
@@ -1617,51 +1623,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   const f = fxCh(o), a = axM(o)
   const ptFill = sp ? ((d: { unitFill?: string }) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
-  // Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
-  // active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
-  // outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
-  // drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
-  // delta was too subtle at swarm density — the ring is what actually pops.
-  //
-  // MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
-  // — the dot's identity selects that source's id set, and only ids from THAT source match.
-  // Fixes two ambiguities in one:
-  //   • track_id=5 exists in every (image, segmentation) numeric space, so a lasso on
-  //     segmentation B was lighting up segmentation T's dots too. `(uid, vn)` fixes that.
-  //   • two POPULATIONS under the same (uid, vn) share the numeric space too — a track with
-  //     cells in both B and T appears once per box, and lassoing one lit both. The specific
-  //     `(uid, vn, pop)` key fixes that. The renderer tries the specific key FIRST and only
-  //     falls back to `(uid, vn)` for writers that don't know pop (Show button, MCP mark_*):
-  //     those genuinely want to highlight the track wherever it appears on that (uid, vn).
-  // If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
-  // not-brushable dot would look like a broken renderer.
-  const dimOpacity = 0.08
-  const isPerSource = activeIds instanceof Map
-  type PtRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
-  const matches = (d: PtRow): boolean => {
-    if (d.pointId == null || !activeIds) return false
-    if (isPerSource) {
-      const map = activeIds as Map<string, Set<number>>
-      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
-      if (map.get(specKey)?.has(d.pointId)) return true
-      // Fallback: a writer that only knows (uid, vn) — Show button, MCP mark_* — targets every
-      // dot in that (uid, vn) regardless of pop. That's the correct semantics for a "highlight
-      // this track" write: the track's location within populations isn't what the writer meant
-      // to narrow by, so we let it match across pops on the same (uid, vn).
-      const vnKey = `${d.pointUid}|${d.pointVn}`
-      return map.get(vnKey)?.has(d.pointId) ?? false
-    }
-    return (activeIds as Set<number>).has(d.pointId)
-  }
-  const ptFillOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : o.pointOpacity
-  const ptStrokeWidth = activeIds
-    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
-    : 0.5
-  const ptStrokeOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
-    : 0.55
+  const { ptFillOpacity, ptStrokeWidth, ptStrokeOpacity } = rawPointStyle(o, activeIds, !!sp)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
@@ -1739,6 +1701,51 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
 }
 
+// ── raw-point styling, shared by the box overlay and the strip chart ─────────────────
+// Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
+// active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
+// outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
+// drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
+// delta was too subtle at swarm density — the ring is what actually pops.
+//
+// The outline fades with Point opacity, like the fill: a fixed outline stayed drawn when the user
+// faded the points, so a dense cloud never thinned out. A SuperPlot replicate mean keeps its fixed
+// fill/outline — it must read over its cells, and Point opacity is the cells' knob.
+//
+// MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
+// — the dot's identity selects that source's id set, and only ids from THAT source match.
+// Fixes two ambiguities in one:
+//   • track_id=5 exists in every (image, segmentation) numeric space, so a lasso on
+//     segmentation B was lighting up segmentation T's dots too. `(uid, vn)` fixes that.
+//   • two POPULATIONS under the same (uid, vn) share the numeric space too — a track with
+//     cells in both B and T appears once per box, and lassoing one lit both. The specific
+//     `(uid, vn, pop)` key fixes that. The renderer tries the specific key FIRST and only
+//     falls back to `(uid, vn)` for writers that don't know pop (Show button, MCP mark_*):
+//     those genuinely want to highlight the track wherever it appears on that (uid, vn).
+// If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
+// not-brushable dot would look like a broken renderer.
+type BrushRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
+function rawPointStyle(o: BuildOpts, activeIds: BuildOpts['brushActiveIds'], superplotMeans: boolean) {
+  const fill = superplotMeans ? 0.9 : o.pointOpacity
+  const stroke = superplotMeans ? 0.55 : o.pointOpacity
+  if (!activeIds) return { ptFillOpacity: fill, ptStrokeWidth: 0.5, ptStrokeOpacity: stroke }
+  const dimOpacity = 0.08
+  const ids = activeIds
+  const matches = (d: BrushRow): boolean => {
+    if (d.pointId == null) return false
+    if (ids instanceof Map) {
+      if (ids.get(`${d.pointUid}|${d.pointVn}|${d.pointPop}`)?.has(d.pointId)) return true
+      return ids.get(`${d.pointUid}|${d.pointVn}`)?.has(d.pointId) ?? false   // (uid, vn)-only writer
+    }
+    return ids.has(d.pointId)
+  }
+  return {
+    ptFillOpacity: (d: BrushRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : fill,
+    ptStrokeWidth: (d: BrushRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5,
+    ptStrokeOpacity: (d: BrushRow) => matches(d) ? 1 : d.pointId != null ? 0 : stroke,
+  }
+}
+
 // ── numeric: strip / jitter (raw points, downsampled) ─────────────────────────────
 // Point-source brushing is wired the same way as the boxplot jitter — server emits `pointIds`
 // (and `pointUids` for pooled cross-image) on the shared /api/plot_data points branch, the dot
@@ -1752,7 +1759,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   type PtRow = { series: string; fkey: string; xj: number; value: number; unitFill?: string;
                  pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
   const rows: PtRow[] = []
-  const sp = superplotColours(r.series, POPULATION_PALETTE)                       // SuperPlot: means over their cells
+  const sp = superplotOn(r.series, o.superplot) ? superplotColours(r.series, POPULATION_PALETTE) : null  // SuperPlot: means over their cells
   const cells = sp ? superplotCellRows(r.series, keyOf, idx, o, sp, 0.42) : []
   for (const s of r.series) {
     const i = idx.get(keyOf(s))!
@@ -1760,7 +1767,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const pids = (s.pointIds ?? []) as number[]
     const puids = (s.pointUids ?? []) as string[]
     const units = (s.pointUnits ?? []) as string[]
-    const off = offsetsFor(o, vals, 0.42)                     // wider swarm (no box to overlay)
+    const off = pointOffsets(o.jitter, vals, 0.42)            // wider cloud (no box to overlay)
     vals.forEach((v, k) => rows.push({
       series: keyOf(s), fkey: facetKeyOf(o, s, keyOf(s)), xj: i + off[k], value: v,
       unitFill: sp ? sp.get(replicateOf(units[k] ?? '')) : undefined,
@@ -1772,29 +1779,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   if (!rows.length) return null
   const a = axM(o)
-  const dimOpacity = 0.08
-  const isPerSource = activeIds instanceof Map
-  const matches = (d: PtRow): boolean => {
-    if (d.pointId == null || !activeIds) return false
-    if (isPerSource) {
-      const map = activeIds as Map<string, Set<number>>
-      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
-      if (map.get(specKey)?.has(d.pointId)) return true
-      const vnKey = `${d.pointUid}|${d.pointVn}`
-      return map.get(vnKey)?.has(d.pointId) ?? false
-    }
-    return (activeIds as Set<number>).has(d.pointId)
-  }
   const ptFill = sp ? ((d: PtRow) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
-  const ptFillOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : o.pointOpacity
-  const ptStrokeWidth = activeIds
-    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
-    : 0.5
-  const ptStrokeOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
-    : 0.55
+  const { ptFillOpacity, ptStrokeWidth, ptStrokeOpacity } = rawPointStyle(o, activeIds, !!sp)
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters, color })
   return {

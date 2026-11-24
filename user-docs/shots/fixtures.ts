@@ -36,3 +36,15 @@ export const TCELL_TIMELAPSE: FixtureProject = {
     { image: 'TKufLV', segmentation: 'Tcells', name: 'P14', parent: '/qc/non-OTI', fromSource: true },
   ],
 }
+
+/** A PhenoCycler section of human small intestine (source project "PhenoCycler 0064520 cycle registration",
+ *  set "HuMAP tissues"; 60 named markers), segmented as `cells` and clustered. Its cell clusters are
+ *  recreated from the source's own (what a lens's chip counts). Public data, not the lab's: HuBMAP
+ *  HBM666.MCZF.973, recorded as its set's data source, which the copy carries, so a caption cites
+ *  `{{<project>.2dR91B.citation}}` and `.doi` from the record, never typed. */
+export const HUBMAP_INTESTINE: FixtureProject = {
+  source: 'mjphFQ', images: { '2dR91B': 'Human small intestine, PhenoCycler' }, name: 'Small intestine', results: true,
+  gates: ['Epithelial', 'DEFA5-ITLN1-OLFM4 crypt', 'CD20 B', 'Lymphoid, mixed', 'CD38 plasma', 'Myeloid',
+          'CD3-PGP95, CD45 low', 'Endothelial', 'Stromal', 'CD56-SYNAP-TENC', 'Low signal']
+    .map(name => ({ image: '2dR91B', name, popType: 'clust' as const, fromSource: true as const })),
+}

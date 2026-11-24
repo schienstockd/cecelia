@@ -72,11 +72,6 @@ mutable struct CciaImage
     # carry `starred: true`, read as RATING_GOOD.
     rating::ImageRating
     _dir::String                      # {proj}/1/{uid}/ — runtime only
-    # runtime-only pop_df result cache (keyed by request hash; values are DataFrames).
-    # Mirrors R cciaImage `private$filteredPopDT`. Not serialised; cleared via
-    # `pop_df(...; flush_cache=true)`. Typed loosely because DataFrames is imported after
-    # this file in the module include order.
-    _pop_df_cache::Dict{String,Any}
 end
 
 function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, dir="")
@@ -88,8 +83,7 @@ function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, 
               Dict{String,Union{Vector{String},String}}(),   # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
               true, "", RATING_NONE,              # included (default), note, rating
-              dir,
-              Dict{String,Any}())                 # _pop_df_cache (runtime only)
+              dir)
 end
 
 """Image data directory — {proj}/0/{uid}/"""
@@ -1058,9 +1052,12 @@ function run_scale_defaults(img::CciaImage, need::Set{Symbol})::Dict{String,Any}
 end
 
 """The `meta` keys that say which raw file an image came from: `ori_path` and its `oriFingerprint`
-(`source_fingerprint`, banked at import). A derived image (crop, bin, projection, copy, registration)
-comes from the same acquisition, so it carries both — `copy_source_meta!` is the one place that does."""
-const SOURCE_META_KEYS = ("ori_path", "oriFingerprint")
+(`source_fingerprint`, banked at import), and the image's own `data_source` (who published the data,
+`data_source.jl`). A derived image (crop, bin, projection, copy, registration) comes from the same
+acquisition, so it carries them — `copy_source_meta!` is the one place that does. A source recorded
+on the SET reaches a derived image through `inherit_data_source!`, since the derived image may land
+in another set."""
+const SOURCE_META_KEYS = ("ori_path", "oriFingerprint", "data_source")
 
 """The `meta` keys that make up an image's frame interval: the value, its unit, and where it came
 from when it was declared rather than read (`TimeIncrementDeclared`, Immunemap). A derived image that
@@ -1238,6 +1235,5 @@ function _load_image(dir::String)::CciaImage
         haskey(d, "rating") ? get(_IMAGE_RATING_PARSE, string(d["rating"]), RATING_NONE) :
             (get(d, "starred", false) === true ? RATING_GOOD : RATING_NONE),
         dir,
-        Dict{String,Any}(),                 # _pop_df_cache (runtime only)
     )
 end

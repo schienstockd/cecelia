@@ -383,6 +383,31 @@ class TestAppProject(unittest.TestCase):
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])
 
 
+    def test_copy_takes_its_old_sets_data_source(self):
+        # the copy lands in a new, blank set: an image takes its old set's source as its own (a figure made
+        # from the copy still cites the data); an image with its own keeps it
+        with tempfile.TemporaryDirectory() as d:
+            projects = pathlib.Path(d)
+            hubmap = {"citation": "HuBMAP HBM666.MCZF.973", "doi": "10.35079/HBM666.MCZF.973", "by": "user", "confirmed": True}
+            own = {"citation": "Collaborator lab", "by": "user", "confirmed": True}
+            for uid, meta in (("imgA", {}), ("imgB", {"data_source": own}), ("imgC", {})):
+                (projects / "SRC" / "0" / uid / "raw.ome.zarr").mkdir(parents=True)
+                (projects / "SRC" / "1" / uid).mkdir(parents=True)
+                (projects / "SRC" / "1" / uid / "ccid.json").write_text(json.dumps(
+                    {"uid": uid, "filepath": {"default": "raw.ome.zarr"}, "meta": meta}), encoding="utf-8")
+            (projects / "SRC" / "1" / "setS").mkdir(parents=True)
+            (projects / "SRC" / "1" / "setS" / "ccid.json").write_text(json.dumps(
+                {"uid": "setS", "class": "CciaSet", "image_uids": ["imgA", "imgB"], "meta": {"data_source": hubmap}}), encoding="utf-8")
+            (projects / "SRC" / "1" / "setT").mkdir(parents=True)
+            (projects / "SRC" / "1" / "setT" / "ccid.json").write_text(json.dumps(
+                {"uid": "setT", "class": "CciaSet", "image_uids": ["imgC"], "meta": {}}), encoding="utf-8")
+            (projects / "SRC" / "project.json").write_text(json.dumps({"uid": "SRC", "set_uids": ["setS", "setT"]}), encoding="utf-8")
+            info = app_project.build(projects, "SRC", ["imgA", "imgB", "imgC"], "Copy")
+            root = pathlib.Path(info["projectDir"])
+            got = {im["sourceImageUid"]: json.loads((root / "1" / im["imageUid"] / "ccid.json").read_text(encoding="utf-8"))["meta"].get("data_source")
+                   for im in info["images"]}
+            self.assertEqual(got, {"imgA": hubmap, "imgB": own, "imgC": None})
+
     def test_carries_only_knowledge_entries(self):
         with tempfile.TemporaryDirectory() as d:
             projects = pathlib.Path(d)

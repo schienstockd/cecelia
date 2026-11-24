@@ -229,6 +229,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-verified', lucide: 'badge-check', means: 'A claim stated from a plot, checked against the record' },
       { icon: 'pi-list-check', lucide: 'list-checks', means: 'Tasks' },
       { icon: 'pi-clone', lucide: 'layers', means: 'The analysis board, or cascade the plots' },
+      { icon: 'pi-magnet', lucide: 'magnet', means: 'Snap plots to each other and the canvas edges while dragging' },
       { icon: 'pi-table', lucide: 'table', means: 'A heatmap of values' },
     ],
   },

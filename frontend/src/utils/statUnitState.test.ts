@@ -66,8 +66,12 @@ describe('plotCaption — the line under an exported summary plot', () => {
   const mice = { one: 'mouse', many: 'mice' }
   it('states the n, what a point is and what the test ran on', () => {
     expect(plotCaption({ nLabel: 'n = 5 vs 3 mice', statUnit: 'replicate', imageAgg: 'mean', noun: mice,
-                         test: 'Mann-Whitney U (two-sided)' }))
+                         test: 'Mann-Whitney U (two-sided)', cellsBeneath: true }))
       .toBe('n = 5 vs 3 mice · mouse means, cells beneath · Mann-Whitney U (two-sided) on the mouse means')
+  })
+  it('SuperPlot off (or a chart without the cell layer): the caption does not claim cells', () => {
+    expect(plotCaption({ nLabel: 'n = 5 vs 3 mice', statUnit: 'replicate', imageAgg: 'mean', noun: mice, cellsBeneath: false }))
+      .toBe('n = 5 vs 3 mice · mouse means')
   })
   it('a point per image, medians, no test drawn', () => {
     expect(plotCaption({ nLabel: 'n = 4 images', statUnit: 'image', imageAgg: 'median',
