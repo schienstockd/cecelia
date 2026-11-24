@@ -350,12 +350,46 @@ function plan_versioned_target(img, value_name::AbstractString, filename::Abstra
     (joinpath(img_zero_dir(img), ver_rel), ver_rel, true)
 end
 
+"""The `meta` key listing an image's stores (paths relative to its folder, as `filepath` records them)
+whose planes run the REVERSE of the image's acquisition settings: a Z flip (`editImages.flip`), and
+every version made from one. `acquisition` is kept per image, not per version, so a copy, crop or bin
+of such a version mirrors the depth-ordered settings (`inherited_acquisition`). Written only by
+`versioned_filepath_write!`; read with `store_z_flipped`."""
+const Z_FLIPPED_STORES_KEY = "zFlippedStores"
+
+_meta_entry(meta, k::String) = meta isa AbstractDict ? get(meta, k, get(meta, Symbol(k), nothing)) : nothing
+
+"""Whether `rel_path` (a store of the image whose `meta` this is) runs Z-reversed (`Z_FLIPPED_STORES_KEY`)."""
+function store_z_flipped(meta, rel_path)::Bool
+    rel_path isa AbstractString || return false
+    stores = _meta_entry(meta, Z_FLIPPED_STORES_KEY)
+    stores isa AbstractVector || return false
+    any(s -> s isa AbstractString && normpath(String(s)) == normpath(String(rel_path)), stores)
+end
+
+# Record whether `rel_path` runs Z-reversed; leaves `meta` alone when there is nothing to record or drop.
+function _set_store_z_flipped!(raw::Dict{String,Any}, rel_path::AbstractString, flipped::Bool)
+    flipped == store_z_flipped(get(raw, "meta", nothing), rel_path) && return
+    m = get(raw, "meta", nothing)
+    m = m isa Dict{String,Any} ? m : m isa AbstractDict ? json_native(m) : Dict{String,Any}()
+    stores = String[String(s) for s in something(_meta_entry(m, Z_FLIPPED_STORES_KEY), String[])
+                    if s isa AbstractString && normpath(String(s)) != normpath(String(rel_path))]
+    flipped && push!(stores, String(rel_path))
+    delete!(m, Z_FLIPPED_STORES_KEY)
+    isempty(stores) || (m[Z_FLIPPED_STORES_KEY] = stores)
+    raw["meta"] = m
+end
+
 """
-    versioned_filepath_write!(raw, value_name, rel_path; as_new_version)
+    versioned_filepath_write!(raw, value_name, rel_path; as_new_version, from = nothing, z_flip = false)
 
 Inside `commit_state!`, record `filepath[value_name] = rel_path` — either overwrite semantics
 (`versioned_set_field!`, legacy scalar shape) or version-append (`versioned_upgrade_entry!` +
 `version_write!`, D6-guarded so an existing `vN` can't be clobbered).
+
+`from` is the store the new one was made from (its `filepath` value) and `z_flip` whether the task
+reversed Z: the new store runs Z-reversed (`store_z_flipped`) when exactly one of them says so. A
+writer that passes neither (an import) records a store in the source's own order.
 
 `as_new_version=true` requires a prior entry at `filepath[value_name]` — `plan_versioned_target`
 guarantees this by only returning `true` when there's a prior. If misused (no prior), errors; the
@@ -363,7 +397,9 @@ outer `commit_state!` typically swallows the error and logs it, so callers that 
 `plan_versioned_target` first will silently no-op the ccid.json write.
 """
 function versioned_filepath_write!(raw::Dict{String,Any}, value_name::AbstractString,
-                                    rel_path::AbstractString; as_new_version::Bool)
+                                    rel_path::AbstractString; as_new_version::Bool,
+                                    from::Union{AbstractString,Nothing} = nothing, z_flip::Bool = false)
+    flipped = store_z_flipped(get(raw, "meta", nothing), from) ⊻ z_flip   # before the input is overwritten
     if as_new_version
         existing = get(raw, "filepath", nothing)
         (existing isa AbstractDict && (haskey(existing, value_name) ||
@@ -381,6 +417,7 @@ function versioned_filepath_write!(raw::Dict{String,Any}, value_name::AbstractSt
     else
         versioned_set_field!(raw, "filepath", String(rel_path), String(value_name))
     end
+    _set_store_z_flipped!(raw, rel_path, flipped)
 end
 
 # Read a ccid.json / project.json into a String-keyed Dict{String,Any} ready for the versioned_*

@@ -75,6 +75,7 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
     end
 
     src_meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    z_flipped = store_z_flipped(src_meta, string(filename))   # made from a Z-flipped version
     px_x = Float64(get(src_meta, "PhysicalSizeX", 0.0))
     px_z = Float64(get(src_meta, "PhysicalSizeZ", 0.0))
     if px_x <= 0 || px_z <= 0
@@ -95,7 +96,7 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
         "resampleZ_source_value_name" => p.valueName,
         "resampleZ_order"             => p.order)
     merge!(resamp_meta, _resample_z_inherited_meta(src_meta))
-    copy_source_meta!(resamp_meta, src_meta)
+    copy_source_meta!(resamp_meta, src_meta; z_flipped)
     inherit_data_source!(resamp_meta, proj, img, s)
 
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "iso-z"), meta = resamp_meta, attr = img.attr)

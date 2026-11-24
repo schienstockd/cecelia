@@ -19,7 +19,9 @@ end
 # image. Dims are preserved but the content is MIRRORED: an object at x sits at W-1-x on the flipped
 # version. Labels are not touched — existing segmentations (and their populations, gates, tracks)
 # stay in the SOURCE version's coordinates and do NOT line up on the flipped one; segment after
-# flipping. (Same reason `flip_run.py` drops the valid-region box.) Same versioned-in-place pattern
+# flipping. (Same reason `flip_run.py` drops the valid-region box.) A Z flip is recorded on the new
+# store (`z_flip`, `store_z_flipped`): the image's acquisition settings stay as acquired, and a crop,
+# copy or bin of this version gets them mirrored. Same versioned-in-place pattern
 # as af_correct / drift_correct / smooth (`versioned_set_field!` on the same image under an output
 # value_name), NOT a new image (a rotation of 90° / 270° would swap X↔Y and become a new-image /
 # editImages task).
@@ -68,7 +70,8 @@ function _run_task(task::Flip, img::CciaImage, params::Dict{String,Any};
     ok || return nothing
 
     commit_state!(img) do raw2
-        versioned_filepath_write!(raw2, out_value_name, store_rel; as_new_version = as_new_version)
+        versioned_filepath_write!(raw2, out_value_name, store_rel; as_new_version = as_new_version,
+            from = string(filename), z_flip = p.axis == "Z")
     end
 
     on_log("[INFO] Flip complete → version '$out_value_name'")
