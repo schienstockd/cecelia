@@ -888,6 +888,12 @@ docs/TODO.md.)
    types) — reuse the categorical/numeric detection (`_is_categorical_col`-style).
 2. **Raw values (downsampled)** for box/violin/strip: a `rawPoints` option returning ≤N/group sampled
    values (cap **~1500/group**, decision A) — payload stays bounded; note when sampling truncated.
+   The box and strip charts send `maxPoints` from the **Subsample** toggle (Points section): on (the
+   default) → `SUBSAMPLE_POINTS` = 500 per series, off → `0` = every point (`maxPointsFor`,
+   `plots/plot.ts`). Drawing, not layout, is the cost: ~8 µs a dot in Chromium's SVG against ~0.3 µs
+   for the sina offsets, so 8 × 1500 points took ~100 ms a redraw and 8 × 500 ~25 ms. The stride keeps
+   the distribution's shape; box stats, `n` and the group tests use every value either way. Violin
+   keeps the 1500 default (its density is built from these points).
 3. **Bar error metrics**: return `sd`, `sem`, `ciLo`/`ciHi` (compute all; panel picks).
 4. **Violin density** is computed **client-side** (a Gaussian KDE in `plot.ts`, Silverman bandwidth)
    from the downsampled raw points (the `points` chart type) — no separate server density endpoint.

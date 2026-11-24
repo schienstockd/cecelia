@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPlotOptions, defaultVis } from './plot'
+import { buildPlotOptions, defaultVis, maxPointsFor, SUBSAMPLE_POINTS } from './plot'
 import { visControlsFor, type PlotKind, type VisControl } from './plotControls'
 import type { PlotDataResponse } from './types'
 
@@ -52,7 +52,8 @@ const CASES: [string, PlotKind, PlotDataResponse, object?][] = [
 
 // each control: the vis it is flipped FROM and TO (a dependent row is flipped with its parent on)
 // (`title` is drawn by PlotChart as an overlay on every chart — asserted separately below)
-const FLIPS: Record<Exclude<VisControl, 'stats' | 'title'>, [object, object][]> = {
+// (`stats` and `subsample` change the REQUEST, not the build — asserted separately below)
+const FLIPS: Record<Exclude<VisControl, 'stats' | 'title' | 'subsample'>, [object, object][]> = {
   legend: [[{ legend: true }, { legend: false }]],
   logScale: [[{}, { logScale: true }]],
   grid: [[{}, { grid: true }]],
@@ -85,10 +86,23 @@ describe('visControlsFor — the rail offers exactly what the renderer honours',
       const live = new Set<VisControl>()
       for (const [c, flips] of Object.entries(FLIPS) as [VisControl, [object, object][]][])
         if (flips.some(([a, b]) => build(a) !== build(b))) live.add(c)
-      expect([...live].sort()).toEqual([...offered].filter(c => c !== 'stats' && c !== 'title').sort())
+      expect([...live].sort()).toEqual([...offered].filter(c => c !== 'stats' && c !== 'title' && c !== 'subsample').sort())
       expect(offered).toContain('title')
     })
   }
+
+  it('offers Subsample exactly where the request caps the raw points', () => {
+    for (const t of ['boxplot', 'strip'] as const) {
+      expect(visControlsFor({ chartType: t })).toContain('subsample')
+      expect(maxPointsFor(t, {})).toBe(SUBSAMPLE_POINTS)          // on by default
+      expect(maxPointsFor(t, { subsample: false })).toBe(0)       // 0 = every point
+    }
+    for (const t of ['violin', 'bar', 'histogram', 'count', 'heatmap'] as const) {
+      expect(visControlsFor({ chartType: t })).not.toContain('subsample')
+      expect(maxPointsFor(t, { subsample: false })).toBeUndefined()
+    }
+    expect(visControlsFor({ chartType: 'boxplot', trend: true })).not.toContain('subsample')
+  })
 
   it('offers the group comparison only where the request asks the server for one', () => {
     for (const t of ['bar', 'boxplot', 'violin', 'strip'] as const) expect(visControlsFor({ chartType: t })).toContain('stats')

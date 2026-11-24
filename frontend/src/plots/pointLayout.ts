@@ -35,17 +35,28 @@ export function pointOffsets(layout: string | undefined, values: readonly number
  * sit either side), so a handful of image means still reads like a swarm.
  */
 export function sinaOffsets(values: readonly number[], halfWidth: number): number[] {
-  const out = new Array<number>(values.length).fill(0)
+  const N = values.length
+  const out = new Array<number>(N).fill(0)
   let lo = Infinity, hi = -Infinity, n = 0
-  for (const v of values) if (Number.isFinite(v)) { n++; if (v < lo) lo = v; if (v > hi) hi = v }
+  for (let i = 0; i < N; i++) { const v = values[i]; if (Number.isFinite(v)) { n++; if (v < lo) lo = v; if (v > hi) hi = v } }
   if (n < 2) return out
   const B = Math.max(10, Math.min(40, Math.round(Math.sqrt(n))))
   const w = (hi - lo) / B
-  const binOf = (v: number) => (w > 0 ? Math.min(B - 1, Math.floor((v - lo) / w)) : 0)
-  const counts = new Array<number>(B).fill(0)
-  const members: number[][] = Array.from({ length: B }, () => [])
-  values.forEach((v, i) => { if (Number.isFinite(v)) { const b = binOf(v); counts[b]++; members[b].push(i) } })
-  const max = Math.max(...counts)
+  // bin per point (-1 = not finite), counts, then a counting sort: `order` holds each bin's members
+  // contiguously, from `start[b]` — flat typed arrays, not one JS array per bin
+  const bin = new Int32Array(N), counts = new Int32Array(B)
+  for (let i = 0; i < N; i++) {
+    const v = values[i]
+    if (!Number.isFinite(v)) { bin[i] = -1; continue }
+    const b = w > 0 ? Math.min(B - 1, Math.floor((v - lo) / w)) : 0
+    bin[i] = b; counts[b]++
+  }
+  let max = 0
+  for (let b = 0; b < B; b++) if (counts[b] > max) max = counts[b]
+  const start = new Int32Array(B + 1)
+  for (let b = 0; b < B; b++) start[b + 1] = start[b] + counts[b]
+  const fillAt = start.slice(0, B), order = new Int32Array(n)
+  for (let i = 0; i < N; i++) if (bin[i] >= 0) order[fillAt[bin[i]]++] = i
   // density at the value, 0..1 (one value only: every dot in bin 0, a flat band)
   const dens = (v: number) => {
     if (!(w > 0)) return 1
@@ -54,16 +65,29 @@ export function sinaOffsets(values: readonly number[], halfWidth: number): numbe
     const t = Math.max(0, Math.min(1, pos - b0))
     return (counts[b0] * (1 - t) + counts[b1] * t) / max
   }
-  const key = new Float64Array(values.length)
-  for (const m of members) {
-    if (!m.length) continue
-    for (const i of m) key[i] = unitHash(i)
-    m.sort((a, b) => key[a] - key[b])                             // a stable shuffle, not value order
-    const k = m.length
+  const key = hashTable(N)
+  for (let b = 0; b < B; b++) {
+    const k = counts[b]
+    if (!k) continue
+    const m = order.subarray(start[b], start[b + 1])
+    m.sort((x, y) => key[x] - key[y] || x - y)                   // a stable shuffle, not value order
     // slot j of k across the bin's share of the width: k = 1 → centre, k = 2 → ±1/2, …
-    m.forEach((i, j) => { out[i] = (k === 1 ? 0 : (2 * j + 1) / k - 1) * halfWidth * dens(values[i]) })
+    for (let j = 0; j < k; j++) { const i = m[j]; out[i] = (k === 1 ? 0 : (2 * j + 1) / k - 1) * halfWidth * dens(values[i]) }
   }
   return out
+}
+
+// `unitHash(i)` for i < n, computed once per index for the session (the hash is the costly part of
+// a layout, and every redraw of every plot asks for the same leading indices)
+let HASH = new Float64Array(0)
+function hashTable(n: number): Float64Array {
+  if (HASH.length < n) {
+    const t = new Float64Array(Math.max(n, 2 * HASH.length))
+    t.set(HASH)
+    for (let i = HASH.length; i < t.length; i++) t[i] = unitHash(i)
+    HASH = t
+  }
+  return HASH
 }
 
 // deterministic in [-1, 1): the same dot lands in the same place on every redraw (no resize reshuffle)

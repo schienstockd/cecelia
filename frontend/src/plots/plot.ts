@@ -133,6 +133,7 @@ export interface VisProps {
   pointOpacity: number                       // raw-point opacity (R alphaInput)
   colorData: boolean                         // colour points by series (else single grey) (R colorData)
   superplot?: boolean                        // draw the cells under replicate means (plots/superplot.ts); absent = on
+  subsample?: boolean                        // box/strip: draw ≤ SUBSAMPLE_POINTS per series (`maxPointsFor`); absent = on
   // statistics / legend
   legend: boolean                            // show the colour legend
   // OUTER width PlotChart renders at, in px. Needed to decide whether the x tick labels fit their
@@ -315,6 +316,15 @@ const facetSingle = (v: Pick<VisProps, 'facetBy' | 'facet'>) => facetMode(v) ===
 /** The value a mark's facet panel is keyed by, given the series key it already computed. */
 const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, seriesKey: string) =>
   facetMode(v) === 'image' ? (s.uID ?? '') : seriesKey
+
+/** Raw points per series the box/strip charts draw while Subsample is on. The server strides them
+ *  evenly over the sorted values (plot_data.jl `_downsample`), so the cloud keeps the distribution's
+ *  shape; box stats, n and the group tests always use every cell. Drawing is ~8 µs a dot (SVG). */
+export const SUBSAMPLE_POINTS = 500
+/** The `maxPoints` a plot_data request sends: box/strip follow Subsample (0 = every point); any other
+ *  chart sends none and keeps the server's default cap. */
+export const maxPointsFor = (c: ChartType, v: Pick<VisProps, 'subsample'>): number | undefined =>
+  c === 'boxplot' || c === 'strip' ? (v.subsample === false ? 0 : SUBSAMPLE_POINTS) : undefined
 
 export const defaultVis = (): VisProps => ({
   jitter: 'sina', pointSize: 2, pointOpacity: 0.5, colorData: true, superplot: true,
@@ -1613,51 +1623,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   const f = fxCh(o), a = axM(o)
   const ptFill = sp ? ((d: { unitFill?: string }) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
-  // Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
-  // active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
-  // outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
-  // drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
-  // delta was too subtle at swarm density — the ring is what actually pops.
-  //
-  // MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
-  // — the dot's identity selects that source's id set, and only ids from THAT source match.
-  // Fixes two ambiguities in one:
-  //   • track_id=5 exists in every (image, segmentation) numeric space, so a lasso on
-  //     segmentation B was lighting up segmentation T's dots too. `(uid, vn)` fixes that.
-  //   • two POPULATIONS under the same (uid, vn) share the numeric space too — a track with
-  //     cells in both B and T appears once per box, and lassoing one lit both. The specific
-  //     `(uid, vn, pop)` key fixes that. The renderer tries the specific key FIRST and only
-  //     falls back to `(uid, vn)` for writers that don't know pop (Show button, MCP mark_*):
-  //     those genuinely want to highlight the track wherever it appears on that (uid, vn).
-  // If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
-  // not-brushable dot would look like a broken renderer.
-  const dimOpacity = 0.08
-  const isPerSource = activeIds instanceof Map
-  type PtRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
-  const matches = (d: PtRow): boolean => {
-    if (d.pointId == null || !activeIds) return false
-    if (isPerSource) {
-      const map = activeIds as Map<string, Set<number>>
-      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
-      if (map.get(specKey)?.has(d.pointId)) return true
-      // Fallback: a writer that only knows (uid, vn) — Show button, MCP mark_* — targets every
-      // dot in that (uid, vn) regardless of pop. That's the correct semantics for a "highlight
-      // this track" write: the track's location within populations isn't what the writer meant
-      // to narrow by, so we let it match across pops on the same (uid, vn).
-      const vnKey = `${d.pointUid}|${d.pointVn}`
-      return map.get(vnKey)?.has(d.pointId) ?? false
-    }
-    return (activeIds as Set<number>).has(d.pointId)
-  }
-  const ptFillOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : sp ? 0.9 : o.pointOpacity                              // a replicate mean must read over its cells
-  const ptStrokeWidth = activeIds
-    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
-    : 0.5
-  const ptStrokeOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
-    : 0.55
+  const { ptFillOpacity, ptStrokeWidth, ptStrokeOpacity } = rawPointStyle(o, activeIds, !!sp)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
@@ -1735,6 +1701,51 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
 }
 
+// ── raw-point styling, shared by the box overlay and the strip chart ─────────────────
+// Subscribe-side highlight (LINKED_BRUSHING_PLAN.md Option B — read side). When a selection is
+// active AND this dot carries an id: selected dots pop with a full-opacity fill AND a bold
+// outline (thick stroke, full stroke opacity); non-selected dots hard-dim to ~0.08 fill and
+// drop their stroke entirely. Idle → base opacity + thin stroke throughout. A pure opacity
+// delta was too subtle at swarm density — the ring is what actually pops.
+//
+// The outline fades with Point opacity, like the fill: a fixed outline stayed drawn when the user
+// faded the points, so a dense cloud never thinned out. A SuperPlot replicate mean keeps its fixed
+// fill/outline — it must read over its cells, and Point opacity is the cells' knob.
+//
+// MATCH MODE: a plain Set is flat-id (legacy Show button / MCP mark_*). A Map is per-source
+// — the dot's identity selects that source's id set, and only ids from THAT source match.
+// Fixes two ambiguities in one:
+//   • track_id=5 exists in every (image, segmentation) numeric space, so a lasso on
+//     segmentation B was lighting up segmentation T's dots too. `(uid, vn)` fixes that.
+//   • two POPULATIONS under the same (uid, vn) share the numeric space too — a track with
+//     cells in both B and T appears once per box, and lassoing one lit both. The specific
+//     `(uid, vn, pop)` key fixes that. The renderer tries the specific key FIRST and only
+//     falls back to `(uid, vn)` for writers that don't know pop (Show button, MCP mark_*):
+//     those genuinely want to highlight the track wherever it appears on that (uid, vn).
+// If the dot has no id (server didn't emit pointIds), it stays at base — a dim on a
+// not-brushable dot would look like a broken renderer.
+type BrushRow = { pointId: number | null; pointUid: string; pointVn: string; pointPop: string }
+function rawPointStyle(o: BuildOpts, activeIds: BuildOpts['brushActiveIds'], superplotMeans: boolean) {
+  const fill = superplotMeans ? 0.9 : o.pointOpacity
+  const stroke = superplotMeans ? 0.55 : o.pointOpacity
+  if (!activeIds) return { ptFillOpacity: fill, ptStrokeWidth: 0.5, ptStrokeOpacity: stroke }
+  const dimOpacity = 0.08
+  const ids = activeIds
+  const matches = (d: BrushRow): boolean => {
+    if (d.pointId == null) return false
+    if (ids instanceof Map) {
+      if (ids.get(`${d.pointUid}|${d.pointVn}|${d.pointPop}`)?.has(d.pointId)) return true
+      return ids.get(`${d.pointUid}|${d.pointVn}`)?.has(d.pointId) ?? false   // (uid, vn)-only writer
+    }
+    return ids.has(d.pointId)
+  }
+  return {
+    ptFillOpacity: (d: BrushRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : fill,
+    ptStrokeWidth: (d: BrushRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5,
+    ptStrokeOpacity: (d: BrushRow) => matches(d) ? 1 : d.pointId != null ? 0 : stroke,
+  }
+}
+
 // ── numeric: strip / jitter (raw points, downsampled) ─────────────────────────────
 // Point-source brushing is wired the same way as the boxplot jitter — server emits `pointIds`
 // (and `pointUids` for pooled cross-image) on the shared /api/plot_data points branch, the dot
@@ -1768,29 +1779,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   if (!rows.length) return null
   const a = axM(o)
-  const dimOpacity = 0.08
-  const isPerSource = activeIds instanceof Map
-  const matches = (d: PtRow): boolean => {
-    if (d.pointId == null || !activeIds) return false
-    if (isPerSource) {
-      const map = activeIds as Map<string, Set<number>>
-      const specKey = `${d.pointUid}|${d.pointVn}|${d.pointPop}`
-      if (map.get(specKey)?.has(d.pointId)) return true
-      const vnKey = `${d.pointUid}|${d.pointVn}`
-      return map.get(vnKey)?.has(d.pointId) ?? false
-    }
-    return (activeIds as Set<number>).has(d.pointId)
-  }
   const ptFill = sp ? ((d: PtRow) => d.unitFill ?? 'currentColor') : o.colorData ? 'series' : 'currentColor'
-  const ptFillOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? dimOpacity : o.pointOpacity
-    : sp ? 0.9 : o.pointOpacity                              // a replicate mean must read over its cells
-  const ptStrokeWidth = activeIds
-    ? (d: PtRow) => matches(d) ? 1.8 : d.pointId != null ? 0 : 0.5
-    : 0.5
-  const ptStrokeOpacity = activeIds
-    ? (d: PtRow) => matches(d) ? 1 : d.pointId != null ? 0 : 0.55
-    : 0.55
+  const { ptFillOpacity, ptStrokeWidth, ptStrokeOpacity } = rawPointStyle(o, activeIds, !!sp)
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters, color })
   return {

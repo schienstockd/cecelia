@@ -15,7 +15,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { facetMode, type VisProps } from '../../plots/plot'
+import { facetMode, SUBSAMPLE_POINTS, type VisProps } from '../../plots/plot'
 import { pointLayoutOf } from '../../plots/pointLayout'
 import CcToggle from '../CcToggle.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
@@ -121,6 +121,8 @@ const has = (s: OptionSection) => props.sections.includes(s) && SECTION_ROWS[s].
       <div class="po-body">
         <div v-if="can('superplot')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Each replicate\'s cells under its mean'"><span>SuperPlot</span>
           <CcToggle aria-label="SuperPlot" :model-value="vis.superplot !== false" @update:model-value="set({ superplot: $event })" /></div>
+        <div v-if="can('subsample')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="`At most ${SUBSAMPLE_POINTS} points per series; off draws all`"><span>Subsample</span>
+          <CcToggle aria-label="Subsample" :model-value="vis.subsample !== false" @update:model-value="set({ subsample: $event })" /></div>
         <label v-if="can('jitter')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Data offset (sina / random / none)'"><span>Offset</span>
           <select class="po-sel" :value="pointLayoutOf(vis.jitter)" @change="set({ jitter: ($event.target as HTMLSelectElement).value as VisProps['jitter'] })">
             <option value="sina">sina</option><option value="random">random</option><option value="none">none</option>

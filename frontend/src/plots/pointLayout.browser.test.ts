@@ -41,3 +41,34 @@ describe('box chart points on screen', () => {
     expect(cxs({ darkTheme: false })).toEqual(cxs({ darkTheme: true }))
   })
 })
+
+// Point opacity fades the whole dot: a fixed outline stayed drawn when the points were faded, so a
+// dense cloud never thinned out. Read the opacities Chromium resolves on each drawn circle.
+function dotOpacities(chartType: 'boxplot' | 'strip', pointOpacity: number): Array<[number, number]> {
+  const o = { ...defaultVis(), pointOpacity, chartType, byImage: false, normalize: false, errorMetric: 'sd',
+              nonNegative: true, plotWidth: 400, plotHeight: 320, legendHeight: 0, colorOf: () => '#4477aa' }
+  const resp = { ...r, chartType: chartType === 'strip' ? 'points' : 'boxplot' } as PlotDataResponse
+  const svg = Plot.plot({ ...(buildPlotOptions(Plot, resp, o as never) as object), width: 400, height: 320 }) as SVGElement
+  document.body.appendChild(svg)
+  const out = [...svg.querySelectorAll('circle.cc-brush-dot, .cc-brush-dot circle')].map(c => {
+    const cs = getComputedStyle(c)
+    return [Number(cs.fillOpacity), Number(cs.strokeOpacity)] as [number, number]
+  })
+  svg.remove()
+  return out
+}
+
+describe('point opacity on screen', () => {
+  for (const chart of ['boxplot', 'strip'] as const) {
+    it(`${chart}: the outline fades with the fill`, () => {
+      for (const op of [0.15, 0.9]) {
+        const ops = dotOpacities(chart, op)
+        expect(ops.length).toBeGreaterThan(0)
+        for (const [fill, stroke] of ops) {
+          expect(fill).toBeCloseTo(op, 5)
+          expect(stroke).toBeCloseTo(op, 5)
+        }
+      }
+    })
+  }
+})
