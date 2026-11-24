@@ -2382,7 +2382,7 @@ end
 #   therefore be empty there (`missing_gate_columns`); absent key ⇒ nothing missing.
 function api_gating_copy(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
-    is_gating_pop_type(pt) || return _gerr(400, "Not a gating pop type: $pt (only flow/track)")
+    is_gating_pop_type(pt) || return _gerr(400, "Not a gating population type: $pt (only flow/track)")
     tgt_raw = get(body, "toImageUids", nothing)
     (tgt_raw isa AbstractVector && !isempty(tgt_raw)) || return _gerr(400, "toImageUids required")
     proj, src_uid, err = _require_ids(body); err === nothing || return err

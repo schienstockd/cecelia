@@ -75,6 +75,9 @@ Code, routes and older docs keep the old names; only what a user or Claude reads
 | **Sidebar layout** | which sidebar pages are shown (hides; doesn't restrict) | ~~View profile~~ |
 | **Profile** | who is using the app: their settings, logins, HPC account | — |
 | **Capture** | a frame or plot shared with Claude via Share | — |
+| **Population** | a gated, filter, cluster or boolean set of cells — every label, tip, message and guide | ~~Pop~~, ~~Pops~~ |
+
+**Population is enforced:** `utils/uiCopy.test.ts` → *copy says population, not pop* reads template copy and every prose literal in script and `.ts` tables (`uiCopy.scriptStrings`); `pop-out` / `pop out` and identifiers (`l.pops`, `'pops'`) pass. Code, routes, store keys and MCP params keep `pop`.
 
 **Two of these are now enforced, not just asked for.** `utils/uiCopy.test.ts` fails the build on a
 `v-tooltip` literal, a `ModuleLayout` `hint`, or a task-JSON `tip` that runs past **90 characters** or

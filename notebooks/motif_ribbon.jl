@@ -27,7 +27,7 @@ per-cell obs columns via `pop_df` and paints them.
 > `motif.distance.{suffix}` (per-cell obs written by the task). This example is **UID-free**:
 > set the project/image + motif suffix below (or use `CECELIA_EXAMPLE_PROJ` / `_UID` /
 > `CECELIA_MOTIF_SUFFIX`). `SUFFIX` = the source segmentation's value_name that the task ran
-> against (whatever you selected under Populations — e.g. `flowTom` if your tracked pop lives
+> against (whatever you selected under Populations — e.g. `flowTom` if your tracked population lives
 > on the `flowTom` value_name).
 """
 

@@ -314,7 +314,7 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
     } else if (colourLabels && !hasMask) {
       caption = 'colour-labels needs a mask picked'
     } else if (cfg.showPopulations && !wantedPops.size) {
-      caption = 'no pops selected'
+      caption = 'no populations selected'
     } else {
       caption = 'nothing on'
     }

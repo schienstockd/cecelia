@@ -799,7 +799,7 @@ async function loadPresentPopTypes() {
   if (!projectUid || !imageUid) return
   try {
     const res = await fetch(popTypesUrl({ projectUid, imageUid }), { cache: 'no-store' })
-    presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Pop types')
+    presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Population types')
   } catch { /* keep the last answer: a failed probe must not hide switches */ }
 }
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */

@@ -26,6 +26,7 @@ These change results when old work is re-run:
 
 ### Changed
 
+- **One word for populations:** the app says *Populations* everywhere it used to say *Pops* or *pop* (the mask colour choice, the gate plot's row label, messages, guides); a test keeps it that way.
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).
 
 ## [0.2.13] — 2026-11-17

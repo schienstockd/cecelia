@@ -85,7 +85,7 @@ function stale_artefacts_for(img::CciaImage, value_name::AbstractString;
         isfile(gpath) || continue
         n_pops = _gating_pop_count(gpath)
         push!(out, _stale_entry(_STALE_KIND_GATING, gpath, img._dir;
-                                summary = "$(n_pops) $(pop_type) gating pop(s) on $(vn)",
+                                summary = "$(n_pops) $(pop_type) gating population(s) on $(vn)",
                                 detail  = Dict{String,Any}("pop_type" => pop_type,
                                                            "count"    => n_pops)))
     end

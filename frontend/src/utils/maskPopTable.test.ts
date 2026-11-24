@@ -262,7 +262,7 @@ describe('the mask on Colour by (`colourByMaskLayer`) — every cell by the colu
     expect(maskColourKeys('trackclust', false, '')).toEqual({ maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: false })
     // track clusters with a colour-by: the clusters select, the column shades (`mask_id_colours`' gated)
     expect(maskColourKeys('trackclust', false, 'c')).toEqual({ maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: true })
-    // Pops keeps its pop colours whatever the colour-by — only the points take it
+    // Populations keeps its population colours whatever the colour-by — only the points take it
     expect(maskColourKeys('pops', true, 'c')).toEqual({ maskAllCells: false, maskPopTypes: [], colourLabels: false })
     expect(maskColourKeys('colourBy', false, 'c')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: true })
     expect(maskColourKeys('colourBy', false, '')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
@@ -271,7 +271,7 @@ describe('the mask on Colour by (`colourByMaskLayer`) — every cell by the colu
 })
 
 describe('effectiveMaskColour', () => {
-  it('a stored Track clusters draws Pops on a still, as stored on a time-lapse; others untouched', () => {
+  it('a stored Track clusters draws Populations on a still, as stored on a time-lapse; others untouched', () => {
     expect(effectiveMaskColour('trackclust', false)).toBe('pops')
     expect(effectiveMaskColour('trackclust', true)).toBe('trackclust')
     expect(effectiveMaskColour('colourBy', false)).toBe('colourBy')

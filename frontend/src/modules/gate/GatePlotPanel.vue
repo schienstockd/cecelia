@@ -360,7 +360,7 @@ async function loadPopLayers() {
       ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? UNASSIGNED_POP,
          points: await fetchBuf(plotQ(path, effXs.value, effYs.value)) })))
   } catch (e) {
-    log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+    log.error(`Gating population layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
   }
 }
 
@@ -594,7 +594,7 @@ watch(() => props.reloadToken, fetchPlot)
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="zOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(zOverride, '')" /></label>
-        <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
+        <label class="ax-row cc-muted"><span class="ax-lbl">population</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
           <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-fs-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
@@ -658,8 +658,8 @@ watch(() => props.reloadToken, fetchPlot)
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
-/* wide enough for the longest row label ("colour") so all four rows' selects still line up */
-.ax-lbl { width: 3.4rem; color: var(--cc-text-dim); flex-shrink: 0; }
+/* wide enough for the longest row label ("population") so all four rows' selects still line up */
+.ax-lbl { width: 4.2rem; white-space: nowrap; color: var(--cc-text-dim); flex-shrink: 0; }
 /* fixed widths so the controls don't stretch when the plot is resized */
 .ax-chan { width: 9rem; flex: none; }
 .ax-row .tsel { flex-shrink: 0; }
