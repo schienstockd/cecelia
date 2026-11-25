@@ -176,6 +176,8 @@ resolve_gate(g::Gate, xraw, yraw) = g
 resolve_gate(g::HistGate, xraw::AbstractVector, yraw) = resolve_gate(g, xraw)
 rule_flags(g::Gate, xraw, yraw) = Dict{String,Any}()
 rule_flags(g::HistGate, xraw::AbstractVector, yraw) = rule_flags(g, xraw)
+# both at once, for a display (a follow rule computes its density once — follow_rule.jl)
+resolve_with_flags(g::Gate, xraw, yraw) = (resolve_gate(g, xraw, yraw), rule_flags(g, xraw, yraw))
 # each ruled end moves to its valley inside its `end_window`, or keeps its stored value
 function resolve_gate(g::RangeGate, raw::AbstractVector)
     needs_parent_data(g) || return g

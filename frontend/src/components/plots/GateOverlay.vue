@@ -15,7 +15,10 @@
       its cut, or a rule's window ends drag sideways, and a double-click on a bisector switches it
       between a fixed cut and following the density valley (a range's end, its own valley). A double-click
       inside a selected rectangle / polygon switches it to following the cloud it was drawn on, per image
-      (plots/followRule.ts; dashed where no such cloud was found). An outline or
+      (plots/followRule.ts; dashed where no such cloud was found); a selected following one marks the peak it
+      found with a cross. The selection is reported (`select`), so the host can show the gate's own controls
+      (GatePlotPanel's follow switch); a press on an element marked `data-keeps-gate-selection` does not
+      deselect. An outline or
       corner grabs on hover; a gate's BODY moves it only once the gate is SELECTED — click inside it
       (the smallest gate there wins, `gateAt`); click outside every gate, outside the plot, or Esc
       deselects — and while nothing is selected, presses inside gates reach the plot (pan/zoom). Live local
@@ -64,7 +67,7 @@ const props = withDefaults(defineProps<{
   // cursor-following preview, no new shape) until the host clears it — Add, ×, or Esc (`cancel`)
   pending?: Partial<GateSpec> | null
 }>(), { lineWidth: 1.5, showLabels: false, readonly: false })
-const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
+const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: []; select: [string | null] }>()
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
 let ctx: CanvasRenderingContext2D | null = null
@@ -224,6 +227,8 @@ const selectedGestures = computed(() => {
   const g = selected.value && !props.readonly && props.mode === 'off' ? gateOf(selected.value) : undefined
   return g ? gateEditGestures(g.gate.kind) : []
 })
+// the host shows the selected gate's own controls (an editable plot only)
+watch(() => (props.readonly ? null : selected.value), p => emit('select', p))
 // a press-and-release on the plot that did not drag selects the gate under it (or none) — tracked on
 // the PARENT, so it also sees clicks that pass through to the dot canvas while nothing is grabbed
 let pressAt: [number, number] | null = null
@@ -242,7 +247,8 @@ function onParentUp(e: MouseEvent) {
 // a press anywhere outside this plot deselects
 function onWindowDown(e: MouseEvent) {
   const host = canvasEl.value?.parentElement
-  if (selected.value && host && !host.contains(e.target as Node)) select(null)
+  if (selected.value && host && !host.contains(e.target as Node) &&
+      !(e.target as Element | null)?.closest?.('[data-keeps-gate-selection]')) select(null)
 }
 useWindowListener('mousedown', onWindowDown)
 
@@ -387,6 +393,20 @@ function drawHistTip() {
   c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo(); c.strokeText(text, tx, py)
   c.fillStyle = themed('--cc-text', NEUTRAL); c.fillText(text, tx, py); c.restore()
 }
+// the peak a selected following shape found on this parent: a small cross in its colour (live only —
+// not while it is dragged, when the stored peak no longer belongs to the shape shown)
+function drawPeak() {
+  const e = selected.value && !editHandle ? gateOf(selected.value) : undefined
+  const pk = e && follows(e.gate) && e.gate.rule_ok !== false ? e.gate.rule_peak : undefined
+  if (!pk) return
+  // ink over a ground-toned halo, not the gate's colour: it sits on the densest dots, which the heat ramp
+  // paints red / orange — a coloured cross vanishes there
+  const [px, py] = dataToPx(pk[0], pk[1]), r = 5, c = ctx!
+  c.save(); c.lineCap = 'round'
+  c.beginPath(); c.moveTo(px - r, py - r); c.lineTo(px + r, py + r); c.moveTo(px - r, py + r); c.lineTo(px + r, py - r)
+  c.lineWidth = 4; c.strokeStyle = halo(); c.stroke()
+  c.lineWidth = 1.5; c.strokeStyle = ink(); c.stroke(); c.restore()
+}
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = WHITE; c.strokeStyle = colour; c.lineWidth = 1.5
   if (isHistGate(g)) {              // a square on each draggable line, halfway up
@@ -497,6 +517,7 @@ function draw() {
     const spec = active.path === editPath && draft.value ? draft.value : active.gate
     drawHandles(spec, active.colour || themed('--cc-accent', NEUTRAL))
   }
+  drawPeak()
   drawHistTip()
 
   // in-progress NEW shape (accent)

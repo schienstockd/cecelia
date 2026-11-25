@@ -127,7 +127,7 @@ export apply_transform, invert_transform, transform_spec, transform_from_spec, t
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
        RangeGate, BisectorGate, ValleyRule, valley_cut, FollowRule, follow_mode
-export inside, inside_t, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
+export inside, inside_t, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate, project_point
 export Density2D, density_2d, axis_summary, grid_summary
 
 # ── Population manager ─────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_tree!, load_pop_tree, gating_dir, gating_path, stored_pop_tree, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
-export copy_gating!, with_pop_tree_lock
+export copy_gating!, plan_gating_copy, with_pop_tree_lock
 export co_clustered_value_names, cluster_run_at, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
        cluster_id_owners, as_cluster_id
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES

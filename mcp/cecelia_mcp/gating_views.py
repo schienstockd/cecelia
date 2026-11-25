@@ -38,7 +38,8 @@ region) lists as `slice` (`vertices` of a line run on to infinity, `side` 1 = le
 drawn on that channel's histogram) lists as `range` (`lo`, `hi`) or `bisector` (`cut`, `side` 1 = above);
 a bisector with a `rule` cuts at the parent's density valley inside `rule.lo`–`rule.hi`, and `rule_ok`
 says whether it found one. A rectangle or polygon with `"rule": {"kind": "follow"}` is drawn where it moved
-to follow the cloud it was drawn on; `rule_ok` false = no such cloud here, so it stays where it was drawn."""
+to follow the cloud it was drawn on, a cross on the peak it found (`rule_peak`); `rule_ok` false = no such
+cloud here, so it stays where it was drawn, dashed."""
 
 GATE_CELLS_VIEW_DOC = """The image with populations marked — the check of a gate where it matters, on the cells.
 One timepoint `t` (default the middle frame) in the saved viewer contrast, with segmentation

@@ -120,6 +120,24 @@ end
     end
 end
 
+@testset "plan_gating_copy — what a copy would write, or why it skips, with nothing written" begin
+    _gate_fixture() do src, tgt
+        m = load_pop_tree(src; value_name = "B", pop_type = "flow")
+        add_pop!(m, "cd4"; gate = RectangleGate("mean_intensity_0", "area", 0.0, 1e9, 0.0, 1e9))
+        _set_names!(src, ["CD4", "CD8", "GFP", "TOM"])
+        plan(t) = plan_gating_copy(m, t; value_name = "B", src_names = channel_names(src; value_name = "B"))
+        _set_names!(tgt, ["CD8", "GFP", "TOM", "x"])
+        @test plan(tgt).skip == "channels don't match — CD4 (mean_intensity_0) not on this image"
+        _set_names!(tgt, ["CD8", "cd4", "GFP", "TOM"])                 # CD4 is the target's second channel
+        p = plan(tgt)
+        @test p.skip === nothing && p.remapped == [(from = "mean_intensity_0", to = "mean_intensity_1", channel = "CD4")]
+        @test pop_at(p.tree, "/cd4").gate.x_channel == "mean_intensity_1"
+        @test pop_at(m, "/cd4").gate.x_channel == "mean_intensity_0"   # the source map untouched
+        @test !_gated(tgt)                                             # nothing written
+        @test plan_gating_copy(m, tgt; value_name = "nope", src_names = ["CD4"]).skip == "no segmentation 'nope'"
+    end
+end
+
 @testset "rename_pop_columns — every column a pop reads, on a copy" begin
     m = PopulationTree(; pop_type = "flow", value_name = "B")
     add_pop!(m, "g"; gate = PolygonGate("mean_intensity_0", "mean_intensity_1", [(0, 0), (1, 0), (1, 1)]))

@@ -44,4 +44,17 @@ describe('GateNameBar on a narrow plot', () => {
     const { host, root } = bar('bisector', { rule: false }); await frames()
     oneRowInside(host, root)
   })
+  it('a rectangle / polygon offers "follow" (its cloud, per image); a quadrant offers no rule', async () => {
+    for (const kind of ['rectangle', 'polygon']) {
+      const rule = ref(false)
+      const { host, root } = bar(kind, { rule: rule.value, 'onUpdate:rule': (v: boolean) => { rule.value = v } }); await frames()
+      const t = root.querySelector('.cc-toggle')!
+      expect(t.textContent).toBe('follow')
+      t.querySelector('input')!.click(); await frames()
+      expect(rule.value).toBe(true)
+      oneRowInside(host, root)
+    }
+    const { root } = bar('quadrant', { count: 4 }); await frames()
+    expect(root.querySelector('.cc-toggle')).toBeNull()
+  })
 })
