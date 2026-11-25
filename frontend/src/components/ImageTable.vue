@@ -738,7 +738,8 @@ function thumbTip(img: CciaImage): TooltipBinding {
   <div v-else class="table-scroll">
   <!-- The canonical table (docs/UI.md). It owns the header, the checkboxes and their tri-state
        select-all, the sticky left columns, the resize handles and the row hit target; every cell below
-       is this component's, through a `#cell-` slot. -->
+       is this component's, through a `#cell-` slot. `windowed`: only the rows near the viewport are in
+       the DOM, so a 2000-image set costs what a screenful does (docs/UI.md → Image search). -->
   <SelectionTable
     class="image-table"
     data-guide="images.table"
@@ -752,6 +753,7 @@ function thumbTip(img: CciaImage): TooltipBinding {
     v-model:sort="sortModel"
     :disabled-ids="unselectableUids"
     sticky-header
+    windowed
     column-width-key="cc-imagetable-cols"
     :row-class="img => ({ 'cc-row-excluded': isExcluded(img) })"
     :row-tooltip="img => isExcluded(img) && !canSelectExcluded
