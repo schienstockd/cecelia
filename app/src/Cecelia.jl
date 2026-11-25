@@ -423,6 +423,7 @@ include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/af_cells.jl")      # per-cell AF correction → af_ intensity columns
+include("tasks/segment/af_cells_reapply.jl")   # a re-measure re-applies it
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
 include("tasks/gate/manual_gate.jl")
