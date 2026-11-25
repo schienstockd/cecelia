@@ -450,11 +450,24 @@ def _render_agent_causes(record: dict) -> list[str]:
 
 def shipped_reproduced(b: dict) -> bool:
     """A result review's `reproduced` finding its author tagged anything but fixed. The tag is the
-    author's word against a failing repro, so only the owner closes it (`decide`): neither the sweep's
-    excerpt judge nor verify may dismiss it."""
-    return bool(b.get("owner_only")) or (  # set by the sweep's merge when any merged finding was one
-        str(b.get("key", "")).startswith("result-") and b.get("marker") == "reproduced"
-        and b.get("outcome") in OUTCOME_VOCABULARY - {"fixed_pre_commit"})
+    author's word against a failing repro, so only the owner closes it: neither the sweep's excerpt
+    judge nor verify may dismiss it (verify's `dismiss` or `guard` becomes `decide`; a `fix` goes
+    through a PR the owner merges)."""
+    return bool(b.get("owner_only")) or _shipped_itself(b)  # owner_only: set by the sweep's merge
+
+
+def _shipped_itself(b: dict) -> bool:
+    return (str(b.get("key", "")).startswith("result-") and b.get("marker") == "reproduced"
+            and b.get("outcome") in OUTCOME_VOCABULARY - {"fixed_pre_commit"})
+
+
+def shipped_note(b: dict) -> str:
+    """How a `shipped_reproduced` bug was shipped, as a clause. A merged bug whose shipped repro is a
+    non-lead member carries only the lead's fields, so it says no more than that."""
+    if _shipped_itself(b):
+        return (f"its author reproduced the wrong result and shipped it as `{b['outcome']}`"
+                + (f": {b['reason']}" if b.get("reason") else ""))
+    return "a finding merged into it reproduced a wrong result its author shipped"
 
 
 def path_misses(bugs: _t.Sequence[dict], globs: _t.Sequence[str]) -> list[dict]:

@@ -289,6 +289,9 @@ def _bug_lines(bug: dict) -> list[str]:
     lines += [f"Also raised: {a['desc']}" for a in bug.get("also", [])]
     if v:
         lines.append(f"Verified ({v.get('verdict')}): {v.get('effect', '')}")
+    if _record.shipped_reproduced(bug):   # verify's `fix` keeps no override question to carry this
+        note = _record.shipped_note(bug)
+        lines.append(note[0].upper() + note[1:] + ". A shipped reason is a claim, not evidence.")
     if bug.get("owner_answer"):
         lines.append(f"My answer, which decides the fix over the agent's recommendation: {bug['owner_answer']}")
     elif v.get("recommendation"):
@@ -419,13 +422,20 @@ def append_auto(row: dict, path: pathlib.Path | None = None) -> None:
 
 def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = (),
                tried: _t.Mapping[str, dict] = {}) -> list[dict]:
-    """The pending work `--auto` may take, bundled: every bug verify called `fix` with no landed fix
+    """The pending work `--auto` may take, bundled: every bug verify called `fix`, and every `decide` the
+    owner answered `open` (its brief carries his answer, else the recommendation), with no landed fix
     (`fix_landed`), except one an auto session already called `not_real` or `left`, found `landed`
     on main, or failed on `AUTO_ATTEMPTS` times (its card says why; the owner takes it from there).
     Then the `parked` bugs (verify said `guard`): the session adds the guard, its commit names the
     key, and the next pass's verify closes it. That is how parked bugs leave instead of piling up.
     One PR each: a parked bug an auto session already opened a PR for isn't taken again."""
+    reviews = list(reviews)
+    record = apply_reviews(record, reviews, older)   # an answer given since the pass counts
     by_id = {b["id"]: b for b in record.get("bugs", [])}
+
+    def answered_work(b: dict) -> bool:
+        v = (b.get("verify") or {}).get("verdict")
+        return v == "fix" or (v == "decide" and b.get("owner_decision") == "open")
 
     def eligible(ref: str, done: tuple[str, ...] = ("not_real", "left", "landed")) -> bool:
         b = by_id[ref]
@@ -434,8 +444,7 @@ def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict
                 and last.get("outcome") not in done
                 and not (last.get("outcome") == "failed" and last.get("attempt", 1) >= AUTO_ATTEMPTS))
     work = [it for it in pending(record, reviews, older)
-            if it["kind"] == "work" and (by_id[it["ref"]].get("verify") or {}).get("verdict") == "fix"
-            and eligible(it["ref"])]
+            if it["kind"] == "work" and answered_work(by_id[it["ref"]]) and eligible(it["ref"])]
     parked = [{"kind": "work", "ref": b["id"]} for b in record.get("bugs", [])
               if b.get("status") == "parked" and (b.get("verify") or {}).get("verdict") == "guard"
               and eligible(b["id"], ("not_real", "left", "landed", "fixed"))]
@@ -735,6 +744,10 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     if newest and newest != record["date"]:
         title += "\n" + _col(YELLOW, f"  superseded by {newest}: answers given there don't show here",
                              use_colour=use_colour)
+    # an empty step reads like a quiet week here: the record's `run.failed` says which didn't run
+    for step, why in ((record.get("run") or {}).get("failed") or {}).items():
+        title += "\n" + _col(YELLOW, f"  {step} failed this pass ({_record.one_line(why)})"
+                             + (": no rule proposals" if step == "rules" else ""), use_colour=use_colour)
     if not items:
         print(title, file=out)
         print(_col(SKY_BLUE, "  nothing to review: every open bug and rule proposal is answered", use_colour=use_colour), file=out)

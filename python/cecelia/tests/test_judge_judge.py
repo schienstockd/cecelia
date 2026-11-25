@@ -62,6 +62,15 @@ class TokensTest(unittest.TestCase):
         with self.assertRaisesRegex(self.j.JudgeError, r"exit 1\): Overloaded$"):
             self._call(1, {"is_error": True, "api_error_status": 529, "result": "Overloaded"})
 
+    def test_a_timeout_says_so_without_the_command_line(self):
+        # TimeoutExpired's own text is the argv, schema and all: the reason fell off the record's cell
+        boom = subprocess.TimeoutExpired(["/bin/claude", "-p", "--json-schema", "{" * 400], 240)
+        with mock.patch.object(self.j.subprocess, "run", side_effect=boom), \
+                mock.patch.object(self.j, "resolve_claude_bin", return_value="/bin/claude"), \
+                self.assertRaises(self.j.JudgeError) as caught:
+            self.j.call_judge("p", {}, timeout=240)
+        self.assertEqual(str(caught.exception), "judge call timed out after 240s")
+
     def test_no_usage_is_zeros(self):
         self.assertEqual(self.j.tokens({}), {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0})
 
