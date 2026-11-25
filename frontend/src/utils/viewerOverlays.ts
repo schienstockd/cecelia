@@ -279,6 +279,28 @@ export function buildPointBuffer(
 export interface PointLayer {
   payload: OverlayPayload
   hidden?: ReadonlySet<string>
+  /** dim the dots of cells with no track ("Tracked only", `UNTRACKED_DIM`) */
+  dimUntracked?: boolean
+}
+
+/** How much of its colour an untracked cell's dot keeps under "Tracked only" — dimmed, not hidden, so
+ *  a gated cell the tracker missed stays visible. The movie dims by the same factor
+ *  (`UNTRACKED_DIM`, api/src/overlay_author.jl). docs/todo/TRACK_SUBPOP_GATING_PLAN.md (Decision 9). */
+export const UNTRACKED_DIM = 0.35
+
+/** A payload row's cell is in a track (the overlays route sends -1 for none). */
+export const isTrackedRow = (track: readonly number[] | undefined, r: number): boolean =>
+  !!track && track[r] > 0
+
+/** How many of `labels` are tracked cells of `payload` — a population's "tracked of gated". 0 when the
+ *  segmentation carries no tracks. */
+export function trackedLabelCount(payload: OverlayPayload, labels: readonly number[]): number {
+  const { label, track } = payload.cells
+  if (!label || !track || !track.length) return 0
+  const row = labelRows(label)
+  let n = 0
+  for (const l of labels) { const r = row(l); if (r >= 0 && track[r] > 0) n++ }
+  return n
 }
 
 /**
@@ -306,8 +328,9 @@ export function buildPointBufferLayers(
   const cols = new Float32Array(cap * 3)
   let k = 0
   for (let li = 0; li < layers.length; li++) {
-    const { payload, hidden } = layers[li]
-    const { label, x, y } = payload.cells
+    const { payload, hidden, dimUntracked } = layers[li]
+    const { label, x, y, track } = payload.cells
+    const dim = !!dimUntracked && !!track && track.length > 0
     if (!label || !x || !y || label.length === 0) continue
     const row = labelRows(label)
     const byValue = colourByValue(payload, palette, scale)
@@ -325,7 +348,8 @@ export function buildPointBufferLayers(
         // Colour-by wins over the population colour when it is on, which is what makes it useful: the
         // populations are still what SELECTS the cells, the column is what shades them.
         const rgb = byValue ? byValue(r) : popRgb
-        cols[k * 3] = rgb[0]; cols[k * 3 + 1] = rgb[1]; cols[k * 3 + 2] = rgb[2]
+        const f = dim && !isTrackedRow(track, r) ? UNTRACKED_DIM : 1
+        cols[k * 3] = rgb[0] * f; cols[k * 3 + 1] = rgb[1] * f; cols[k * 3 + 2] = rgb[2] * f
         k++
       }
     }

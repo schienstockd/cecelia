@@ -320,6 +320,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "spatialGraphs"    => spatial_graphs,
         "spatialGraphWidth" => _cfg_maybe(cfg, "spatialGraphWidth"),
         "spatialGraphPopsOnly" => _cfg_bool(cfg, "spatialGraphPopsOnly"),
+        # a viewer look's "Tracked only": the segmentations whose untracked cells' dots are dimmed
+        "dimUntracked"     => (d = _cfg_maybe(cfg, "dimUntracked");
+                               d isa AbstractVector ? String[String(x) for x in d] : String[]),
         # The pop layers: a viewer look draws these cell pop types on EVERY segmentation (populations
         # are not a property of the shown segmentation); without them, the one `popType` of `valueName`.
         "popTypes"         => pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[],
