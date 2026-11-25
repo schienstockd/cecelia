@@ -345,6 +345,18 @@ end
 # that opens many images would otherwise keep every one.
 const _RESOLVE_POPS_CACHE = BoundedCache(32)
 
+# `label_track_sources` for `_resolve_pops_compute`, keyed on the cell table alone. The resolver's own
+# stamp follows every gating map, so without this each gate write or colour change re-read the table's
+# tracking columns: 0.17 s of a 608k-cell movie's resolve, for an answer only re-tracking changes.
+# Read-only use here (`_pop_has_authored_tracks` only looks up) — other callers keep their own fresh copy.
+const _LABEL_TRACK_SOURCES_CACHE = BoundedCache(8)
+function _label_track_sources_cached(img::CciaImage, value_name::AbstractString)
+    lpp = img_label_props_path(img, value_name)
+    cached!(_LABEL_TRACK_SOURCES_CACHE, string(lpp); stamp = file_stamp(lpp)) do
+        label_track_sources(img, value_name)
+    end::Dict{Int,Union{String,Nothing}}
+end
+
 # `pop_df`'s frames, same reasoning (they used to live on the image too). A frame can be large — a
 # 600k-cell read with every channel runs to ~100 MB — so this one is bounded by bytes as well as by
 # count, and a single frame over the byte budget is returned without being kept.
@@ -457,7 +469,7 @@ function _resolve_pops_compute(img::CciaImage, pt::String, value_name::String)::
     # (claimed by every pop that touches its label). Preserves the pre-orphan-guard behaviour for
     # projects tracked before the P1 provenance ship; re-tracking rewrites the marker and the guard
     # tightens.
-    label_to_source = label_track_sources(img, value_name)
+    label_to_source = _label_track_sources_cached(img, value_name)
     out = NamedTuple[]
     for path in pop_paths(m)
         p = pop_at(m, path)

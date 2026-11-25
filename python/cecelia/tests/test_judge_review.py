@@ -111,6 +111,18 @@ class IssueTest(_ReviewFixture):
         self.assertIn("Don't read it", brief)
         self.assertIn("name `fanout-b3` in the commit message", brief)   # landed-fix detection still needs it
 
+    def test_a_shipped_reproduced_brief_carries_the_authors_tag_and_reason(self):
+        # verify's `fix` on it no longer becomes a `decide` whose question held the reason
+        bug = {**self.record["bugs"][2], "key": "result-1", "marker": "reproduced", "outcome": "false_positive",
+               "reason": "the repro expects the wrong unit"}
+        self.assertIn("Its author reproduced the wrong result and shipped it as `false_positive`: the repro "
+                      "expects the wrong unit. A shipped reason is a claim", self.rv.fix_brief(self.record, bug))
+        # merged: the shipped repro was another member, and the lead's own fields say nothing about it
+        merged = {**self.record["bugs"][2], "owner_only": True}
+        self.assertIn("A finding merged into it reproduced a wrong result its author shipped",
+                      self.rv.fix_brief(self.record, merged))
+        self.assertNotIn("`None`", self.rv.fix_brief(self.record, merged))
+
     def test_a_duplicate_brief_asks_for_the_helper_not_a_failing_test(self):
         bug = {**self.record["bugs"][2], "kind": "duplicate", "marker": "should reuse"}
         brief = self.rv.fix_brief(self.record, bug)
@@ -191,6 +203,12 @@ class SupersededTest(_ReviewFixture):
         self.assertIn("superseded by 2026-10-12: answers given there don't show here", out)
         _, out = self.queue("q", newest="2026-10-05")    # the newest record itself: no warning
         self.assertNotIn("superseded", out)
+
+    def test_a_step_that_failed_this_pass_is_on_the_title(self):
+        # no rule items in the queue otherwise reads like a quiet week
+        self.record["run"] = {**self.record.get("run", {}), "failed": {"rules": "judge call timed out after 240s"}}
+        _, out = self.queue("q")
+        self.assertIn("rules failed this pass (judge call timed out after 240s): no rule proposals", out)
 
     def test_the_warning_stays_on_every_full_screen_card(self):
         _, text = self.queue("o", "q", fullscreen=True, newest="2026-10-12")

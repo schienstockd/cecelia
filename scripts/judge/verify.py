@@ -114,8 +114,10 @@ bug's reasoning depends on. Trace it; don't infer. Read only: don't edit, build 
 
 For each bug give one verdict:
 - fix: the defect is present here and can happen with today's callers.
-- decide: whether it's a bug depends on intent nobody has written down. Put the exact question in
-  `question` (one line) and your answer in `recommendation`.
+- decide: only when you can't pick the fix without the owner's intent: two fixes give different
+  results, or the fix changes behaviour a doc or test states. Put the exact question in `question`
+  (one line) and your answer in `recommendation`. When you would commit to one fix, it's `fix`:
+  describe that fix in `recommendation`.
 - guard: the code has the flaw, but nothing reachable today triggers it. Put what would make it
   live in `trigger`.
 - fixed: the finding was right, but this code no longer has the defect: fixed since it was raised,
@@ -210,7 +212,9 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
              "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(SCHEMA)],
             input=prompt, cwd=str(dest), env=agent_sandbox.agent_env(),
             capture_output=True, text=True, encoding="utf-8", timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired) as e:
+    except subprocess.TimeoutExpired as e:   # its text is the whole argv, which buries the reason
+        raise VerifyError(f"verify agent timed out after {timeout:.0f}s") from e
+    except OSError as e:
         raise VerifyError(f"verify agent failed: {e}") from e
     finally:
         agent_sandbox.remove_worktree(repo, dest)
@@ -232,7 +236,7 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
     agent spends its whole budget. A group that fails or isn't reached stays unverified and waits
     for the next pass. `fixed` sets the bug's status to `gone` (a repeated agent error's to
     `dismissed`, which keeps it muted), `dismiss` to `dismissed`, `guard` to `parked` (on a
-    duplicate, where it can't apply, `guard` becomes `decide`). A `dismiss` on a bug with a landed
+    duplicate, where it can't apply, `guard` becomes `fix`). A `dismiss` on a bug with a landed
     fix is `fixed`.
 
     The summary's `usd` is what the agents reported spending; `reserved_usd` is what the cap
@@ -269,19 +273,19 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
     for b in bugs:
         v = verdicts.get(b["key"])
         if v and v["verdict"] == "guard" and b.get("kind") == "duplicate":
-            # a copy can't be "not reachable yet": parking it would drop it off the work list unseen
-            v = {**{k: x for k, x in v.items() if k != "trigger"}, "verdict": "decide",
-                 "question": v.get("question") or "verify answered `guard` for a duplicate: reuse the helper, or keep the copy?",
+            # a copy can't be "not reachable yet": parking it would drop it off the work list unseen.
+            # The copy is there, so the fix is the reuse; the trigger says what it would take.
+            v = {**{k: x for k, x in v.items() if k != "trigger"}, "verdict": "fix",
                  **({"recommendation": v["trigger"]} if v.get("trigger") and not v.get("recommendation") else {})}
         if v is None:
             out.append(b)
             continue
         v = {**v, "verdict": _record.verify_verdict(v["verdict"], b)}
-        if _record.shipped_reproduced(b) and v["verdict"] in ("fix", "dismiss", "guard"):
-            # the author ran into a wrong result and shipped it: only the owner closes that, not an agent
+        if _record.shipped_reproduced(b) and v["verdict"] in ("dismiss", "guard"):
+            # the author ran into a wrong result and shipped it: only the owner closes that, not an agent.
+            # A `fix` stays one: its PR goes to the owner, and the fix brief carries the author's reason
             v = {**v, "verdict": "decide",
-                 "question": f"A reproduced wrong result was shipped as `{b.get('outcome')}`"
-                             f"{': ' + b['reason'] if b.get('reason') else ''}. Verify said `{v['verdict']}`. Real?",
+                 "question": f"{(note := _record.shipped_note(b))[0].upper()}{note[1:]}. Verify said `{v['verdict']}`. Real?",
                  "recommendation": v.get("recommendation") or v.get("effect", "")}
         b = {k: x for k, x in b.items() if k != "reverify"}
         if v["verdict"] == "fixed" and not b.get("repeat"):

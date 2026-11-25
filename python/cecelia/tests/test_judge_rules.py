@@ -109,16 +109,50 @@ class ProposeTest(unittest.TestCase):
     def test_one_judge_call_sees_every_finding_and_the_rules(self):
         def assign(prompt):
             self.seen.append(prompt)
-            return {"assignments": [{"slug": "y", "rule": "CLAUDE.md → *Testing*"}]}, 0.3
+            return {"assignments": [{"slug": "y", "rule": 1}]}, 0.3
         with tempfile.TemporaryDirectory() as d:
             (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
             rows, props, stats, cost = self.r.propose([_finding_event("y")], date="2026-10-02", assign=assign,
                                                       repo=pathlib.Path(d), git=lambda *a: None)
         self.assertEqual(len(self.seen), 1)
         self.assertIn("desc y", self.seen[0])
-        self.assertIn("CLAUDE.md → *Testing*", self.seen[0])
+        self.assertIn("1. CLAUDE.md → *Testing*", self.seen[0])
         self.assertEqual((rows[0]["findings"], props, cost), (1, [], 0.3))
         self.assertNotIn("_sources", rows[0])
+
+    def test_findings_are_judged_in_batches_and_rule_numbers_name_the_rule(self):
+        # the judge answers with a rule's number: 2 is the second section; 0 and 9 are no rule
+        ev = [_finding_event(f"s{i}", session=f"x{i}") for i in range(5)]
+        answers = iter([{"assignments": [{"slug": "s0", "rule": 2}, {"slug": "s1", "rule": 0}]},
+                        {"assignments": [{"slug": "s2", "rule": 2}, {"slug": "s3", "rule": 9}]},
+                        {"assignments": [{"slug": "s4", "rule": 1}]}])
+
+        def assign(prompt):
+            self.seen.append(prompt)
+            return next(answers), 0.25
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(self.r, "ASSIGN_BATCH", 2):
+            (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n## Discovery\n", encoding="utf-8")
+            rows, _, _, cost = self.r.propose(ev, date="2026-10-02", assign=assign, repo=pathlib.Path(d),
+                                              git=lambda *a: None, edited=lambda rl: {})
+        self.assertEqual(len(self.seen), 3)
+        self.assertEqual(cost, 0.75)
+        self.assertEqual({r["rule"]: r["findings"] for r in rows},
+                         {"CLAUDE.md → *Discovery*": 2, "CLAUDE.md → *Testing*": 1})
+
+    def test_one_failed_batch_fails_the_step(self):
+        # a tally of the batches that answered could read as "nothing broken"
+        calls = iter([({"assignments": [{"slug": "s0", "rule": 1}]}, 0.2)])
+
+        def assign(prompt):
+            try:
+                return next(calls)
+            except StopIteration:
+                raise self.r._judge.JudgeError("judge call timed out after 240s") from None
+        failures: dict = {}
+        with mock.patch.object(self.r, "ASSIGN_BATCH", 1):
+            rows, props, _, cost = self.r.propose([_finding_event("s0"), _finding_event("s1")], date="2026-10-02",
+                                                  assign=assign, git=lambda *a: None, failures=failures)
+        self.assertEqual((rows, props, cost, failures), ([], [], 0.0, {"rules": "judge call timed out after 240s"}))
 
     def test_the_logs_latest_outcome_decides_what_shipped(self):
         def resolved(slug, outcome, ts, branch="feat/x"):
@@ -131,7 +165,7 @@ class ProposeTest(unittest.TestCase):
                # revised later: the newest resolution wins
                resolved("b", "fixed_pre_commit", "2026-10-01T01:00:00Z"),
                resolved("b", "dropped_no_action", "2026-10-01T02:00:00Z")]
-        assign = lambda p: ({"assignments": [{"slug": x, "rule": "CLAUDE.md → *Testing*"} for x in "abc"]}, 0.1)  # noqa: E731
+        assign = lambda p: ({"assignments": [{"slug": x, "rule": 1} for x in "abc"]}, 0.1)  # noqa: E731
         with tempfile.TemporaryDirectory() as d:
             (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
             rows, props, _, _ = self.r.propose(iter(ev), date="2026-10-02", assign=assign, repo=pathlib.Path(d),
@@ -158,7 +192,7 @@ class ProposeTest(unittest.TestCase):
 
     def _three_sessions(self, edited=None):
         ev = [_finding_event(x, ts=f"2026-09-2{i}T00:00:00Z") for i, x in enumerate("abc", 1)]
-        assign = lambda p: ({"assignments": [{"slug": x, "rule": "CLAUDE.md → *Testing*"} for x in "abc"]}, 0.1)  # noqa: E731
+        assign = lambda p: ({"assignments": [{"slug": x, "rule": 1} for x in "abc"]}, 0.1)  # noqa: E731
         with tempfile.TemporaryDirectory() as d:
             (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
             return self.r.propose(ev, date="2026-10-02", assign=assign, repo=pathlib.Path(d), git=lambda *a: None,
@@ -173,7 +207,7 @@ class ProposeTest(unittest.TestCase):
     def test_an_answer_to_a_proposal_cuts_like_an_edit_and_the_later_of_the_two_wins(self):
         def run(edited, answered):
             ev = [_finding_event(x, ts=f"2026-09-2{i}T00:00:00Z") for i, x in enumerate("abc", 1)]
-            assign = lambda p: ({"assignments": [{"slug": x, "rule": "CLAUDE.md → *Testing*"} for x in "abc"]}, 0.1)  # noqa: E731
+            assign = lambda p: ({"assignments": [{"slug": x, "rule": 1} for x in "abc"]}, 0.1)  # noqa: E731
             with tempfile.TemporaryDirectory() as d:
                 (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
                 return self.r.propose(ev, date="2026-10-02", assign=assign, repo=pathlib.Path(d),

@@ -116,14 +116,20 @@ export interface OverlayPayload {
   note?: string
 }
 
+/** `/api/viewer/overlays?part=pops` — the populations alone, for a viewer that holds the cells. */
+export interface OverlayPopsPayload { pops: OverlayPop[]; valueName?: string; popType?: string }
+
 export function overlaysUrl(q: {
   projectUid: string; imageUid: string; valueName?: string
   popType?: string; colourBy?: string
+  /** `pops`: the populations alone (`OverlayPopsPayload`) — no cells, no table read */
+  part?: 'pops'
 }): string {
   const p = new URLSearchParams({ projectUid: q.projectUid, imageUid: q.imageUid })
   if (q.valueName) p.set('valueName', q.valueName)
   if (q.popType) p.set('popType', q.popType)
   if (q.colourBy) p.set('colourBy', q.colourBy)
+  if (q.part) p.set('part', q.part)
   return '/api/viewer/overlays?' + p.toString()
 }
 

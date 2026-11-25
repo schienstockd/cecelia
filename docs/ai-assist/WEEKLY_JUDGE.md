@@ -101,8 +101,9 @@ test whether an agent can actually use the framework.
    **Result review** (key `result-…`): `reproduced` findings not tagged `fixed_pre_commit`, and untagged
    `inferred` notes, judged like fanout findings. `display` notes are never swept
    ([`RESULT_REVIEW.md`](RESULT_REVIEW.md)). A `reproduced` one its author tagged anything but fixed
-   goes to the owner as `decide` whatever the excerpt judge or verify said (`record.shipped_reproduced`), unless the code is gone or verify finds
-   it fixed. Verify also says per bug whether it makes a result wrong (`result`); the record lists real
+   can't be closed by an agent (`record.shipped_reproduced`): the excerpt judge's `not_a_bug` sends it
+   back to verify, and verify's `dismiss` or `guard` goes to the owner as `decide`. Verify's `fix`
+   stays `fix`: its PR goes to the owner, and the fix brief carries the author's tag and reason. Verify also says per bug whether it makes a result wrong (`result`); the record lists real
    ones outside the result paths under *Result bugs outside the result paths* (`record.path_misses`).
 
    **Duplicates** (`kind: "duplicate"`, key `conv-…`): convention findings marked `should reuse` that
@@ -216,7 +217,10 @@ test whether an agent can actually use the framework.
    - `guard`: it can't happen today, and the agent names what would make it live. The bug becomes
      `parked`: off the work list, listed under *Parked*; `--auto` adds the guard (*Unattended* below), and it comes
      back to verify when a commit names it or its function changes;
-   - `decide`: only you can answer it, so it goes on the owner queue;
+   - `decide`: the fix depends on intent only you can give (two fixes with different results, or one
+     that changes stated behaviour), so it goes on the owner queue with the agent's recommendation.
+     An agent that would commit to one fix says `fix` and puts it in `recommendation`. A duplicate's
+     `guard` becomes `fix`: the copy is there, so reuse is the fix;
    - `fixed`: the finding was right, but the code no longer has the defect (fixed since, or removed).
      The bug becomes `gone`, and counts as a real bug fixed in the charts. A repeated agent error
      becomes `dismissed` instead, which keeps it muted (step 3);
@@ -227,8 +231,10 @@ test whether an agent can actually use the framework.
      `fixed` existed, verify answered `dismiss` for a fixed bug. Read that way, the findings-flow
      chart's history moves 10 bugs from *not a bug* to *fixed*.
 5. **Rules** (`rules.py`). Every fanout + convention finding from the last 30 days is mapped to the
-   one CLAUDE.md `##` section it breaks, by one tool-less judge call. Git sorts each finding into
-   `agent_made` (the reviewed diff wrote it) or `legacy` (the code was there before). A rule broken
+   one CLAUDE.md `##` section it breaks, by tool-less judge calls of 150 findings each (the judge
+   answers with a section's number; one call over the whole window outgrew the timeout). Git sorts
+   each finding into `agent_made` (the reviewed diff wrote it) or `legacy` (the code was there
+   before). A rule broken
    in **3 or more different sessions** gets a proposal:
    - `tighten`: agents keep missing the rule. Reword it, or turn it into a mechanical check.
    - `ratchet`: older code keeps the shape alive. Add a test that bans it.
@@ -346,8 +352,8 @@ than the screen, and a resize repaints it at once:
 1. **Decide.** The bugs a verify agent sent to you. `[o] follow recommendation` (stays open; a
    session follows the agent's recommendation), `[a] answer` (in your own words; a session follows yours instead), or
    `[w] won't fix` (dropped, never carried again).
-2. **Work.** Every other open bug: `fix` first, then the `decide` bugs you followed or answered,
-   then the rest. A `guard` bug is parked, so it isn't offered. `[f] fix now` starts an interactive Claude Code session where you
+2. **Work.** Every other open bug: `fix` first, then the `decide` bugs you followed or answered
+   (`--auto` takes these too, briefed on your answer), then the rest. A `guard` bug is parked, so it isn't offered. `[f] fix now` starts an interactive Claude Code session where you
    start sessions (the folder holding the main checkout and its worktrees, `~/cc-workspace/cecelia`),
    briefed on that bug: where it is, what verify found, your answer or the recommendation, and how to
    work it (confirm on `origin/main`, its own worktree from `pixi run bootstrap-worktree fix-<key>`,
@@ -376,7 +382,8 @@ add one comment (your words, defused like a body; on a bug filed that pass, righ
 create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's create cap says
 *issue not filed yet*.
 
-**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works every `fix` bug, then every
+**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works every `fix` bug and every
+`decide` bug you answered `open` (briefed on your answer, else the recommendation), then every
 `parked` one (or the first N sessions) without you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
 per step: spinner, elapsed time, the agent's tool calls and its latest; `pixi run agents` lists
 the agent as `auto-fix^`. On the usage limit it waits for the reset and resumes the same
@@ -386,7 +393,8 @@ holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<k
 `fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with
 `acceptEdits` keeping edits in the worktree, then stages the diff, runs recital, resumes the agent
 to act on the findings and tag them, and runs recital again while that changed the diff (up to
-`RECITAL_ROUNDS`, then it goes back to you), and commits, pushes and opens the PR itself, its body flagged
+`RECITAL_ROUNDS`, then it goes back to you; an agent that reverts its whole fix on a finding leaves
+the bug `left` with the finding as the reason, no worktree), and commits, pushes and opens the PR itself, its body flagged
 when the fix changes what is drawn on screen (look before you merge). Then it waits for the PR's CI and mergeability: red CI goes back to the same
 session with the failed jobs' log excerpts (an unrelated failure is re-run once), a conflict with main
 as a merge the agent resolves; after `CI_ROUNDS` (2) still red, the bundle goes back to you. A bug
@@ -509,7 +517,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`); `--date D` an older record, flagged superseded on every screen |
-| `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background, `--resume-stopped` for worktrees a run fixed but stopped before recital) |
+| `pixi run judge-review --auto` | Work the `fix` bugs and the `decide` ones you answered, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background, `--resume-stopped` for worktrees a run fixed but stopped before recital) |
 | `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |

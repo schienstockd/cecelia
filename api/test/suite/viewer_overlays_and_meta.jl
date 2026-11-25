@@ -136,6 +136,49 @@
     end
 end
 
+@testset "API: viewer overlays part=pops — the populations alone, as the whole payload has them" begin
+    # A gate write changes membership, never the cells, so the viewer asks for `part=pops` after one
+    # (`frontend/src/utils/viewer/overlayTick.ts`). It must be the SAME populations the whole payload
+    # carries — the viewer swaps them in under the cells it holds — and carry no cells at all.
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy: the gates below are written to it
+    if fx === nothing
+        @test_skip "cell-table fixture missing"
+    else
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dirname(fx.project)
+            # the routes take ids, not paths: the uids of the `fixture_for` copy above
+            ids = Dict("projectUid" => basename(fx.project), "imageUid" => basename(fx.dir),
+                       "valueName" => fx.value_name, "popType" => "flow")
+            tab = as_df(select_cols(label_props(fixture_table(fx)), ["area"]))
+            cut = sort(Float64.(tab.area))[cld(size(tab, 1), 2)]       # the median area
+            add(name, lo) = api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(ids, Dict("name" => name, "parent" => "/",
+                "colour" => "#ff0000", "gate" => Dict("kind" => "rectangle", "x_channel" => "area", "y_channel" => "area",
+                    "x_transform" => Dict("kind" => "linear"), "y_transform" => Dict("kind" => "linear"),
+                    "x_min" => lo, "x_max" => 1e9, "y_min" => -1e9, "y_max" => 1e9))))))
+            @test add("hi", cut)[1] == 200
+            @test add("all", -1e9)[1] == 200
+            get_(qs) = api_viewer_overlays(HTTP.Request("GET",
+                "/api/viewer/overlays?" * HTTP.escapeuri(ids) * qs))
+            whole = JSON3.read(get_("")[2])
+            st, body = get_("&part=pops")
+            @test st == 200
+            part = JSON3.read(body)
+            @test !haskey(part, :cells) && !haskey(part, :nCells)
+            @test String(part.valueName) == fx.value_name && String(part.popType) == "flow"
+            @test length(whole.pops) == 2
+            # the same answer, pop for pop: path, colour, show, uid, flags and every label
+            @test JSON3.write(part.pops) == JSON3.write(whole.pops)
+            # membership straight from the table: the gated pop holds exactly the cells at or above its cut
+            hi = only(p for p in part.pops if p.path == "/hi")
+            @test Set(Int.(hi.labels)) == Set(Int(l) for (l, a) in zip(tab.label, tab.area) if a >= cut)
+            @test 0 < length(hi.labels) < size(tab, 1)
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 @testset "API: viewer label stores (P4 — masks through the same reader)" begin
     # A mask is another zarr of the same geometry, which is what makes P4 cheap: the same `read_slab`,
     # the same headers, the same shape guard. What must NOT be re-derived is where a store lives —

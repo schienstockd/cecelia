@@ -304,7 +304,8 @@ same name is skipped.
 
 **Claude groups a run (`add_cluster_pops`).** `POST /api/gating/pop/add-cluster-pops` takes the whole
 grouping of one run — `groups: [{name, clusters}]`, several clusters per population — and writes each as
-the root-level cluster population the manager's ticks write, stamped `createdBy`, on EVERY image of the
+the cluster population the manager's ticks write (at the root; under the source population for a refine
+run), stamped `createdBy`, on EVERY image of the
 run (`partOf`, the cluster page's set-wide replay done server-side). All or nothing: every image's map
 is checked (names, `cluster_taken`, ids the run lacks, a cluster in two groups) before any is written.
 The reply carries per-group counts summed over the run and the clusters still `unassigned`.
@@ -313,6 +314,28 @@ The reply carries per-group counts summed over the run and the clusters still `u
 grouping checked as it will be after the request (so a cluster moves between two of Claude's populations
 in one call), set-wide and all or nothing, under set-own-gate's ownership rules. Re-picking the clusters
 re-stamps the run, as the stale icon's click does.
+
+**Refine runs — gating with clustering.** A coarse run gives the first populations; clustering ONE of
+them again (usually at a higher resolution) gives its children. The refine run is an ordinary
+`clusters.{suffix}` column, NaN outside the source population, with its own `X_umap.{suffix}` of just
+those cells. What makes it a level of a tree is its manifest entry: every `clustPops` run records
+`params` (resolution, normalisation, …) and, when its `popsToCluster` is one cell cluster population
+(the same path on each segmentation picked), `refines: {pop, run, clusters, runAt}` — the source as it
+was when the run ran (`refine_source`, `app/src/gating/popmanager/cluster_refine.jl`). Any other input
+(several pops, a gate, a region) is a plain restricted run with no lineage: a cluster pop tree can only
+nest cluster pops. A population added with no `parent` that picks from a refine run goes under the
+source population (`refine_source_pop` — `pop/add` and `add-cluster-pops` alike; an explicit parent wins;
+404 on an image without the source, so the run's images keep the same paths).
+`cluster_refine_stale` says why a refine run no longer matches its source — the source population is
+gone, picks other clusters or another run, or its run was deleted or re-run; and up the chain when the
+run it refines is itself stale. `/api/gating/channels` reports all of it as `clusterRuns`; the cluster
+page orders its run dropdown as the tree (`utils/clusterRefine.ts`), shows the source population above a
+refine run's pops as read-only context rows, links a refined population to its runs, warns on a stale
+run, and its pop-manager ⋯ → **Refine** fills Cluster cells (the run's saved params, the population as
+input, double the resolution, a new suffix) through `paramHandoff` — it never starts the run. Deleting a
+source run does not delete its refine runs (their columns stay valid); they read stale, and their
+populations read empty — their parent filters a column that is gone — until moved (⋯ → Move under…). Design:
+`docs/todo/CLUSTER_REFINE_PLAN.md`.
 
 **Cluster plots resolve value_name from the RUN, not the active segmentation.** The UMAP endpoint
 (`api_plots_cluster_map`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
@@ -703,7 +726,9 @@ stats, the plot refresh and the viewer overlays at once. `computed_pop_tree`, th
 and `resolve_pops` (cell-table pop types) evaluate through it.
 
 `recompute!` itself transforms each (column, transform) once per evaluation (`transform_column`, shared
-by sibling gates on the same axes) and tests a child only on its parent's rows (`inside_t`); a slice
+by sibling gates on the same axes; typed and threaded — the array methods of `apply_transform` /
+`invert_transform` route through it and `invert_column`, so a rule gate's parent column, the gate-examples
+edge distance and the gate-plot image pay the same, ~11 ms per logicle column of 608k cells at 8 threads) and tests a child only on its parent's rows (`inside_t`); a slice
 gate is still tested on every row, since its half-plane is clipped to a box around the points given.
 The parsed `obs/_index` label column is cached per h5ad file (`_OBS_LABELS_CACHE`, mtime + size).
 
@@ -1120,6 +1145,22 @@ things until Apply: the eye toggles (`stagedSel`), and the refreshes gate writes
 
 Apply, or switching manual apply off, runs everything held; Discard leaves held refreshes alone
 (they are server-side changes). The chip counts both.
+
+**The viewer follows the same rule** — the pop-out has its own stores, so a write reaches it as the
+`cc.viewerOverlaysTick` ping, and the ping names its scope (`utils/viewer/overlayTick.ts`):
+
+- **a colour or show change** (no pop's membership changed) — `look`: the tick carries every pop's
+  colour + show, patched onto the arrays the viewer holds. Nothing is fetched. The colours are the
+  gating map's, as the server's reply has them, so a recording (which reads the map) draws the same.
+- **a gate add / move / delete / rename** — `pops`: only the edited (segmentation, pop type) layer
+  refetches, and only its populations (`/api/viewer/overlays?part=pops`): the cells did not move.
+- **anything else** (a task rewrote the table, the document switched) — `all`, the whole payload,
+  which is also what a bare `<imageUid>:<ts>` tick from an older pinger means.
+
+Held pings widen rather than replace (`widerScope`): a held gate move then a colour change still
+refetches the populations at Apply. Measured on a 608k-cell × 100-frame movie: the payload a gate
+ping fetched was the whole movie (42 MB, 0.12–0.3 s server, ~0.11 s to parse); a membership change
+now fetches 15 MB (0.03–0.05 s, ~0.03 s to parse) and a colour change nothing.
 
 ## Scale
 
