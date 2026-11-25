@@ -428,6 +428,13 @@ end
         @test size(df) == (1377, 40)
         # n_obs is the cheap dims-only count — must agree with the materialised row count
         @test n_obs(label_props(h5)) == 1377
+        # an obsm matrix comes back (n_obs × k) in obs order: each column is one of the centroid
+        # columns `as_df` reads from the same matrix (obsm counts the rows from the index dims only)
+        sp = obsm(label_props(h5), "spatial")
+        @test size(sp, 1) == 1377
+        cents = [c for c in names(df) if startswith(c, "centroid_") && c != "centroid_t"]
+        @test size(sp, 2) == length(cents) && all(j -> any(c -> sp[:, j] ≈ df[!, c], cents), axes(sp, 2))
+        @test size(obsm(label_props(h5), "no.such.key")) == (0, 0)
         @test "label" in names(df)
         @test eltype(df.label) == Int64
         @test df.label[1:5] == [0, 1, 2, 3, 4]

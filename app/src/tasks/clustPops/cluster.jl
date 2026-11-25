@@ -22,6 +22,11 @@ using DataFrames: nrow, groupby, DataFrame
 
 struct ClustPops <: CciaTask end
 
+# The runner params a run records with its features (what the Refine form copies; CLUSTER_REFINE_PLAN).
+const _CLUST_RUN_PARAM_KEYS = ("resolution", "normaliseAxis", "normaliseToMedian", "maxFraction",
+    "normalisePercentile", "normalisePercentileBottom", "transformation", "logBase", "createUmap",
+    "usePaga", "pagaThreshold")
+
 # Coerce a multi-select param to Vector{String}, dropping blanks/placeholders.
 function _str_list(params, key)::Vector{String}
     raw = get(params, key, String[])
@@ -71,39 +76,8 @@ function parse_clust_pops_params(d::AbstractDict)::ClustPopsParams
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
 end
 
-# Persist a clustering run's per-suffix manifest, so the cluster pages can offer EXACTLY the columns
-# the run used (heatmap) and know WHICH images were clustered together (the `partOf` set — mirrors the
-# old R `attr(clustPath, "partOf") <- uIDs` + `valuePartOf`). Stored as a `{props}.clustfeatures.json`
-# sidecar next to the labelProps (cell table for clust, `__tracks` table for trackclust), keyed by
-# suffix as `{features, partOf, family, labels}`; merged so multiple runs/suffixes coexist. Shared by
-# clustPops + clustTracks + clustRegions (read by api_gating_channels). Cluster pops can only be
-# defined for images in `partOf`.
-#
-# `family` is the obs-column family the run wrote (`_cluster_measure_prefix` without the dot:
-# "clusters" for clustPops/clustTracks, "regions" for clustRegions). Two runs of DIFFERENT families may
-# legitimately share a suffix on one segmentation (a `clusters.immune` cell clustering and a
-# `regions.immune` region clustering are different columns) — without `family` the second write would
-# silently clobber the first's features/partOf. Absent `family` reads back as "clusters" (back-compat
-# with sidecars written before this field existed).
-#
-# `labels` optionally maps column name → display label, for runs whose feature columns are machine
-# names but whose meaning is a user-facing string (region composition: `spatial.comp.B_qc__tracked.x`
-# → "B/qc/_tracked"). Empty for the cluster tasks, whose columns are already channel/measure names
-# relabelled via the channels endpoint's nameMap. `behaviour_axes` (track runs only) is the metadata
-# `clustering_utils.behaviour_axes` returns — axis names + path root — stored as `behaviourAxes`
-# (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decision 4). Untyped until a Julia reader needs it.
-# `at` = when the run ran, one value for all its segments — a cluster pop's staleness (`cluster_run_at`).
-function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
-                                features::Vector{String}, part_of::Vector{String};
-                                family::AbstractString = "clusters",
-                                labels::AbstractDict = Dict{String,String}(),
-                                behaviour_axes::Union{Nothing,AbstractDict} = nothing,
-                                at::AbstractString = string(Dates.now()))
-    entry = Dict{String,Any}("features" => features, "partOf" => part_of,
-                             "family" => String(family), "labels" => Dict{String,Any}(labels), "at" => String(at))
-    behaviour_axes === nothing || (entry["behaviourAxes"] = behaviour_axes)
-    put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
-end
+# `_write_clust_features!` (the run manifest every clustering task writes) lives beside its readers in
+# gating/popmanager/clustering_colour.jl.
 
 # One segment per (uID, value_name) of the pooled membership frame: its labelProps path, member labels
 # and its own `featureCols` for the selected features. Returns `(segments, names)` — `names` the features
@@ -157,6 +131,8 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     resolved = _cluster_segments(df, img_by_uid, p.clusterMeasures; on_log = on_log)
     resolved === nothing && return nothing
     segments, features = resolved
+    # what it refines, per segment — each records its own source as it is now, before the run
+    refines = [refine_source([img_by_uid[s["uID"]]], p.popsToCluster; value_name = s["valueName"]) for s in segments]
     on_log("[INFO] $(length(segments)) segment(s), $(nrow(df)) cells, $(length(p.clusterMeasures)) features")
 
     # ── hand off to the Python engine runner ──
@@ -186,8 +162,10 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     at = string(Dates.now())                  # one stamp for the whole run
-    for seg in segments
-        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, features, uids; at = at)
+    run_params = Dict{String,Any}(k => task_params[k] for k in _CLUST_RUN_PARAM_KEYS)
+    for (seg, src) in zip(segments, refines)
+        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, features, uids; at = at,
+                               params = run_params, refines = src)
     end
     # bank per-image cluster QC (cell counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", suffix = p.valueNameSuffix, on_log = on_log)

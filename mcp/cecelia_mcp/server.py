@@ -944,6 +944,14 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
     `missingFeatures` = recorded features the tables no longer carry. Describe a cluster by its
     features; a NAME ("scanning", "arrested") is the user's call — propose, never assert. With few
     clusters the z-scores are coarse (3 clusters ⇒ values near ±1).
+
+    REFINE RUNS — top-level `runs: {suffix => {params, refines?: {pop, run}, stale?}}` (cell runs).
+    `params.resolution` is the Leiden resolution the run used (absent on runs recorded before it was).
+    A run with `refines` clustered ONLY the cells of cluster population `pop` of run `run` — usually at a
+    higher resolution, to split a mixed population ("gating with clustering"); its z-scores are across
+    ITS clusters, i.e. differences inside that population. Its populations sit under `pop` in the tree
+    (add_cluster_pops places them there). `stale` = why it no longer matches its source (the source
+    population picks other clusters, its run was re-run or deleted) — say so before reading it.
     Summary-level (sizes + per-cluster means, not raw cluster assignments). Reads current on-disk
     state."""
     return _client.get_cluster_summary(project_uid, image_uid or None, set_uid or None)

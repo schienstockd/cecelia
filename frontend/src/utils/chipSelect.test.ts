@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toggleValue, moveItem, partitionOptions, selectAllState, syncGroupOrder, chipTree, visibleChips } from './chipSelect'
+import { toggleValue, toggleInPlace, inPlaceOrder, mergeOrder, moveItem, selectAllState, syncGroupOrder, chipTree, visibleChips } from './chipSelect'
 
 describe('toggleValue', () => {
   it('appends a new value at the end (pick order)', () => {
@@ -13,6 +13,44 @@ describe('toggleValue', () => {
     const src = ['a']
     toggleValue(src, 'b')
     expect(src).toEqual(['a'])
+  })
+})
+
+describe('in-place reordering (multiple + reorderable)', () => {
+  const opts = ['a', 'b', 'c', 'd']
+
+  it('a chip switched off stays put, and switched on is back in its own place', () => {
+    // the user had dragged d to the front: d a b c, all picked
+    const order = inPlaceOrder(opts, ['d', 'a', 'b', 'c'], ['d', 'a', 'b', 'c'])
+    expect(order).toEqual(['d', 'a', 'b', 'c'])
+    const off = toggleInPlace(order, ['d', 'a', 'b', 'c'], 'a')
+    expect(off).toEqual(['d', 'b', 'c'])
+    expect(inPlaceOrder(opts, order, off)).toEqual(['d', 'a', 'b', 'c'])      // a did not go to the back
+    expect(toggleInPlace(order, off, 'a')).toEqual(['d', 'a', 'b', 'c'])      // nor does it come back there
+  })
+
+  it('with no memory, picked chips follow the selection and the rest keep option order', () => {
+    expect(inPlaceOrder(opts, [], ['c', 'a'])).toEqual(['c', 'b', 'a', 'd'])
+  })
+
+  it('a pick made outside the control takes its slot from the selection order', () => {
+    expect(inPlaceOrder(opts, ['a', 'b', 'c', 'd'], ['d', 'b'])).toEqual(['a', 'd', 'c', 'b'])
+  })
+
+  it('drops remembered values that are no longer options', () => {
+    expect(inPlaceOrder(['a', 'b'], ['x', 'b', 'a'], [])).toEqual(['b', 'a'])
+  })
+})
+
+describe('mergeOrder', () => {
+  it('slots an option the memory has never seen in after its option-order predecessor', () => {
+    // b follows a, d follows c — wherever those were moved
+    expect(mergeOrder(['a', 'b', 'c', 'd'], ['c', 'a'])).toEqual(['c', 'd', 'a', 'b'])
+    expect(mergeOrder(['a', 'b'], ['b'])).toEqual(['a', 'b'])     // no placed predecessor → front
+  })
+
+  it('keeps remembered values that are not options', () => {
+    expect(mergeOrder(['a'], ['z', 'a'])).toEqual(['z', 'a'])
   })
 })
 
@@ -33,25 +71,6 @@ describe('moveItem', () => {
   })
 })
 
-describe('partitionOptions', () => {
-  it('keeps selection order for selected, option order for unselected', () => {
-    const opts = ['mouse', 'treatment', 'location', 'channels']
-    const sel = ['location', 'mouse']
-    expect(partitionOptions(opts, sel)).toEqual({
-      selected: ['location', 'mouse'],
-      unselected: ['treatment', 'channels'],
-    })
-  })
-  it('drops selected values no longer present in the option set', () => {
-    expect(partitionOptions(['a', 'b'], ['b', 'gone'])).toEqual({
-      selected: ['b'],
-      unselected: ['a'],
-    })
-  })
-})
-
-// The All chip on a chip multi-select. The rule that matters is what a PARTIAL selection does:
-// completing it is the useful move, and flipping it to empty silently throws away picks.
 describe('selectAllState', () => {
   const opts = [{ value: 'a' }, { value: 'b' }, { value: 'c' }]
 

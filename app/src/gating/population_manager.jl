@@ -18,6 +18,7 @@ using JSON3
 #   picker.jl             — summary-canvas population picker + popScope (author-time selection).
 #   allow_list.jl         — accepts allow-list (Decision 14) — one gate for pop-type mismatches.
 #   mixed_resolution.jl   — mixed-type resolver for module-function pickers (any-pop-type row list).
+#   cluster_refine.jl     — refine runs: a run's lineage, its populations' parent, its staleness.
 
 include("popmanager/types.jl")
 include("popmanager/registry.jl")
@@ -31,4 +32,5 @@ include("popmanager/pop_df.jl")
 include("popmanager/picker.jl")
 include("popmanager/allow_list.jl")
 include("popmanager/mixed_resolution.jl")
+include("popmanager/cluster_refine.jl")
 include("popmanager/copy.jl")

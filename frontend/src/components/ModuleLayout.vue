@@ -62,7 +62,6 @@ import ChecksCluster from './ChecksCluster.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
-import HintCallout from './HintCallout.vue'
 import HeaderLaunchers from './HeaderLaunchers.vue'
 import NextStep from './NextStep.vue'
 import TeleportPopover from './TeleportPopover.vue'
@@ -81,13 +80,6 @@ const props = withDefaults(defineProps<{
   singleSelect?: boolean   // radio-style image selection (e.g. gating works on one image)
   plotsLabel?:  string
   noSetHint?:   string
-  // NO PAGE USES THESE TODAY, and that is the intended state — see docs/UI.md → First-use hints. The
-  // four that existed were pipeline ordering and prerequisites, which the guide prereqs answer LIVE;
-  // a static sentence asserting "segment first" is wrong for the user who already did. The mechanism
-  // stays so the next real case reuses it instead of hand-rolling a callout. The bar: an interaction
-  // affordance with no other surface, that no live check could answer.
-  hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
-  hintKey?:     string   // stable id for the hint's dismissal (required if hint set)
   // The #right panel's width bounds. These used to live inside the panels themselves, back when each
   // owned its own width — TaskRunner 200/600/280, MetadataPanel 260/520/280. The host owns the width
   // now (one panel, one handle), so the numbers have to come from here or they are silently lost:
@@ -311,9 +303,6 @@ const visibleUids = computed<string[]>(() =>
       <div class="image-panel"
         :class="{ 'no-right': !$slots.right, 'is-plots-maximised': isMaximised }">
 
-        <!-- first-use hint (dismissed permanently per hintKey) -->
-        <HintCallout v-if="hint && hintKey" :hint-key="hintKey" :text="hint" />
-
         <!-- Set row (mock frame 1): the set and its recipe, the counts, the checks, the row filters and
              a ⋯ menu for the episodic actions. It lives in the image panel, so the right panel runs the
              page's full height. -->
@@ -338,6 +327,10 @@ const visibleUids = computed<string[]>(() =>
             </template>
           </span>
           <span class="no-set-hint cc-muted" v-else>{{ noSetHint }}</span>
+          <!-- a plain click REPLACES the selection; name the multi-pick gestures while one or none is
+               picked (docs/UI.md → *Hidden gestures need a visible surface*) -->
+          <span v-if="activeSet && !singleSelect && activeSet.images.length > 1 && selectedUids.length <= 1"
+                class="cc-gesture-line"><kbd>Ctrl</kbd>-click adds · <kbd>Shift</kbd>-click a range</span>
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Checks: Acquisition, Design, QC (its click is the qcFlagged row filter), Cohort -->
             <ChecksCluster :set-uid="activeSet.uid" :module="module" :cohort-funs="cohortFuns"

@@ -3,7 +3,8 @@
 //
 // ChipSelect is the ONE canonical pill/segmented selection control (see components/ChipSelect.vue):
 //  - single-select  → modelValue is a `string`
-//  - multi-select   → modelValue is a `string[]` in DISPLAY/pick order (drag-reorderable)
+//  - multi-select   → modelValue is a `string[]` in pick order; with `reorderable`, in DISPLAY order —
+//                     every chip keeps its place when toggled (`inPlaceOrder`) and drags
 // These helpers operate on the multi-select array form; single-select is a trivial assign in the SFC.
 
 import { toggleSelected } from './selection'
@@ -27,19 +28,52 @@ export function moveItem<T>(arr: readonly T[], from: number, to: number): T[] {
   return out
 }
 
-/** Split an option list into [selected-in-order, unselected-in-option-order] for rendering: selected
- *  chips render first (draggable), the remaining options render dimmed after them. `optionValues` is
- *  the full option set (its order fixes where unselected chips appear). */
-export function partitionOptions(
-  optionValues: readonly string[],
-  selected: readonly string[],
-): { selected: string[]; unselected: string[] } {
-  const sel = new Set(selected)
-  return {
-    // keep the caller's selection order (not option order) for the selected group
-    selected: selected.filter(v => optionValues.includes(v)),
-    unselected: optionValues.filter(v => !sel.has(v)),
-  }
+/**
+ * Merge a remembered order with the current options: every remembered value in its remembered order,
+ * plus each option it has not seen, slotted in after its nearest option-order predecessor that is
+ * already placed (or at the front when there is none). Remembered values that are not options are
+ * kept — a caller that persists the order uses that to give a column back its slot.
+ */
+export function mergeOrder(defaults: readonly string[], stored: readonly string[]): string[] {
+  const out = stored.filter((g, i) => stored.indexOf(g) === i)
+  defaults.forEach((g, i) => {
+    if (out.includes(g)) return
+    let at = 0
+    for (let j = i - 1; j >= 0; j--) {
+      const p = out.indexOf(defaults[j])
+      if (p >= 0) { at = p + 1; break }
+    }
+    out.splice(at, 0, g)
+  })
+  return out
+}
+
+/** Each slot of `base` that `inSlot` claims takes the next item of `next`, in order; the rest stay. */
+export function fillSlots<T>(base: readonly T[], inSlot: (v: T) => boolean, next: readonly T[]): T[] {
+  let k = 0
+  return base.map(v => inSlot(v) && k < next.length ? next[k++] : v)
+}
+
+/**
+ * Where every chip of a reorderable multi-select sits — picked or not. Picked chips follow the
+ * selection's order; an unpicked chip keeps the place it had (`remembered`), so switching one off
+ * and on again does not move it. Options the memory has not seen fall back to option order.
+ */
+export function inPlaceOrder(
+  optionValues: readonly string[], remembered: readonly string[], selected: readonly string[],
+): string[] {
+  const here = new Set(optionValues)
+  const base = mergeOrder(optionValues, remembered).filter(v => here.has(v))
+  const picked = selected.filter((v, i) => here.has(v) && selected.indexOf(v) === i)
+  const isPicked = new Set(picked)
+  return fillSlots(base, v => isPicked.has(v), picked)
+}
+
+/** Flip `value` against a full in-place order; the selection comes back in that order. */
+export function toggleInPlace(order: readonly string[], selected: readonly string[], value: string): string[] {
+  const next = new Set(selected)
+  if (next.has(value)) next.delete(value); else next.add(value)
+  return order.filter(v => next.has(v))
 }
 
 /**
@@ -62,7 +96,8 @@ export function selectAllState(
   const n = pickable.filter(v => chosen.has(v)).length
   const state = n === 0 ? 'none' : n === pickable.length ? 'all' : 'some'
   // Filling keeps any already-selected values in their PICK order (ChipSelect's array is ordered),
-  // then appends the rest in option order — so completing a selection never reshuffles it.
+  // then appends the rest in option order — so completing a selection never reshuffles it. (A
+  // reorderable ChipSelect re-sorts `next` into its in-place order, so a chip keeps its slot.)
   const kept = selected.filter(v => pickable.includes(v))
   const next = state === 'all' ? [] : [...kept, ...pickable.filter(v => !chosen.has(v))]
   return { state, next, enabled: pickable.length > 0 }

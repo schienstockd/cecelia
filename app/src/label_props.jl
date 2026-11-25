@@ -207,13 +207,9 @@ end
 Number of observations (cells) — the length of the obs index. Reads the dataset **dims only**
 (no column materialised), so it's a cheap count for QC/banking. `0` if the file has no obs index.
 """
-function n_obs(lp::LabelProps)::Int
-    _with_h5(lp.path, "r") do fid
-        haskey(fid, "obs/_index") || return 0
-        idx = fid["obs/_index"]
-        Int(first(size(idx isa HDF5.Group ? idx["values"] : idx)))
-    end
-end
+n_obs(lp::LabelProps)::Int = _with_h5(_n_obs, lp.path, "r")
+_n_obs(fid)::Int = haskey(fid, "obs/_index") ?
+    (idx = fid["obs/_index"]; Int(first(size(idx isa HDF5.Group ? idx["values"] : idx)))) : 0
 
 _intensity_measure(fid) = haskey(fid, "uns/intensity_measure") ?
                           String(read(fid["uns/intensity_measure"])) : "mean"
@@ -896,7 +892,7 @@ column from `as_df` for alignment. Returns a `0×0` matrix if the key is absent.
 function obsm(lp::LabelProps, key::AbstractString)::Matrix{Float64}
     _with_h5(lp.path, "r") do fid
         haskey(fid, "obsm/$key") || return Matrix{Float64}(undef, 0, 0)
-        n_obs = length(_as_strings(read(fid["obs/_index"])))
+        n_obs = _n_obs(fid)   # dims only — parsing the index (one string per cell) was most of the read
         dset  = fid["obsm/$key"]
         data  = read(dset)
         m = Matrix{Float64}(data)

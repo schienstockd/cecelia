@@ -31,11 +31,12 @@
   via a bubbled mousemove on the parent), and 'none' otherwise, so empty-space clicks pass through.
 -->
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { useWindowListener } from '../../composables/useKeepAlive'
 import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
+import { gateEditGestures } from '../../utils/gateGestures'
 import { svgPolygon, svgEsc, svgClip, svgLine } from '../../plots/export'
 import { gateLabelPos, GATE_LABEL_H, type GateLabelPos } from '../../utils/gateLabel'
 import { placeChips, type Chip } from '../../plots/chipPlacement'
@@ -214,6 +215,12 @@ function outlinePx(g: GateSpec): [number, number][] {
   return pts.map(v => dataToPx(v[0], v[1])) as [number, number][]
 }
 function select(path: string | null) { if (selected.value !== path) { selected.value = path; draw() } }
+// the selected gate's edit gestures, named on the plot while it is selected (docs/UI.md → *Hidden
+// gestures need a visible surface*)
+const selectedGestures = computed(() => {
+  const g = selected.value && !props.readonly && props.mode === 'off' ? gateOf(selected.value) : undefined
+  return g ? gateEditGestures(g.gate.kind) : []
+})
 // a press-and-release on the plot that did not drag selects the gate under it (or none) — tracked on
 // the PARENT, so it also sees clicks that pass through to the dot canvas while nothing is grabbed
 let pressAt: [number, number] | null = null
@@ -855,6 +862,7 @@ onBeforeUnmount(() => {
     @mousedown="onDown" @mousemove="onMove" @mouseleave="onLeave"
     @click="onClick" @dblclick="onDblClick" @contextmenu="onContextMenu"
   />
+  <span v-if="selectedGestures.length" class="cc-gesture-line cc-gesture-line-overlay">{{ selectedGestures.join(' · ') }}</span>
 </template>
 
 <style scoped>

@@ -18,6 +18,13 @@ export function clusterMeasure(popType: string, suffix: string): string {
   return `${clusterMeasurePrefix(popType)}${suffix}`
 }
 
+/** The run a cluster pop's filter measure names (`clusters.lymphoid` → `lymphoid`), or '' when it names
+ *  none — the inverse of `clusterMeasure`, the twin of Julia `cluster_pop_suffix`. */
+export function clusterRunOf(popType: string, measure: string | undefined): string {
+  const prefix = clusterMeasurePrefix(popType)
+  return measure && measure.startsWith(prefix) ? measure.slice(prefix.length) : ''
+}
+
 // Is `col` a cluster-run obs column (`clusters.*` / `regions.*`) — one whose categories the cluster
 // populations name server-side (plot_data.jl `_cluster_category_names`)?
 export function isClusterColumn(col: string | null | undefined): boolean {

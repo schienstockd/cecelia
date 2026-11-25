@@ -160,6 +160,31 @@ end
     rm(proj.root; recursive = true)
 end
 
+@testset "Methods report — a population removed is checked on every run, not the newest" begin
+    proj, s, imgs = _mr_project("RFtn9f_TKufLV", 2)
+    row = Dict{String,Any}("step" => "Cluster regions", "task" => "clustRegions.cluster", "images" => "2/2",
+                           "taskIds" => String[], "cite" => "")
+    run(id, at, uid, pops) = Dict{String,Any}("taskId" => id, "fun" => "clustRegions.cluster", "status" => "done",
+                                              "at" => at, "uID" => uid, "params" => Dict{String,Any}("basisPops" => pops))
+    # the older image read a pop since removed; the newer one did not — the record still holds it
+    older = run("a", "2026-11-19T12:00:00", imgs[1].uid, ["Tcells/slow", "Tcells/gone"])
+    newer = run("b", "2026-11-20T12:00:00", imgs[2].uid, ["Tcells/slow"])
+    checks = String[]
+    Cecelia._mr_step_sentence(row, Any[older, newer], 2, String[], Set(["Tcells/slow"]), checks)
+    @test only(checks) == "*Cluster regions* (2/2) read population no longer defined on these images — " *
+                          "gone: renamed or removed since, so it cannot be rerun as recorded."
+    rm(proj.root; recursive = true)
+end
+
+@testset "Methods report — a combination of two same-named pops names them apart" begin
+    pop(path) = (; value_name = "Tcells", path)
+    names = Cecelia._mr_pop_names([(nothing, Any[pop("/qc"), pop("/qc/OTI"), pop("/other"), pop("/other/OTI")])])
+    @test names["Tcells"]["/qc/OTI"] == "qc/OTI" && names["Tcells"]["/other/OTI"] == "other/OTI"
+    p = (; gate = nothing, pop_type = "flow", parent = "root", boolean_op = "and",
+           boolean_pops = ["/qc/OTI"], boolean_not = ["/other/OTI"])
+    @test Cecelia._mr_pop_detail(p, String[], names["Tcells"]) == (:boolean, "qc/OTI without other/OTI")
+end
+
 @testset "Methods report — what a population is, and what Claude did to make it" begin
     mk(kind, pt, detail) = Cecelia._MrPop(pt, "Tcells", "/x", "x", "root", kind, Dict(detail => 1), 1,
                                           Any[Dict("via" => "claude", "model" => "m")], false)

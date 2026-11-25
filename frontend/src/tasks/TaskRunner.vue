@@ -1111,9 +1111,9 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
       <div class="cc-panel-heading">
         <h3 class="cc-eyebrow cc-fs-2xs">Parameters</h3>
         <div class="cc-panel-heading-actions">
-          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+          <button class="cc-btn cc-btn-bare cc-fs-2xs"
                   v-tooltip.left="'Copy settings from a previous run on another image'"
-                  @click="copyOpen = true"><i class="pi pi-copy" /></button>
+                  @click="copyOpen = true"><i class="pi pi-copy" /> Copy from…</button>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   v-tooltip.left="'Reset to defaults'"
                   @click="resetParamsToDefaults"><i class="pi pi-refresh" /></button>

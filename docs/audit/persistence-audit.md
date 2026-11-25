@@ -60,7 +60,7 @@ None of these go through the profile bag.
 |---|---|---|
 | `cc.kiwiDraft`, `cc.kiwiPrompt` | `stores/kiwi.ts:18` | **Typed, unsent user input.** Alice's half-written question appears in Ben's Kiwi box. The strongest case in this list. |
 | `cc.guide.<id>.done` | `stores/guide.ts:35` | Completed guides. "Did I finish the tour" is per person. |
-| `cc.hint.*` (HintCallout `_key`) | `components/HintCallout.vue:10` | Dismissed first-use hints. Same argument. |
+| `cc.hint.*` (HintCallout `_key`) | — (`HintCallout.vue` deleted 2026-11-25) | Dismissed first-use hints; no writer left, so stale keys are inert. |
 | `cc-fn:<module>` | `tasks/TaskRunner.vue:452`, `composables/useKiwiPoint.ts` | Last-picked task function per module. |
 | `cc-filters-open`, `cc-task-open`, `cc-proc-fun`, `cc-proc-mode`, row filters | `components/ModuleLayout.vue` | Module-page layout + filter choices. |
 | `cc.movies.starredOnly`, `cc.movies.tags`, `cc.movies.attrFilter`, `cc.movies.filtersOpen`, sort | `modules/MoviesModule.vue:263` | Movie list filters. (The stars/tags themselves are project data, correctly in `settings/movies.json`.) |

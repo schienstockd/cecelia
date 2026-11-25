@@ -231,6 +231,7 @@ include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
 # The draft Methods section: set / chain-run scopes (ai/methods_report.jl).
 include(joinpath(@__DIR__, "suite", "methods_report.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_methods_partial_input.jl"))
+include(joinpath(@__DIR__, "suite", "chain_from_history_partial_input.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_methods_input_spread.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_methods_group_entries.jl"))
 # A chain run as an RO-Crate (Workflow Run Crate 0.5): the profile's MUST list (ai/ro_crate.jl).

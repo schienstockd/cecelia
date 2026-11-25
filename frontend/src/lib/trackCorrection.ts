@@ -288,7 +288,7 @@ export function manualActions(
 
   const join: ManualAction = { key: 'join', label: 'Join', blocked: null, op: null }
   if (sel.length !== 2) {
-    join.blocked = 'Pick exactly two tracks'
+    join.blocked = 'Pick exactly two tracks — Shift-click a second lane'
   } else {
     // THE ENGINE'S RULE IS A SET INTERSECTION OF FRAMES, not a range test (`_op_join`: it collects
     // the timepoints track B shares with track A and refuses only if that set is non-empty). A caller

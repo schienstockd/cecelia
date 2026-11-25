@@ -52,6 +52,7 @@ import { submitLabelOps } from '../../utils/labelOpsRun'
 import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
 import { armViewerSelectMode, readTrackSelection } from '../../utils/viewer/trackSelectionFromViewer'
 import { selectedTracks as resolvedTracks } from '../../lib/trackCorrection'
+import { KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
 import { buildFocusViewState } from '../../utils/viewer/focusOnCell'
 import { overlaysUrl, type OverlayPayload } from '../../utils/viewerOverlays'
 import {
@@ -535,6 +536,10 @@ type ToolRow = {
   blocked: string; tooltip: string; danger?: boolean; run: () => void
 }
 
+// the track timeline's key for a verb, in its tooltip — `Join (l)` (utils/trackSchemeKeymap.ts)
+const withKey = (key: string, tip: string) =>
+  key in KEY_HINT ? `${tip} (${KEY_HINT[key as TrackSchemeAction]})` : tip
+
 const tracksTools = computed<ToolRow[]>(() => {
   // Draw + Read + Show are the viewer-brush trio — kept first, in flow order (arm → read →
   // highlight). The mutating verbs (Add / Join / Split / Remove) come after; they operate on the
@@ -560,7 +565,7 @@ const tracksTools = computed<ToolRow[]>(() => {
   rows.push({
     key: 'add', label: add.label, icon: 'pi-plus',
     blocked: add.blocked || '',
-    tooltip: add.blocked || (add.op ? trackOpDescription(add.op) : 'Add'),
+    tooltip: add.blocked || withKey('add', add.op ? trackOpDescription(add.op) : 'Add'),
     run: () => queueTrackOp(add.op),
   })
   for (const a of trackScope.value.actions) {
@@ -568,7 +573,7 @@ const tracksTools = computed<ToolRow[]>(() => {
       key: a.key, label: a.label,
       icon: a.key === 'remove' ? 'pi-trash' : undefined,
       blocked: a.blocked || '',
-      tooltip: a.blocked || (a.op ? trackOpDescription(a.op) : a.label),
+      tooltip: a.blocked || withKey(a.key, a.op ? trackOpDescription(a.op) : a.label),
       danger: a.key === 'remove',
       run: () => queueTrackOp(a.op),
     })
@@ -658,7 +663,7 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
             Pick a labels set to enable Review.
           </div>
           <div v-else-if="!reviewList.length" class="cockpit-placeholder cc-fs-sm cc-muted">
-            Pick cells in the viewer to build a review list.
+            Pick cells in the viewer's Select mode; Shift-click adds one.
           </div>
           <div v-else class="cockpit-review">
             <div class="cc-btn-group cockpit-toolbar">

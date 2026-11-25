@@ -123,7 +123,7 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
-export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, transform_key
+export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, invert_column, transform_key
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
        RangeGate, BisectorGate, ValleyRule, valley_cut
@@ -152,7 +152,7 @@ export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_tree!, load_pop_tree, gating_dir, gating_path, stored_pop_tree, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
 export copy_gating!, with_pop_tree_lock
-export co_clustered_value_names, cluster_run_at, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
+export co_clustered_value_names, cluster_run_at, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
        cluster_id_owners, as_cluster_id
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export category_colours, category_sort_key, pop_label_overrides, POPULATION_PALETTE

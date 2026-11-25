@@ -10,7 +10,7 @@
 import { isInSubtree } from './popName'
 
 /** The ⋯-menu actions of a population row. */
-export type PopAction = 'kiwi' | 'plot' | 'convert' | 'rename' | 'move' | 'combine' | 'deleteBelow' | 'delete'
+export type PopAction = 'kiwi' | 'plot' | 'convert' | 'refine' | 'rename' | 'move' | 'combine' | 'deleteBelow' | 'delete'
 
 /**
  * The actions that apply to a multi-selection; every other one is single-only. Why each is where it
