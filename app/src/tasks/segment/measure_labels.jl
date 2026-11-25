@@ -7,6 +7,7 @@ Base.@kwdef struct MeasureLabelsParams
     gaussianFilter::Float64    = 0.0
     extendedMeasures::Bool     = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
+    by::String                     = ""        # scheduler-injected `_by` (jobs.jl) — stamps a re-applied afCells run
 end
 
 function parse_measure_labels_params(d::AbstractDict)::MeasureLabelsParams
@@ -16,7 +17,8 @@ function parse_measure_labels_params(d::AbstractDict)::MeasureLabelsParams
         intensityMeasure   = string(get(d, "intensityMeasure", "mean")),
         gaussianFilter     = Float64(get(d, "gaussianFilter", 0.0)),
         extendedMeasures   = Bool(get(d, "extendedMeasures", false)),
-        version = parse_version_pin(d))
+        version = parse_version_pin(d),
+        by      = string(get(d, "_by", "")))
 end
 
 function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any};
@@ -127,7 +129,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     end
     # Corrected intensities are built from this table; a gate or clustering on `af_CD4` would lose its
     # column. Redo them from the new values, as the last correction run did (`af_cells_reapply!`).
-    had_af && af_cells_reapply!(img, p.outputValueName; by = string(get(params, "_by", "")), on_log, on_process)
+    had_af && af_cells_reapply!(img, p.outputValueName; by = p.by, on_log, on_process)
 
     Dict{String,Any}("outputValueName" => p.outputValueName,
                      "labelValueName"  => p.outputValueName,
