@@ -23,3 +23,17 @@ export function isTypingTarget(e: Event): boolean {
 export function escapeClearsSelection(e: KeyboardEvent, hasSelection: boolean): boolean {
   return e.key === 'Escape' && hasSelection && !e.defaultPrevented && !isTypingTarget(e)
 }
+
+const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+
+/**
+ * Is this keydown about to move nodes through Vue Flow's keyboard nudge? Vue Flow (keyboard a11y
+ * on) moves the selected nodes on an arrow key pressed on a focused selected node or on the
+ * box-selection rectangle — with no drag-start event, so an editor that records undo on drag must
+ * record on this too. Call it in the capture phase, before Vue Flow moves anything.
+ */
+export function nudgesSelection(e: KeyboardEvent, hasSelectedNodes: boolean): boolean {
+  if (!ARROW_KEYS.has(e.key) || !hasSelectedNodes || isTypingTarget(e)) return false
+  const t = e.target as HTMLElement | null
+  return !!t?.closest?.('.vue-flow__node, .vue-flow__nodesselection-rect')
+}

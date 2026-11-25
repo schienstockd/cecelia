@@ -776,14 +776,23 @@ frozen copy, so resume and replay work as for any run). It has two nodes:
   (`params.waitFor`, uid → ids) until each has a banked outcome (`banked_task_outcome`). The ids cover a
   run on the other process (task on the runner, chain in the backend) and one that ended before the
   chain looked. It then takes their outcome — any cancelled → `cancelled`, else any failed → `failed`,
-  else `done`. An image with nothing to wait for is `done` at once. When all is over it looks again for
-  2 s, so a sequential sweep's next value (sent only after the previous ends) is waited for too. A chain
+  else `done`. An image with nothing to wait for, on it or on the chain's other images, is `done` at
+  once. Otherwise, when its own runs are over (or it had none — a sweep's early finisher has no live row
+  at the click), it still holds while a run of that `fn` is going on any other image of the chain (local,
+  or an id seen there), then looks again for 2 s: a sequential sweep sends its next value only once the
+  previous one has ended on every image, so an image done early would otherwise run the follow-up on
+  that value's output. The outcome is still its own runs' only. A set run's ids reach `waitFor` under
+  every member: the browser takes them from `imageUids` on a row it dispatched, and from the in-flight
+  snapshot's `image_uids` (`list_tasks`) on one it adopted. A chain
   cancel stops the wait, never the run waited for. It fires **no** `chain:node:*` events (`quiet`): the
   run it waits for already has its own rail row, and a node frame under that task id would list and bank
   the same work twice. Cohort QC, the history readers and `nodeParams` skip it — it ran nothing. Image
   scope only (validated).
 - `next` — the runner's function with the runner's params and pool. Set scope runs with
   `successful_only`, so an image whose run failed or was cancelled sits out.
+
+**The chain editor refuses an `after_live` node** (`assertNoAfterLive`, at `applyTemplate`): it has no
+field for the flag, so a saved wait step would come back as a plain run of the waited-for function.
 
 **Resume never retries an `after_live` node** (`_reset_stale_nodes!`, the executor's skip): what it
 waited for is over, so waiting again would find nothing and pass — running the follow-up on an image

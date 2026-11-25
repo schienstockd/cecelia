@@ -15,10 +15,15 @@
 #     between the click and this check: both processes bank every task's outcome.
 # Then it takes their outcome: any cancelled → NODE_CANCELLED, else any failed → NODE_FAILED, else
 # NODE_DONE, so the follow-up is skipped on that image exactly as after an upstream step failed inside
-# the chain. An image with nothing to wait for is done at once: it was selected for the follow-up.
+# the chain. An image with nothing to wait for, here or on the chain's other images, is done at once.
 #
-# Once everything it waits for is over, it looks again for `grace` seconds: a sequential sweep sends its
-# next value only after the previous one ends, and the follow-up belongs after the last.
+# Once everything it waits for is over, it holds while a run of `fn` is still going on any OTHER image of
+# the chain (local, or an id the asker saw there), then looks again for `grace` seconds: a sequential
+# sweep sends its next value only after the previous one has ended on EVERY image, so an image that
+# finishes a value early sits idle for as long as the slowest one takes — far longer than any grace — and
+# the follow-up belongs after the last value. That includes an image with nothing of its own live at the
+# click — it may be the one that finished the current value first. The outcome is still its own runs'
+# only (none → done).
 #
 # The node fires NO chain events (`quiet`): the run it waits for already has its own row on the task
 # rail; a `chain:node:*` frame under its task id would list that work twice and bank its outcome twice.
@@ -66,24 +71,32 @@ function _await_live_runs!(run::ChainRun, node::ChainNode, image_uid::String,
     unseen() = String[i for i in expected if !haskey(seen, i) && isnothing(banked_task_outcome(i))]
     look!()  = (for r in _live_runs_of(fun, image_uid); seen[r.id] = r; end)
     busy()   = any(_is_active, values(seen)) || !isempty(unseen())
+    peers    = String[u for u in run.image_uids if u != image_uid]
+    peer_ids = unique!(reduce(vcat, (_after_live_expected(effective_params, u) for u in peers); init = String[]))
+    peer_busy() = any(u -> !isempty(_live_runs_of(fun, u)), peers) ||
+                  any(i -> isnothing(banked_task_outcome(i)), peer_ids)
+    holding() = busy() || peer_busy()
 
     look!()
-    if !busy()
+    if !holding()
         isempty(expected) && say("[INFO] Nothing of $(node.fn) running on this image — going on")
     else
         local_ids = [r.id for r in sort!(collect(values(seen)); by = r -> r.queued_at)]
+        pending   = unseen()
         _update_node_state!(run, image_uid, node.id; status = NODE_RUNNING, quiet = true,
-                            task_id = isempty(local_ids) ? first(unseen()) : first(local_ids))
-        say("[INFO] Waiting for $(node.fn) already going on this image")
+                            task_id = !isempty(local_ids) ? first(local_ids) :
+                                      !isempty(pending)   ? first(pending)   : nothing)
+        say(busy() ? "[INFO] Waiting for $(node.fn) already going on this image" :
+                     "[INFO] Waiting for $(node.fn) still going on other images")
         while !is_cancelled()
-            while busy() && !is_cancelled()
+            while holding() && !is_cancelled()
                 sleep(pollint); look!()
             end
-            t0 = time()   # a sequential sweep's next value starts only once the previous ends
-            while time() - t0 < grace && !is_cancelled() && !busy()
+            t0 = time()   # a sequential sweep's next value starts only once the previous ends everywhere
+            while time() - t0 < grace && !is_cancelled() && !holding()
                 sleep(pollint); look!()
             end
-            busy() || break
+            holding() || break
         end
     end
     # an expected id this process never saw and has no outcome for can only be one cut short by a cancel

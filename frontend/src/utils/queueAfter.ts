@@ -81,3 +81,16 @@ export function queueAfterTemplate(live: LiveGroup, next: FollowUp): ChainTempla
     edges: [{ from: 'wait', to: 'next' }],
   }
 }
+
+/**
+ * Throws if `tmpl` has a Queue-after wait step. The whiteboard has no field for `after_live`: its node
+ * mapping and its save both drop it, so a wait step opened there and saved would come back as an ordinary
+ * run of the waited-for function — starting segmentation again instead of waiting for the run going.
+ * Nothing brings one to the editor today (the Queue-after template is never saved); this makes the day
+ * something does fail loudly instead.
+ */
+export function assertNoAfterLive(tmpl: Pick<ChainTemplate, 'nodes'>): void {
+  const waits = (tmpl.nodes ?? []).filter(n => n.after_live).map(n => n.id)
+  if (waits.length)
+    throw new Error(`a Queue-after wait step (${waits.join(', ')}) can't be opened in the chain editor`)
+}

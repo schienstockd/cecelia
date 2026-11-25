@@ -212,6 +212,7 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 include(joinpath(@__DIR__, "suite", "chain.jl"))
 include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 include(joinpath(@__DIR__, "suite", "chain_after_live.jl"))   # "Queue after": wait for a run already going
+include(joinpath(@__DIR__, "suite", "chain_after_live_sweep_early_review.jl"))
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
 include(joinpath(@__DIR__, "suite", "channel_names_dotted.jl"))   # a dotted channel name is a name, not an aggregate
 # Gating + statistics QC and the chain's end-of-run cohort QC (CECELIA_STRUCTURE_PLAN rank 8).

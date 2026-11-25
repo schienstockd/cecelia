@@ -32,6 +32,10 @@ came to report every finished task as "outcome unseen".
 `projects_dir()`, so an image uid on its own doesn't. Resolved at submit time; `""` for a task
 registered without an image (there is none today).
 
+`image_uids` is every image the run covers — a set-scope run's members, `[image_uid]` otherwise.
+`image_uid` is only the representative, so a client that did not launch a set run needs this to know
+it is live on the other members too (Queue after waits for it on each: `utils/queueAfter.ts`).
+
 `live_outputs` carries the stores the task is streaming into right now (usually empty — see
 `live_outputs` in task.jl). This snapshot is therefore also the answer to "what can I watch while it
 runs?", which is how the napari viewer offers a preview of a segmentation before `ccid.json` knows
@@ -50,7 +54,7 @@ the alternative is a client guessing, and a guessed param set is a silently diff
 function list_tasks()
     lock(_TASKS_LOCK) do
         [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
-           image_uid=rec.image_uid, project_uid=rec.project_uid, chain_run_id=rec.chain_run_id,
+           image_uid=rec.image_uid, image_uids=rec.image_uids, project_uid=rec.project_uid, chain_run_id=rec.chain_run_id,
            chain_node_id=rec.chain_node_id, by=rec.by,
            status=string(rec.status), queued_at=iso_utc(rec.queued_at),
            started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs,
