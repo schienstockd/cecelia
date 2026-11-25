@@ -46,6 +46,11 @@ export interface MeasureGroupsInput {
 // returns `cellMeasures` + `channelNames` only), and as belt-and-braces before the lists have loaded.
 const INTENSITY_COL = /(^|_)(?:mean|median)_intensity_\d+$/
 export const isIntensityColumn = (col: string): boolean => INTENSITY_COL.test(col)
+// A per-cell autofluorescence-corrected copy of an intensity column (`segment.afCells` writes
+// `af_<measure>_intensity_<i>`, shown as `af_<channel>`) — offered under its own heading so a picker
+// never mixes a corrected marker into the measured ones unnoticed.
+const AF_COL = /^af_(?:mean|median)_intensity_\d+$/
+export const isAfColumn = (col: string): boolean => AF_COL.test(col)
 
 // For track gating/clustering the endpoint's `columns` IS the per-track motility table
 // (`live.track.speed`, `…straightness`) — not morphology. A caller that knows only the popType (the
@@ -73,7 +78,7 @@ const OBS_REST_TITLE = 'Other measures'
 /**
  * Split the offered measure columns into titled groups.
  *
- * Order is fixed (track → morphology → channels → spatial → obs families) so two pickers fed
+ * Order is fixed (track → morphology → channels → AF-corrected channels → spatial → obs families) so two pickers fed
  * different subsets still agree on where a heading sits. Empty groups are dropped, and a column is
  * emitted ONCE even if it arrives on two keys (legacy data lists centroids as ordinary vars *and* on
  * `spatialColumns`, which is why the gate select used to offer `centroid_x` twice).
@@ -103,7 +108,8 @@ export function measureGroups(input: MeasureGroupsInput): MeasureGroup[] {
 
   push('Track measures', track.filter(c => !isSpatial(c)))
   push('Morphology', columns.filter(c => !isChannel(c) && !isSpatial(c)))
-  push('Channels', columns.filter(isChannel))
+  push('Channels', columns.filter(c => isChannel(c) && !isAfColumn(c)))
+  push('AF-corrected channels', columns.filter(isAfColumn))
   // declared obsm axes first, then any centroid column the data surfaces as an ordinary var
   push('Spatial / Time', [...spatial, ...columns.filter(isSpatial), ...track.filter(isSpatial)])
   for (const f of OBS_FAMILIES) push(f.title, obs.filter(c => f.test.test(c)))

@@ -20,8 +20,12 @@ export function placeChips(chips: Chip[], W: number, H: number, inset: Inset = {
       const oy = (chips[i].h + chips[j].h) / 2 + gap - Math.abs(p[i].y - p[j].y)
       if (ox <= 0 || oy <= 0) continue
       moved = true
+      // push along the axis of least overlap — unless the box has no room to part them that way (two
+      // wide labels side by side: a sideways push would only pin them to the walls, still overlapping)
+      const roomX = (r - l) - (chips[i].w + chips[j].w) / 2 >= (chips[i].w + chips[j].w) / 2 + gap
+      const roomY = (b - t) - (chips[i].h + chips[j].h) / 2 >= (chips[i].h + chips[j].h) / 2 + gap
       // split the push between the pair; ties (identical anchors) break by index so they still part
-      if (oy <= ox) {
+      if ((oy <= ox && roomY) || !roomX) {
         const s = (p[i].y < p[j].y || (p[i].y === p[j].y && i < j)) ? -1 : 1
         p[i].y = clampY(p[i].y + s * oy / 2, chips[i].h); p[j].y = clampY(p[j].y - s * oy / 2, chips[j].h)
       } else {

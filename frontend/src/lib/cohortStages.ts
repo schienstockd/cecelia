@@ -7,7 +7,8 @@
 // Keyed by the `module` prop ModuleLayout passes (see the module pages).
 export const COHORT_STAGES: Record<string, string[]> = {
   segment:           ['segment.cellpose', 'segment.coastal', 'segment.importLabels',
-                      'segment.measureLabels', 'segment.branching', 'segment.correct'],
+                      'segment.measureLabels', 'segment.branching', 'segment.correct',
+                      'segment.afCells'],
   opticalFlow:       ['opticalFlow.train'],
   tracking:          ['tracking.bayesian_tracking', 'tracking.track_measures', 'tracking.correct',
                       'gating.track'],
