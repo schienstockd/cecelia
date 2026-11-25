@@ -45,6 +45,7 @@ import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
 import SquarePlot from './SquarePlot.vue'
+import PlotSpinner from './PlotSpinner.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { axisTitle, type BehaviourAxes } from '../../utils/behaviourAxes'
@@ -157,8 +158,15 @@ const centroids = ref<{ label: string; x: number; y: number }[]>([])
 const tooManyClusters = ref(0)
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })
 const loading = ref(false)
-// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
-useDelayedLoading(loading)
+// board idle (utils/plotReady): a board export / headless render waits on this load, not a guess; the
+// same flag drives the wheel over a map that is being replaced (a big run takes seconds to arrive)
+const showSpinner = useDelayedLoading(loading)
+// Which run the drawn points belong to. On a run switch the host's pops (names, colours, cluster ids)
+// change at once but the new embedding takes seconds; recolouring the OLD points with the NEW run's
+// pops showed new labels over the old map, so the map looked identical between runs until it flipped.
+// recolour() holds until the drawn data matches the requested run.
+const runKey = computed(() => [props.projectUid, props.imageUids.join(','), props.popType, props.suffix, basis.value].join('|'))
+let drawnKey = ''
 const err = ref('')
 const total = computed(() => (points.value ? points.value.length / 2 : 0))
 // current on-screen plot box (px) — tracked so the label map matches the canvas one under resize
@@ -456,6 +464,7 @@ function recolourByValue(vals: Float32Array) {
 }
 
 function recolour() {
+  if (drawnKey !== runKey.value) return   // the old run's points are still up — keep their own colours
   valueScale.value = null
   // until a feature is picked and its values are in, the map stays coloured by cluster
   if (useValue.value && valuesRef.value) { recolourByValue(valuesRef.value); return }
@@ -521,6 +530,7 @@ const loader = debouncedLatest<void>((_a, isCurrent) => fetchMap(isCurrent),
 function load() { loader.schedule() }
 async function fetchMap(isCurrent: () => boolean) {
   err.value = ''
+  const key = runKey.value
   if (!props.projectUid || !props.imageUids.length) { points.value = null; rawPoints = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
   try {
     // wire = flat Float32 [x, y, clusterCode, popIdx, label] per point (20 B via `withLabels=1`). We
@@ -551,6 +561,7 @@ async function fetchMap(isCurrent: () => boolean) {
       for (let i = 0; i < f.length / stride; i++) { imgOf.push(ui); vnOf.push(iuid) }
     }
     const n = Math.floor(rec.length / stride)
+    drawnKey = key
     if (n === 0) {
       points.value = null; rawPoints = null; categories.value = null; legend.value = []; centroids.value = []
       err.value = basis.value === 'diffmap'
@@ -582,6 +593,8 @@ async function fetchMap(isCurrent: () => boolean) {
     applyDisplay()
   } catch (e) {
     if (!isCurrent()) return
+    // a failed run switch must not leave the previous run's map up as if it were this one
+    if (drawnKey !== key) { points.value = null; rawPoints = null; codesRef.value = null; legend.value = []; centroids.value = [] }
     err.value = e instanceof Error ? e.message : String(e)
     log.error(`${layoutName.value}: ${err.value}`, { source: 'cluster' })
   }
@@ -1016,6 +1029,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
                                        borderRadius: forceLight ? '0' : undefined }">
           <template v-if="points && points.length">
             <canvas ref="dotsEl" class="uv-canvas" />
+            <PlotSpinner v-if="showSpinner" label="Loading…" />
             <!-- centroid labels only when NOT faceted (their full-box positions don't map into cells) -->
             <span v-for="c in chipLabels" :key="c.label" class="uv-label"
                   :style="{ left: c.x + 'px', top: c.y + 'px', fontSize: labelFont + 'px', ...labelStyle }">{{ c.label }}</span>
