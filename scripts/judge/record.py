@@ -125,11 +125,11 @@ def newly_open(bug: dict, date: str) -> bool:
 
 def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Sequence[dict],
           proposals: _t.Sequence[dict], spend: dict, agent_causes: _t.Sequence[dict] = (),
-          fixture_requests: dict | None = None) -> dict:
+          fixture_requests: dict | None = None, coherence: dict | None = None) -> dict:
     """The record for the pass on `date`. `ts` is when the pass started: the next pass's sweep
     window opens there. `agent_causes`: run reviews' `agent` causes per guide (`run_reviews.py`).
     `fixture_requests`: open fixture requests and candidate COUNTS (`fixture_requests.summary`) —
-    the record is published, so never image names."""
+    the record is published, so never image names. `coherence`: whole-repo counts (`coherence.trend`)."""
     return {
         "schema_version": SCHEMA_VERSION, "kind": "pass", "date": date,
         "run": {"ts": ts, "sha": sha, "spend": spend},
@@ -138,6 +138,7 @@ def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Se
         "queue": [{"kind": "bug", "ref": b["id"]} for b in bugs if owner_bug(b, date)],
         **({"agent_causes": list(agent_causes)} if agent_causes else {}),
         **({"fixture_requests": fixture_requests} if fixture_requests and fixture_requests.get("requests") else {}),
+        **({"coherence": coherence} if coherence else {}),
     }
 
 
@@ -437,6 +438,31 @@ def _render_fixture_requests(record: dict) -> list[str]:
     return out + [""]
 
 
+_COHERENCE_LABELS = {
+    "clones": "Copied blocks (jscpd)", "cycles": "Frontend import cycles (madge)",
+    "py_dead": "Python dead code (vulture)", "routes_uncalled": "Routes with no caller",
+    "inventory_stale": "Inventory names not in source"}
+
+
+def _render_coherence(record: dict) -> list[str]:
+    c = record["coherence"]
+    prev = c.get("previous") or {}
+    out = ["Whole-repo counts at the pinned SHA (`scripts/judge/coherence.py`). Counts only: nothing here is "
+           "queued. A check rising two passes running means a shape is spreading; ban it with a ratchet "
+           "test (`docs/todo/CONSISTENCY_COHERENCE_AUDIT.md` §6).", "",
+           "| Check | Count | Last pass | Change |", "|---|---|---|---|"]
+    for k, n in c["counts"].items():
+        last = prev.get(k)
+        change = f"{n - last:+d}" if n is not None and last is not None else "–"
+        out.append(f"| {_COHERENCE_LABELS.get(k, k)} | {'–' if n is None else n} | "
+                   f"{'–' if last is None else last} | {change} |")
+    if c.get("rising"):
+        out += ["", "**Rising two passes running:** " + ", ".join(_COHERENCE_LABELS.get(k, k) for k in c["rising"])]
+    for k, why in (c.get("errors") or {}).items():
+        out.append(f"- {_COHERENCE_LABELS.get(k, k)} didn't count: `{_cell(one_line(why))}`")
+    return out + [""]
+
+
 def _render_agent_causes(record: dict) -> list[str]:
     out = [_AGENT_CAUSES_HOW_TO, ""]
     for g in record.get("agent_causes", []):
@@ -519,6 +545,8 @@ def render_markdown(record: dict) -> str:
         out += ["", "## Agent causes per guide", "", *_render_agent_causes(record)]
     if record.get("fixture_requests"):
         out += ["", "## Fixture requests", "", *_render_fixture_requests(record)]
+    if record.get("coherence"):
+        out += ["", "## Coherence counts", "", *_render_coherence(record)]
     return "\n".join(out) + "\n"
 
 

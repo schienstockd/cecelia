@@ -11,7 +11,11 @@
   Selection modes:
     single  (default)     modelValue is a `string`  (or '' when `allowEmpty` and the active one is re-clicked)
     multiple              modelValue is a `string[]` in PICK order
-    multiple + reorderable drag the selected chips to reorder the array (pill variant only)
+    multiple + reorderable every chip drags, picked or not, and a toggle never moves a chip: switched
+                           off it stays put, switched on it is back in its own place (pill only).
+                           modelValue is the picks in that display order. Where the unpicked chips
+                           sit is remembered here; a caller that persists a full order (table columns)
+                           passes options in it and listens to `update:order`.
 
   Per-option extras (all optional): `icon` (icon class), `tip` (tooltip), `disabled`,
   `badge` (a count shown after the label), `accent` (override the active colour — for per-level /
@@ -22,7 +26,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { toggleValue, moveItem, partitionOptions, selectAllState, chipTree,
+import { toggleValue, toggleInPlace, inPlaceOrder, moveItem, selectAllState, chipTree,
          visibleChips, CHIP_COLLAPSE_ABOVE } from '../utils/chipSelect'
 
 export interface ChipOption {
@@ -63,7 +67,11 @@ const props = withDefaults(defineProps<{
   collapseAbove: CHIP_COLLAPSE_ABOVE,
 })
 
-const emit = defineEmits<{ 'update:modelValue': [string | string[]] }>()
+const emit = defineEmits<{ 'update:modelValue': [string | string[]]; 'update:order': [string[]] }>()
+const inPlace = computed(() => props.multiple && props.reorderable)
+// Where each chip sat at the last toggle or drag — control view state, like `expanded`.
+const remembered = ref<string[]>([])
+const fullOrder = computed(() => inPlaceOrder(props.options.map(o => o.value), remembered.value, selected.value))
 
 const selected = computed<string[]>(() =>
   props.multiple ? ((props.modelValue as string[]) ?? []) : [])
@@ -75,6 +83,12 @@ const allToggle = computed(() => selectAllState(props.options, selected.value))
 const showSelectAll = computed(() => props.selectAll && props.multiple && allToggle.value.enabled)
 function toggleAll() {
   if (props.disabled) return
+  if (inPlace.value) {   // filled in place too — a chip picked by All stays where it was
+    const next = new Set(allToggle.value.next)
+    remembered.value = fullOrder.value
+    emit('update:modelValue', fullOrder.value.filter(v => next.has(v)))
+    return
+  }
   emit('update:modelValue', allToggle.value.next)
 }
 
@@ -97,16 +111,12 @@ const byValue = computed(() => {
   return m
 })
 
-// Render order. Reorderable multi-select shows picked chips first (in pick order, draggable), then the
-// remaining options dimmed. Everything else keeps the caller's option order.
+// Render order. Reorderable multi-select renders `fullOrder` — picked and unpicked chips interleaved,
+// each where it was put. Everything else keeps the caller's option order.
 const rendered = computed<{ opt: ChipOption; on: boolean; drag: boolean }[]>(() => {
-  if (props.multiple && props.reorderable) {
-    const { selected: sel, unselected } = partitionOptions(props.options.map(o => o.value), selected.value)  // never long
-    return [
-      ...sel.map(v => ({ opt: byValue.value.get(v)!, on: true, drag: true })),
-      ...unselected.map(v => ({ opt: byValue.value.get(v)!, on: false, drag: false })),
-    ].filter(r => r.opt)
-  }
+  if (inPlace.value)   // never long
+    return fullOrder.value.map(v => ({ opt: byValue.value.get(v)!, on: selected.value.includes(v), drag: true }))
+      .filter(r => r.opt)
   return shown.value.map(o => ({
     opt: o,
     on: props.multiple ? selected.value.includes(o.value) : props.modelValue === o.value,
@@ -141,7 +151,10 @@ const rows = computed<{ depth: number; tree: boolean; items: Item[] }[]>(() => {
 
 function pick(o: ChipOption) {
   if (props.disabled || o.disabled) return
-  if (props.multiple) {
+  if (inPlace.value) {
+    remembered.value = fullOrder.value
+    emit('update:modelValue', toggleInPlace(fullOrder.value, selected.value, o.value))
+  } else if (props.multiple) {
     emit('update:modelValue', toggleValue(selected.value, o.value))
   } else if (props.allowEmpty && props.modelValue === o.value) {
     emit('update:modelValue', '')
@@ -155,12 +168,13 @@ let dragValue: string | null = null
 function onDragStart(o: ChipOption) { dragValue = o.value }
 function onDrop(target: ChipOption) {
   if (dragValue === null || dragValue === target.value) { dragValue = null; return }
-  const arr = selected.value
-  const from = arr.indexOf(dragValue)
-  const to = arr.indexOf(target.value)
+  const all = fullOrder.value
+  const order = moveItem(all, all.indexOf(dragValue), all.indexOf(target.value))
   dragValue = null
-  if (from < 0 || to < 0) return
-  emit('update:modelValue', moveItem(arr, from, to))
+  remembered.value = order
+  const picked = order.filter(v => selected.value.includes(v))
+  if (picked.join() !== selected.value.join()) emit('update:modelValue', picked)
+  emit('update:order', order)
 }
 
 // A per-option `accent` marks a SEMANTIC colour (log level, population colour, …). Render it as a
