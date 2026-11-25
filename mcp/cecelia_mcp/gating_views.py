@@ -179,7 +179,8 @@ get_cluster_summary (`suffix`, `granularity`). Read its `profiles` first and gro
 top-|z| features agree; name each group by those features ("fast straight", "CD8 high") — a cell-type
 name is the user's call, so propose it, never assert it. `image_uid` / `value_name`: any image of the run
 and the run's segmentation; the populations are written to EVERY image of the run (`images`; `skipped` =
-members that no longer carry it), as the cluster page does.
+members that no longer carry it), as the cluster page does. A refine run's populations (get_cluster_summary
+`runs[run].refines`) go under the population it refines — `path` in the reply says where.
 
 A cluster belongs to one population of a run: 409 `cluster_taken` (naming the holder) when one is
 already in a population, 409 on a taken name, 422 on an id the run lacks or one cluster in two groups,

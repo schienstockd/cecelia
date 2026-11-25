@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useObserverStore } from '../stores/observer'
 import { useInlineEdit } from '../composables/useInlineEdit'
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useKiwiStore } from '../stores/kiwi'
@@ -26,12 +26,18 @@ import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import CcToggle from './CcToggle.vue'
 import TissueExtent from './TissueExtent.vue'
 import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
 import { profileStorage } from '../utils/profileStorage'
-import { allShown, loadThumb, parseShown, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
+import { allShown, loadThumb, parseShown, PREVIEW_PX, previewCaption, previewHtml, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
+import ThumbSlot from './ThumbSlot.vue'
+import type { TooltipBinding } from '../utils/tooltipOptions'
 import { setImageAttr } from '../utils/imageAttrApi'
+import { ALWAYS_SHOWN, CHANNELS_GROUP, DEFAULT_PREFS, applyOrder, applyShown, arrangeColumns, columnPrefsKey, groupsOf,
+         orderedGroups, parseColumnPrefs, serializeColumnPrefs, setGroupShown, type ColumnPrefs } from '../utils/imageTableColumns'
 
 const props = defineProps<{
   setUid: string
@@ -467,22 +473,33 @@ const channelCount = computed(() => {
     Math.max(max, img.channelNames?.length ?? 0, img.sizeC ?? 0), 0)
 })
 
-// One column per channel is a lot for a 60-channel multiplex set, so the names fold into the `Ch`
-// count column (header toggle), per project and per person like the thumbnails. Shown by default.
-const channelNamesKey = (projectUid: string) => `cc.imageChannelNames:${projectUid}`
-const channelNamesShown = ref(true)
+// ── Column layout (Columns popover) ─────────────────────────────────────────────
+// Which columns show, their order, and whether the first is frozen — per project and per person like
+// the thumbnails. The pure rules (channel columns move as one group, Name can't be hidden, a column
+// absent from this set keeps its slot) are utils/imageTableColumns.ts.
+const columnPrefs = ref<ColumnPrefs>({ ...DEFAULT_PREFS })
+// the channel-name fold predates the popover and had its own key; read it until the layout is saved
+const legacyChannelNamesKey = (projectUid: string) => `cc.imageChannelNames:${projectUid}`
 watch(() => projectMeta.current?.uid, uid => {
-  channelNamesShown.value = uid ? profileStorage.getItem(channelNamesKey(uid)) !== '0' : true
+  const raw = uid ? profileStorage.getItem(columnPrefsKey(uid)) : null
+  const p = parseColumnPrefs(raw)
+  columnPrefs.value = !raw && uid && profileStorage.getItem(legacyChannelNamesKey(uid)) === '0'
+    ? setGroupShown(p, CHANNELS_GROUP, false) : p
 }, { immediate: true })
-function toggleChannelNames() {
-  channelNamesShown.value = !channelNamesShown.value
+function saveColumnPrefs(next: ColumnPrefs) {
+  columnPrefs.value = next
   const uid = projectMeta.current?.uid
-  if (uid) profileStorage.setItem(channelNamesKey(uid), channelNamesShown.value ? '1' : '0')
+  if (uid) profileStorage.setItem(columnPrefsKey(uid), serializeColumnPrefs(next))
 }
 
-// 1-based channel indices, e.g. [1, 2, 3] — none while the names are folded away
-const channelIndices = computed(() => channelNamesShown.value
-  ? Array.from({ length: channelCount.value }, (_, i) => i + 1) : [])
+// One column per channel is a lot for a 60-channel multiplex set, so the names fold into the `Ch`
+// count column (header toggle). Shown by default; the same switch as the Channel names chip.
+const channelNamesShown = computed(() => !columnPrefs.value.hidden.includes(CHANNELS_GROUP))
+const toggleChannelNames = () =>
+  saveColumnPrefs(setGroupShown(columnPrefs.value, CHANNELS_GROUP, !channelNamesShown.value))
+
+// 1-based channel indices, e.g. [1, 2, 3] — the columns exist even when folded; arrangeColumns drops them
+const channelIndices = computed(() => Array.from({ length: channelCount.value }, (_, i) => i + 1))
 
 // Dimension columns only appear when the set actually has a z-stack / timelapse (mirrors the
 // metadata-warning z>1 / t>1 tests), so 2D single-timepoint sets aren't cluttered with empty columns.
@@ -545,6 +562,38 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   { key: 'tissue', label: 'Tissue', fixed: true, width: 132 },
   ...(props.module ? [{ key: 'status', label: 'Status', fixed: true, width: 90 }] : []),
 ])
+const shownColumns = computed(() => arrangeColumns(COLUMNS.value, columnPrefs.value))
+
+// The picker: one chip per group, in column order — on = shown. A toggle never moves a chip, and every
+// chip (hidden ones too) drags; a drop reports the full order (`update:order`), which is what persists.
+const columnsOpen   = ref(false)
+const columnsAnchor = ref<HTMLElement | null>(null)
+function openColumns(e: MouseEvent) {
+  columnsAnchor.value = e.currentTarget as HTMLElement
+  columnsOpen.value = !columnsOpen.value
+}
+const GROUP_LABELS: Record<string, string> = {
+  thumb: 'Thumbnail', ch: 'Channel count', [CHANNELS_GROUP]: 'Channel names',
+}
+const columnGroups = computed(() => groupsOf(COLUMNS.value))
+const columnOptions = computed<ChipOption[]>(() =>
+  orderedGroups(columnGroups.value, columnPrefs.value).map(g => ({
+    value: g,
+    label: GROUP_LABELS[g] ?? COLUMNS.value.find(c => c.key === g)?.label ?? g,
+    tip: g === ALWAYS_SHOWN ? 'Always shown' : undefined,
+  })))
+const setColumnOrder = (order: string[]) =>
+  saveColumnPrefs(applyOrder(columnGroups.value, columnPrefs.value, order))
+const columnsShown = computed<string[]>({
+  get: () => orderedGroups(columnGroups.value, columnPrefs.value)
+    .filter(g => !columnPrefs.value.hidden.includes(g)),
+  set: v => saveColumnPrefs(applyShown(columnGroups.value, columnPrefs.value, v)),
+})
+const freezeFirst = computed({
+  get: () => columnPrefs.value.freezeFirst,
+  set: v => saveColumnPrefs({ ...columnPrefs.value, freezeFirst: v }),
+})
+const resetColumns = () => saveColumnPrefs({ ...DEFAULT_PREFS })
 
 // The sort, held where it always was — per (scope, set) in the project store, ordered by the pure
 // `sortImages`. The table renders the affordance and reports the cycle; `v-model:sort` is what lets it
@@ -592,13 +641,37 @@ const anyThumbShown = computed(() => images.value.some(thumbShown))   // narrow 
 /** uid → data URL ('' = loading, null = nothing to show). */
 const thumbUrls = ref<Record<string, string | null>>({})
 const thumbKeys = new Map<string, string>()    // uid → the version + rev its URL (or request) is for
+/** The slot's `src`: not requested yet reads as loading — the slot is already there, waiting. */
+const thumbSrc = (img: CciaImage) => thumbUrls.value[img.uid] === undefined ? '' : thumbUrls.value[img.uid]
+
+// Lazy: a row's thumbnail is fetched once its slot comes within a screen of the viewport, so showing
+// all on a 200-image set doesn't fire 200 renders at once. Seen stays seen (no refetch on scroll back).
+const thumbsSeen = ref<Set<string>>(new Set())
+const slotUids = new WeakMap<Element, string>()
+const thumbObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
+  const seen: string[] = []
+  for (const e of entries) {
+    const uid = e.isIntersecting ? slotUids.get(e.target) : undefined
+    if (uid) { seen.push(uid); thumbObserver!.unobserve(e.target) }
+  }
+  if (seen.length) thumbsSeen.value = new Set([...thumbsSeen.value, ...seen])
+}, { rootMargin: '100% 0px' })
+onBeforeUnmount(() => thumbObserver?.disconnect())
+function observeSlot(r: unknown, uid: string) {
+  const el = (r as { $el?: Element } | null)?.$el
+  if (!thumbObserver || !el || thumbsSeen.value.has(uid)) return
+  slotUids.set(el, uid)
+  thumbObserver.observe(el)
+}
+
 // `dataVersion` moves when a task finishes on the image, so a store rewritten in place is re-read.
 // (Read per uid: `bumpDataVersion` writes into the record in place, which a watch on the record misses.)
-watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.uid] ?? 0).join()], () => {
+watch([thumbsShown, thumbsSeen, images, () => images.value.map(i => project.dataVersion[i.uid] ?? 0).join()], () => {
   const pu = projectMeta.current?.uid
   if (!pu) return
   for (const img of images.value) {
     if (!thumbShown(img)) continue
+    if (thumbObserver && !thumbsSeen.value.has(img.uid)) continue
     const rev = project.dataVersion[img.uid] ?? 0
     const key = `${img.uid}|${img.filepath ?? ''}|${rev}`
     if (thumbKeys.get(img.uid) === key) continue
@@ -611,6 +684,26 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     })
   }
 }, { immediate: true })
+
+// Hover preview: a larger render of the same image (`PREVIEW_PX`, its own request, fetched on the first
+// hover) over its name and channels, through the app's tooltip. The row's thumbnail stands in until it lands.
+const previewUrls = ref<Record<string, string | null>>({})
+const previewKey = (img: CciaImage) => `${img.uid}|${img.filepath ?? ''}|${project.dataVersion[img.uid] ?? 0}`
+function loadPreview(img: CciaImage) {
+  const pu = projectMeta.current?.uid
+  const key = previewKey(img)
+  if (!pu || !thumbUrls.value[img.uid] || key in previewUrls.value) return
+  previewUrls.value = { ...previewUrls.value, [key]: null }
+  void loadThumb(pu, img.uid, img.filepath, project.dataVersion[img.uid] ?? 0, PREVIEW_PX)
+    .then(url => { previewUrls.value = { ...previewUrls.value, [key]: url } })
+}
+function thumbTip(img: CciaImage): TooltipBinding {
+  const small = thumbUrls.value[img.uid]
+  if (small === null) return 'No preview'
+  if (!small) return ''
+  const url = previewUrls.value[previewKey(img)] || small
+  return { value: previewHtml(url, img.name, previewCaption(img)), escape: false, class: 'thumb-tip' }
+}
 </script>
 
 <template>
@@ -634,7 +727,7 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     fit="content"
     selection-mode="multi"
     :select-all="!singleSelect"
-    :columns="COLUMNS"
+    :columns="shownColumns"
     :rows="images"
     id-key="uid"
     v-model:selected="selectedList"
@@ -648,10 +741,14 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
   >
     <!-- Batch-fix affordances live in the NAME header, where the images they act on are read. -->
     <template #head-name>
-      <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon"
+      <button class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': columnsOpen }"
+        @click.stop="openColumns" v-tooltip.bottom="'Columns'">
+        <i class="pi pi-table" />
+      </button>
+      <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-fs-2xs"
         :class="{ active: flaggedActive }" @click.stop="selectFlagged"
         v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
-        <i class="pi pi-exclamation-triangle" />
+        <i class="pi pi-exclamation-triangle" /> {{ flaggedUids.length }} flagged
       </button>
       <button v-if="flaggedUids.length && (module === 'metadata' || module === 'manageImages')"
         class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
@@ -753,12 +850,9 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
         <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': thumbShown(img) }"
           :disabled="!isImported(img)" @click.stop="toggleThumb(img)"
           v-tooltip.right="thumbShown(img) ? 'Hide thumbnail' : 'Show thumbnail'"><i class="pi pi-image" /></button>
-        <template v-if="thumbShown(img)">
-          <img v-if="thumbUrls[img.uid]" :src="thumbUrls[img.uid]!" class="row-thumb" :alt="img.name"
-            @click.stop="openViewer(img)" v-tooltip.right="'Open this image in the viewer'" />
-          <i v-else-if="thumbUrls[img.uid] === ''" class="pi pi-spin pi-spinner cc-muted cc-fs-xs" />
-          <span v-else class="cc-muted cc-fs-xs">No preview</span>
-        </template>
+        <ThumbSlot v-if="thumbShown(img)" :ref="r => observeSlot(r, img.uid)" :src="thumbSrc(img)"
+          :alt="img.name" :tip="thumbTip(img)" @mouseenter="loadPreview(img)"
+          @click.stop="thumbUrls[img.uid] && openViewer(img)" />
       </span>
     </template>
     <template v-for="idx in channelIndices" :key="'ch-' + idx" #[`cell-ch:${idx}`]="{ row: img }">
@@ -889,6 +983,21 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     </div>
   </TeleportPopover>
 
+  <!-- Columns: show/hide + drag to reorder, and the freeze switch -->
+  <TeleportPopover v-model="columnsOpen" :anchor="columnsAnchor">
+    <div class="columns-pop">
+      <div class="cc-eyebrow cc-fs-2xs">Columns · drag to reorder</div>
+      <ChipSelect :options="columnOptions" v-model="columnsShown" multiple reorderable
+        aria-label="Columns" @update:order="setColumnOrder" />
+      <div class="cc-row columns-foot">
+        <CcToggle v-model="freezeFirst" label="Freeze first column"
+          v-tooltip.bottom="'Keep it in view when scrolling sideways'" />
+        <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="resetColumns"
+          v-tooltip.bottom="'Default columns and order'">Reset</button>
+      </div>
+    </div>
+  </TeleportPopover>
+
   <!-- run-history popover — shared TeleportPopover escapes the table's scroll/transform clip and
        positions from the cog rect (was clipped by the following row) -->
   <TeleportPopover v-model="runLogOpen" :anchor="runLogAnchor">
@@ -927,7 +1036,7 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 .image-table { font-size: var(--cc-fs-md); }
 
 /* Batch-fix buttons in the Name header (select-flagged, re-sync) */
-.select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare cc-btn-icon */
+.select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare, labelled or -icon */
 .select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .select-flagged-btn.active { color: var(--cc-warn); }
 .select-flagged-btn.active:hover { color: var(--cc-ink-amber); }
@@ -1016,13 +1125,9 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 /* exclusion note — editable reason under the uid, only on excluded rows */
 .note-row { display: flex; align-items: center; margin-top: 0.15rem; }
 
-/* Thumbnail column — the table's mini map. Fixed height so a shown row is predictable; the width follows
-   the image's aspect within the column. Clicking it opens the viewer, the same as the eye. */
+/* Thumbnail column — the table's mini map. Each shown row gets the same square slot (ThumbSlot), so rows
+   line up whatever the image's aspect. Clicking it opens the viewer, the same as the eye. */
 .thumb-cell { display: flex; align-items: flex-start; gap: 0.25rem; min-width: 0; }
-.row-thumb {
-  height: 80px; width: auto; max-width: calc(100% - 1.75rem); object-fit: contain; cursor: pointer; display: block;
-  border-radius: var(--cc-radius-xs);
-}
 .note-text {
   font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: text;
   display: inline-flex; align-items: center; gap: 0.25rem;
@@ -1057,6 +1162,8 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 .runlog-cell { position: relative; display: inline-flex; flex-shrink: 0; }
 .runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.columns-pop { display: flex; flex-direction: column; gap: 0.5rem; width: 20rem; }
+.columns-foot { justify-content: space-between; }
 .runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; }   /* padding: TeleportPopover */
 .runlog-hd { margin-bottom: 4px; }
 

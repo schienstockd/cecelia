@@ -63,6 +63,13 @@ class _WeeklyFixture(_Fixture):
         guard = mock.patch.object(self.w._issues, "_default_run", no_gh)
         guard.start()
         self.addCleanup(guard.stop)
+        # never the real coherence tools: a live pass would run npx/uvx over the checkout. A test that wants
+        # counts passes `coherence=`
+        self.counted = []
+        coh = mock.patch.object(self.w._coherence, "run",
+                                lambda root, **_k: self.counted.append(root) or {"counts": {"clones": 1}})
+        coh.start()
+        self.addCleanup(coh.stop)
         # never the real `git push` either: the chart step pushes to `judge-assets` unless `--no-pr`.
         # Every `chart.Git` talks to an in-memory remote instead
         self.chart_remote = FakeRemote()
@@ -135,6 +142,16 @@ class WeeklyTest(_WeeklyFixture):
         (args, kw), = calls
         self.assertEqual((args, kw["root"]), (("m.py", 3, 5), wt))
         self.assertFalse(any(k.startswith("PIXI_") for k in kw["env"]))   # the worktree's own env, not ours
+
+    def test_a_live_pass_counts_coherence_in_its_pinned_worktree_and_a_dry_one_does_not(self):
+        self.assertNotIn("coherence", self.run_pass())
+        self.assertEqual(self.counted, [])
+        wt = pathlib.Path(self.tmp) / "wt"
+        record = self.w.weekly(ref="HEAD", live=True, worktree=wt, date="2026-10-05")
+        self.assertEqual(self.counted, [wt])
+        self.assertEqual(record["coherence"]["counts"], {"clones": 1})
+        self.assertEqual(self.rec.validate(record), [])
+        self.assertIn("## Coherence counts", self.rec.render_markdown(record))
 
     def test_a_pass_makes_a_valid_record_with_its_spend_summed(self):
         record = self.run_pass()

@@ -9,6 +9,7 @@
 // (popType, suffix) at a time — that's why the analysis board enforces ONE cluster run per board, so
 // this context drives its store once, unambiguously.
 import type { BehaviourAxes } from '../utils/behaviourAxes'
+import type { ClusterRun } from '../utils/clusterRefine'
 import { ref, computed, watch, type Ref } from 'vue'
 import type { GatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
@@ -49,6 +50,7 @@ export function useClusterContext(opts: {
   const clusterMembers = ref<Record<string, string[]>>({}) // per-suffix uids the run clustered together
   const clusterRunAt = ref<Record<string, string>>({})     // per-suffix: when the run ran (stale cluster pops)
   const clusterAxes = ref<Record<string, BehaviourAxes>>({}) // per-suffix diffusion axis names (track runs)
+  const clusterRuns = ref<Record<string, ClusterRun>>({})  // per-suffix params + refine lineage (CLUSTER_REFINE_PLAN)
   const resolvedVn = ref('default')                    // segmentation value_name the channels resolved to
   const hmmStateCols = ref<string[]>([])               // live.cell.hmm.state.<name>
   const hmmTransitionCols = ref<string[]>([])          // live.cell.hmm.transitions.<name>
@@ -80,6 +82,7 @@ export function useClusterContext(opts: {
       clusterMembers.value = d.clusterMembers ?? {}
       clusterRunAt.value = d.clusterRunAt ?? {}
       clusterAxes.value = d.clusterAxes ?? {}
+      clusterRuns.value = d.clusterRuns ?? {}
       resolvedVn.value = d.valueName ?? 'default'
       const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
       channelNames.value = names
@@ -158,7 +161,7 @@ export function useClusterContext(opts: {
 
   return {
     suffixes, clusterFeatures, featureFallback, channelNames, featureLabels, labelMap,
-    clusterIds, clusterMembers, clusterRunAt, clusterAxes, resolvedVn,
+    clusterIds, clusterMembers, clusterRunAt, clusterAxes, clusterRuns, resolvedVn,
     hmmStateCols, hmmTransitionCols, allFeatures, featureOptions,
     runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor,
   }
