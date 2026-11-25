@@ -284,7 +284,7 @@ end
 # transformed Float32 vectors for plotdata/density/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
     xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = labels_version)
-    Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv))
+    Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv))
 end
 
 # x/y PLUS the colour-by measure, from the one aligned read (see `_plot_cols_raw`)
@@ -293,8 +293,8 @@ function _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt; labels_version=n
     xv, yv = _xy_pair(v)
     # an unreadable colour measure (not a column of THIS table) is "no value for any cell" — NaN, which
     # the client paints in the dim ink — not a short vector, and never a reason to drop the dots.
-    zv = length(v[3]) == length(xv) ? Float32.(apply_transform(zt, v[3])) : fill(NaN32, length(xv))
-    (Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv)), zv)
+    zv = length(v[3]) == length(xv) ? Float32.(transform_column(zt, v[3])) : fill(NaN32, length(xv))
+    (Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv)), zv)
 end
 
 # `{path → [column]}`: for each population that is EMPTY on this image because a gate/filter column
@@ -993,7 +993,7 @@ function api_gating_plotmeta(req::HTTP.Request)
         rzext = _finite_extrema(rv[3])
         zt = auto ? effective_transform(zt0, rzext[1], rzext[2]) : zt0
         # robust range (see `_ramp_range`): the ramp is a contrast setting, not an axis
-        e = _ramp_range(Float32.(apply_transform(zt, rv[3])))
+        e = _ramp_range(Float32.(transform_column(zt, rv[3])))
         if e !== nothing
             zext = [e[1], e[2]]
             # the legend's labels are RAW values (inverted through the transform) — served from here for
@@ -1004,7 +1004,9 @@ function api_gating_plotmeta(req::HTTP.Request)
         end
     end
     rxp, ryp = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = pin)
-    xv, yv = Float32.(apply_transform(xt, rxp)), Float32.(apply_transform(yt, ryp))
+    # `transform_column`, not the scalar map: typed and threaded — a logicle axis solves per value, and
+    # this point cloud is the plot's whole population (0.2 s of a 600k-cell plotmeta, single-threaded)
+    xv, yv = Float32.(transform_column(xt, rxp)), Float32.(transform_column(yt, ryp))
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
     mode = n > density_threshold ? "density" : "scatter"

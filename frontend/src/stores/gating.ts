@@ -10,6 +10,7 @@ import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
 import { channelLabel } from '../utils/channelNames'
 import { popPath } from '../utils/popName'
 import { gateSignatures, changedPopPaths, booleanDeps, statsToFetch } from '../utils/popChanges'
+import { OVERLAY_TICK_KEY, encodeOverlayTick, lookOf, widerScope, writeScope, type OverlayTickScope } from '../utils/viewer/overlayTick'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
 // leaf names beginning with `_`. Hand-drawn gates may not use that prefix — mirrors the backend
@@ -238,6 +239,10 @@ export function createGatingStore(initialPopType: string) {
   }
 
   async function _post(path: string, body: Record<string, unknown>) {
+    // the document as it stood before this write — what the viewer's tick is scoped against. Not the
+    // tree when the reply lands: the server broadcasts before it answers, so by then `applyBroadcast`
+    // has usually set the new tree already and a diff against it finds nothing.
+    const before = tree.value.populations ?? []
     try {
       const res = await fetch(path, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -268,11 +273,16 @@ export function createGatingStore(initialPopType: string) {
           log.error(`Gating (image ${uid}): ${e.error ?? `HTTP ${r.status}`}`, { source: 'gating' })
         }).catch(() => undefined)))
       if (data.tree) setTree(data.tree, data.missingColumns)
+      const pops = data.tree?.populations ?? []
+      const changed = data.tree
+        ? changedPopPaths(gateSignatures(before), gateSignatures(pops), booleanDeps(pops)) : undefined
       _setHistory(data)
       // Any pop mutation (add/delete/rename/setGate/updatePop) changes what the viewer draws — the
-      // /viewer-window popup has its own store, so it needs the localStorage ping to refetch its
-      // overlays. Held for Apply in manual-apply mode (`holdViewerPings`).
-      _pingViewerAfterApply()
+      // /viewer-window popup has its own store, so it needs the localStorage ping. Scoped by what
+      // changed: a colour or show change ships its look and fetches nothing, a membership change
+      // fetches this document's populations alone (`utils/viewer/overlayTick.ts`). Held for Apply in
+      // manual-apply mode (`holdViewerPings`).
+      _pingViewerAfterApply(writeScope(changed))
       return true
     } catch (e) {
       log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -483,7 +493,7 @@ export function createGatingStore(initialPopType: string) {
   // Without this the viewer keeps drawing yesterday's popType until the user gates something.
   watch([imageUid, valueName, popType], () => {
     if (typeof localStorage !== 'undefined' && imageUid.value) {
-      localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
+      localStorage.setItem(OVERLAY_TICK_KEY, encodeOverlayTick({ imageUid: imageUid.value, scope: 'all' }))
     }
   })
 
@@ -507,13 +517,26 @@ export function createGatingStore(initialPopType: string) {
   // (P2), so a `pop.show` change here needs a channel to reach it. The tick's VALUE carries the
   // imageUid so a popup on image A doesn't refetch on a change to image B (broadcasts are cheap
   // but noisy). See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
-  const _pingViewer = () => {
-    if (typeof localStorage !== 'undefined' && imageUid.value) {
-      // Publish the current (valueName, popType) BEFORE the tick, so a viewer that refetches on the
-      // storage event reads the up-to-date selection rather than a stale one.
-      _publishGatingCurrent()
-      localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
-    }
+  // The scope still to send: a held `pops` ping followed by a `look` one must still refetch
+  // (`widerScope`), so pings accumulate here until one goes out.
+  let _pendingScope: OverlayTickScope | null = null
+  const _sendTick = (uid: string) => {
+    const scope = _pendingScope ?? 'all'
+    _pendingScope = null
+    // Publish the current (valueName, popType) BEFORE the tick, so a viewer that refetches on the
+    // storage event reads the up-to-date selection rather than a stale one. A tick for an image this
+    // store has since left is unscoped: its document is no longer the one named here.
+    const own = uid === imageUid.value
+    if (own) _publishGatingCurrent()
+    localStorage.setItem(OVERLAY_TICK_KEY, encodeOverlayTick(own
+      ? { imageUid: uid, scope, valueName: valueName.value, popType: popType.value,
+          // the look as it stands when the tick goes out — after Apply, the latest
+          ...(scope === 'look' ? { look: lookOf(flat.value) } : {}) }
+      : { imageUid: uid, scope: 'all' }))
+  }
+  const _pingViewer = (scope: OverlayTickScope) => {
+    _pendingScope = widerScope(_pendingScope, scope)
+    if (typeof localStorage !== 'undefined' && imageUid.value) _sendTick(imageUid.value)
   }
   // Manual apply holds the viewer reload a gate write triggers, so a hierarchy can be built on a
   // large image before the viewer draws any of it. The owning canvas hands in its Apply queue
@@ -521,24 +544,24 @@ export function createGatingStore(initialPopType: string) {
   // reload (`pingViewer`) does what a held one would, so it drops it.
   let _viewerHold: { defer: (run: () => void) => void; drop: () => void } | null = null
   const holdViewerPings = (h: typeof _viewerHold) => { _viewerHold = h }
-  function _pingViewerAfterApply() {
+  function _pingViewerAfterApply(scope: OverlayTickScope = 'all') {
     const uid = imageUid.value
+    _pendingScope = widerScope(_pendingScope, scope)
     const ping = () => {
       if (typeof localStorage === 'undefined' || !uid) return
-      if (uid === imageUid.value) _publishGatingCurrent()
-      localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
+      _sendTick(uid)
     }
     if (_viewerHold) _viewerHold.defer(ping)
     else ping()
   }
-  const pingViewer = () => { _viewerHold?.drop(); _pingViewer() }
-  // Refresh POPULATIONS on the WebGPU viewer after a per-pop visibility change.
+  const pingViewer = (scope: OverlayTickScope = 'all') => { _viewerHold?.drop(); _pingViewer(scope) }
+  // Refresh POPULATIONS on the WebGPU viewer after a per-pop visibility change (or the point size).
   // PopulationManager's per-pop checkbox is the primary surface, so a change here MUST reach the
-  // popup window.
-  const refreshPops = () => { pingViewer(); return Promise.resolve(true) }
+  // popup window. Nothing about membership changed: the viewer re-reads its eyes and draws what it holds.
+  const refreshPops = () => { pingViewer('look'); return Promise.resolve(true) }
   // Unified refresh used by the manager's per-pop visibility toggle — the WebGPU viewer routes to
   // tracks or points itself based on `popType`, so this is just a ping.
-  const refreshOverlays = () => { pingViewer(); return Promise.resolve(true) }
+  const refreshOverlays = () => { pingViewer('look'); return Promise.resolve(true) }
   // Clear the transient cell-selection pop: the server drops it from the registry, re-broadcasts
   // the tree without it. Used by the × button in `CellSelectionTools`; the WebGPU picker writes
   // into the same registry (`_set_pick_selection!`), so this clear is symmetric.
