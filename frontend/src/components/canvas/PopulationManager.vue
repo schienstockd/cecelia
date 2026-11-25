@@ -45,7 +45,7 @@ import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
 import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import { DOT_R } from '../../plots/density'
 import { assignHistoryFor, recordStep, takeStep, toggleStep, writePlan, type Assign } from '../../utils/clusterAssignHistory'
-import { clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale, claimsClusterIds, clusterPopIds } from '../../utils/clusterMeasure'
+import { clusterMeasure, clusterRunOf, isClusterPopType, isGatingPopType, clusterPopStale, claimsClusterIds, clusterPopIds } from '../../utils/clusterMeasure'
 import { eyeKey, offPaths, popEyeOn, popTypeSwitch } from '../../utils/viewer/popEyes'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
@@ -55,6 +55,7 @@ import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
 import { allSelected, fileManagerPick } from '../../utils/tableSelection'
 import { actionEnabled, actionTargets, deleteCount, moveTargetsFor, selectionRoots, sharedParent,
          SINGLE_ONLY_TIP, type PopAction } from '../../utils/popSelection'
+import { contextAncestors, refinedBy, runLabel, type ClusterRun } from '../../utils/clusterRefine'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
 const AXIS_OPTIONS: ChipOption[] = [
@@ -74,6 +75,7 @@ const props = withDefaults(defineProps<{
   clusterIds?: number[]            // cluster mode: the tickable cluster IDs for the active suffix
   suffix?: string                  // cluster mode: which clusters.{suffix} new pops filter on
   runAt?: string                   // cluster mode: when that run ran — a pop picked on an older one is stale
+  runs?: Record<string, ClusterRun> // cluster mode: every run's params + refine lineage (CLUSTER_REFINE_PLAN)
   // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
@@ -88,7 +90,7 @@ const props = withDefaults(defineProps<{
   hasStaged?: boolean
   stagedChangeCount?: number
   reloadable?: boolean | null      // forward to CanvasSidePanel — manual reload button (null = hide)
-}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, readout: emptyReadout, docked: false, readonly: false,
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', runs: () => ({}), vis: undefined, readout: emptyReadout, docked: false, readonly: false,
         manualApply: null, hasStaged: false, stagedChangeCount: 0, reloadable: null })
 const emit = defineEmits<{
   'update:selected': [string]
@@ -104,6 +106,8 @@ const emit = defineEmits<{
   reload: []
   toggleHighlight: [string]
   showDefiningPlot: [FlatPop]      // open the plot where this pop's gate was drawn
+  refine: [FlatPop]                // cluster mode: sub-cluster this population (fills the task form)
+  'update:suffix': [string]        // cluster mode: show another run (a refine run, or the one above)
 }>()
 const g = useGatingStore()
 const kiwi = useKiwiStore()
@@ -257,6 +261,20 @@ const visiblePops = computed<FlatPop[]>(() =>
   clusterMode.value
     ? g.flat.filter(p => p.filter?.measure === clusterMeasure(props.popType, props.suffix))
     : g.flat)
+// REFINE TREE (docs/todo/CLUSTER_REFINE_PLAN.md): a refine run's populations sit under the population it
+// refines, which belongs to ANOTHER run — so the rows are the run's own pops plus their ancestors, the
+// ancestors shown as read-only context that switches to their run on click. Context rows never take part
+// in ticking, highlighting or the "all" toggles (those read `visiblePops`).
+const contextPaths = computed<Set<string>>(() => clusterMode.value
+  ? contextAncestors(g.flat, visiblePops.value.map(p => p.path)) : new Set())
+const treePops = computed<FlatPop[]>(() => {
+  if (!contextPaths.value.size) return visiblePops.value
+  const own = new Set(visiblePops.value.map(p => p.path))
+  return g.flat.filter(p => own.has(p.path) || contextPaths.value.has(p.path))
+})
+const popRun = (p: FlatPop): string => clusterRunOf(props.popType, p.filter?.measure)
+const refinedRuns = computed(() => refinedBy(props.runs))
+const canRefine = computed(() => props.popType === 'clust' && !props.readonly)
 
 // ── Multi-selection (ctrl/⌘-click, shift-click) ───────────────────────────────────────────────────
 // The rows a bulk ⋯ action reaches. A plain click is unchanged — it picks the row the plots show —
@@ -779,8 +797,15 @@ function addMenuPopsToKiwi() {
         <span class="pm-icon pm-allrow-pad cc-btn cc-btn-bare cc-btn-icon" aria-hidden="true"><i class="pi pi-ellipsis-h" /></span>
       </div>
 
-      <template v-for="p in visiblePops" :key="p.path">
-        <div class="pm-row" data-guide="popmanager.row"
+      <template v-for="p in treePops" :key="p.path">
+        <div v-if="contextPaths.has(p.path)" class="pm-row pm-context"
+             :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
+             v-tooltip.bottom="'Show its run'" @click="popRun(p) && emit('update:suffix', popRun(p))">
+          <i class="pi pi-circle-fill pm-context-dot" :style="{ color: p.colour }" />
+          <span class="pm-name">{{ p.name }}</span>
+          <span class="pm-ncl cc-fs-2xs">{{ runLabel(popRun(p), runs[popRun(p)]) }}</span>
+        </div>
+        <div v-else class="pm-row" data-guide="popmanager.row"
              :class="{ active: p.path === props.selected, picked: isPicked(p), transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @mouseenter="hoverPath = p.path" @mouseleave="hoverPath = null"
@@ -838,6 +863,10 @@ function addMenuPopsToKiwi() {
              :style="{ color: SEVERITY.warn.color }" v-tooltip.left="'Clustering re-run since — check its clusters'" />
           <span v-if="clusterMode && p.filter" class="pm-ncl cc-fs-2xs" v-tooltip.left="popClusterIds(p).join(', ') || 'No clusters yet'">
             {{ popClusterIds(p).length }} cl</span>
+          <button v-if="refinedRuns[p.path]" class="pm-icon cc-btn cc-btn-bare cc-btn-icon"
+                  v-tooltip.left="`Refined in ${refinedRuns[p.path].join(', ')}`"
+                  @click.stop="emit('update:suffix', refinedRuns[p.path][0])">
+            <i class="pi pi-angle-double-down" /></button>
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
             {{ g.stats[p.path]?.count ?? '–' }}
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
@@ -903,6 +932,12 @@ function addMenuPopsToKiwi() {
                 {{ convertTip(actionsPop) }}
               </button>
             </ConfirmButton>
+            <button v-if="canRefine && actionsPop.filter && !actionsPop.transient" class="cc-actions-item"
+                    :aria-disabled="!can('refine')"
+                    v-tooltip.right="onlyTip('refine') || 'Cluster it again, finer'"
+                    @click.stop="can('refine') && runAction(() => emit('refine', actionsPop!))">
+              <i class="pi pi-search-plus" /> Refine
+            </button>
             <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item" :aria-disabled="!can('rename')"
                     v-tooltip.right="onlyTip('rename')"
                     @click.stop="can('rename') && runAction(() => beginRename(actionsPop!))">
@@ -1021,6 +1056,9 @@ function addMenuPopsToKiwi() {
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
+/* a refine run's source population (another run) — context above its children, click = its run */
+.pm-row.pm-context { color: var(--cc-text-dim); font-style: italic; }
+.pm-context-dot { font-size: 0.6em; }
 /* in a multi-selection: the house selection mark (`--cc-selected`, as SelectionTable's rows) — a left
    rule + faint tint, so it reads apart from the accent-filled ACTIVE row it can sit on */
 .pm-row.picked { box-shadow: inset 2px 0 0 var(--cc-selected);
