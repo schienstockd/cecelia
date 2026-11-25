@@ -179,13 +179,13 @@ function _gate_mask(g::Gate, parent_mask::BitVector, tcol)::BitVector
 end
 
 """
-    recompute!(m, fetch_cols) -> m
+    recompute!(m, fetch_cols; valley = valley_cut) -> m
 
 Derive membership for every population. `fetch_cols(cols::Vector{String})` must return a
 `DataFrame` with a `label` column plus the requested columns (production wraps
 `label_props`; tests pass an in-memory closure). Result cached on the map.
 """
-function recompute!(m::PopulationTree, fetch_cols::Function)
+function recompute!(m::PopulationTree, fetch_cols::Function; valley = valley_cut)
     df = fetch_cols(_needed_columns(m))
     "label" in names(df) || error("recompute!: fetch_cols must return a `label` column")
     # ── spatial axes: put the DATA in the same unit as the GATE, here and nowhere else ──
@@ -210,6 +210,17 @@ function recompute!(m::PopulationTree, fetch_cols::Function)
     # share it (a logicle column of a 600k-cell movie is ~0.1 s, and every gate used to redo it).
     tcols = Dict{Tuple{String,String},Vector{Float64}}()
     tcol(ch, t) = get!(() -> transform_column(t, df[!, ch]), tcols, (String(ch), transform_key(t)))
+    # A rule gate resolves on its parent's cells — that column cut from the shared transform, and each
+    # valley search done once per (parent, column, transform, window): the two halves of a bisector group
+    # share one search, as their cut is one cut. `valley` is the search (`valley_cut`; a test counts it).
+    rule_cols = Dict{Tuple{String,String,String},Vector{Float64}}()
+    searches = Dict{Tuple{String,String,String,Float64,Float64,Float64},Union{Nothing,Float64}}()
+    function resolved(g::Gate, parent::String, parent_mask::BitVector)
+        ch, tk = String(g.x_channel), transform_key(g.x_transform)
+        v = get!(() -> tcol(ch, g.x_transform)[parent_mask], rule_cols, (parent, ch, tk))
+        memo(v, lo, hi; adjust) = get!(() -> valley(v, lo, hi; adjust), searches, (parent, ch, tk, lo, hi, adjust))
+        first(resolve_rules(g, v; valley = memo))
+    end
     memb = Dict{String,BitVector}()
     memb[ROOT] = trues(n)
     for path in topo_order(m)
@@ -227,8 +238,7 @@ function recompute!(m::PopulationTree, fetch_cols::Function)
             # the filter case below for the rationale (missing column ≠ hard 500).
             # a rule gate (a valley-following bisector) is first resolved on its PARENT's cells
             (p.gate.x_channel in cols && p.gate.y_channel in cols) ?
-                _gate_mask(needs_parent_data(p.gate) ?
-                               resolve_gate(p.gate, df[parent_mask, p.gate.x_channel]) : p.gate,
+                _gate_mask(needs_parent_data(p.gate) ? resolved(p.gate, p.parent, parent_mask) : p.gate,
                            parent_mask, tcol) :
                 _missing_col_mask(n, path, string(p.gate.x_channel, " / ", p.gate.y_channel))
         elseif p.filter_conditions !== nothing

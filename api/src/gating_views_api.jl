@@ -379,7 +379,7 @@ function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector
     sx = span(xt); sy = span(yt)
     if g isa Cecelia.HistGate
         # one axis: the distance to the nearest end / the cut (a rule's, on these — the parent's — cells)
-        g = Cecelia.resolve_gate(g, xraw)
+        g = first(Cecelia.resolve_rules(g, xt))    # xt: this gate's transform of xraw, as `resolve_gate` takes it
         ends = g isa RangeGate ? (g.lo, g.hi) : (g.cut,)
         return [isfinite(v) ? minimum(abs(v - e) for e in ends) / sx : Inf for v in xt]
     end
