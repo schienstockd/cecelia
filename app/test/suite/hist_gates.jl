@@ -79,6 +79,29 @@ end
     @test abs(valley_cut([two_pops(rng, 2000, 0.0, 1.0, 2000, 6.0, 1.0); fill(NaN, 50)], -10, 10) - 3.0) < 0.3
 end
 
+# The cut is the docstring's recipe on the finite values: Silverman's bandwidth from their sd and IQR, a grid
+# over their 0.1–99.9 % quantiles ∪ the window (± 3h), the binned density, its most prominent valley — the
+# quantiles taken straight from `Statistics.quantile` on the values as given (in table order, NaN/Inf dropped).
+@testset "valley_cut: the documented recipe, quantiles of the finite values" begin
+    function recipe(v, lo, hi; adjust = 1.0)
+        x = Float64[a for a in v if isfinite(a)]; n = length(x)
+        q1, q3 = Cecelia.quantile(x, (0.25, 0.75)); sd = Cecelia.std(x)
+        h = 0.9 * (q3 > q1 ? min(sd, (q3 - q1) / 1.34) : sd) * n^(-1 / 5) * adjust
+        qa, qb = Cecelia.quantile(x, (Cecelia.VALLEY_RANGE_Q, 1 - Cecelia.VALLEY_RANGE_Q))
+        a = max(minimum(x), min(qa, lo)) - 3h; b = min(maximum(x), max(qb, hi)) + 3h
+        G = clamp(ceil(Int, 4 * (b - a) / h), Cecelia.VALLEY_GRID, Cecelia.VALLEY_GRID_MAX)
+        d, a, dx = Cecelia._binned_kde(x, a, b, h, G)
+        Cecelia._most_prominent_valley(d, a, dx, lo, hi)
+    end
+    rng = MersenneTwister(11)
+    for k in 1:20
+        v = Cecelia.Random.shuffle(rng, [two_pops(rng, 4000, 0.0, 1.0, 1000 * k, 4.0 + 0.1k, 0.8); NaN; Inf; -Inf; 1e4])
+        lo, hi = -2.0 + 0.1k, 6.0 - 0.05k
+        c = valley_cut(v, lo, hi; adjust = 0.5 + 0.1k)
+        @test c !== nothing && isequal(c, recipe(v, lo, hi; adjust = 0.5 + 0.1k))
+    end
+end
+
 @testset "rule bisector: the cut follows each parent's own valley" begin
     rng = MersenneTwister(11)
     rule = ValleyRule(-5.0, 15.0)

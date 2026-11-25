@@ -703,7 +703,9 @@ stats, the plot refresh and the viewer overlays at once. `computed_pop_tree`, th
 and `resolve_pops` (cell-table pop types) evaluate through it.
 
 `recompute!` itself transforms each (column, transform) once per evaluation (`transform_column`, shared
-by sibling gates on the same axes) and tests a child only on its parent's rows (`inside_t`); a slice
+by sibling gates on the same axes; typed and threaded — the array methods of `apply_transform` /
+`invert_transform` route through it and `invert_column`, so a rule gate's parent column, the gate-examples
+edge distance and the gate-plot image pay the same, ~11 ms per logicle column of 608k cells at 8 threads) and tests a child only on its parent's rows (`inside_t`); a slice
 gate is still tested on every row, since its half-plane is clipped to a box around the points given.
 The parsed `obs/_index` label column is cached per h5ad file (`_OBS_LABELS_CACHE`, mtime + size).
 

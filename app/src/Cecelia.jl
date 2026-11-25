@@ -123,7 +123,7 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
-export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, transform_key
+export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, invert_column, transform_key
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
        RangeGate, BisectorGate, ValleyRule, valley_cut
