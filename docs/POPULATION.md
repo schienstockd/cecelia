@@ -423,7 +423,11 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `categorical` name the *base* cell columns to aggregate into gateable track properties (numeric →
   `.mean/.median/.sum/.qUp/.qLow/.sd`; categorical → per-category frequency `{m}.{cat}`); the common
   case (motility-only gating) needs neither, and an aggregate named in `pop_cols` (`area.mean`,
-  `live.cell.hmm.state.movement.1`) is derived without them (`track_aggregate_measures`). **Numeric vs categorical is auto-detected** from the
+  `live.cell.hmm.state.movement.1`) is derived without them (`track_aggregate_measures`). In the GUI
+  the track gating axes list the motility measures, then every cell measure once (Morphology /
+  Channels); picking one adds a summary select beside it (median by default, also mean, sum, 95th / 5th
+  percentile, SD) and the axis stores `<base>.<summary>` (`utils/trackAxis.ts`, `GatePlotPanel.vue`).
+  **Numeric vs categorical is auto-detected** from the
   decoded type + values (strings like `hmm.transitions="1.3"` and integer code sets like
   `hmm.state∈{1,2,3}` → categorical; continuous floats like `speed=10.12` → numeric); no config map
   (replaces the old R `config.yml` `labelStats`). `categorical`/`numeric` are escape-hatch overrides

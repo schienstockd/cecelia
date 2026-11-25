@@ -57,6 +57,24 @@
         # `numeric` escape-hatch forces it back to numeric aggregates when desired
         forced = track_props(img; value_name="B", cell_measures=["st"], numeric=["st"])
         @test "st.mean" in names(forced) && !("st.1" in names(forced))
+        # a VAR column is a quantity even with few integer levels (`euler_number_mesh` here has a
+        # handful): numeric aggregates, never per-level frequencies — else a track gate on its median
+        # reads an absent column (docs/todo/TRACK_SUBPOP_GATING_PLAN.md P2)
+        eul = label_props(img; value_name="B") |> select_cols(["euler_number_mesh"]) |> as_df
+        vals = filter(isfinite, Float64.(eul.euler_number_mesh))
+        @test all(isinteger, vals) && length(unique(vals)) <= 20          # the case the heuristic misreads
+        @test Cecelia._is_categorical_col(eul.euler_number_mesh, "euler_number_mesh")
+        ev = track_props(img; value_name="B", cell_measures=["euler_number_mesh"])
+        @test "euler_number_mesh.median" in names(ev) && "euler_number_mesh.mean" in names(ev)
+        # the structural rule every reader shares: a var, or a numeric per-track summary of one, is a
+        # quantity; an obs column (`st`) and a per-level frequency (`st.1`) are not
+        vs = Cecelia._var_measure_set(img, "B")
+        @test Cecelia._is_var_measure(vs, "euler_number_mesh")
+        @test Cecelia._is_var_measure(vs, "euler_number_mesh.median") && Cecelia._is_var_measure(vs, "euler_number_mesh.sum")
+        @test !Cecelia._is_var_measure(vs, "st") && !Cecelia._is_var_measure(vs, "st.mean")
+        @test !Cecelia._is_var_measure(vs, "euler_number_mesh.3") && !Cecelia._is_var_measure(vs, "live.track.speed")
+        @test !any(startswith(n, "euler_number_mesh.") && n ∉
+                   ("euler_number_mesh." .* ["mean", "median", "sum", "qUp", "qLow", "sd"]) for n in names(ev))
 
         # An UNTRACKED segmentation → the empty, well-formed table, and SILENTLY. `track_props`
         # handles this case by design, so it must ASK (`is_tracked`, which reads the obs column list

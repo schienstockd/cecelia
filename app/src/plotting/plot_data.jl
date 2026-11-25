@@ -800,7 +800,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # (a test frame's 1/2/3 values, a 0/1 flag), and those must keep their ordinary boxes. The panel sets
     # it for a categorical measure on these charts (plot.ts COMPOSITION_CHARTS).
     composed = composition && measure !== nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar") &&
-               String(measure) in names(df) && !(String(measure) in var_cols) &&
+               String(measure) in names(df) && !_is_var_measure(var_cols, String(measure)) &&
                _is_categorical_col(df[!, String(measure)], String(measure))
     if composed
         group_by = String(measure)
@@ -864,7 +864,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # ours — so the panel keeps offering the same chart list whichever of them is showing
     mtype = composed ? "categorical" : !asked_for_measure ? "numeric" :
             (measure !== nothing && String(measure) in names(df)) ?
-            (String(measure) in var_cols ? "numeric" :                        # var = quantitative, always
+            (_is_var_measure(var_cols, String(measure)) ? "numeric" :         # var (or its per-track summary) = quantitative
              _is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
     # RAW EXPORT: emit the tidy per-datapoint rows behind the plot — identity (uID, label/track_id,
     # value_name, pop) + the optional groupBy level + the measure value — so the board CSV export can

@@ -19,9 +19,11 @@ These change results when old work is re-run:
 
 - **Neighbour stats on kNN graphs** now count edges stored one way only, which they missed (about a fifth). Re-run the graph and stats on every image of a set (#2317).
 - **Region clustering (Leiden)** clusters each distinct neighbourhood mix once; small neighbourhoods used to split regions into thousands. Runs over 200 regions now fail.
+- **Cluster tracks** on a shape measure with few whole-number values (e.g. Euler number) now uses its per-track mean/median/…, not the share of each value. Re-run to compare.
 
 ### Added
 
+- **Track gating on cell measures:** a track gating plot can put any shape or channel measure on an axis, summarised per track (median by default; also mean, sum, 95th / 5th percentile, SD).
 - **Proximity profile:** which populations sit near a structure (germinal centre, follicle, aggregate), in distance bands, against the image as a whole. Two Spatial plots and MCP `get_proximity_profiles`.
 
 ### Changed
