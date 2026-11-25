@@ -87,19 +87,27 @@ _mr_note_shown(note) = startswith(note, "parameters unknown") || startswith(note
 function _mr_missing_pops(fn::AbstractString, entries, defined::Set{String})::Vector{String}
     isempty(defined) && return String[]
     idx = _mr_param_index(fn)
-    vals = first(_mr_values(fn, entries, idx))
-    own = string(something(get(vals, "valueName", nothing), VERSIONED_DEFAULT_VAL))
+    is_pops(k) = (p = get(idx, first(_mr_slot(k)), nothing); p isa AbstractDict && get(p, "type", "") == "popSelection")
+    defaults = Dict{String,Any}(k => p["default"] for (k, p) in idx if is_pops(k) && haskey(p, "default"))
     out = String[]
-    for (k, p) in idx
-        (p isa AbstractDict && get(p, "type", "") == "popSelection") || continue
-        for ref in _mr_list(get(vals, k, nothing))
-            r = string(ref)
-            (_whole_pop(r) || any(seg -> startswith(seg, "_"), split(r, '/'))) && continue
-            ls, path = _split_pop_ref(r, own)
-            "$ls$path" in defined || push!(out, r)
+    # every done run, every group entry: one image clustered on a removed pop is enough to check
+    for e in entries
+        run_entry_status(e) == "done" || continue
+        flat = _hp_flat(run_log_row(e).params, _history_param_defaults(String(fn)), _history_leaves(String(fn)))
+        vals = merge(defaults, Dict{String,Any}(k => v[1] for (k, v) in flat))
+        vn = [v[1] for (k, v) in flat if (s = _mr_slot(k); s[1] == "valueName" && isempty(s[2]))]
+        own = string(something(isempty(vn) ? nothing : first(vn), VERSIONED_DEFAULT_VAL))
+        for (k, v) in vals
+            is_pops(k) || continue
+            for ref in _mr_list(v)
+                r = string(ref)
+                (_whole_pop(r) || any(seg -> startswith(seg, "_"), split(r, '/'))) && continue
+                ls, path = _split_pop_ref(r, own)
+                "$ls$path" in defined || push!(out, r)
+            end
         end
     end
-    sort!(unique!(methods_pop_phrases(out)))          # named together, so two OTIs stay two
+    sort!(unique!(methods_pop_phrases(unique!(out))))          # named together, so two OTIs stay two
 end
 
 """
