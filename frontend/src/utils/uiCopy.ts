@@ -136,6 +136,46 @@ export function textStrings(src: string): string[] {
   return out
 }
 
+/**
+ * Prose string literals in SCRIPT code — the copy the template extractors cannot see because it is
+ * built in `<script>` or a `.ts` table (`{ label: 'Populations', tip: … }`, a `log.error` message, a
+ * guide bullet) and reaches the screen as a bound value.
+ *
+ * "Prose" = a literal that still has a space in it once `${…}` is dropped, which is what separates
+ * `'no populations selected'` from the identifiers (`'pops'`, `q.set('pops', …)`) that share its
+ * words. Comment lines are skipped; for an SFC only the `<script>` blocks are read.
+ */
+const SCRIPT_BLOCK = /<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi
+const SCRIPT_LITERAL = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`([^`]*)`/g
+
+export function scriptStrings(src: string, path = ''): string[] {
+  const code = path.endsWith('.vue') ? [...src.matchAll(SCRIPT_BLOCK)].map(m => m[1]).join('\n') : src
+  const out: string[] = []
+  for (const raw of code.split('\n')) {
+    const t = raw.trim()
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue
+    const line = raw.replace(/(^|\s)\/\/\s.*$/, '')                // trailing comment, not `http://`
+    for (const m of line.matchAll(SCRIPT_LITERAL)) {
+      const s = normalise(stripInterpolation(m[1] ?? m[2] ?? m[3] ?? ''))
+      if (/\s/.test(s) || /^[A-Z]/.test(s)) out.push(s)
+    }
+  }
+  return out
+}
+
+/**
+ * Whether copy calls a population a "pop" / "Pops" — the house noun is *population*
+ * (`docs/ui/COPY.md` → Noun vocabulary).
+ *
+ * Not flagged, because they are other words or code: `pop-out` / `pop out` / `pops up` (the verb),
+ * a hyphenated class (`vw-pop-name`), a member access or call (`l.pops`, `.pop()`), and `pop_type`.
+ */
+const POP_ABBREV = /(?<![\w.$-])[Pp]ops?(?![\w(-]|\.\w|\s+(?:out|up)\b)/
+
+export function abbreviatesPopulation(text: string): boolean {
+  return POP_ABBREV.test(text)
+}
+
 // A capital mid-string is only evidence of Title Case if the word isn't EXPECTED to carry one.
 // Without this allowance "Calculate UMAP", "Use Dask" and "Flatten Z" all read as violations and the
 // signal is mostly noise — 16 real hits hid behind 23 raw ones.

@@ -54,7 +54,7 @@ export interface SceneAidCorners {
 }
 
 /** The full render — a producer builds one of these, `SceneAid.vue` draws it. `caption` sits under
- *  the frame in muted type, for a producer to say "no pops selected" without adding another
+ *  the frame in muted type, for a producer to say "no populations selected" without adding another
  *  component. */
 export interface SceneAidRender {
   points: SceneAidPoint[]

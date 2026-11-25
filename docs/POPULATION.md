@@ -713,6 +713,28 @@ transient napari-selection pop is excluded (it's the selection *source*). Cell p
 REPL contract (headless, no API/UI): `add_pop!`, `set_gate!`, `recompute!`,
 `cells_in_pop`, `pop_df`, `pop_df_multi`, `resolve_pops`, `save_pop_tree!`/`load_pop_tree`.
 
+### Membership cache — one evaluation per edit
+
+`recompute_cached!(m, img, vn, pop_type, fetch_cols; labels_version)` is `recompute!` kept server-wide
+(`_MEMBERSHIP_CACHE`, one slot per image × segmentation × pop type × labels pin). Its stamp is what the
+evaluation read: the map's membership fields (paths, parents, gates, filters, booleans, explicit labels
+in full, spatial unit, µm/px — not colour, uid, visibility or edit stamps) and the file stamp of the
+table `pop_membership_fetch` reads. Digesting the map *as evaluated* is what lets the API's hooked reads
+(the pick selection, injected in memory) cache too. One evaluation per slot runs at a time; requests
+that arrive during it wait and take its result — after an edit the GUI asks for the changed pops'
+stats, the plot refresh and the viewer overlays at once. `computed_pop_tree`, the cell `pop_df` path
+and `resolve_pops` (cell-table pop types) evaluate through it.
+
+`recompute!` itself transforms each (column, transform) once per evaluation (`transform_column`, shared
+by sibling gates on the same axes; typed and threaded — the array methods of `apply_transform` /
+`invert_transform` route through it and `invert_column`, so a rule gate's parent column, the gate-examples
+edge distance and the gate-plot image pay the same, ~11 ms per logicle column of 608k cells at 8 threads) and tests a child only on its parent's rows (`inside_t`); a slice
+gate is still tested on every row, since its half-plane is clipped to a box around the points given.
+The parsed `obs/_index` label column is cached per h5ad file (`_OBS_LABELS_CACHE`, mtime + size).
+
+Measured on a 608k-cell movie (KDIeEm scaled ×442, eight nested logicle gates, 8 threads): one
+evaluation 2.4 s → ~0.25 s; the request burst after a gate edit 9.5–15.5 s → 0.6–1.4 s.
+
 ### `pop_df_multi` — mixed-type module-function inputs
 
 A module function's `popSelection` can offer **any** pop type at once (cell gates, `clust`, `region`,
@@ -828,6 +850,12 @@ after fixing a gate. The GET cohort route computes the same answer without writi
   re-appended after its new parent). Exposed as `POST /api/gating/pop/move` and the population
   manager's ⋯ → *Move under…*; before it existed the only way to change a pop's parent was to delete
   the branch and redraw every gate in it.
+- **A selection moves or deletes in one mutation** — `move_pops!(m, paths, newparent)` and
+  `del_pops!(m, paths)` (the manager's multi-selection, `pop/move` / `pop/delete` with `paths`): one
+  save, one broadcast, one undo step, not N requests each rewriting the sidecar. `selection_roots`
+  drops a selected pop whose ancestor is also selected — it moves or goes with that ancestor. A move is
+  all-or-nothing: a target inside any selected subtree (a cycle), a taken target path, or two selected
+  pops with one name landing under one parent refuses the whole selection before anything moves.
 - **Time-agnostic**: gate eval is identical on timecourse segmentations (gates pooled
   cell-instances across timepoints) — no special code.
 - **A gate's SHAPE can be changed without deleting the population.** `set_gate!` takes any `Gate`
@@ -1096,7 +1124,9 @@ client-side; the server persistence was already correct.
 One rule for every canvas: **a gate write refetches only what shows a changed population** —
 the redrawn, added or deleted pop and everything under it (`utils/popChanges.ts`,
 `changedPopPaths`). The gating plots bump per-pop versions with it (`stores/gating.ts`
-`popVersion`); the summary and layout canvases key each panel's refetch off the pops it plots
+`popVersion`); the edit's own reply refetches the manager's counts of exactly those pops
+(`statsToFetch`), and the broadcast that follows, like a fresh tree read, refreshes every count — it
+also carries writes this tab did not make, and the server answers them from its membership cache; the summary and layout canvases key each panel's refetch off the pops it plots
 (`seriesReloadToken`, ancestors included so a derived `/_tracked` follows its parent). A new
 gate is never ticked, so it refetches no plot. One exception: a panel reading a cluster column
 (measure, heatmap category or group-by — Track cluster frequency) follows **every** pop write,
@@ -1115,6 +1145,22 @@ things until Apply: the eye toggles (`stagedSel`), and the refreshes gate writes
 
 Apply, or switching manual apply off, runs everything held; Discard leaves held refreshes alone
 (they are server-side changes). The chip counts both.
+
+**The viewer follows the same rule** — the pop-out has its own stores, so a write reaches it as the
+`cc.viewerOverlaysTick` ping, and the ping names its scope (`utils/viewer/overlayTick.ts`):
+
+- **a colour or show change** (no pop's membership changed) — `look`: the tick carries every pop's
+  colour + show, patched onto the arrays the viewer holds. Nothing is fetched. The colours are the
+  gating map's, as the server's reply has them, so a recording (which reads the map) draws the same.
+- **a gate add / move / delete / rename** — `pops`: only the edited (segmentation, pop type) layer
+  refetches, and only its populations (`/api/viewer/overlays?part=pops`): the cells did not move.
+- **anything else** (a task rewrote the table, the document switched) — `all`, the whole payload,
+  which is also what a bare `<imageUid>:<ts>` tick from an older pinger means.
+
+Held pings widen rather than replace (`widerScope`): a held gate move then a colour change still
+refetches the populations at Apply. Measured on a 608k-cell × 100-frame movie: the payload a gate
+ping fetched was the whole movie (42 MB, 0.12–0.3 s server, ~0.11 s to parse); a membership change
+now fetches 15 MB (0.03–0.05 s, ~0.03 s to parse) and a colour change nothing.
 
 ## Scale
 
@@ -1242,6 +1288,20 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   so a gate drawn to it encloses the edge cells and does not make the axes regrow. Nothing rescales
   while drawing — the alternative (grow the axes as the cursor nears the edge) moves the dots under
   the cursor mid-gesture.
+- **Naming a drawn gate.** A finished shape goes to the panel as `pending` and the naming bar
+  (`modules/gate/GateNameBar.vue`) opens over the plot's top-left. While it is open the gate stays
+  painted where it was drawn (in the drawing accent, via `GateOverlay`'s `pending` prop) and the armed
+  tool is **paused**: no cursor-following preview, no new shape from a click — a crosshair still tracking
+  the mouse read as "the gate I drew is gone". Add, × or Esc ends it; × and Esc leave the tool armed
+  (Esc only disarms when nothing is pending). Shift-adjusting existing gates still works meanwhile. The
+  bar is one row that never wraps — the tool's icon stands for the kind, a quadrant shows "4 populations" —
+  and the name box shrinks first, so it fits a ~200 px plot (`GateNameBar.browser.test.ts`).
+- **Gate names dodge each other.** Every label on a plot is placed together: each starts where
+  `utils/gateLabel.ts` / the split / 1D rule puts it, then `plots/chipPlacement.ts` `placeChips` pushes
+  overlapping ones apart (vertically, when two wide names side by side have no room sideways — a
+  quadrant's long `X+ Y+` names). The canvas, the PNG export and the SVG export all read the one
+  placement (`GateOverlay` `placedLabels`), and the server raster (`api/src/gate_plot_render.jl`, the
+  MCP plot picture) runs the Julia port `_place_chips`.
 - **Displayed parent is owned by `GatingPlots` (per panel), not the panel.** So the manager can
   highlight the active plot's parent row and switch the highlight when you change active plots.
   Clicking a population row sets it as the active plot's parent; clicking it **again resets to

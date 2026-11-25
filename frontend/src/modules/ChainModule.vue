@@ -44,6 +44,7 @@ import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { taskPageLabel } from '../utils/kiwiTurn'
+import { assertNoAfterLive } from '../utils/queueAfter'
 import { taskOutput, consumerField, consumerAccepts, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids, excludedReason } from '../utils/inclusion'
 import type { CciaImage } from '../stores/project'
@@ -51,7 +52,7 @@ import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, sta
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { createUndoStack } from '../utils/undoStack'
 import { prospectivePops } from '../utils/chainProspective'
-import { isTypingTarget } from '../utils/typingTarget'
+import { isTypingTarget, nudgesSelection } from '../utils/typingTarget'
 import { useWindowListener } from '../composables/useKeepAlive'
 import { withChainProducedModels } from '../utils/chainModelOptions'
 import { waitingByNode, continueFrame } from '../utils/chainManual'
@@ -724,6 +725,8 @@ async function applyTemplate(
   tmpl: ChainTemplate,
   positions: Record<string, { x: number; y: number }>,
 ) {
+  // The canvas has no field for `after_live`, so a wait step saved from here would become a plain run.
+  assertNoAfterLive(tmpl)
   // Clear canvas — and let Vue unmount it before adding the next chain (why: clearCanvas in utils/startDot).
   selectedNodeId.value = null
   await clearWhiteboard()
@@ -825,6 +828,14 @@ async function restore(snap: WbSnap | null) {
 }
 onNodeDragStart(() => recordEdit())
 onSelectionDragStart(() => recordEdit())      // a box-selected group dragged by its rectangle
+// Arrow keys on a selected node / the selection rectangle move nodes via Vue Flow's keyboard nudge,
+// which fires no drag-start: record here, in the capture phase (before the move). A held key or a run
+// of presses on one selection is one undo step.
+function onCanvasKeydownCapture(e: KeyboardEvent) {
+  const sel = getSelectedNodes.value
+  if (!nudgesSelection(e, sel.length > 0)) return
+  recordEdit(`nudge:${sel.map(n => n.id).sort().join(',')}`)
+}
 const undoEdit = () => restore(undo.undo(snapshot()))
 const redoEdit = () => restore(undo.redo(snapshot()))
 // Ctrl/⌘+Z, Ctrl/⌘+Shift+Z (and Ctrl+Y) — on the window, so it works with focus on the canvas; not
@@ -1926,6 +1937,7 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
       tabindex="0"
       @dragover.prevent
       @drop="onCanvasDrop"
+      @keydown.capture="onCanvasKeydownCapture"
       @keydown.delete="deleteSelectedNode"
       @keydown.backspace="deleteSelectedNode"
     >

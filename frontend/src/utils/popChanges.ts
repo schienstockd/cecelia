@@ -71,6 +71,24 @@ export function changedPopPaths(prev: ReadonlyMap<string, string> | undefined,
   return out
 }
 
+/**
+ * Which pops' counts to refetch after a tree update: `only` (the changed paths) that still exist, or
+ * every path when `only` is absent. `kept` is the current counts of every other path that still
+ * exists — a deleted pop's count goes, an unchanged pop's stays (its membership is the same, and so is
+ * its % of a parent, which is unchanged too or it would be in `only` as that parent's descendant).
+ */
+export function statsToFetch<T>(paths: readonly string[], current: Readonly<Record<string, T>>,
+                                only?: ReadonlySet<string>): { fetch: string[]; kept: Record<string, T> } {
+  if (!only) return { fetch: [...paths], kept: {} }
+  const kept: Record<string, T> = {}
+  const fetch: string[] = []
+  for (const p of paths) {
+    if (only.has(p) || !(p in current)) fetch.push(p)
+    else kept[p] = current[p]
+  }
+  return { fetch, kept }
+}
+
 /** Key of a pop's change counter — segmentation + path. Pop type is left out on purpose: the summary
  *  picker's families (`live`) and the gating document's (`flow`, `clust`) name the same tree, and a
  *  spare refetch is cheaper than a missed one. */

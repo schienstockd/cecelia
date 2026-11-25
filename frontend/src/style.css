@@ -1081,8 +1081,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   background: none; color: var(--cc-text); font-size: var(--cc-fs-md); text-align: left; cursor: pointer;
   text-decoration: none;   /* an outward link (<a>) in a menu reads as an item, not underlined prose */
 }
-.cc-actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
-.cc-actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.cc-actions-item:hover:not(:disabled, [aria-disabled="true"]) { background: var(--cc-surface-2); }
+.cc-actions-item:disabled, .cc-actions-item[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 .cc-actions-item .pi { width: 1rem; text-align: center; color: var(--cc-text-dim); flex-shrink: 0; }
 /* destructive item (delete): the icon carries the colour at rest, the whole row once armed */
 .cc-actions-item.danger .pi { color: var(--cc-sev-fail); }

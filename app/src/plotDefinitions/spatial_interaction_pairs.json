@@ -3,7 +3,7 @@
   "label": "Interaction across images",
   "category": "compare",
   "sketch": "contactImages",
-  "answers": "Does a population pair's contact differ between images or treatments?",
+  "answers": "Does a pair's contact differ between treatments?",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["boxplot", "strip", "bar"],

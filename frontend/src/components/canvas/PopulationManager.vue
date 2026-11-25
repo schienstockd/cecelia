@@ -10,6 +10,10 @@
   plot-options (gate labels, line width, axis) are passed in as props by the host canvas, since
   they belong to the plot panels, not the manager.
 
+  Multi-selection: ctrl/⌘-click and shift-click pick several rows, exactly as in every table
+  (`fileManagerPick`, shared with SelectionTable); the ⋯ menu on a selected row then acts on all of
+  them where the action allows it (`utils/popSelection.ts`). A plain click still picks ONE row.
+
   Highlight scope (footer): GLOBAL (globe) = highlights apply to every plot; LOCAL (pin) = only the
   active plot. The eye state reflects the current scope's highlight set. Draggable by its header
   (clamped on-screen via useFloatingPanel); collapsible body.
@@ -48,7 +52,9 @@ import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
 import { SEVERITY } from '../../lib/severity'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
-import { allSelected } from '../../utils/tableSelection'
+import { allSelected, fileManagerPick } from '../../utils/tableSelection'
+import { actionEnabled, actionTargets, deleteCount, moveTargetsFor, selectionRoots, sharedParent,
+         SINGLE_ONLY_TIP, type PopAction } from '../../utils/popSelection'
 import { contextAncestors, refinedBy, runLabel, type ClusterRun } from '../../utils/clusterRefine'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
@@ -133,6 +139,7 @@ const beginRename = (p: FlatPop) => beginRenameAt(p.path, p.name)
 function pick(p: FlatPop) {
   emit('update:selected', clusterMode.value && p.path === props.selected ? '' : p.path)
 }
+
 const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
   // reserved-prefix + same-list duplicate are caught here for instant feedback; a cross-pop-type
   // collision is rejected by the server (pop_name_conflict) and surfaced via the store's error toast.
@@ -171,8 +178,8 @@ async function setViewer(pops: FlatPop[], on: boolean) {
     const sw = on ? popTypeSwitch(g.popType) : null, su = sw ? projectStore.setUidOfImage(uid) : null
     if (sw && su) settings.setPopVisible(su, sw, true)
   }
-  // sequential: each update rewrites the same pop tree file server-side
-  for (const p of pops) await g.updatePop(p.path, { show: on })
+  // one write for every pop (one reply, one broadcast, one viewer refetch)
+  await g.setPopsShown(pops.map(p => p.path), on)
   g.refreshOverlays()
 }
 const toggleViewer = (p: FlatPop) => setViewer([p], !viewerEyeOn(p))
@@ -207,6 +214,7 @@ const redo = () => clusterMode.value ? stepAssign('redo') : g.redo()
 // WINDOW, so it works with focus on the plot canvas where the gate was just dragged — hence the
 // typing guard, or "z" in a rename field would undo the rename you are in the middle of typing.
 function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && multiCount.value > 1 && !isTypingTarget(e)) { clearMulti(); return }
   if (!historyMode.value || isTypingTarget(e)) return
   if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return
   e.preventDefault()
@@ -267,6 +275,40 @@ const treePops = computed<FlatPop[]>(() => {
 const popRun = (p: FlatPop): string => clusterRunOf(props.popType, p.filter?.measure)
 const refinedRuns = computed(() => refinedBy(props.runs))
 const canRefine = computed(() => props.popType === 'clust' && !props.readonly)
+
+// ── Multi-selection (ctrl/⌘-click, shift-click) ───────────────────────────────────────────────────
+// The rows a bulk ⋯ action reaches. A plain click is unchanged — it picks the row the plots show —
+// and restarts the selection at that row; a modified click only grows or shrinks the selection and
+// leaves the plots alone. The active row seeds it, so ctrl-clicking a second row selects two.
+// Transient (viewer) pops and read-only surfaces don't take part: nothing here acts on them.
+const multiSel = ref<string[]>([])
+let selAnchor: string | null = null
+const selectablePaths = computed(() => visiblePops.value.filter(p => !p.transient).map(p => p.path))
+// drop what left the list (deleted, renamed, another run's) so a stale path is never acted on
+watch(selectablePaths, live => {
+  const keep = multiSel.value.filter(x => live.includes(x))
+  if (keep.length !== multiSel.value.length) multiSel.value = keep
+  if (selAnchor && !live.includes(selAnchor)) selAnchor = null
+})
+const multiCount = computed(() => multiSel.value.length)
+const isPicked = (p: FlatPop) => multiCount.value > 1 && multiSel.value.includes(p.path)
+const clearMulti = () => { multiSel.value = []; selAnchor = null }
+function onRowClick(p: FlatPop, e: MouseEvent) {
+  const modified = e.shiftKey || e.ctrlKey || e.metaKey
+  if (props.readonly || p.transient || !modified) {
+    if (!p.transient && !props.readonly) { multiSel.value = [p.path]; selAnchor = p.path } else clearMulti()
+    pick(p)
+    return
+  }
+  const active = selectablePaths.value.includes(props.selected) ? props.selected : null
+  const base = multiSel.value.length ? multiSel.value : active ? [active] : []
+  const r = fileManagerPick(selectablePaths.value, base, selAnchor ?? active, p.path,
+                            { shift: e.shiftKey, additive: e.ctrlKey || e.metaKey })
+  multiSel.value = r.selected
+  selAnchor = r.anchor
+}
+// no native text selection when shift-clicking a range (the browser's own shift-click)
+function onRowMouseDown(e: MouseEvent) { if (e.shiftKey && !props.readonly) e.preventDefault() }
 // the ids a pop OWNS — none for a `neq`/`gt` pop (clusterPopIds), never the ones it excludes
 const popClusterIds = (p: FlatPop): number[] => clusterPopIds(p.filter)
 // the pops the strip assigns ids to: those that claim their values. A `neq`/`gt` pop can't be armed or
@@ -447,11 +489,14 @@ function resetBoolForm() {
 // than at the four open sites so a future opener can't forget it.
 watch(showFilterForm, on => { if (on) showBoolForm.value = false })
 watch(showBoolForm, on => { if (on) showFilterForm.value = false })
-function openCreateBool(seed?: FlatPop) {
+// A multi-selection seeds every selected population as a term (and an empty one only when it is
+// just the one), under the parent they share, else all cells.
+function openCreateBool(seed: FlatPop[] = []) {
   resetBoolForm()
-  if (seed) {
-    bpTerms.value = [{ path: seed.path, negate: false }, { path: '', negate: false }]
-    bpParent.value = seed.parent
+  if (seed.length) {
+    bpTerms.value = [...seed.map(p => ({ path: p.path, negate: false })),
+                     ...(seed.length === 1 ? [{ path: '', negate: false }] : [])]
+    bpParent.value = sharedParent(seed, seed.map(p => p.path))
   }
   showBoolForm.value = true
 }
@@ -520,19 +565,36 @@ const childCount = (p: FlatPop) => g.flat.filter(x => x.path.startsWith(p.path +
 // "Move under…" reuses the SAME popover rather than opening a second one: the choice is a list of
 // populations, which is exactly what a menu renders.
 const moveMode = ref(false)
-const moveTargets = computed<string[]>(() => {
-  const p = actionsPop.value
-  if (!p) return []
-  // every pop except the one being moved, its own subtree (that would be a cycle), the transient
-  // viewer selection (never persisted, so it can't parent anything) and its current parent.
-  return ['root', ...visiblePops.value
-    .filter(t => !isInSubtree(t.path, p.path) && !t.transient)
-    .map(t => t.path)].filter(t => t !== p.parent)
-})
+// every pop except the ones being moved, their own subtrees (that would be a cycle), the transient
+// viewer selection (never persisted, so it can't parent anything) and a parent they all already have.
+const moveTargets = computed<string[]>(() => actionsPop.value ? moveTargetsFor(visiblePops.value, menuPaths.value) : [])
 function moveTo(target: string) {
-  const p = actionsPop.value
+  const paths = selectionRoots(menuPaths.value)
   closeActions()
-  if (p) g.movePop(p.path, target)
+  if (paths.length === 1) g.movePop(paths[0], target)
+  else if (paths.length) g.movePops(paths, target)
+}
+
+// ── What the ⋯ menu acts on: the multi-selection when it was opened on one of its rows ─────────
+// Which actions reach more than one population, and why, is `MULTI_ACTIONS` (utils/popSelection.ts);
+// the rest stay in the menu, disabled with a one-line reason, so the menu never changes shape.
+const menuPaths = computed<string[]>(() => actionsPath.value
+  ? actionTargets(multiSel.value, actionsPath.value, selectablePaths.value) : [])
+const menuPops  = computed<FlatPop[]>(() => visiblePops.value.filter(p => menuPaths.value.includes(p.path)))
+const bulk      = computed(() => menuPaths.value.length > 1)
+const can       = (a: PopAction) => actionEnabled(a, menuPaths.value.length)
+const onlyTip   = (a: PopAction) => can(a) ? '' : SINGLE_ONLY_TIP
+// over the WHOLE map, not the listed rows: in cluster mode a pop's child can be on another measure
+// (not listed), and the server's cascade takes it all the same — the label must count it
+const deleteTotal = computed(() => deleteCount(g.flat, menuPaths.value))
+function deleteMenuPops() {
+  const paths = selectionRoots(menuPaths.value)
+  if (paths.length === 1) g.deletePop(paths[0])
+  else if (paths.length) g.deletePops(paths)
+}
+function addMenuPopsToKiwi() {
+  for (const p of menuPops.value)
+    kiwi.addRef({ kind: 'population', imageUid: g.imageUid!, valueName: g.valueName, popPath: p.path })
 }
 </script>
 
@@ -710,6 +772,14 @@ function moveTo(target: string) {
         {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
       </div>
 
+      <!-- a multi-selection (ctrl/⌘- or shift-click): how many, and the way out. The ⋯ menu of any
+           selected row acts on all of them. -->
+      <div v-if="multiCount > 1" class="pm-multi cc-row cc-row-tight cc-fs-2xs cc-muted">
+        <span>{{ multiCount }} selected</span>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" v-tooltip.bottom="'Clear selection (Esc)'"
+                aria-label="Clear selection" @click.stop="clearMulti"><i class="pi pi-times" /></button>
+      </div>
+
       <!-- "All" row: the eye + viewer toggles for every population at once, in the rows' own columns.
            Only worth its height once there is more than one row to tick. -->
       <div v-if="visiblePops.length > 1" class="pm-row pm-allrow" data-guide="popmanager.allToggles">
@@ -736,10 +806,10 @@ function moveTo(target: string) {
           <span class="pm-ncl cc-fs-2xs">{{ runLabel(popRun(p), runs[popRun(p)]) }}</span>
         </div>
         <div v-else class="pm-row" data-guide="popmanager.row"
-             :class="{ active: p.path === props.selected, transient: p.transient }"
+             :class="{ active: p.path === props.selected, picked: isPicked(p), transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @mouseenter="hoverPath = p.path" @mouseleave="hoverPath = null"
-             @click="pick(p)">
+             @mousedown="onRowMouseDown" @click="onRowClick(p, $event)">
           <!-- `.bottom`, not `.left`: this marker is the row's LEFTMOST element, so there is never room
                beside it and the flip drops the tip somewhere it covers a pop row. The injected viewer
                pop is always the last root child, so below it is the panel edge, not a control. The row
@@ -831,19 +901,22 @@ function moveTo(target: string) {
         <div v-if="actionsPop" class="cc-actions-menu pm-actions">
           <!-- MOVE: the same popover becomes the parent list (the choice IS a list of populations) -->
           <template v-if="moveMode">
-            <div class="cc-actions-head">Move “{{ actionsPop.name }}” under</div>
+            <div class="cc-actions-head">Move {{ bulk ? `${menuPaths.length} populations` : `“${actionsPop.name}”` }} under</div>
             <button v-for="t in moveTargets" :key="t" class="cc-actions-item pm-move-target"
                     @click.stop="moveTo(t)">{{ t === 'root' ? 'All cells' : t }}</button>
             <div v-if="!moveTargets.length" class="cc-actions-head">nowhere else to put it</div>
           </template>
           <template v-else>
+            <!-- a multi-selection: say what the menu acts on. Single-only actions stay, disabled with
+                 the reason (aria-disabled, not `disabled`: a disabled button shows no tooltip). -->
+            <div v-if="bulk" class="cc-actions-head pm-bulk-head">{{ menuPaths.length }} populations</div>
             <button v-if="observer.ai.enabled && !actionsPop.transient && g.imageUid && g.valueName" class="cc-actions-item"
-                    @click.stop="runAction(() => kiwi.addRef({ kind: 'population', imageUid: g.imageUid!,
-                                                               valueName: g.valueName, popPath: actionsPop!.path }))">
+                    @click.stop="runAction(addMenuPopsToKiwi)">
               <i class="pi pi-at" /> Add to Kiwi
             </button>
-            <button v-if="actionsPop.gate" class="cc-actions-item"
-                    @click.stop="runAction(() => emit('showDefiningPlot', actionsPop!))">
+            <button v-if="actionsPop.gate" class="cc-actions-item" :aria-disabled="!can('plot')"
+                    v-tooltip.right="onlyTip('plot')"
+                    @click.stop="can('plot') && runAction(() => emit('showDefiningPlot', actionsPop!))">
               <i class="pi pi-search" /> Show the gate's plot
             </button>
             <!-- rectangle ⇄ polygon on the SAME population (no delete-and-redraw). Widening
@@ -852,19 +925,22 @@ function moveTo(target: string) {
             <ConfirmButton v-if="actionsPop.gate && convertTo(actionsPop) && !readonly && !actionsPop.transient"
                            :needs-confirm="actionsPop.gate.kind === 'polygon'"
                            @confirm="runAction(() => convertGate(actionsPop!))" v-slot="{ armed, press }">
-              <button class="cc-actions-item" :class="{ armed }" @click.stop="press"
-                      v-tooltip.right="armed ? 'Click again — the gate widens' : ''">
+              <button class="cc-actions-item" :class="{ armed }" :aria-disabled="!can('convert')"
+                      @click.stop="can('convert') && press()"
+                      v-tooltip.right="onlyTip('convert') || (armed ? 'Click again — the gate widens' : '')">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : convertIcon(actionsPop)" />
                 {{ convertTip(actionsPop) }}
               </button>
             </ConfirmButton>
             <button v-if="canRefine && actionsPop.filter && !actionsPop.transient" class="cc-actions-item"
-                    v-tooltip.right="'Cluster it again, finer'"
-                    @click.stop="runAction(() => emit('refine', actionsPop!))">
+                    :aria-disabled="!can('refine')"
+                    v-tooltip.right="onlyTip('refine') || 'Cluster it again, finer'"
+                    @click.stop="can('refine') && runAction(() => emit('refine', actionsPop!))">
               <i class="pi pi-search-plus" /> Refine
             </button>
-            <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
-                    @click.stop="runAction(() => beginRename(actionsPop!))">
+            <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item" :aria-disabled="!can('rename')"
+                    v-tooltip.right="onlyTip('rename')"
+                    @click.stop="can('rename') && runAction(() => beginRename(actionsPop!))">
               <i class="pi pi-pencil" /> Rename
             </button>
             <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
@@ -872,27 +948,31 @@ function moveTo(target: string) {
               <i class="pi pi-arrows-h" /> Move under…
             </button>
             <!-- combine THIS one with another: opens the form with this population already in it, so
-                 the "…or the other marker too" case is two clicks rather than a form from scratch. -->
+                 the "…or the other marker too" case is two clicks rather than a form from scratch.
+                 On a multi-selection every selected population is a term. -->
             <button v-if="!readonly && !actionsPop.transient && !clusterMode" class="cc-actions-item"
-                    @click.stop="runAction(() => openCreateBool(actionsPop!))">
-              <i class="pi pi-link" /> Combine with…
+                    @click.stop="runAction(() => openCreateBool(menuPops))">
+              <i class="pi pi-link" /> {{ bulk ? 'Combine these…' : 'Combine with…' }}
             </button>
             <ConfirmButton v-if="!readonly && !actionsPop.transient && childCount(actionsPop) > 0"
                            @confirm="runAction(() => g.deletePopChildren(actionsPop!.path))"
                            v-slot="{ armed, press }">
-              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="press"
-                      v-tooltip.right="armed ? 'Click again to delete' : ''">
+              <button class="cc-actions-item danger" :class="{ armed }" :aria-disabled="!can('deleteBelow')"
+                      @click.stop="can('deleteBelow') && press()"
+                      v-tooltip.right="onlyTip('deleteBelow') || (armed ? 'Click again to delete' : '')">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
                 Delete {{ childCount(actionsPop) }} below it
               </button>
             </ConfirmButton>
             <ConfirmButton v-if="!readonly && !actionsPop.transient"
-                           @confirm="runAction(() => g.deletePop(actionsPop!.path))"
+                           @confirm="runAction(deleteMenuPops)"
                            v-slot="{ armed, press }">
               <button class="cc-actions-item danger" :class="{ armed }" @click.stop="press"
                       v-tooltip.right="armed ? 'Click again to delete' : ''">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
-                {{ childCount(actionsPop) ? `Delete it and ${childCount(actionsPop)} below` : 'Delete population' }}
+                <template v-if="bulk">{{ deleteTotal > menuPaths.length
+                  ? `Delete ${menuPaths.length} and ${deleteTotal - menuPaths.length} below` : `Delete ${menuPaths.length} populations` }}</template>
+                <template v-else>{{ childCount(actionsPop) ? `Delete it and ${childCount(actionsPop)} below` : 'Delete population' }}</template>
               </button>
             </ConfirmButton>
             <!-- The cell-selection pop is transient (never persisted) — this clears it so it
@@ -979,6 +1059,12 @@ function moveTo(target: string) {
 /* a refine run's source population (another run) — context above its children, click = its run */
 .pm-row.pm-context { color: var(--cc-text-dim); font-style: italic; }
 .pm-context-dot { font-size: 0.6em; }
+/* in a multi-selection: the house selection mark (`--cc-selected`, as SelectionTable's rows) — a left
+   rule + faint tint, so it reads apart from the accent-filled ACTIVE row it can sit on */
+.pm-row.picked { box-shadow: inset 2px 0 0 var(--cc-selected);
+                 background: color-mix(in srgb, var(--cc-selected) 12%, transparent); }
+.pm-multi { padding: 2px 8px; }
+.pm-row.active.picked { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
 /* the "All" row is a control strip, not a population: no pick-hover, the ⋯ column kept as a spacer */
 .pm-allrow { cursor: default; }
 .pm-allrow:hover { background: none; }

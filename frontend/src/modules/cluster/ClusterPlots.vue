@@ -384,7 +384,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           Clustering run “{{ suffix }}” covers {{ runMembers.length }} image{{ runMembers.length === 1 ? '' : 's' }}.
           <template v-if="strayUids.length">
             {{ strayUids.length }} selected ({{ strayUids.map(nameOf).join(', ') }})
-            {{ strayUids.length === 1 ? 'is' : 'are' }} not in it — pops won’t be written there.
+            {{ strayUids.length === 1 ? 'is' : 'are' }} not in it — populations won’t be written there.
           </template>
           <template v-if="missingUids.length">
             Also in the run but not selected: {{ missingUids.map(nameOf).join(', ') }}.

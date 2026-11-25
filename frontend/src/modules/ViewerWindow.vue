@@ -111,7 +111,9 @@ import {
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween,
   type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  type OverlayPopsPayload,
 } from '../utils/viewerOverlays'
+import { OVERLAY_TICK_KEY, parseOverlayTick, patchPopsLook, layerFetches, type OverlayTick, type PopLook } from '../utils/viewer/overlayTick'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow, type OverlayStyle,
          isTrackDrawable, type TrackColorMode } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
@@ -799,7 +801,7 @@ async function loadPresentPopTypes() {
   if (!projectUid || !imageUid) return
   try {
     const res = await fetch(popTypesUrl({ projectUid, imageUid }), { cache: 'no-store' })
-    presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Pop types')
+    presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Population types')
   } catch { /* keep the last answer: a failed probe must not hide switches */ }
 }
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
@@ -1115,6 +1117,27 @@ function reconcileTrackclustEyesFor(vn: string, payload: OverlayPayload) {
   popEyes.value = new Map(popEyes.value).set(vn, points)
   const ribbons = reconcileTrackclustEyes(settings.getPopEyes(imageUid, vn, 'ribbons'), prev, next)
   storeRibbonEyes(new Map(ribbonEyes.value).set(vn, ribbons))
+}
+/** A track-cluster colour / show change (`look` tick): patched onto the held payloads, ribbons and
+ *  mask alike — nothing is refetched. The eyes are re-read either way: the manager's viewer toggle
+ *  writes them and sends a `look` tick. */
+function applyTrackclustLook(vn: string, look: Record<string, PopLook>) {
+  let tc = trackclustPayloads.value.get(vn)
+  if (tc) {
+    const pops = patchPopsLook(tc.pops, look)
+    if (pops !== tc.pops) {
+      tc = { ...tc, pops }
+      trackclustPayloads.value = new Map(trackclustPayloads.value).set(vn, tc)
+    }
+  }
+  const m = maskTrackclust.value
+  if (m?.vn === vn) {
+    const pops = patchPopsLook(m.payload.pops, look)
+    if (pops !== m.payload.pops) maskTrackclust.value = { vn, payload: { ...m.payload, pops } }
+  }
+  const held = tc ?? (maskTrackclust.value?.vn === vn ? maskTrackclust.value.payload : null)
+  if (held) reconcileTrackclustEyesFor(vn, held)
+  rebuildOverlays()
 }
 const maskTable = computed(() => maskPopLayers.value.length ? maskPopTable(maskPopLayers.value) : null)
 watch(maskTable, () => frame.redraw())
@@ -2118,10 +2141,24 @@ function rebuildOverlays() {
   frame.redraw()
 }
 
-async function loadOverlays() {
+/** The colour-by column each held population layer was fetched with, by `vn::popType` — what tells a
+ *  scoped refresh it can reuse the layer's cells (`layerFetches`). */
+const layerColourBy = new Map<string, string>()
+/** The latest `look` tick applied, and when: a fetch that started before it lands with the colours it
+ *  read then, so the look goes back on top (`loadOverlays`). */
+let lastLook: { tick: OverlayTick; at: number } | null = null
+let overlaysClock = 0
+
+/**
+ * Fetch the population layers and draw them. `tick` scopes the refresh (`utils/viewer/overlayTick.ts`):
+ * absent or `all` refetches every layer whole; `pops` refetches only the edited layer's populations and
+ * reuses the cells every layer already holds; `look` fetches nothing.
+ */
+async function loadOverlays(tick: OverlayTick = { imageUid: imageUid ?? '', scope: 'all' }) {
   if (!projectUid || !imageUid) return
-  void loadPresentPopTypes()
+  if (tick.scope !== 'look') void loadPresentPopTypes()
   overlaysErr.value = ''
+  const started = ++overlaysClock
   // Every segmentation × every cell pop type the panel has on. The pop manager's selection is what it
   // EDITS, not what the viewer draws — populations are not a property of the shown segmentation.
   // With no segmentation list yet (meta not loaded), the pop manager's is the one we know of.
@@ -2131,19 +2168,47 @@ async function loadOverlays() {
   const vns = cellTableNames().length ? cellTableNames()
     : (gatingCurrent.value.valueName ? [gatingCurrent.value.valueName] : [])
   const wanted = vns.flatMap(vn => shownPopTypes.value.map(popType => ({ vn, popType })))
+  const cb = colourBy.value
+  const plan = layerFetches(wanted, layerColourBy, cb, tick)
   const errors: string[] = []
-  const fetched = await Promise.all(wanted.map(async ({ vn, popType }): Promise<PopLayer | null> => {
+  // A held layer as it stands when the fetch LANDS, not when it started: an overlapping refresh may
+  // have replaced it meanwhile.
+  const heldLayer = (vn: string, popType: string) => popLayers.value.find(l => l.vn === vn && l.popType === popType)
+  const fetched = await Promise.all(wanted.map(async ({ vn, popType }, i): Promise<PopLayer | null> => {
+    const whole = async (): Promise<PopLayer> => {
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: cb, valueName: vn, popType }),
+                              { cache: 'no-store' })
+      const payload = await readJson<OverlayPayload>(res, 'Overlays')
+      layerColourBy.set(`${vn}::${popType}`, cb)
+      return { vn, popType, payload }
+    }
     try {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value,
-                                            valueName: vn, popType }), { cache: 'no-store' })
-      return { vn, popType, payload: await readJson<OverlayPayload>(res, 'Overlays') }
+      // a layer no longer held (its last fetch failed) has no cells to reuse: fetched whole
+      if (plan[i] === 'full' || !heldLayer(vn, popType)) return await whole()
+      if (plan[i] === 'pops') {
+        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType, part: 'pops' }),
+                                { cache: 'no-store' })
+        const { pops } = await readJson<OverlayPopsPayload>(res, 'Overlays')
+        const held = heldLayer(vn, popType)
+        return held ? { vn, popType, payload: { ...held.payload, pops } } : await whole()
+      }
+      // `reuse` — a `look` tick patches the edited document's colours + show onto what is held
+      const held = heldLayer(vn, popType)!
+      const look = tick.scope === 'look' && vn === tick.valueName && popType === tick.popType ? tick.look : undefined
+      const pops = look ? patchPopsLook(held.payload.pops, look) : held.payload.pops
+      return pops === held.payload.pops ? held : { vn, popType, payload: { ...held.payload, pops } }
     } catch (e) {
       // One segmentation without a cell table must not take the others down.
       errors.push(`${vn}: ${e instanceof Error ? e.message : String(e)}`)
       return null
     }
   }))
-  const next = fetched.filter((l): l is PopLayer => l !== null)
+  // a look applied while this was in flight is newer than the colours a fetch read: put it back on top
+  if (tick.scope === 'look') lastLook = { tick, at: started }
+  const lt = tick.scope !== 'look' && lastLook && lastLook.at > started ? lastLook.tick : null
+  const next = fetched.filter((l): l is PopLayer => l !== null).map(l =>
+    lt?.look && l.vn === lt.valueName && l.popType === lt.popType
+      ? { ...l, payload: { ...l.payload, pops: patchPopsLook(l.payload.pops, lt.look) } } : l)
   // An overlay failure must not take the IMAGE down — the viewer's job is the pixels, and a missing
   // cell table is a normal state for an unsegmented image. Said only when nothing came back.
   if (!next.length && errors.length) overlaysErr.value = errors[0]
@@ -5805,12 +5870,28 @@ onUnmounted(() => {
 // still when the user gates image B in the main window. See
 // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P5.
 function onOverlaysTick(e: StorageEvent) {
-  if (e.key !== 'cc.viewerOverlaysTick' || !e.newValue) return
-  const [uid] = e.newValue.split(':')
-  if (uid !== imageUid) return
+  if (e.key !== OVERLAY_TICK_KEY) return
+  const tick = parseOverlayTick(e.newValue)
+  if (!tick || tick.imageUid !== imageUid) return
   // The gating store writes `cc.gatingCurrent` BEFORE the tick, so re-read the current selection
   // here rather than in a separate storage listener — one storage event, one refetch.
   gatingCurrent.value = readGatingCurrent()
+  // A gate write scopes its tick (`utils/viewer/overlayTick.ts`): a colour / show change fetches
+  // nothing, a membership change only the edited layer's populations. Neither touches the cells or
+  // the per-segmentation track payloads, so only a track-cluster document goes on to `loadTracks`.
+  if (tick.scope !== 'all') {
+    if (tick.popType === 'trackclust') {
+      // a track-cluster map is lent to co-clustered segmentations (`_borrow_cluster_pop_tree`): with
+      // another segmentation's track clusters held, they may be drawing this map relabelled — refetch
+      const lent = [...trackclustPayloads.value.keys(), maskTrackclust.value?.vn ?? '']
+        .some(vn => vn && vn !== tick.valueName)
+      if (tick.scope === 'look' && tick.look && !lent) applyTrackclustLook(tick.valueName ?? '', tick.look)
+      else void loadTracks()
+      return
+    }
+    void loadOverlays(tick)
+    return
+  }
   void loadOverlays()
   // A track toggle from the main window (`showTracksInViewer`, the image strip) also fires this ping,
   // so refetching per-vn track payloads here is what gets ribbons on screen. Cheap when

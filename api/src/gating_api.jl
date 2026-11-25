@@ -284,7 +284,7 @@ end
 # transformed Float32 vectors for plotdata/density/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
     xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = labels_version)
-    Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv))
+    Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv))
 end
 
 # x/y PLUS the colour-by measure, from the one aligned read (see `_plot_cols_raw`)
@@ -293,8 +293,8 @@ function _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt; labels_version=n
     xv, yv = _xy_pair(v)
     # an unreadable colour measure (not a column of THIS table) is "no value for any cell" — NaN, which
     # the client paints in the dim ink — not a short vector, and never a reason to drop the dots.
-    zv = length(v[3]) == length(xv) ? Float32.(apply_transform(zt, v[3])) : fill(NaN32, length(xv))
-    (Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv)), zv)
+    zv = length(v[3]) == length(xv) ? Float32.(transform_column(zt, v[3])) : fill(NaN32, length(xv))
+    (Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv)), zv)
 end
 
 # `{path → [column]}`: for each population that is EMPTY on this image because a gate/filter column
@@ -1008,7 +1008,7 @@ function api_gating_plotmeta(req::HTTP.Request)
         rzext = _finite_extrema(rv[3])
         zt = auto ? effective_transform(zt0, rzext[1], rzext[2]) : zt0
         # robust range (see `_ramp_range`): the ramp is a contrast setting, not an axis
-        e = _ramp_range(Float32.(apply_transform(zt, rv[3])))
+        e = _ramp_range(Float32.(transform_column(zt, rv[3])))
         if e !== nothing
             zext = [e[1], e[2]]
             # the legend's labels are RAW values (inverted through the transform) — served from here for
@@ -1019,7 +1019,9 @@ function api_gating_plotmeta(req::HTTP.Request)
         end
     end
     rxp, ryp = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = pin)
-    xv, yv = Float32.(apply_transform(xt, rxp)), Float32.(apply_transform(yt, ryp))
+    # `transform_column`, not the scalar map: typed and threaded — a logicle axis solves per value, and
+    # this point cloud is the plot's whole population (0.2 s of a 600k-cell plotmeta, single-threaded)
+    xv, yv = Float32.(transform_column(xt, rxp)), Float32.(transform_column(yt, ryp))
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
     mode = n > density_threshold ? "density" : "scatter"
@@ -2412,30 +2414,51 @@ end
 # `childrenOnly: true` deletes the subtree UNDER `path` and keeps the population itself — the
 # "prune what I gated off this" action in the manager's row menu. One request (so one undo step),
 # not one delete per child.
+# `paths: [...]` (instead of `path`) deletes a multi-selection the same way: one load, one save, one
+# undo step. A selected child of a selected parent is part of the parent's cascade (`del_pops!`).
+# `childrenOnly` takes ONE path: "everything below" a selection that holds a parent and its child is
+# ambiguous (keep the child, or prune it with the parent's subtree?).
 function api_gating_pop_delete(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
-    haskey(body, "path") || return _gerr(400, "path required")
+    _paths, perr = _body_paths(body); perr === nothing || return perr
+    _children_only = _wbool(body, "childrenOnly", false)
+    (_children_only && length(_paths) > 1) && return _gerr(400, "childrenOnly takes one path")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
-        _path = String(body["path"])
-        _children_only = _wbool(body, "childrenOnly", false)
+        for p in _paths
+            has_pop(m, p) || return _pop_not_found(m, p)
+        end
         # A boolean pop (Decision 16) references pops by PATH, so deleting one it combines would leave
         # it silently pointing at nothing (empty membership + a server warning nobody reads). Refuse
         # and name the dependants instead — rename/move rewrite references, only delete can orphan them.
-        _going = _children_only ? descendants(m, _path) : [_path; descendants(m, _path)]
+        _going = _children_only ? descendants(m, _paths[1]) : pops_with_subtrees(m, _paths)
         _deps = boolean_dependents(m, _going)
         isempty(_deps) || return _gerr(400,
             "Can't delete: " * join(["\"$(pop_name(d))\" combines $(join([pop_name(r) for r in rs], ", "))"
                                     for (d, rs) in _deps], "; ") *
             ". Edit or delete the combined population$(length(_deps) > 1 ? "s" : "") first.")
-        _children_only ? del_children!(m, _path) : del_pop!(m, _path)
+        _children_only ? del_children!(m, _paths[1]) : del_pops!(m, _paths)
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
 
+# The populations a mutation acts on: `paths` (a multi-selection) or the single `path` → (paths, err).
+function _body_paths(body)
+    if haskey(body, "paths")
+        ps = body["paths"]
+        (ps isa AbstractVector && !isempty(ps) && all(p -> p isa AbstractString, ps)) ||
+            return String[], _gerr(400, "paths must be a non-empty list of population paths")
+        return unique(String[String(p) for p in ps]), nothing
+    end
+    haskey(body, "path") || return String[], _gerr(400, "path required")
+    String[String(body["path"])], nothing
+end
+
 function api_gating_pop_update(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    # `paths` + `show`: the manager's "all" viewer toggle, as ONE write — one reply, one broadcast, one
+    # viewer overlay refetch (a whole-movie payload) for any number of populations
+    haskey(body, "paths") && return _gating_pops_show(img, vn, pt, body)
     haskey(body, "path") || return _gerr(400, "path required")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
@@ -2492,6 +2515,21 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
     end
 end
 
+function _gating_pops_show(img, vn, pt, body)
+    haskey(body, "show") || return _gerr(400, "show required with paths")
+    paths = String.(collect(body["paths"]))
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
+        for p in paths
+            has_pop(m, p) || return _pop_not_found(m, p)
+        end
+        for p in paths
+            pop_at(m, p).show = Bool(body["show"])       # looking, not editing: no edit stamp
+        end
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
+    end
+end
+
 function api_gating_pop_rename(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     (haskey(body, "path") && haskey(body, "newName")) || return _gerr(400, "path and newName required")
@@ -2516,33 +2554,40 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
     end
 end
 
-# POST /api/gating/pop/move  { …, path, parent }  → re-parent a population, subtree and all.
+# POST /api/gating/pop/move  { …, path | paths, parent }  → re-parent populations, subtrees and all.
 # The gate is unchanged; its MEMBERSHIP is not — a pop is its own gate ∩ its parent's, so this is how
 # a population gated under a QC gate is lifted out to all cells (or tucked under another gate) without
-# redrawing it and its children. `parent` is "root" for top level.
+# redrawing it and its children. `parent` is "root" for top level. `paths` moves a multi-selection in
+# ONE save and one undo step (`move_pops!`: all-or-nothing, a selected child rides with its selected
+# parent) → `paths` (each moved root's new path) and `path` (the first, for single-path callers).
 function api_gating_pop_move(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
-    (haskey(body, "path") && haskey(body, "parent")) || return _gerr(400, "path and parent required")
-    _path   = String(body["path"])
+    haskey(body, "parent") || return _gerr(400, "path and parent required")
+    _paths, perr = _body_paths(body); perr === nothing || return perr
     _parent = String(body["parent"])
-    # the move changes the pop's PATH, so it needs the same cross-pop-type uniqueness guard a rename
-    # does (the mixed-type module picker resolves a population by path alone).
-    _newpath = pop_path(is_root(_parent) ? ROOT : _parent, pop_name(_path))
-    _conflict = pop_name_conflict(img, vn, _newpath; pop_type = pt)
-    _conflict === nothing || return _gerr(400,
-        "A $_conflict population already exists at \"$_newpath\" in this segmentation — names must be " *
-        "unique across population types so a population can be selected unambiguously. Rename it first.")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
-        has_pop(m, _path) || return _pop_not_found(m, _path)
-        stamp_edit!(m, _path)
-        newpath = try
-            move_pop!(m, _path, _parent)
+        for p in _paths
+            has_pop(m, p) || return _pop_not_found(m, p)
+        end
+        roots = selection_roots(m, _paths)
+        # the move changes each pop's PATH, so it needs the same cross-pop-type uniqueness guard a
+        # rename does (the mixed-type module picker resolves a population by path alone).
+        for r in roots
+            _newpath = pop_path(is_root(_parent) ? ROOT : _parent, pop_name(r))
+            _conflict = pop_name_conflict(img, vn, _newpath; pop_type = pt)
+            _conflict === nothing || return _gerr(400,
+                "A $_conflict population already exists at \"$_newpath\" in this segmentation — names must be " *
+                "unique across population types so a population can be selected unambiguously. Rename it first.")
+        end
+        foreach(r -> stamp_edit!(m, r), roots)
+        newpaths = try
+            move_pops!(m, roots, _parent)
         catch e
             return _gerr(400, sprint(showerror, e))
         end
         r = _persist_and_broadcast!(m, img, body, vn, pt)
-        200, JSON3.write((; r..., path = newpath))
+        200, JSON3.write((; r..., path = first(newpaths), paths = newpaths))
     end
 end
 
@@ -2557,7 +2602,7 @@ end
 #   therefore be empty there (`missing_gate_columns`); absent key ⇒ nothing missing.
 function api_gating_copy(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
-    is_gating_pop_type(pt) || return _gerr(400, "Not a gating pop type: $pt (only flow/track)")
+    is_gating_pop_type(pt) || return _gerr(400, "Not a gating population type: $pt (only flow/track)")
     tgt_raw = get(body, "toImageUids", nothing)
     (tgt_raw isa AbstractVector && !isempty(tgt_raw)) || return _gerr(400, "toImageUids required")
     proj, src_uid, err = _require_ids(body); err === nothing || return err

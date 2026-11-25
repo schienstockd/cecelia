@@ -572,6 +572,12 @@ end
     wrong_verb = ["$f: \"$s\" — use $good" for (f, s) in vcat(labels, tips2)
                   for (bad, good) in BANNED if occursin(Regex("\\b$bad\\b", "i"), s)]
     @test isempty(wrong_verb)
+
+    # One noun: a population is a "population", never "pop"/"Pops" (docs/ui/COPY.md → Noun
+    # vocabulary). Mirrors `abbreviatesPopulation` in uiCopy.ts — `pop-out`/`pop out` are the verb.
+    POP_ABBREV = r"(?<![\w.$-])[Pp]ops?(?![\w(-]|\.\w|\s+(?:out|up)\b)"
+    pop_abbrev = ["$f: \"$s\" — use population" for (f, s) in vcat(labels, tips2) if occursin(POP_ABBREV, s)]
+    @test isempty(pop_abbrev)
 end
 
 # ── Task discovery: every visible task says what it is for (docs/todo/TASK_DISCOVERY_PLAN.md) ──────

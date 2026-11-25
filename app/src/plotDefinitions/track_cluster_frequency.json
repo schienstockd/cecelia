@@ -3,7 +3,7 @@
   "label": "Track cluster frequency",
   "category": "makeup",
   "sketch": "movementPatterns",
-  "answers": "What is each population's behaviour make-up — its tracks per track cluster?",
+  "answers": "How do a population's tracks split across clusters?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["stacked100", "stacked", "frequency", "boxplot", "strip", "violin", "bar"],

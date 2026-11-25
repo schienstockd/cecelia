@@ -345,6 +345,18 @@ end
 # that opens many images would otherwise keep every one.
 const _RESOLVE_POPS_CACHE = BoundedCache(32)
 
+# `label_track_sources` for `_resolve_pops_compute`, keyed on the cell table alone. The resolver's own
+# stamp follows every gating map, so without this each gate write or colour change re-read the table's
+# tracking columns: 0.17 s of a 608k-cell movie's resolve, for an answer only re-tracking changes.
+# Read-only use here (`_pop_has_authored_tracks` only looks up) — other callers keep their own fresh copy.
+const _LABEL_TRACK_SOURCES_CACHE = BoundedCache(8)
+function _label_track_sources_cached(img::CciaImage, value_name::AbstractString)
+    lpp = img_label_props_path(img, value_name)
+    cached!(_LABEL_TRACK_SOURCES_CACHE, string(lpp); stamp = file_stamp(lpp)) do
+        label_track_sources(img, value_name)
+    end::Dict{Int,Union{String,Nothing}}
+end
+
 # `pop_df`'s frames, same reasoning (they used to live on the image too). A frame can be large — a
 # 600k-cell read with every channel runs to ~100 MB — so this one is bounded by bytes as well as by
 # count, and a single frame over the byte budget is returned without being kept.
@@ -436,7 +448,12 @@ function _resolve_pops_compute(img::CciaImage, pt::String, value_name::String)::
     # `labels` are CELL labels, so membership is evaluated over the cell table — the shared source's
     # cell branch, whatever `pt` is (a `branch` map's ids are not cells). Raw column names. No transient
     # selection injection here — it must not enter the cached (pure on-disk) result.
-    recompute!(m, pop_membership_fetch(img, value_name, "flow"))
+    fetch = pop_membership_fetch(img, value_name, "flow")
+    # the membership cache the plots and stats share (`recompute_cached!`): an edit evaluates the map
+    # once, not once for the viewer and again for the plots. Its table stamp follows `pt`'s table, so
+    # only the cell-table pop types take it (a `branch` map read here is evaluated over cells).
+    _membership_table(pt) == MEMBERSHIP_CELL ? recompute_cached!(m, img, value_name, pt, fetch) :
+                                               recompute!(m, fetch)
     # `has_tracks`: does this pop hold any cell with `track_id > 0` AND authored by this pop (or by
     # whole-seg tracking, or from a legacy row with no `track_source` marker)? Provenance-aware — an
     # orphan row from a deleted pop whose label happens to fall inside a live pop's gate no longer
@@ -452,7 +469,7 @@ function _resolve_pops_compute(img::CciaImage, pt::String, value_name::String)::
     # (claimed by every pop that touches its label). Preserves the pre-orphan-guard behaviour for
     # projects tracked before the P1 provenance ship; re-tracking rewrites the marker and the guard
     # tightens.
-    label_to_source = label_track_sources(img, value_name)
+    label_to_source = _label_track_sources_cached(img, value_name)
     out = NamedTuple[]
     for path in pop_paths(m)
         p = pop_at(m, path)
@@ -763,9 +780,12 @@ function pop_df(img::CciaImage, pop_type::PopTypeArg, pops;
     # the columns its gates name and must not be widened.
     out_fetch = centroids === false ? fetch :
                 _fetch_with_centroids(img, fetch; labels_version = labels_version)
+    evaluate = (m, vn) -> recompute_cached!(m, img, vn, pop_type,
+                                            pop_membership_fetch(img, vn, pop_type; labels_version=labels_version);
+                                            labels_version=labels_version)
     df = _pop_df(load_map, out_fetch, pop_type, pops;
                  default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
-                 drop_na=drop_na, membership_fetch=membership_fetch)
+                 drop_na=drop_na, membership_fetch=membership_fetch, evaluate=evaluate)
     _pop_df_store!(img, ckey, df, map_hook)
     # a copy so callers never mutate the cached frame; `_pop_df_finish` converts units on that copy
     _pop_df_finish(copy(df), img, centroids)

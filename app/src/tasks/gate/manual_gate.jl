@@ -38,7 +38,7 @@ function _run_task(::ManualGate, img::CciaImage, params::Dict{String,Any};
                    on_process::Function  = _ -> nothing)
     p = parse_manual_gate_params(params)
     vn, pt, from = p.valueName, p.popType, p.copyFrom
-    is_gating_pop_type(pt) || error("not a gating pop type: $pt (flow or track)")
+    is_gating_pop_type(pt) || error("not a gating population type: $pt (flow or track)")
     # QC-EXEMPT: this step produces nothing to score — the user's gates are the result, and the
     # chain's check (`manual_check` below) is what holds a run that lacks them.
     if isempty(from) || from == img.uid

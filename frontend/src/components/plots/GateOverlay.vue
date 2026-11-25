@@ -21,6 +21,8 @@
       broadcasts → smooth cross-plot propagation). See docs/UI.md "rendering & UX hacks".
       Holding Shift while a draw tool is armed enters this edit path too (grab the gate under the
       cursor) without disarming the tool — release Shift to keep drawing.
+   3. While the host holds a drawn gate for naming (`pending`), that gate is painted where it was drawn
+      and the draw tool pauses — nothing follows the cursor until it is added or dropped.
 
   Everything is mapped data→px through the LIVE (zoom-synced) extents, so gates track pan/zoom.
 
@@ -35,7 +37,8 @@ import { useWindowListener } from '../../composables/useKeepAlive'
 import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc, svgClip, svgLine } from '../../plots/export'
-import { gateLabelPos, type GateLabelPos } from '../../utils/gateLabel'
+import { gateLabelPos, GATE_LABEL_H, type GateLabelPos } from '../../utils/gateLabel'
+import { placeChips, type Chip } from '../../plots/chipPlacement'
 import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateShape, gateAt } from '../../plots/gateGeometry'
 import { handleRadius, distToSeg, HANDLE_R_PX } from '../../utils/drawGeometry'
 import { parseHex, luminance } from '../../utils/colour'
@@ -53,6 +56,9 @@ const props = withDefaults(defineProps<{
   showLabels?: boolean                       // draw the population name on each gate
   readonly?: boolean                         // fully static: draw outlines only, never move/resize/draw
   flipY?: boolean                            // y is an IMAGE row coordinate (grows downward)
+  // a drawn gate waiting for its name: held still where it was drawn, and the draw tool pauses (no
+  // cursor-following preview, no new shape) until the host clears it — Add, ×, or Esc (`cancel`)
+  pending?: Partial<GateSpec> | null
 }>(), { lineWidth: 1.5, showLabels: false, readonly: false })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -306,17 +312,40 @@ function labelPos(g: GateSpec, labelW: number, w: number, h: number): GateLabelP
   const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1])) as [number, number][]
   return gateLabelPos(pts, labelW, w, h)
 }
-function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string) {
-  const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
-  const c = ctx!; c.save()
-  c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'
-  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo()   // ground-toned halo for legibility
+// Every gate's name on this plot, placed clear of the others: each starts where `labelPos` puts it and
+// overlapping ones are pushed apart (plots/chipPlacement — long quadrant names side by side would
+// otherwise print over each other). The canvas, the PNG export and the SVG export all take their
+// labels from here, so a still matches the screen. A label is moved by its chip's shift, keeping its
+// baseline, so one with nothing to dodge is drawn exactly where `labelPos` put it.
+const LABEL_FONT = 'bold 12px system-ui, sans-serif'
+type PlacedLabel = { name: string; colour: string; pos: GateLabelPos }
+function measureLabel(name: string): number {
+  const c = ctx; if (!c) return name.length * 12 * 0.6
+  c.save(); c.font = LABEL_FONT; const lw = c.measureText(name).width; c.restore(); return lw
+}
+function placedLabels(specOf: (g: { path: string; gate: GateSpec }) => GateSpec): PlacedLabel[] {
+  if (!props.showLabels) return []
   const { w, h } = size()
-  const pos = labelPos(g, c.measureText(name).width, w, h)
-  if (!pos) { c.restore(); return }
-  c.textBaseline = pos.baseline
-  c.strokeText(name, pos.x, pos.y)
-  c.fillStyle = colour; c.fillText(name, pos.x, pos.y); c.restore()
+  const items: (PlacedLabel & { chip: Chip })[] = []
+  for (const g of props.gates ?? []) {
+    const name = g.label ?? (g.path.split('/').filter(Boolean).pop() ?? '')
+    if (!name) continue
+    const lw = measureLabel(name)
+    const pos = labelPos(specOf(g), lw, w, h); if (!pos) continue
+    const cy = pos.baseline === 'top' ? pos.y + GATE_LABEL_H / 2 : pos.y - GATE_LABEL_H / 2
+    items.push({ name, colour: gateColour(g.colour), pos, chip: { x: pos.x, y: cy, w: lw + 6, h: GATE_LABEL_H } })
+  }
+  const at = placeChips(items.map(i => i.chip), w, h)
+  return items.map((it, i) => ({ name: it.name, colour: it.colour,
+    pos: { ...it.pos, x: it.pos.x + at[i].x - it.chip.x, y: it.pos.y + at[i].y - it.chip.y } }))
+}
+function drawGateLabel(l: PlacedLabel) {
+  const c = ctx!; c.save()
+  c.font = LABEL_FONT; c.textAlign = 'center'
+  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo()   // ground-toned halo for legibility
+  c.textBaseline = l.pos.baseline
+  c.strokeText(l.name, l.pos.x, l.pos.y)
+  c.fillStyle = l.colour; c.fillText(l.name, l.pos.x, l.pos.y); c.restore()
 }
 // beside a hovered 1D handle / ruled line: what it is (a window edge, a ruled cut that found its valley or
 // not) — a canvas tip, since v-tooltip anchors to the whole plot. Live canvas only, never exported.
@@ -382,34 +411,27 @@ function paintGates() {
     // a split's / bisector's regions share one divider: stroked once, in ink
     if (!isSplitGate(spec) && spec.kind !== 'bisector') strokeShape(spec, gateColour(g.colour))
     else if (!spec.group || !drawn.has(spec.group)) { strokeShape(spec, ink()); if (spec.group) drawn.add(spec.group) }
-    if (props.showLabels) drawGateLabel(spec, g.path, gateColour(g.colour), g.label)
   }
+  for (const l of placedLabels(shownSpec)) drawGateLabel(l)
 }
 // ── TRUE-VECTOR SVG export (docs/PLOTS.md) ──────────────────────────────────────────────────────────
 // The committed gate outlines (+ labels) as SVG in LOCAL plot-area coords [0..w,0..h] — <polygon> per
 // gate, reusing rectCorners/vertices + dataToPx (same geometry as strokeShape). Handles / in-progress
 // shapes are interaction-only and never exported. The host translates this into the capture.
-function gateLabelSvg(g: GateSpec, path: string, colour: string, label: string | undefined, w: number, h: number): string {
-  const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
-  if (!name) return ''
+function gateLabelSvg(l: PlacedLabel): string {
   const SIZE = 12
-  // measured with the same font the canvas label uses, on the overlay's own canvas
-  const c = ctx; let labelW = name.length * SIZE * 0.6
-  if (c) { c.save(); c.font = 'bold 12px system-ui, sans-serif'; labelW = c.measureText(name).width; c.restore() }
-  const pos = labelPos(g, labelW, w, h)
-  if (!pos) return ''
   // canvas `textBaseline` → SVG: a 'top' label's baseline sits one glyph height lower
-  const y = pos.baseline === 'top' ? pos.y + SIZE : pos.y
+  const y = l.pos.baseline === 'top' ? l.pos.y + SIZE : l.pos.y
   const r1 = (n: number) => Math.round(n * 10) / 10
   // paint-order:stroke → ground-toned halo BEHIND the coloured fill (legible over dense dots), like the canvas
-  return `<text x="${r1(pos.x)}" y="${r1(y)}" font-family="system-ui, sans-serif" font-size="${SIZE}" ` +
+  return `<text x="${r1(l.pos.x)}" y="${r1(y)}" font-family="system-ui, sans-serif" font-size="${SIZE}" ` +
          `font-weight="bold" text-anchor="middle" paint-order="stroke" stroke="${halo()}" ` +
-         `stroke-width="3" stroke-linejoin="round" fill="${colour}">${svgEsc(name)}</text>`
+         `stroke-width="3" stroke-linejoin="round" fill="${l.colour}">${svgEsc(l.name)}</text>`
 }
 // Outlines are clipped to the plot area like the canvas (an open-ended gate runs far off-axis).
 function exportSvgContent(): string {
   const { w, h } = size(); if (!w || !h) return ''
-  let outlines = '', labels = ''
+  let outlines = ''
   const drawn = new Set<string>()
   for (const g of props.gates ?? []) {
     if (isHistGate(g.gate)) {           // 1D: its lines (a bisector's once per pair, in ink)
@@ -419,7 +441,6 @@ function exportSvgContent(): string {
           outlines += svgLine(a[0], a[1], b[0], b[1], { stroke: shared ? ink() : gateColour(g.colour), width: props.lineWidth })
         if (shared && g.gate.group) drawn.add(g.gate.group)
       }
-      if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, gateColour(g.colour), g.label, w, h)
       continue
     }
     if (isSplitGate(g.gate)) {          // the divider once per split, as lines; each region's name
@@ -427,16 +448,14 @@ function exportSvgContent(): string {
         for (const [a, b] of segsPx(g.gate)) outlines += svgLine(a[0], a[1], b[0], b[1], { stroke: ink(), width: props.lineWidth })
         if (g.gate.group) drawn.add(g.gate.group)
       }
-      if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, gateColour(g.colour), g.label, w, h)
       continue
     }
     const pts = (g.gate.kind === 'rectangle' ? rectCorners(g.gate) : (g.gate.vertices ?? []))
       .map(p => dataToPx(p[0], p[1])) as [number, number][]
     if (pts.length < 2) continue
     outlines += svgPolygon(pts, { stroke: gateColour(g.colour), width: props.lineWidth })
-    if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, gateColour(g.colour), g.label, w, h)
   }
-  return svgClip({ w, h }, outlines) + labels
+  return svgClip({ w, h }, outlines) + placedLabels(g => g.gate).map(gateLabelSvg).join('')
 }
 
 function draw() {
@@ -460,7 +479,8 @@ function draw() {
   // in-progress NEW shape (accent)
   const accent = themed('--cc-accent', NEUTRAL)
   ctx.strokeStyle = accent; ctx.fillStyle = tint(accent, 0.12); ctx.lineWidth = 1.5
-  if (props.mode === 'rectangle' && start && cur) {
+  if (props.pending) paintPending(props.pending, accent)
+  else if (props.mode === 'rectangle' && start && cur) {
     const x = Math.min(start[0], cur[0]), y = Math.min(start[1], cur[1])
     ctx.fillRect(x, y, Math.abs(cur[0] - start[0]), Math.abs(cur[1] - start[1]))
     ctx.strokeRect(x, y, Math.abs(cur[0] - start[0]), Math.abs(cur[1] - start[1]))
@@ -489,6 +509,17 @@ function draw() {
   }
 }
 const previewBase = { x_channel: '', y_channel: '', x_transform: { kind: 'linear' }, y_transform: { kind: 'linear' } } as const
+// the drawn gate waiting for its name, in the drawing accent: a closed shape filled faintly as it was
+// while drawn, a divider / cut as lines. In data coordinates, so it stays put under the cursor.
+function paintPending(p: Partial<GateSpec>, accent: string) {
+  const g = { ...previewBase, ...p } as GateSpec
+  if (g.kind === 'rectangle' || g.kind === 'polygon') {
+    const pts = outlinePx(g); if (pts.length < 3) return
+    const c = ctx!; c.beginPath(); pts.forEach((q, i) => (i === 0 ? c.moveTo(q[0], q[1]) : c.lineTo(q[0], q[1]))); c.closePath()
+    c.fillStyle = tint(accent, 0.12); c.fill()
+  }
+  strokeShape(g, accent, 1.5)
+}
 function dashed(path: () => void) {
   const c = ctx!; c.save(); c.setLineDash([4, 4]); c.beginPath(); path(); c.stroke(); c.restore()
 }
@@ -597,6 +628,7 @@ function onDown(e: MouseEvent) {
     const h = hitTest(evtPx(e), true); if (h) startEdit(h, evtPx(e))
     return
   }
+  if (props.mode !== 'off' && props.pending) return   // naming a drawn gate: the tool is paused
   if (props.mode === 'rectangle' || props.mode === 'range') return startRectDrag(drawPx(e))
   if (props.mode !== 'off') return                // polygon / slice / quadrant / bisector: placed on click
   const h = hover.value ?? hitTest(evtPx(e))      // off mode → begin editing
@@ -610,8 +642,8 @@ function onMove(e: MouseEvent) {
       return draw()
     }
     if (shiftEdit.value) { shiftEdit.value = false; hover.value = null; cursor.value = 'crosshair'; draw() }
-    if (dragging) return                          // a rectangle drag is tracked on the window (onDrawMove)
-    cur = drawPx(e)
+    if (dragging || props.pending) return         // a rectangle drag is tracked on the window (onDrawMove);
+    cur = drawPx(e)                               // a gate being named holds still
     if (props.mode === 'rectangle' || props.mode === 'range') return
     return draw()
   }
@@ -650,7 +682,7 @@ function onUp() {
   }
 }
 function onClick(e: MouseEvent) {
-  if (e.shiftKey) return                          // Shift+click is an edit grab (onDown), not a vertex
+  if (e.shiftKey || props.pending) return         // Shift+click is an edit grab (onDown), not a vertex
   if (props.mode === 'polygon' || props.mode === 'slice') placeVertex(drawPx(e))
   else if (props.mode === 'quadrant') placeQuadrant(drawPx(e))
   else if (props.mode === 'bisector') placeBisector(drawPx(e))
@@ -670,6 +702,7 @@ function placeVertex(p: [number, number]) {
   polyPts.value.push(p); draw()
 }
 function onDblClick(e: MouseEvent) {
+  if (props.mode !== 'off' && props.pending) return
   if (props.mode === 'polygon') return finishPolygon()
   if (props.mode === 'slice') return finishSlice()
   // off mode: insert a vertex on the nearest polygon edge — or slice segment — under the cursor; on a
@@ -729,7 +762,7 @@ function finishSlice() {
 // control, so the band cannot steal a click meant for something else.
 function inReachBand(e: MouseEvent): boolean {
   const c = canvasEl.value
-  if (!c || props.readonly || props.mode === 'off' || e.shiftKey || e.button !== 0) return false
+  if (!c || props.readonly || props.mode === 'off' || props.pending || e.shiftKey || e.button !== 0) return false
   const t = e.target as Element | null
   if (!t || t === c || !(c.closest('.plot-capture') ?? c.parentElement)?.contains(t)) return false
   if (t.closest('button, input, select, textarea, a, label, [role="button"], .gate-overlay')) return false
@@ -764,6 +797,8 @@ useWindowListener('mousemove', onBandMove)
 function onKey(e: KeyboardEvent) {
   // an Escape a popover or dialog on top already took (a plot's settings menu) is not ours
   if (e.defaultPrevented) return
+  // Esc while a drawn gate waits for its name drops that gate; the tool stays as it was
+  if (e.key === 'Escape' && props.pending) { e.preventDefault(); emit('cancel'); return }
   // idle Esc deselects (claimed only when there is a selection, so the maximised-layout Esc still works)
   if (e.key === 'Escape' && props.mode === 'off' && !editHandle && selected.value) {
     e.preventDefault(); select(null); return
@@ -778,7 +813,14 @@ function onKey(e: KeyboardEvent) {
 useWindowListener('keydown', onKey)
 
 // drawing modes always capture; off mode toggles via proximity
-watch(() => props.mode, m => { pe.value = m === 'off' ? 'none' : 'auto'; cursor.value = m === 'off' ? 'default' : 'crosshair'; shiftEdit.value = false })
+watch(() => props.mode, m => { pe.value = m === 'off' ? 'none' : 'auto'; cursor.value = m === 'off' || props.pending ? 'default' : 'crosshair'; shiftEdit.value = false })
+// a gate waiting for its name freezes the tool; once it is added or dropped, drawing resumes from the
+// next cursor move (no stale crosshair where the click was)
+watch(() => props.pending, p => {
+  cur = null
+  cursor.value = p || props.mode === 'off' ? 'default' : 'crosshair'
+  draw()
+})
 // authoritative gates arrived → drop the local draft (unless mid-drag)
 watch(() => props.gates, () => {
   if (!editHandle) { draft.value = null; editPath = null }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gateSignatures, changedPopPaths, seriesReloadToken, clusterAwareFetchToken, type SigNode } from './popChanges'
+import { gateSignatures, changedPopPaths, seriesReloadToken, clusterAwareFetchToken, statsToFetch, type SigNode } from './popChanges'
 
 const rect = (x: number) => ({ kind: 'rectangle', x_min: x })
 const tree = (tGate = 1, bGate = 2): SigNode[] => [
@@ -66,5 +66,23 @@ describe('clusterAwareFetchToken', () => {
     expect(clusterAwareFetchToken(2, 5, [undefined, null, ''])).toBe(2)
     // a column merely containing the word is not a cluster run
     expect(clusterAwareFetchToken(2, 5, ['n_clusters.x'])).toBe(2)
+  })
+})
+
+describe('statsToFetch', () => {
+  const cur = { '/T': 1, '/T/CD4': 2, '/B': 3, '/gone': 4 }
+  it('no change set → every pop, nothing kept', () => {
+    expect(statsToFetch(['/T', '/B'], cur)).toEqual({ fetch: ['/T', '/B'], kept: {} })
+  })
+  it('a colour change (nothing changed) fetches nothing and keeps every count', () => {
+    const paths = ['/T', '/T/CD4', '/B']
+    const changed = changedPopPaths(gateSignatures(tree()), gateSignatures(tree()))
+    expect(statsToFetch(paths, cur, changed)).toEqual({ fetch: [], kept: { '/T': 1, '/T/CD4': 2, '/B': 3 } })
+  })
+  it('a moved gate fetches it and its subtree; a new pop is fetched; a deleted one dropped', () => {
+    const changed = changedPopPaths(gateSignatures(tree()), gateSignatures(tree(9)))
+    const r = statsToFetch(['/T', '/T/CD4', '/B', '/new'], cur, changed)
+    expect(r.fetch.sort()).toEqual(['/T', '/T/CD4', '/new'])
+    expect(r.kept).toEqual({ '/B': 3 })
   })
 })

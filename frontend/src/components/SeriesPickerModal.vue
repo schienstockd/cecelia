@@ -49,11 +49,11 @@ function save() {
     <div class="sp-panel">
       <div class="sp-grid">
         <label v-for="s in probe.series" :key="s.index"
-               class="sp-card" :class="{ 'sp-picked': picked.has(s.index) }"
-               v-tooltip.top="`Import series ${s.index} (${seriesLabel(s)})`">
+               class="sp-card" :class="{ 'sp-picked': picked.has(s.index) }">
           <input type="checkbox" class="sp-cb"
                  :checked="picked.has(s.index)"
                  @change="toggle(s.index)"
+                 v-tooltip.left="'Import this series'"
                  :aria-label="`Series ${s.index}`" />
           <div class="sp-thumb">
             <img v-if="s.thumbnailPngB64"

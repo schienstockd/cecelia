@@ -212,6 +212,7 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 include(joinpath(@__DIR__, "suite", "chain.jl"))
 include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 include(joinpath(@__DIR__, "suite", "chain_after_live.jl"))   # "Queue after": wait for a run already going
+include(joinpath(@__DIR__, "suite", "chain_after_live_sweep_early_review.jl"))
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
 include(joinpath(@__DIR__, "suite", "channel_names_dotted.jl"))   # a dotted channel name is a name, not an aggregate
 # Gating + statistics QC and the chain's end-of-run cohort QC (CECELIA_STRUCTURE_PLAN rank 8).
@@ -335,6 +336,7 @@ include(joinpath(@__DIR__, "suite", "figures.jl"))
 # so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "pop_df.jl"))
+include(joinpath(@__DIR__, "suite", "gating_membership_cache.jl"))
 include(joinpath(@__DIR__, "suite", "pop_plot_cols.jl"))
 
 # ── resolve_pops: cached, display-ready per-pop membership (napari points overlay) ──
@@ -617,6 +619,13 @@ include(joinpath(@__DIR__, "suite", "bf2raw_series_subdir.jl"))
 # so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "typed_params.jl"))
+# segment.afCells: per-cell AF correction — dye groups, params, QC findings, registration
+include(joinpath(@__DIR__, "suite", "af_cells.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_dapi.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_exclude.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_percycle.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_registered.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_afcells_order_dna.jl"))
 # ── Boundary types + ratchet testsets ───────────────────────────────
 # Four sections pinning type / convention boundaries across the code base: label_props
 # boundary types (add_obs type refusals), typed params ratchet (every _run_task reads

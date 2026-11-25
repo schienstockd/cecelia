@@ -136,6 +136,24 @@ class ItemsTest(_AutoFixture):
         items = self.rv.auto_items(self.record, [])
         self.assertEqual([it["ref"] for it in items], ["B1"])
 
+    def test_a_decide_bug_the_owner_answered_open_is_taken_too(self):
+        # following a recommendation used to leave the bug for a manual [f]: --auto skipped `decide`
+        self.rv.append_review("bug_status", "2026-10-05", "B3", "open", path=self.log)
+        items = self.rv.auto_items(self.record, self.rv.read_reviews(self.log))
+        self.assertEqual(sorted(r for it in items for r in it.get("refs") or [it["ref"]]), ["B1", "B3"])
+        self.rv.append_review("bug_status", "2026-10-05", "B3", "wont_fix", path=self.log)
+        items = self.rv.auto_items(self.record, self.rv.read_reviews(self.log))
+        self.assertEqual([it["ref"] for it in items], ["B1"])
+
+    def test_the_session_gets_the_owners_answer_given_since_the_pass(self):
+        self.rv.append_review("bug_status", "2026-10-05", "B3", "open", path=self.log, note="keep the copy, add a test")
+        with mock.patch.object(self.af, "landed", return_value={}), \
+                mock.patch.object(self.af, "work_one", return_value=0.0) as work:
+            self.af.run(self.record, out=io.StringIO(), path=self.log, auto_log=self.auto, main=self.main,
+                        sh=lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+        b3 = next(b for call in work.call_args_list for b in call.args[1] if b["id"] == "B3")
+        self.assertEqual(b3.get("owner_answer"), "keep the copy, add a test")
+
     def test_a_bug_the_owner_or_an_auto_session_already_took_is_skipped(self):
         self.rv.append_review("bug_work", "2026-10-05", "B1", "fix_session", path=self.log)
         self.assertEqual(self.rv.auto_items(self.record, self.rv.read_reviews(self.log)), [])
@@ -583,6 +601,29 @@ class WorkTest(_AutoFixture):
         msg = self.messages[0]
         self.assertEqual(msg.count("[fanout-x1: fixed_pre_commit]"), 1)   # every round's tags, once
         self.assertIn("[fanout-x2: fixed_pre_commit]", msg)
+
+    def test_a_slug_tagged_again_in_a_later_round_keeps_only_that_rounds_outcome(self):
+        # the commit hook refuses a slug twice ("the same finding cannot have two outcomes")
+        tags = lambda t: {"tags": [t]}   # noqa: E731
+        self.work(_answer(), tags("[tv-0000aaaa: false_positive: refactor]"), tags("[tv-0000aaaa: fixed_pre_commit]"),
+                  diff=["d1", "d2", "d2"])
+        msg = self.messages[0]
+        self.assertEqual(msg.count("[tv-0000aaaa:"), 1)
+        self.assertIn("[tv-0000aaaa: fixed_pre_commit]", msg)
+
+    def test_a_fix_the_agent_undoes_after_the_recital_is_left_with_why_not_a_failed_recital(self):
+        # the review showed the fix wrong and the agent reverted it: nothing to review again or commit
+        _, out = self.work(_answer(), {"tags": ["[result-x: dropped_no_action: reverted, needs a decision]"]},
+                           diff=["d1", ""])
+        recitals = [c for c in self.calls if c[:3] == ["pixi", "run", "recital"]]
+        self.assertEqual(len(recitals), 1)
+        self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual(row["outcome"], "left")
+        self.assertEqual(row["reason"], "It undid its fix after recital round 1: "
+                                        "[result-x: dropped_no_action: reverted, needs a decision]")
+        self.assertNotIn("tree", row)   # nothing left to work in
+        self.assertIn("undid its fix after recital round 1: no PR, worktree removed", out)
 
     def test_a_diff_that_never_settles_goes_back_to_the_owner(self):
         rounds = self.af.RECITAL_ROUNDS

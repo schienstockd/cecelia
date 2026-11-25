@@ -617,7 +617,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
             <option value="region">regions</option>
           </select>
           <select v-if="segNames.length" v-model="popValueName" class="bm-mini"
-                  v-tooltip.bottom="'Segmentation whose pop tree to draw from'">
+                  v-tooltip.bottom="'Segmentation whose population tree to draw from'">
             <option v-for="s in segNames" :key="s" :value="s">{{ s }}</option>
           </select>
         </div>

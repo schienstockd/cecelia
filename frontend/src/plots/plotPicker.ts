@@ -61,13 +61,24 @@ const SYNONYMS: Record<string, string[]> = {
   velocity: ['speed'],
   motility: ['speed', 'displacement', 'straightness'],
   persistence: ['straightness'],
-  proportion: ['fraction', 'percent'],
-  percentage: ['fraction', 'percent'],
-  abundance: ['count', 'size'],
+  proportion: ['fraction', 'percent', 'split', 'how big', 'size'],
+  percentage: ['fraction', 'percent', 'split'],
+  abundance: ['count', 'size', 'how big'],
   umap: ['cluster map'],
   embedding: ['cluster map'],
   contact: ['interaction', 'touch'],
   distance: ['spatial'],
+  // words the question lines used to carry before they were cut to fit a card — still searchable
+  fraction: ['split', 'share'],
+  displacement: ['track speed'],
+  duration: ['track speed'],
+  marker: ['cell measure'],
+  shape: ['cell measure', 'shapes'],
+  turning: ['cell measure'],
+  angle: ['cell measure'],
+  neighbourhood: ['contact'],
+  screenshot: ['still'],
+  behaviour: ['umap', 'tracks split'],
 }
 
 /**

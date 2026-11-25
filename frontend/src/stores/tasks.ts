@@ -14,8 +14,8 @@ export interface TaskEntry {
   label: string           // human-readable description
   imageUid: string
   imageName: string
-  // A set-scope run's members (`imageUid` is the representative). Set by the runner that dispatched it;
-  // absent on single-image rows and on rows this tab did not launch.
+  // A set-scope run's members (`imageUid` is the representative). Set by the runner that dispatched it,
+  // or from the in-flight snapshot's `image_uids` on an adopted row; absent on single-image rows.
   imageUids?: string[]
   status: TaskStatus
   startedAt?: Date

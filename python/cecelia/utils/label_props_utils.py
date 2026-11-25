@@ -153,6 +153,8 @@ class LabelPropsView:
         self._pending_drop = None    # staged obs column names to delete; flushed by save()
         self._pending_obsm = None    # staged obsm matrices to write; flushed by save()
         self._pending_cat = None     # staged categorical/string obs columns; flushed by save()
+        self._pending_vars = None    # staged feature (X/var) columns; flushed by save()
+        self._pending_var_drop_prefix = None  # var-name prefix to clear first; flushed by save()
 
     # ── metadata ────────────────────────────────────────────────────────────────
     def labels(self) -> np.ndarray:
@@ -361,13 +363,59 @@ class LabelPropsView:
         self._pending_obsm[key] = (np.asarray(labels).astype(np.int64), vals)
         return self
 
+    def set_vars(self, data, drop_prefix=None):
+        """Stage FEATURE (X/var) columns to write — derived per-cell measures that must sit beside
+        the measured ones so every channel picker and the channel-name resolver see them (e.g.
+        `af_mean_intensity_3`, which displays as `af_<channel 3>`). ``data`` is ``{var name: array}``
+        in obs order. A name already in var is replaced in place. ``drop_prefix`` first removes every
+        var starting with it, so a re-run cannot leave stale columns from an earlier one. Terminal
+        verb is ``save()``."""
+        if self._pending_vars is None:
+            self._pending_vars = {}
+        n = self.adata.n_obs
+        for k, v in dict(data).items():
+            arr = np.asarray(v, dtype=np.float64)
+            if arr.shape != (n,):
+                raise ValueError(f"set_vars: {k} has shape {arr.shape}, expected ({n},)")
+            self._pending_vars[str(k)] = arr
+        if drop_prefix:
+            self._pending_var_drop_prefix = str(drop_prefix)
+        return self
+
+    def _apply_vars(self):
+        """Rebuild X/var with the staged feature columns (obs, obsm, uns kept as they are)."""
+        prefix = self._pending_var_drop_prefix
+        names = list(self.adata.var_names)
+        keep = [i for i, v in enumerate(names) if not (prefix and v.startswith(prefix))]
+        X = self.adata.X
+        X = X.toarray() if hasattr(X, "toarray") else np.asarray(X)
+        X = X[:, keep]
+        names = [names[i] for i in keep]
+        new = self._pending_vars or {}
+        cols = []
+        for k, v in new.items():
+            if k in names:
+                X[:, names.index(k)] = v.astype(X.dtype, copy=False)
+            else:
+                names.append(k)
+                cols.append(v)
+        if cols:
+            X = np.hstack([X, np.column_stack(cols).astype(X.dtype, copy=False)])
+        a = self.adata
+        out = ad.AnnData(X=X, obs=a.obs, var=pd.DataFrame(index=pd.Index(names, dtype=object)),
+                         uns=dict(a.uns), obsm=dict(a.obsm.items()))
+        self.adata = out
+
     def save(self):
-        """Terminal write: flush staged obs adds/drops + obsm matrices into the .h5ad via anndata.
-        No-op if nothing is staged. Drops are applied before adds (so a column can be dropped and
-        re-added in one chain)."""
-        if (not self._pending_obs and not self._pending_drop
-                and not self._pending_obsm and not self._pending_cat):
+        """Terminal write: flush staged obs adds/drops, feature (var) columns and obsm matrices into
+        the .h5ad via anndata. No-op if nothing is staged. Drops are applied before adds (so a column
+        can be dropped and re-added in one chain)."""
+        if (not self._pending_obs and not self._pending_drop and not self._pending_obsm
+                and not self._pending_cat and not self._pending_vars
+                and not self._pending_var_drop_prefix):
             return self
+        if self._pending_vars or self._pending_var_drop_prefix:
+            self._apply_vars()
         labels = self.adata.obs.index.astype(np.int64).to_numpy()
         for c in (self._pending_drop or []):
             if c in self.adata.obs.columns:
@@ -392,6 +440,8 @@ class LabelPropsView:
         self._pending_drop = None
         self._pending_obsm = None
         self._pending_cat = None
+        self._pending_vars = None
+        self._pending_var_drop_prefix = None
         return self
 
     def close(self):

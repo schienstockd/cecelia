@@ -1,0 +1,69 @@
+{
+  "task": "afCells",
+  "fun_name": "segment.afCells",
+  "label": "Correct autofluorescence (per cell)",
+  "purpose": "Remove each cell's autofluorescence from its marker intensities, per fluorophore",
+  "useWhen": [
+    "Cyclic panels (PhenoCycler, IBEX, CODEX): markers on one dye rise together",
+    "Before gating or clustering dim markers such as CD3, CD4, CD8 or CD20"
+  ],
+  "notWhen": [
+    "Fewer than 3 markers per dye: nothing to estimate the background from",
+    "Image-level autofluorescence: use AF correction on the image instead"
+  ],
+  "category": "Segment",
+  "group": "Measure",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "writesInto": "valueName",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Label set",
+      "type": "valueNameSelection",
+      "field": "labelPropsNames",
+      "default": "default",
+      "tip": "Cell table to correct; adds af_<channel> beside each measured channel"
+    },
+    {
+      "key": "groupBy",
+      "label": "Group channels by",
+      "type": "select",
+      "default": "dye",
+      "tip": "Which channels share a fluorophore",
+      "options": [
+        { "label": "Dye (from the acquisition)", "value": "dye" },
+        { "label": "Channel order", "value": "order" }
+      ]
+    },
+    {
+      "key": "period",
+      "showIf": { "groupBy": "order" },
+      "label": "Markers per cycle",
+      "type": "int",
+      "min": 2,
+      "max": 10,
+      "default": 3,
+      "tip": "Markers imaged per cycle, not counting nuclear stains"
+    },
+    {
+      "key": "nuclear",
+      "showIf": {
+        "groupBy": "order"
+      },
+      "label": "Nuclear stains",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Stains outside the marker cycle; empty finds DAPI, Hoechst, DNA_n by name"
+    },
+    {
+      "key": "exclude",
+      "label": "Leave as measured",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Markers not to correct, e.g. a failed stain"
+    }
+  ]
+}

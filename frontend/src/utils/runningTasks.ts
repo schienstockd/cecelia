@@ -36,6 +36,9 @@ export interface InFlightTaskRow {
   hpc_stage?: string
   hpc_job?: string
   image_uid?: string
+  /** every image the run covers — a set run's members (`image_uid` is its representative); absent from
+   *  an older backend */
+  image_uids?: string[]
   chain_run_id?: string
   /** which node of that run — needed to rebuild the store's `runId::nodeId::imageUid` key */
   chain_node_id?: string
@@ -72,6 +75,8 @@ export interface AdoptedTask {
   taskName: string
   imageUid: string
   imageName: string
+  /** a set run's members, when the snapshot names more than the representative */
+  imageUids?: string[]
   projectUid: string
   status: 'queued' | 'running'
   startedAt?: Date
@@ -136,6 +141,7 @@ export function adoptableTasks(
     if (runId && !nodeId) continue
     const imageName = ctx.imageNames[imageUid]
     if (!imageName) continue
+    const members = Array.isArray(r.image_uids) ? r.image_uids.map(String) : []
     out.push({
       // a chain row is addressed by the synthetic key the chain frames will use, so the next one updates
       // THIS row; a plain task is addressed by the scheduler id it was launched with
@@ -148,6 +154,9 @@ export function adoptableTasks(
       taskName:   fun,
       imageUid,
       imageName,
+      // A set run is live on every member, not just the representative its row is keyed by — Queue
+      // after waits for it on each (`queueAfter.ts` → `liveGroups`).
+      ...(members.length > 1 ? { imageUids: members } : {}),
       projectUid: ctx.projectUid,
       status:     status as 'queued' | 'running',
       // The scheduler's own start, so the elapsed is right from the first render rather than counting

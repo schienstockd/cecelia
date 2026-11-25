@@ -90,3 +90,15 @@ describe('plot search', () => {
     expect(matchesPlotQuery(track, 'speed heatmap')).toBe(false)
   })
 })
+
+describe('search still finds words the shortened question lines dropped', () => {
+  const byId = (id: string) => specOption(SPECS.find(s => s.id === id)!)
+  it.each([
+    ['proportion', 'population_summary'], ['proportion', 'hmm_state_frequency'], ['fraction', 'motif_class_frequency'],
+    ['displacement', 'track_measures'], ['duration', 'track_measures'], ['marker', 'cell_properties'],
+    ['turning angle', 'cell_properties'], ['neighbourhood', 'spatial_cell_properties'],
+    ['behaviour', 'track_cluster_frequency'], ['proportion over time', 'population_over_time'],
+  ])('"%s" finds %s', (q, id) => {
+    expect(matchesPlotQuery(byId(id), q)).toBe(true)
+  })
+})

@@ -3,7 +3,7 @@
   "label": "Population summary",
   "category": "compare",
   "sketch": "popImage",
-  "answers": "How big is each population per image (count or proportion), between groups?",
+  "answers": "How big is each population, between groups?",
   "modules": {
     "phenotype": ["flow", "clust"],
     "behaviourAnalysis": ["live", "track", "trackclust"],

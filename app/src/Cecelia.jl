@@ -123,11 +123,11 @@ export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatia
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
-export apply_transform, invert_transform, transform_spec, transform_from_spec
+export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, invert_column, transform_key
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
        RangeGate, BisectorGate, ValleyRule, valley_cut
-export inside, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
+export inside, inside_t, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
 # ── Population manager ─────────────────────────────────────────────────────────
@@ -135,7 +135,8 @@ export Population, PopulationTree, ROOT, PopType, PopTypeArg
 export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
 export parse_pop_type
 export pop_parent, pop_name, pop_path, is_root, pop_display_labels
-export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
+export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!,
+       move_pops!, del_pops!, selection_roots, pops_with_subtrees
 export boolean_dependents, boolean_spec, filter_spec, pops_depending_on, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse_bool_membership
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,
        parse_filter_fun, FilterCondition
@@ -156,7 +157,7 @@ export co_clustered_value_names, cluster_run_at, refine_source, refine_source_po
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export category_colours, category_sort_key, pop_label_overrides, POPULATION_PALETTE
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops, missing_gate_columns, pop_membership_cols
-export pop_plot_cols, computed_pop_tree, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
+export pop_plot_cols, computed_pop_tree, recompute_cached!, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
@@ -420,6 +421,7 @@ include("tasks/segment/cellpose.jl")
 include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
+include("tasks/segment/af_cells.jl")      # per-cell AF correction → af_ intensity columns
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
 include("tasks/gate/manual_gate.jl")

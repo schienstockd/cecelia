@@ -23,7 +23,7 @@
 import { axisQ, outlineToGate, type SrvGate } from '../../plots/montage'
 import { isSplitGate, sliceRegions, quadrantRegions } from '../../plots/splitGeometry'
 import { histogramView, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
-import CcToggle from '../../components/CcToggle.vue'
+import GateNameBar from './GateNameBar.vue'
 import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
@@ -356,7 +356,7 @@ async function loadPopLayers() {
       ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? UNASSIGNED_POP,
          points: await fetchBuf(plotQ(path, effXs.value, effYs.value)) })))
   } catch (e) {
-    log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+    log.error(`Gating population layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
   }
 }
 
@@ -426,6 +426,12 @@ async function confirmGate() {
   }
 
 }
+
+// Esc on the plot: drops a gate waiting for its name (the tool stays armed, as × leaves it), else
+// disarms the tool
+function onCancel() { if (pending.value) pending.value = null; else mode.value = 'off' }
+// the draw tool's icon, which the naming bar shows for the kind
+const toolIcon = (kind?: string) => [...drawModes(false), ...drawModes(true)].find(o => o.value === kind)?.icon ?? 'pi pi-plus'
 
 // existing gate moved/resized/vertex-edited on the canvas → persist (server recomputes + broadcasts)
 async function onEdit(e: { path: string; gate: GateSpec }) {
@@ -590,7 +596,7 @@ watch(() => props.reloadToken, fetchPlot)
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="zOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(zOverride, '')" /></label>
-        <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
+        <label class="ax-row cc-muted"><span class="ax-lbl">population</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
           <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-fs-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
@@ -620,28 +626,22 @@ watch(() => props.reloadToken, fetchPlot)
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
                      :plot-id="props.persistKey"
-                     @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
+                     :pending-gate="pending"
+                     @draw="onDraw" @edit="onEdit" @cancel="onCancel">
       <!-- untracked segmentation on a track plot: nothing to show, point the user at tracking -->
       <div v-if="notTracked" class="gate-empty cc-empty-inline cc-card">
         <i class="pi pi-share-alt" />
         <span>Not tracked yet — run tracking on this segmentation first.</span>
       </div>
-      <div v-if="pending" class="panel-name" data-guide="gate.name">
-        <div class="panel-name-row">
-          <span class="panel-name-kind">new {{ pending.kind }}</span>
-          <span v-if="pending.kind === 'quadrant'" class="cc-muted">{{ splitRegions.length }} populations</span>
-          <input v-else v-model="newName" placeholder="name…" autofocus
-                 v-tooltip.top="pending.kind === 'slice' || pending.kind === 'bisector' ? 'Gives name+ and name-' : 'Name for the new gate'"
-                 :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
-                 @keyup.enter="confirmGate" @keyup.esc="pending = null" />
-          <CcToggle v-if="pending.kind === 'bisector'" v-model="pendingRule" label="valley"
-                    v-tooltip.top="'Cut at the density valley, found per image'" />
-          <button class="cc-btn cc-btn-primary" :disabled="!!nameError || submitting" @click="confirmGate"
-                  v-tooltip.top="pendingSplit && splitRegions.length ? splitRegions.map(r => r.name).join(' · ') : ''">Add</button>
-          <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
-        </div>
-        <span v-if="nameError && (newName.trim() || pending.kind === 'quadrant')" class="name-hint">{{ nameError }}</span>
-      </div>
+      <GateNameBar v-if="pending" v-model="newName" v-model:rule="pendingRule"
+                   :kind="pending.kind ?? ''" :icon="toolIcon(pending.kind)"
+                   :count="pending.kind === 'quadrant' ? splitRegions.length : null"
+                   :name-tip="pending.kind === 'slice' || pending.kind === 'bisector' ? 'Gives name+ and name-' : 'Name for the new gate'"
+                   :invalid="!!nameError && !!newName.trim()"
+                   :error="nameError && (newName.trim() || pending.kind === 'quadrant') ? nameError : null"
+                   :add-disabled="!!nameError || submitting"
+                   :add-tip="pendingSplit && splitRegions.length ? splitRegions.map(r => r.name).join(' · ') : ''"
+                   @add="confirmGate" @cancel="pending = null" />
     </GateScatterCell>
   </CanvasPanel>
 </template>
@@ -654,8 +654,8 @@ watch(() => props.reloadToken, fetchPlot)
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
-/* wide enough for the longest row label ("colour") so all four rows' selects still line up */
-.ax-lbl { width: 3.4rem; color: var(--cc-text-dim); flex-shrink: 0; }
+/* wide enough for the longest row label ("population") so all four rows' selects still line up */
+.ax-lbl { width: 4.2rem; white-space: nowrap; color: var(--cc-text-dim); flex-shrink: 0; }
 /* fixed widths so the controls don't stretch when the plot is resized */
 .ax-chan { width: 9rem; flex: none; }
 .ax-row .tsel { flex-shrink: 0; }
@@ -673,16 +673,7 @@ watch(() => props.reloadToken, fetchPlot)
 .panel-ctrl select:focus { border-color: var(--cc-accent); }
 .gp-export { max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
-.panel-name { position: absolute; top: 4px; left: 4px; display: flex; flex-direction: column; gap: 4px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 4px 6px; font-size: var(--cc-fs-xs); }
-.panel-name-row { display: flex; align-items: center; gap: 5px; }
-.panel-name-kind { white-space: nowrap; }
-.panel-name input { background: var(--cc-bg); border-radius: var(--cc-radius-xs); padding: 1px 5px; width: 90px; }
-.panel-name input.name-invalid { border-color: var(--cc-sev-fail); }
-/* own row under the controls; width:0 + min-width:100% keeps the message from widening the box —
-   it wraps to the controls row's width instead */
-.name-hint { color: var(--cc-sev-fail); font-size: var(--cc-fs-2xs); line-height: 1.3; width: 0; min-width: 100%; }
-/* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
+/* subtle draw-mode affordance (top-right of the plot); mirrors the naming bar (GateNameBar) but muted and non-interactive */
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
 .gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 

@@ -36,6 +36,32 @@ using Base64, PNGFiles
     @test d[1] == d[2] ≈ 1.0 && 0 < d[3] < 1 && d[4] == 0 && d[5] == 0
 end
 
+@testset "API: gate plot raster — gate names dodge each other (port of placeChips)" begin
+    overlaps(a, b) = abs(a.x - b.x) < (a.w + b.w) / 2 && abs(a.y - b.y) < (a.h + b.h) / 2
+    inside(c, W, H) = c.x - c.w / 2 >= 0 && c.x + c.w / 2 <= W && c.y - c.h / 2 >= 0 && c.y + c.h / 2 <= H
+    # one chip that fits stays on its anchor; one hanging off the edge is pulled in whole
+    @test _place_chips([(x = 50, y = 50, w = 20, h = 10)], 100, 100) == [(x = 50.0, y = 50.0)]
+    @test _place_chips([(x = 2, y = 99, w = 60, h = 14)], 200, 100) == [(x = 30.0, y = 93.0)]
+    # a quadrant's two top names, each a bit over half the plot wide: no room to part them sideways, so
+    # they stack — the same case `chipPlacement.test.ts` pins for the browser
+    chips = [(x = 50, y = 50, w = 105, h = 15), (x = 150, y = 50, w = 105, h = 15)]
+    pos = _place_chips(chips, 200, 200)
+    placed = [merge(c, p) for (c, p) in zip(chips, pos)]
+    @test !overlaps(placed[1], placed[2]) && all(c -> inside(c, 200, 200), placed)
+    # four labels on nearly one anchor all part, all inside
+    chips = [(x = 5 + i, y = 395 - i, w = 110, h = 16) for i in 0:3]
+    placed = [merge(c, p) for (c, p) in zip(chips, _place_chips(chips, 360, 400))]
+    @test all(c -> inside(c, 360, 400), placed)
+    @test !any(overlaps(placed[i], placed[j]) for i in 1:4 for j in i+1:4)
+    # and the renderer draws a quadrant with long region names without error
+    q(k) = Dict{String,Any}("kind" => "quadrant", "colour" => "#e11d48", "path" => "/CD45RA-Kat+ CD62L-hi+ $k",
+                            "centre" => [0.5, 0.5], "arms" => [[1.0, 0.5], [0.5, 1.0], [0.0, 0.5], [0.5, 0.0]],
+                            "quadrant" => k, "group" => "g")
+    ticks = [Dict("pos" => 0.0, "label" => "0"), Dict("pos" => 1.0, "label" => "1")]
+    m = render_gate_plot(Float32[0.2, 0.8], Float32[0.2, 0.8], (0.0, 1.0), (0.0, 1.0), ticks, ticks, [q(k) for k in 1:4])
+    @test any(==(RGB{N0f8}(0xe1 / 255, 0x1d / 255, 0x48 / 255)), m)
+end
+
 @testset "API: /api/gating/plot-image + cells-image guards" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"

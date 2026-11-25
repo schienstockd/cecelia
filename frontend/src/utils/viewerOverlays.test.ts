@@ -6,7 +6,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow,
-  isTrackDrawable, zPlaneOf,
+  isTrackDrawable, zPlaneOf, timeOrder, labelRows,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -893,5 +893,40 @@ describe('the z plane of a centroid on an integer voxel z', () => {
   it('buildMultiTrackBuffer: a segment carries the plane of its end', () => {
     const buf = buildMultiTrackBuffer([{ vn: 'cyto', payload: onK() }], m, ['#ff0000'], 'solid')
     expect(segPlanes(buf.segments)).toEqual(ks.slice(1))
+  })
+})
+
+describe('timeOrder / labelRows (the point buffer on a whole movie)', () => {
+  // the order the comparator sort gave: by key, ties in index order
+  const bySort = (keys: number[]) => keys.map((_, i) => i).sort((a, b) => keys[a] - keys[b] || a - b)
+  it('integer keys: a stable ascending order', () => {
+    const keys = [3, 1, 3, 0, 1, 2, 0, 3, -2]
+    expect([...timeOrder(keys.length, i => keys[i])]).toEqual(bySort(keys))
+  })
+  it('a fractional key or a span past the counting table: the same order', () => {
+    const frac = [0.5, 2, 0.5, -1]
+    expect([...timeOrder(frac.length, i => frac[i])]).toEqual(bySort(frac))
+    const wide = [5_000_000, 0, 5_000_000, 1]
+    expect([...timeOrder(wide.length, i => wide[i])]).toEqual(bySort(wide))
+  })
+  it('labelRows: row of each label, -1 when absent, dense or sparse', () => {
+    const dense = labelRows([4, 2, 9, 7])
+    expect([4, 2, 9, 7, 3, 100, -1, 2.5].map(dense)).toEqual([0, 1, 2, 3, -1, -1, -1, -1])
+    const sparse = labelRows([1e9, 5, -3])
+    expect([1e9, 5, -3, 6].map(sparse)).toEqual([0, 1, 2, -1])
+  })
+  it('the buffer is ordered by frame with one range per frame, every member once per population', () => {
+    const payload = {
+      nCells: 4, nDropped: 0, axes: ['x', 'y', 'z'], hasT: true,
+      cells: { label: [10, 11, 12, 13], t: [2, 0, 2, 1], x: [1, 2, 3, 4], y: [0, 0, 0, 0], z: [0, 0, 0, 0] },
+      pops: [{ path: '/a', name: 'a', colour: '#ff0000', show: true, isTrack: false, labels: [10, 11, 12, 13] },
+             { path: '/a/b', name: 'b', colour: '#00ff00', show: true, isTrack: false, labels: [12, 10, 99] }],
+      colourColumns: [], colourBy: null, values: null,
+    } as OverlayPayload
+    const b = buildPointBufferLayers([{ payload }], { voxelUm: [1, 1, 1] } as unknown as ViewerMeta)
+    const xs = Array.from({ length: b.count }, (_, n) => b.data[n * POINT_STRIDE])
+    // frame 0: cell 11; frame 1: cell 13; frame 2: /a's 10, 12 then /a/b's 12, 10 (emission order)
+    expect(xs).toEqual([2, 4, 1, 3, 3, 1])
+    expect([...b.ranges]).toEqual([[0, [0, 1]], [1, [1, 1]], [2, [2, 4]]])
   })
 })

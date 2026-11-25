@@ -67,7 +67,8 @@ end
 function _pop_df(load_map::Function, fetch::Function, pop_type::PopTypeArg, pops;
                  default_vn::AbstractString="default", pop_cols=nothing,
                  unique_labels::Bool=true, drop_na::Bool=false,
-                 membership_fetch::Function=fetch)::DataFrame
+                 membership_fetch::Function=fetch,
+                 evaluate::Function=(m, vn) -> recompute!(m, cols -> membership_fetch(vn, cols)))::DataFrame
     frames = DataFrame[]
     for (vn, vpops) in _group_pops_by_value_name(pops, default_vn)
         # The root alone needs no membership — every row of the table IS the root — so skip the map
@@ -76,7 +77,9 @@ function _pop_df(load_map::Function, fetch::Function, pop_type::PopTypeArg, pops
         m = all(is_root, vpops) ? nothing : load_map(vn)
         # gate eval must read RAW channel columns (gates store {measure}_intensity_{i});
         # `fetch` may rename output columns to channel names, so keep them separate.
-        m === nothing || recompute!(m, cols -> membership_fetch(vn, cols))
+        # `evaluate` = `recompute!` over `membership_fetch`; a caller that knows the image passes the
+        # cached form (`recompute_cached!`)
+        m === nothing || evaluate(m, vn)
         cols = pop_cols === nothing ? nothing : unique(vcat("label", String.(pop_cols)))
         req = cols === nothing ? String[] : filter(!=("label"), cols)
         # `pop_cols = ["label"]` asks for the labels ALONE — fetch exactly that, because an empty
@@ -148,7 +151,8 @@ function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::Ab
 
         # cell-level gate membership (Julia is the evaluator), then cell label → track_id
         m = load_map(vn)
-        recompute!(m, pop_membership_fetch(img, vn, "flow"; labels_version=labels_version))
+        recompute_cached!(m, img, vn, "flow", pop_membership_fetch(img, vn, "flow"; labels_version=labels_version);
+                          labels_version=labels_version)
         cellobs = label_props(img; value_name=vn, version=labels_version) |>
                   lp -> select_cols(lp, ["track_id"]) |> as_df
         cell_tid = Dict{Int,Int}()
@@ -365,6 +369,83 @@ function pop_membership_fetch(img::CciaImage, value_name::AbstractString, pop_ty
              lp -> select_cols(lp, cols) |> as_df)
 end
 
+# ── Membership cache ──────────────────────────────────────────────────────────────
+# Every gate-plot read, every `/api/gating/stats` call and every plot refresh after a gate write
+# evaluated the WHOLE map again — and the GUI asks for the stats once per population after each edit.
+# On a 608k-cell movie with logicle gates that was ~2.4 s per evaluation, so one edit on a ten-pop map
+# queued ~25 s of identical work. The membership (labels + one mask per pop) is now kept server-wide,
+# one slot per (image, segmentation, pop type, labels pin) — ~5 MB of labels at 600k cells.
+#
+# The stamp is what the evaluation READ: the map exactly as evaluated, and the table it was evaluated
+# over. Digesting the evaluated map rather than the file on disk is what lets a hooked read (the API's
+# pick-selection pop, injected in memory) be cached too — its labels are part of the digest, in full
+# (`to_tree`'s `membership_sig` is a `hash`, which samples a long array).
+const _MEMBERSHIP_CACHE = BoundedCache(32)
+
+function _map_digest(m::PopulationTree)::String
+    ctx = SHA.SHA2_256_CTX()
+    put(x) = SHA.update!(ctx, Vector{UInt8}(JSON3.write(x)))
+    # ONLY what `recompute!` reads — not a pop's colour, uid, visibility or edit stamps: a colour change
+    # must not re-evaluate the map, and the pick-selection pop gets a fresh uid on every request
+    put((string(m.pop_type), m.spatial_unit, repr(m.physical_sizes)))
+    for path in topo_order(m)
+        p = m.pops[path]
+        put((path, p.parent, p.gate === nothing ? nothing : gate_spec(p.gate), filter_spec(p),
+             boolean_spec(p), p.explicit_labels === nothing ? -1 : length(p.explicit_labels)))
+        p.explicit_labels === nothing || SHA.update!(ctx, collect(reinterpret(UInt8, Int64.(p.explicit_labels))))
+    end
+    bytes2hex(SHA.digest!(ctx))
+end
+
+# the file stamps of the table `pop_membership_fetch` reads for `pop_type` (`_membership_table`)
+function _membership_table_stamp(img::CciaImage, vn::AbstractString, pop_type;
+                                 labels_version = nothing)::String
+    kind = _membership_table(pop_type)
+    kind == MEMBERSHIP_BRANCH && return file_stamp(img_branch_props_path(img, vn))
+    cell = file_stamp(label_props(img; value_name = vn, version = labels_version).path)
+    # the per-track table aggregates cell measures, so it moves with either file
+    kind == MEMBERSHIP_TRACK ? string(file_stamp(img_track_props_path(img, vn)), "+", cell) : cell
+end
+
+"""
+    recompute_cached!(m, img, value_name, pop_type, fetch_cols; labels_version=nothing) -> m
+
+`recompute!(m, fetch_cols)`, served from `_MEMBERSHIP_CACHE` when this map (as loaded, hooks
+included) was already evaluated over the same table. `fetch_cols` must be
+`pop_membership_fetch(img, value_name, pop_type; labels_version)`'s — the table the stamp describes.
+The cached labels and masks are SHARED: read them, never mutate them (`recompute!` replaces, never
+edits, so a later recompute of `m` is safe).
+"""
+function recompute_cached!(m::PopulationTree, img::CciaImage, value_name::AbstractString, pop_type,
+                           fetch_cols::Function; labels_version = nothing)::PopulationTree
+    vn = String(value_name)
+    stamp = try
+        string(_membership_table_stamp(img, vn, pop_type; labels_version), "|", _map_digest(m))
+    catch
+        return recompute!(m, fetch_cols)        # no table to stamp: evaluate as before, uncached
+    end
+    slot = string(img._dir, "|", vn, "|", pop_type, "|", something(labels_version, ""), "|",
+                  any(p -> p.transient, values(m.pops)))
+    adopt!(hit) = (m._labels = something(hit)[1]; m._membership = copy(something(hit)[2]); m)
+    hit = cache_get(_MEMBERSHIP_CACHE, slot, stamp)
+    hit === nothing || return adopt!(hit)
+    # ONE evaluation per slot at a time: after an edit the GUI asks for every population's stats, the
+    # plots and the viewer overlays at once, and without this each of them missed and evaluated the
+    # same map in parallel. The others wait, then take the cached result.
+    lock(_membership_slot_lock(slot)) do
+        hit = cache_get(_MEMBERSHIP_CACHE, slot, stamp)
+        hit === nothing || return adopt!(hit)
+        recompute!(m, fetch_cols)
+        cache_put!(_MEMBERSHIP_CACHE, slot, stamp, (m._labels, copy(m._membership)))
+        m
+    end
+end
+
+const _MEMBERSHIP_SLOT_LOCKS = Dict{String,ReentrantLock}()
+const _MEMBERSHIP_SLOT_LOCKS_LOCK = ReentrantLock()
+_membership_slot_lock(slot::String) =
+    lock(() -> get!(ReentrantLock, _MEMBERSHIP_SLOT_LOCKS, slot), _MEMBERSHIP_SLOT_LOCKS_LOCK)
+
 """
     pop_membership_cols(img, value_name, pop_type, cols; labels_version=nothing) -> Vector{String}
 
@@ -419,7 +500,9 @@ function computed_pop_tree(img::CciaImage; value_name::AbstractString, pop_type:
                           map_hook::Union{Function,Nothing}=nothing)::PopulationTree
     m = _read_pop_tree(img, value_name, pop_type; map_hook=map_hook)
     m.pinned_labels_version = labels_version === nothing ? nothing : String(labels_version)
-    recompute!(m, pop_membership_fetch(img, value_name, pop_type; labels_version=labels_version))
+    recompute_cached!(m, img, value_name, pop_type,
+                      pop_membership_fetch(img, value_name, pop_type; labels_version=labels_version);
+                      labels_version=labels_version)
 end
 
 """

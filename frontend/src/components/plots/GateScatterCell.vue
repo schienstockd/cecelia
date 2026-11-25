@@ -62,6 +62,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   compact?: boolean                              // tight chrome for small montage panels (gating strategy)
   readonly?: boolean                             // static gates — no move/resize (read-only Analysis board)
+  pendingGate?: Partial<GateSpec> | null         // a drawn gate waiting for its name — GateOverlay `pending`
   flipY?: boolean                                // y is an IMAGE row coordinate (grows downward)
   hideAxisLabels?: boolean                       // drop the x/y axis-name labels (pairs matrix — the
                                                  // diagonal names each channel, so per-tile labels only
@@ -358,7 +359,7 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"
                    :flip-y="flipY"
-                   :line-width="gateLineWidth" :show-labels="gateLabels" :readonly="readonly"
+                   :line-width="gateLineWidth" :show-labels="gateLabels" :readonly="readonly" :pending="pendingGate"
                    @draw="emit('draw', $event)" @edit="emit('edit', $event)" @cancel="emit('cancel')" />
       <span class="axisline axisline-x" />
       <span class="axisline axisline-y" />

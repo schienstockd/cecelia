@@ -42,7 +42,7 @@ function api_gating_plot_image(req::HTTP.Request)
     xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt; labels_version = pin)
     # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
     # down the tree keeps the scale; grown to the child gates' near edges, as the browser does
-    rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
+    rx = _finite_extrema(invert_column(xt, rxv)); ry = _finite_extrema(invert_column(yt, ryv))
     xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
     gates = _child_gate_outlines(m, pop, x, y, xt, yt;
@@ -370,8 +370,7 @@ end
 # 1–99 % range so neither axis dominates. Rectangle and polygon alike: the nearest edge segment; a split
 # gate's edge is its divider.
 function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector)::Vector{Float64}
-    xt = Float64[apply_transform(g.x_transform, float(x)) for x in xraw]
-    yt = Float64[apply_transform(g.y_transform, float(y)) for y in yraw]
+    xt = transform_column(g.x_transform, xraw); yt = transform_column(g.y_transform, yraw)
     function span(v)
         f = sort!(filter(isfinite, v)); isempty(f) && return 1.0
         at(p) = f[clamp(round(Int, p * (length(f) - 1)) + 1, 1, length(f))]

@@ -150,17 +150,34 @@ def _dichroics(acq, phase):
     return [{'slot': slot, 'name': name} for slot, name in found if name]
 
 
+def _pmt_channel(pmt, acq):
+    """The channel id a `<pmt>` / `<pmtParam>` belongs to, or None when that can't be told.
+
+    Its own channelId when it has one. Without one (bright-Z points of older files) only the detector
+    is named, and the detector says which channel only when exactly one channel of the whole
+    acquisition is on it — every phase, disabled channels too, since the `<pmt>` list covers them all.
+    A shared detector is left unattributed rather than handed the last `<pmt>` in the file."""
+    if pmt.get('channelId'):
+        return pmt.get('channelId')
+    on_det = [ch.get('id') for ch in acq.findall('phase/group/channel')
+              if ch.get('detectorId') == pmt.get('detectorId')]
+    return on_det[0] if len(on_det) == 1 else None
+
+
 def _channels(acq, phase, lasers, filters=None):
     """Enabled channels of this phase in acquisition order, each with its laser and detector settings."""
     filters = filters or {}
     # Keyed by CHANNEL: two channels can share a detector (sequential groups), each with its own HV.
-    # A `<pmt>` without a channelId (seen on bright-Z points of older files) falls back to the detector.
-    pmts = {(p.get('channelId') or p.get('detectorId')): p for p in acq.findall('imagingParam/pmt')}
+    pmts = {}
+    for p in acq.findall('imagingParam/pmt'):
+        cid = _pmt_channel(p, acq)
+        if cid is not None:
+            pmts[cid] = p
     out = []
     for ch in phase.findall('group/channel'):
         if ch.get('enable') != 'true':
             continue
-        det = pmts.get(ch.get('id')) or pmts.get(ch.get('detectorId'))
+        det = pmts.get(ch.get('id'))
         out.append({
             'order': int(ch.get('order', '0')),
             'name': _text(ch, 'name'),
@@ -190,14 +207,17 @@ def _bright_z(acq, phase, lasers):
     blocks = [b for b in acq.findall('imagingParam/brightnessAdjustmentParam/phaseBrightnessAdjustment')
               if b.get('phaseId') in (None, phase.get('id'))
               and (drive is None or b.get('zDriveUnitType') in (None, drive))]
+    used = {ch.get('id') for ch in phase.findall('group/channel') if ch.get('enable') == 'true'}
     for z in (z for b in blocks for z in b.findall('zBrightnessAdjustment')):
         points.append({
             'zFromStartUm': _num(_text(z, 'relativeCoordinate')),
             # Only lasers this phase used: a switched-off laser keeps its stored ramp values.
             'transmissionPct': {lasers[lp.get('laserDataId')]['name']: _num(_text(lp, 'transmissivity'))
                                 for lp in z.findall('laserParam') if lp.get('laserDataId') in lasers},
+            # Likewise only channels this phase used; a point naming only a shared detector can't be
+            # told apart from its other channel's, so it is left out (`_pmt_channel`).
             'hv': {(pp.get('channelId') or pp.get('detectorId')): _num(_text(pp, 'voltage'))
-                   for pp in z.findall('pmtParam')},
+                   for pp in z.findall('pmtParam') if _pmt_channel(pp, acq) in used},
         })
     return {
         'enabled': _bool(acq, 'imagingParam/brightnessAdjustmentParam/enable'),
