@@ -3953,17 +3953,29 @@ const SHORTCUTS: { keys: string; pan: string; select: string }[] = [
   { keys: 'Drag',          pan: '2D: pan · 3D: rotate',   select: 'Rectangle (2D)' },
   { keys: 'Shift + drag',  pan: 'Pan',                    select: 'Pan (escape hatch)' },
   { keys: 'Wheel',         pan: 'Zoom',                   select: 'Zoom' },
-  { keys: 'Shift + wheel', pan: '2D: step through z',     select: '2D: step through z' },
-  { keys: 'Click',         pan: '—',                      select: 'Pick cell (replace)' },
+  { keys: 'Shift + wheel', pan: 'Step z (2D, or 3D z-window)', select: 'Step z (2D, or 3D z-window)' },
+  { keys: 'Alt + wheel',   pan: 'Lens on: size the lens', select: 'Lens on: size the lens' },
+  { keys: 'Click',         pan: 'Lens on: pin / unpin it', select: 'Pick cell (replace)' },
   { keys: 'Shift + click', pan: '—',                      select: 'Add cell to selection' },
   { keys: 'Alt + click',   pan: '—',                      select: 'Toggle cell in selection' },
   { keys: 'Space',         pan: 'Play / pause',           select: 'Play / pause' },
   { keys: '← / →',         pan: 'Prev / next frame',      select: 'Prev / next frame' },
-  { keys: '↑ / ↓',         pan: 'Prev / next channel (one at a time)', select: 'Prev / next channel (one at a time)' },
+  { keys: '↑ / ↓',         pan: 'Prev / next channel, or ROI with ROIs open', select: 'Prev / next channel, or ROI with ROIs open' },
+  { keys: 'A / R / F / U', pan: 'ROIs open: accept / reject / flag / undo', select: 'ROIs open: accept / reject / flag / undo' },
+  { keys: '1–9',           pan: 'ROIs open: set the label', select: 'ROIs open: set the label' },
+  { keys: 'Esc',           pan: 'Clear the ruler',        select: 'Clear the ruler' },
   { keys: 'Mode icon',     pan: 'Switch to select',       select: 'Switch to pan' },
 ]
 const keysOpen = ref(false)
 const keysBtn = ref<HTMLElement | null>(null)
+// Help ▾ opens the same popover; with the side panel folded its foot button is hidden (zero rect), so
+// that path anchors under the header instead
+const vwHeader = ref<{ $el: HTMLElement } | null>(null)
+const keysAnchor = ref<HTMLElement | null>(null)
+function openKeys(from: 'header' | 'foot') {
+  keysAnchor.value = from === 'header' ? vwHeader.value?.$el ?? null : keysBtn.value
+  keysOpen.value = from === 'header' ? true : !keysOpen.value
+}
 
 /**
  * ONE panel section open at a time.
@@ -6563,9 +6575,9 @@ onUnmounted(() => {
 <template>
   <div class="vw-page">
   <!-- The window's header: way back, what is on screen, Help, Ask Kiwi (GUI_LAYOUT_PLAN V1) -->
-  <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
+  <VwHeader ref="vwHeader" :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
             :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid" :image-uid="imageUid ?? ''" :set-uid="setUid"
-            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
+            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="openKeys('header')"
             :versions="meta?.valueNames ?? []" :active-version="meta?.activeValueName ?? ''"
             @version="vn => { if (imageUid) settings.setImageVersion(imageUid, vn) }"
             @save-image="saveViewImage" @draw="beginDraw" />
@@ -7284,7 +7296,7 @@ onUnmounted(() => {
         </template>
       <!-- the panel's foot: the shortcuts reference (also in Help ▾ in the header) -->
       <div class="vw-side-foot">
-        <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-dense" @click="keysOpen = !keysOpen"
+        <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-dense" @click="openKeys('foot')"
                 v-tooltip.top="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
           Shortcuts <i class="pi pi-question-circle" />
         </button>
@@ -7295,7 +7307,7 @@ onUnmounted(() => {
     </div>
 
     <!-- teleported: their anchors are in How it looks and the header -->
-      <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
+      <TeleportPopover v-model="keysOpen" :anchor="keysAnchor" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
         <!-- Table with a column per mode: same gesture does different things in pan vs select
 . The current row's active-mode column is highlighted so a user

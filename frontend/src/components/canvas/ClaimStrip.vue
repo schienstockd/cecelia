@@ -121,7 +121,7 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
   <button ref="btn" class="cc-btn cc-btn-ghost cc-btn-dense claim-btn cc-fs-xs" type="button"
           :class="{ 'cc-btn-on': open }" :disabled="!scope && !ui.claimEntryId"
           v-tooltip.top="buttonTip" @click.stop="openPopover">
-    <i class="pi" :class="busy ? 'pi-spin pi-spinner' : 'pi-verified'" />
+    <i class="pi" :class="busy ? 'pi-spin pi-spinner' : 'pi-verified'" /> Claim
     <span v-if="result && nOpen" :style="{ color: SEVERITY.warn.color }">{{ nOpen }}</span>
     <i v-else-if="result" class="pi" :class="SEVERITY.ok.icon" :style="{ color: SEVERITY.ok.color }" />
   </button>

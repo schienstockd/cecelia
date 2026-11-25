@@ -597,6 +597,15 @@ body {
    Two spellings of a scenario the axis already had room for. `--cc-sev-fail`, not `--cc-danger`:
    severity semantics come from the severity palette (see its note on :root). */
 .cc-muted-error { color: var(--cc-sev-fail); font-size: var(--cc-fs-sm); }
+/* The visible surface for a hidden gesture (docs/UI.md → *Hidden gestures need a visible surface*):
+   one muted line, keys in <kbd>, shown only in the state it applies to. */
+.cc-gesture-line { color: var(--cc-text-dim); font-size: var(--cc-fs-2xs); display: inline-flex;
+  align-items: center; gap: 4px; flex-wrap: wrap; pointer-events: none; }
+.cc-gesture-line kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); padding: 0 3px; color: var(--cc-text); }
+/* …pinned to the bottom-left corner of a plot, on a surface chip so it reads over dots and paper */
+.cc-gesture-line-overlay { position: absolute; left: 4px; bottom: 2px; padding: 0 3px;
+  border-radius: var(--cc-radius-xs); background: color-mix(in srgb, var(--cc-surface-1) 85%, transparent); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).

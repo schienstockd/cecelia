@@ -599,7 +599,7 @@ watch(() => props.reloadToken, fetchPlot)
         <label class="ax-row cc-muted"><span class="ax-lbl">population</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
-          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-fs-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
+          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-gesture-line">hold <kbd>Shift</kbd> to adjust gates</span></label>
       </div>
     </template>
     <!-- utility actions (export) in the footer, like the summary / cluster panels -->
@@ -675,12 +675,10 @@ watch(() => props.reloadToken, fetchPlot)
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 /* subtle draw-mode affordance (top-right of the plot); mirrors the naming bar (GateNameBar) but muted and non-interactive */
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
-.gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.gate-hint { margin-left: 2px; white-space: nowrap; }
 
 /* centred empty-state over the plot: track-grained pop type on an untracked segmentation.
    + .cc-empty-inline .cc-card — an inline empty wearing card chrome; only the centring is local */
 .gate-empty { position: absolute; inset: 0; margin: auto; width: max-content; height: max-content;
   padding: 8px 12px; pointer-events: none; font-size: var(--cc-fs-sm); }
-.gate-hint kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
-  padding: 0 3px; color: var(--cc-text); }
 </style>

@@ -699,10 +699,10 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
         @click.stop="openColumns" v-tooltip.bottom="'Columns'">
         <i class="pi pi-table" />
       </button>
-      <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon"
+      <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-fs-2xs"
         :class="{ active: flaggedActive }" @click.stop="selectFlagged"
         v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
-        <i class="pi pi-exclamation-triangle" />
+        <i class="pi pi-exclamation-triangle" /> {{ flaggedUids.length }} flagged
       </button>
       <button v-if="flaggedUids.length && (module === 'metadata' || module === 'manageImages')"
         class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
@@ -993,7 +993,7 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 .image-table { font-size: var(--cc-fs-md); }
 
 /* Batch-fix buttons in the Name header (select-flagged, re-sync) */
-.select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare cc-btn-icon */
+.select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare, labelled or -icon */
 .select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .select-flagged-btn.active { color: var(--cc-warn); }
 .select-flagged-btn.active:hover { color: var(--cc-ink-amber); }

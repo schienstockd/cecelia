@@ -96,6 +96,8 @@ const lit = computed(() => litRoutes(project.activeSet()))
 function navTip(item: NavItem): string {
   if (item.disabled && item.soon) return `${item.tip} (coming soon)`
   if (item.requiresProject && !projectMeta.hasProject) return 'Open or create a project first.'
+  // dimmed: say why, or the dimming reads as disabled
+  if (lit.value && !lit.value.has(item.to)) return `${item.tip} · not in this set's recipe`
   return item.tip
 }
 
