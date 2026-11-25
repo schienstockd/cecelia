@@ -1,6 +1,7 @@
 # Contextual hints: how a user finds out a hidden gesture exists
 
-**Status:** **planning** (2026-11-24, `origin/main` e703aa12). Audit and plan only, nothing built.
+**Status:** **in progress.** Planned 2026-11-24 (`origin/main` e703aa12). P1 done 2026-11-25: both
+bugs fixed and the visible-surface rule is in `docs/UI.md` → *Hidden gestures need a visible surface*.
 **Decided 2026-11-25: clarity first.** Each hidden gesture gets a visible surface (§3, §4) before any
 hint system. The hint system (§5–§7) is kept as a costed fallback, built only if the re-score in §8
 P3 leaves more than five targets that a visible surface cannot fix.
