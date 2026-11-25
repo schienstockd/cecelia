@@ -442,7 +442,8 @@ aggregates of each requested **cell** column joined by `track_id`:
 
 The numeric/categorical split is detected **automatically** from each column's decoded type +
 values (see `_is_categorical_col`): strings (e.g. `hmm.transitions = "1.3"`) and integer code sets
-(e.g. `hmm.state ∈ {1,2,3}`) → categorical; continuous floats (e.g. `speed = 10.12`) → numeric. No
+(e.g. `hmm.state ∈ {1,2,3}`) → categorical; continuous floats (e.g. `speed = 10.12`) → numeric. A
+`var` column (morphology / intensity) is always numeric, whatever its values. No
 config map (replaces the old R `config.yml` `parameters.labelStats`). `categorical`/`numeric` are
 escape-hatch overrides that force a column's classification when the heuristic misreads it.
 
