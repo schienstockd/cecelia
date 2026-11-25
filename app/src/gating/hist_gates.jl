@@ -206,9 +206,12 @@ function valley_cut(v::AbstractVector, lo::Real, hi::Real; adjust::Real = 1.0)
     x = Float64[a for a in v if isfinite(a)]
     n = length(x)
     n < VALLEY_MIN_CELLS && return nothing
-    xmin, xmax = extrema(x)
+    # one sorted copy for every quantile: each unsorted `quantile` call copies and sorts the column again
+    # (~30 ms apiece on a 600k-cell parent). The density below still reads `x` in table order.
+    xs = sort(x)
+    xmin, xmax = xs[1], xs[end]
     xmax > xmin || return nothing
-    q1, q3 = quantile(x, (0.25, 0.75))
+    q1, q3 = quantile(xs, (0.25, 0.75); sorted = true)
     sd = std(x)
     spread = q3 > q1 ? min(sd, (q3 - q1) / 1.34) : sd
     h = 0.9 * spread * n^(-1 / 5) * adjust
@@ -218,7 +221,7 @@ function valley_cut(v::AbstractVector, lo::Real, hi::Real; adjust::Real = 1.0)
     # exceeded the bandwidth and the valley moved or vanished. It is also fine enough for the
     # bandwidth wherever the window reaches (≥ 4 points per h, capped).
     wlo, whi = minmax(float(lo), float(hi))
-    qa, qb = quantile(x, (VALLEY_RANGE_Q, 1 - VALLEY_RANGE_Q))
+    qa, qb = quantile(xs, (VALLEY_RANGE_Q, 1 - VALLEY_RANGE_Q); sorted = true)
     a = max(xmin, min(qa, wlo)) - 3h
     b = min(xmax, max(qb, whi)) + 3h
     G = clamp(ceil(Int, 4 * (b - a) / h), VALLEY_GRID, VALLEY_GRID_MAX)

@@ -26,9 +26,12 @@
 
 abstract type AxisTransform end
 
-# Vectorised wrappers (scalar method defined per type below)
-apply_transform(t::AxisTransform, x::AbstractArray) = map(v -> apply_transform(t, float(v)), x)
-invert_transform(t::AxisTransform, y::AbstractArray)    = map(v -> invert_transform(t, float(v)), y)
+# Vectorised wrappers (scalar method defined per type below). A column goes through `transform_column` /
+# `invert_column` (typed, threaded); any other array shape maps the scalar method.
+apply_transform(t::AxisTransform, x::AbstractVector)  = transform_column(t, x)
+invert_transform(t::AxisTransform, y::AbstractVector) = invert_column(t, y)
+apply_transform(t::AxisTransform, x::AbstractArray)   = map(v -> apply_transform(t, float(v)), x)
+invert_transform(t::AxisTransform, y::AbstractArray)  = map(v -> invert_transform(t, float(v)), y)
 
 """
     transform_column(t, raw) -> Vector{Float64}
@@ -39,19 +42,23 @@ dispatches dynamically) and split across threads on a large column: logicle solv
 so one logicle column of a 600k-cell movie is ~0.1 s single-threaded. `recompute!` calls it once per
 (column, transform) a map's gates share, not once per gate.
 """
-function transform_column(t::AxisTransform, raw::AbstractVector)::Vector{Float64}
-    out = Vector{Float64}(undef, length(raw))
-    _transform_column!(out, t, raw)
-end
-function _transform_column!(out::Vector{Float64}, t::T, raw::AbstractVector) where {T<:AxisTransform}
+transform_column(t::AxisTransform, raw::AbstractVector)::Vector{Float64} =
+    _map_column!(Vector{Float64}(undef, length(raw)), apply_transform, t, raw)
+
+"""`invert_transform(t, float(v))` for every value of a display-coordinate column — `transform_column`'s
+inverse, typed and threaded the same way."""
+invert_column(t::AxisTransform, y::AbstractVector)::Vector{Float64} =
+    _map_column!(Vector{Float64}(undef, length(y)), invert_transform, t, y)
+
+function _map_column!(out::Vector{Float64}, f::F, t::T, raw::AbstractVector) where {F,T<:AxisTransform}
     n = length(raw)
     if n < 50_000 || Threads.nthreads() == 1
-        @inbounds for i in 1:n; out[i] = apply_transform(t, float(raw[i])); end
+        @inbounds for i in 1:n; out[i] = f(t, float(raw[i])); end
         return out
     end
     chunks = Iterators.partition(1:n, cld(n, Threads.nthreads()))
     Threads.@sync for r in chunks
-        Threads.@spawn @inbounds for i in r; out[i] = apply_transform(t, float(raw[i])); end
+        Threads.@spawn @inbounds for i in r; out[i] = f(t, float(raw[i])); end
     end
     out
 end
