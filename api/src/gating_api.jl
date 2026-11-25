@@ -2413,6 +2413,9 @@ end
 
 function api_gating_pop_update(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    # `paths` + `show`: the manager's "all" viewer toggle, as ONE write — one reply, one broadcast, one
+    # viewer overlay refetch (a whole-movie payload) for any number of populations
+    haskey(body, "paths") && return _gating_pops_show(img, vn, pt, body)
     haskey(body, "path") || return _gerr(400, "path required")
     _with_pop_tree_lock() do
         m = load_pop_tree(img; value_name = vn, pop_type = pt)
@@ -2464,6 +2467,21 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
             catch e
                 return _gerr(400, sprint(showerror, e))
             end
+        end
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
+    end
+end
+
+function _gating_pops_show(img, vn, pt, body)
+    haskey(body, "show") || return _gerr(400, "show required with paths")
+    paths = String.(collect(body["paths"]))
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
+        for p in paths
+            has_pop(m, p) || return _pop_not_found(m, p)
+        end
+        for p in paths
+            pop_at(m, p).show = Bool(body["show"])       # looking, not editing: no edit stamp
         end
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end

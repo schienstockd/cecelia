@@ -769,11 +769,11 @@ selectable_cols(lp::LabelProps, cols)::Vector{String} =
 Reads only the requested columns from disk. Always includes a `label` column.
 """
 function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=lp.include_obs)::DataFrame
+    stamp = file_stamp(lp.path)                    # before the open — see `_obs_labels`
     _with_h5(lp.path, "r") do fid
         # ── index + sizes ──
-        labels_raw = _as_strings(read(fid["obs/_index"]))
-        n_obs = length(labels_raw)
-        labels = _maybe_int.(labels_raw)
+        labels = copy(_obs_labels(fid, lp.path, stamp))   # a copy: the frame's column is the caller's to sort
+        n_obs = length(labels)
         ix = _col_index(fid, lp)
         (; var_names, var_idx, chan_ix, cent_map, all_centroid_cols, obs_cols) = ix
         n_var = length(var_names)
@@ -847,6 +847,23 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         end
         return df
     end
+end
+
+# The parsed label index of a cell table, kept server-wide per file (mtime + size): `obs/_index` is one
+# string per cell, and reading + parsing it was most of a narrow read — 0.16 s of a 0.2 s two-column
+# read at 608k cells, paid again by every gate-plot, stats and overlay read of the same table.
+# `stamp` is the file's identity taken BEFORE `fid` was opened: an atomic rewrite landing after that can
+# only file the new labels under the OLD stamp, which no later read asks for — never the old labels under
+# the new one. And a read whose file changed while it ran is not kept at all.
+const _OBS_LABELS_CACHE = BoundedCache(16)
+function _obs_labels(fid, path::AbstractString, stamp::String)::Vector
+    # replaced between the stamp and the open: `fid` may be either file, so read it, cache nothing
+    file_stamp(path) == stamp || return _maybe_int.(_as_strings(read(fid["obs/_index"])))
+    hit = cache_get(_OBS_LABELS_CACHE, String(path), stamp)
+    hit === nothing || return something(hit)
+    labels = _maybe_int.(_as_strings(read(fid["obs/_index"])))
+    file_stamp(path) == stamp && cache_put!(_OBS_LABELS_CACHE, String(path), stamp, labels)
+    labels
 end
 
 # label IDs are integers stored as strings; keep Int when possible

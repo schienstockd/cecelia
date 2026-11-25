@@ -288,16 +288,22 @@ export function buildPointBufferLayers(
   // one colour-by scale over every layer — the same value is the same colour on every segmentation
   const scale = pooledColourScale(layers.map(l => l.payload))
 
-  // Emit (layer, row, colour) triples first, so the sort has something small to work on.
-  const lay: number[] = []
-  const rows: number[] = []
-  const cols: number[] = []
+  // Emit (layer, row, colour) triples first, into typed arrays sized for every shown member, so the
+  // sort has something small to work on.
+  let cap = 0
+  for (const { payload, hidden } of layers) {
+    for (const pop of payload.pops) if (!hidden?.has(pop.path)) cap += pop.labels.length
+  }
+  if (cap === 0) return EMPTY
+  const lay = new Int32Array(cap)
+  const rows = new Int32Array(cap)
+  const cols = new Float32Array(cap * 3)
+  let k = 0
   for (let li = 0; li < layers.length; li++) {
     const { payload, hidden } = layers[li]
     const { label, x, y } = payload.cells
     if (!label || !x || !y || label.length === 0) continue
-    const row = new Map<number, number>()
-    for (let i = 0; i < label.length; i++) row.set(label[i], i)
+    const row = labelRows(label)
     const byValue = colourByValue(payload, palette, scale)
     for (const pop of payload.pops) {
       // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
@@ -306,38 +312,35 @@ export function buildPointBufferLayers(
       if (hidden?.has(pop.path)) continue
       const popRgb = hexToUnit(pop.colour)
       for (const l of pop.labels) {
-        const r = row.get(l)
-        if (r === undefined) continue          // membership can name a cell the table no longer holds
-        lay.push(li)
-        rows.push(r)
+        const r = row(l)
+        if (r < 0) continue                    // membership can name a cell the table no longer holds
+        lay[k] = li
+        rows[k] = r
         // Colour-by wins over the population colour when it is on, which is what makes it useful: the
         // populations are still what SELECTS the cells, the column is what shades them.
         const rgb = byValue ? byValue(r) : popRgb
-        cols.push(rgb[0], rgb[1], rgb[2])
+        cols[k * 3] = rgb[0]; cols[k * 3 + 1] = rgb[1]; cols[k * 3 + 2] = rgb[2]
+        k++
       }
     }
   }
-  if (rows.length === 0) return EMPTY
+  if (k === 0) return EMPTY
 
-  // Stable sort by timepoint, which is what buys the contiguous per-frame range the whole design rests
-  // on: no rebuild and no upload when the timepoint changes. `Array.prototype.sort` on an index array
-  // rather than on the data, so it moves 4-byte integers instead of 28-byte records.
-  //
-  // MEASURED, because "it sorts on the main thread" invites a worker that is not needed: 61-66 ms for
-  // 164,350 instances — 98,610 cells (the largest table in the projects here) across three overlapping
-  // populations. Once, when the overlays are fetched; never per frame. A worker would move a single
-  // dropped frame off the main thread and add a transfer, a copy and a lifecycle to own.
-  const order = rows.map((_, i) => i)
+  // Ordered by timepoint, stable, which is what buys the contiguous per-frame range the whole design
+  // rests on: no rebuild and no upload when the timepoint changes. A COUNTING sort over the frame
+  // index — linear, where the comparator sort it replaced was n log n with a closure per compare:
+  // measured on a 608k-cell movie (~1.3M instances) it took seconds on the main thread, which the
+  // viewer popup shares with the app, so every gate edit froze both.
   const tp = (i: number) => {
     const t = layers[lay[i]].payload.cells.t
     return t && t.length ? Math.round(t[rows[i]]) : 0
   }
-  order.sort((a, b) => tp(a) - tp(b) || a - b)
+  const order = timeOrder(k, tp)
 
-  const data = new Float32Array(order.length * POINT_STRIDE)
+  const data = new Float32Array(k * POINT_STRIDE)
   const ranges = new Map<number, [number, number]>()
   let cur = NaN
-  for (let n = 0; n < order.length; n++) {
+  for (let n = 0; n < k; n++) {
     const i = order[n]
     const r = rows[i]
     const { x, y, z } = layers[lay[i]].payload.cells
@@ -352,12 +355,56 @@ export function buildPointBufferLayers(
     // Floor, not round — a plane covers [k, k+1) voxels — through `zPlaneOf`, which undoes the µm
     // round trip first.
     data[o + 6] = z && z.length ? zPlaneOf(z[r], vz) : 0
-    const k = tp(i)
-    if (k !== cur) { cur = k; ranges.set(k, [n, 0]) }
-    const range = ranges.get(k)!
+    const key = tp(i)
+    if (key !== cur) { cur = key; ranges.set(key, [n, 0]) }
+    const range = ranges.get(key)!
     range[1]++
   }
-  return { data, ranges, count: order.length }
+  return { data, ranges, count: k }
+}
+
+/** label → its row in `label`, -1 when absent. Cell labels are small non-negative integers, so a dense
+ *  table answers it (a `Map` of 600k entries was a third of a large movie's build); anything else —
+ *  a negative, a fraction, labels far sparser than the rows — keeps the `Map`. */
+export function labelRows(label: readonly number[]): (l: number) => number {
+  let max = -1, dense = true
+  for (const l of label) {
+    if (!Number.isInteger(l) || l < 0) { dense = false; break }
+    if (l > max) max = l
+  }
+  if (dense && max < 4 * label.length + 1024) {
+    const at = new Int32Array(max + 1).fill(-1)
+    for (let i = 0; i < label.length; i++) at[label[i]] = i
+    return l => (Number.isInteger(l) && l >= 0 && l <= max ? at[l] : -1)
+  }
+  const m = new Map<number, number>()
+  for (let i = 0; i < label.length; i++) m.set(label[i], i)
+  return l => m.get(l) ?? -1
+}
+
+/** Indices `0..n-1` ordered by `key(i)` ascending, ties in index order (a stable sort). Integer
+ *  keys over a modest span take a counting sort; anything else (a non-integer, a span past 4M) the
+ *  comparator sort, which gives the same order. */
+export function timeOrder(n: number, key: (i: number) => number): Int32Array {
+  const keys = new Float64Array(n)
+  let lo = Infinity, hi = -Infinity, ints = true
+  for (let i = 0; i < n; i++) {
+    const v = key(i); keys[i] = v
+    if (!Number.isInteger(v)) ints = false
+    else { if (v < lo) lo = v; if (v > hi) hi = v }
+  }
+  const order = new Int32Array(n)
+  if (!ints || hi - lo > 4_000_000) {
+    const idx = Array.from({ length: n }, (_, i) => i)
+    idx.sort((a, b) => keys[a] - keys[b] || a - b)
+    order.set(idx)
+    return order
+  }
+  const start = new Int32Array(hi - lo + 2)
+  for (let i = 0; i < n; i++) start[keys[i] - lo + 1]++
+  for (let b = 1; b < start.length; b++) start[b] += start[b - 1]
+  for (let i = 0; i < n; i++) order[start[keys[i] - lo]++] = i
+  return order
 }
 
 /** `[first, count]` for one timepoint, or `null` when nothing is drawn there. */
