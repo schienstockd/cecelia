@@ -484,6 +484,60 @@ end
   end
 end
 
+# ── the copy dialog's precheck names the targets a copy would overwrite ─────────────────────────────
+# `value-name-check` with `popType` adds `gated`: the images that already have that gating (copy replaces it).
+@testset "API: value-name-check with popType lists already-gated images" begin
+  fx = fixture_for(:cells)          # any cell table: the assertions read only which images hold a map
+  if fx === nothing
+    @test_skip "cell-table fixture missing"
+  else
+    dir = mktempdir()
+    cp(fx.project, joinpath(dir, basename(fx.project)))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        puid, uid, vn = basename(fx.project), fx.uid, fx.value_name
+        # a second image: the fixture image under another uid, with no gating
+        src_dir = _gating_image(puid, uid)[1]._dir
+        tgt = joinpath(dirname(src_dir), "TgtImg")
+        cp(src_dir, tgt)
+        rm(joinpath(tgt, "gating"); recursive = true, force = true)
+        ccid = joinpath(tgt, "ccid.json")
+        write(ccid, replace(read(ccid, String), "\"uid\": \"$uid\"" => "\"uid\": \"TgtImg\""))
+        check(extra) = api_images_value_name_check(Vector{UInt8}(JSON3.write(merge(Dict{String,Any}(
+            "projectUid" => puid, "valueName" => vn, "imageUids" => [uid, "TgtImg", "Nope"]), extra))))
+        base = Dict{String,Any}("projectUid" => puid, "imageUid" => uid, "valueName" => vn, "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        post(api_gating_pop_add, Dict{String,Any}("name" => "gatedHere",
+             "filter" => Dict{String,Any}("measure" => "label", "fun" => "gt", "values" => 0)))
+
+        st, b = check(Dict{String,Any}())
+        r = JSON3.read(b)
+        @test st == 200 && !haskey(r, :gated)                          # no popType ⇒ unchanged reply
+        @test collect(String, r.available) == [uid, "TgtImg"] && collect(String, r.missing) == ["Nope"]
+
+        _, b = check(Dict{String,Any}("popType" => "flow"))
+        @test collect(String, JSON3.read(b).gated) == [uid]            # TgtImg has no gating yet
+        _, b = check(Dict{String,Any}("popType" => "track"))
+        @test "TgtImg" ∉ collect(String, JSON3.read(b).gated)         # other gating type
+        @test check(Dict{String,Any}("popType" => "clust"))[1] == 400   # not a gating type
+
+        post(api_gating_copy, Dict{String,Any}("toImageUids" => ["TgtImg"]))
+        _, b = check(Dict{String,Any}("popType" => "flow"))
+        @test collect(String, JSON3.read(b).gated) == [uid, "TgtImg"]
+
+        # an unreadable map is still a file the copy would replace: counted as gated
+        write(gating_path(tgt, vn; pop_type = "flow"), "{not json")
+        _, b = check(Dict{String,Any}("popType" => "flow"))
+        @test "TgtImg" in collect(String, JSON3.read(b).gated)
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
+
 # ── the pop tree says which pops are empty for want of a column (#1769) ──────────────────────────
 # After a copy, a pop filtering on `clusters.<run>` on an image outside that run read 0 in the
 # Population Manager with no reason. Every tree payload now carries `missingColumns` (path → the

@@ -12,6 +12,19 @@ const _POP_TREE_LOCK = ReentrantLock()
 with_pop_tree_lock(f) = lock(f, _POP_TREE_LOCK)
 
 """
+    has_gating(img, value_name, pop_type) -> Bool
+
+Whether `img` already has a `pop_type` gating map with at least one population on `value_name` — what
+`copy_gating!` would replace (`replace = true`) or keep (`replace = false`). A missing or empty sidecar
+is not gating; one that will not load throws (the caller decides: the copy dialog's precheck,
+`POST /api/images/value-name-check` with `popType`, counts it as gated, since a copy overwrites the file).
+Read-only (`backfill_save = false`).
+"""
+has_gating(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)::Bool =
+    isfile(gating_path(img._dir, value_name; pop_type = String(pop_type))) &&
+    !isempty(load_pop_tree(img; value_name = value_name, pop_type = String(pop_type), backfill_save = false).order)
+
+"""
     copy_gating!(src, targets; value_name, pop_type, replace = true, on_copied = (img, m) -> nothing)
         -> (; copied, skipped, warnings, remapped)
 
@@ -52,10 +65,7 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
             tuid = timg.uid
             tuid == src.uid && continue
             img_has_value_name(timg, vn) || (skipped[tuid] = "no segmentation '$vn'"; continue)
-            if !replace && !isempty(load_pop_tree(timg; value_name = vn, pop_type = pt,
-                                                 backfill_save = false).order)
-                skipped[tuid] = "already gated"; continue
-            end
+            (!replace && has_gating(timg, vn, pt)) && (skipped[tuid] = "already gated"; continue)
             # A µm POSITION gate needs the target's own pixel size; without one the coordinates would
             # silently be read as pixels (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7).
             (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&

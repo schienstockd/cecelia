@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { copyWarningLines, copySkippedLines, copyRemappedLines, renamePanelColumns, copyWarningAction, missingColumnsReason } from './gatingCopyWarnings'
+import { copyWarningLines, copySkippedLines, copyRemappedLines, renamePanelColumns, copyWarningAction, missingColumnsReason, overwriteSummary } from './gatingCopyWarnings'
 
 const names: Record<string, string> = { a: 'img2', b: 'img3' }
 const nameOf = (uid: string) => names[uid] ?? uid
@@ -99,5 +99,19 @@ describe('renamePanelColumns', () => {
     const st: Record<string, unknown>[] = [{ x: 'mean_intensity_0' }]
     renamePanelColumns(st, undefined)
     expect(st[0].x).toBe('mean_intensity_0')
+  })
+})
+
+describe('overwriteSummary', () => {
+  it('counts the picked targets that already have this gating', () => {
+    expect(overwriteSummary(new Set(['a', 'b', 'c']), new Set(['b', 'c', 'z']))).toBe('2 of 3 selected will be overwritten')
+  })
+  it('nothing picked is gated → no note', () => {
+    expect(overwriteSummary(new Set(['a']), new Set(['b']))).toBe('')
+    expect(overwriteSummary(new Set(), new Set(['b']))).toBe('')
+  })
+  it('unknown (the check failed) → a warning for any pick, never silence', () => {
+    expect(overwriteSummary(new Set(['a']), null)).toBe('Overwrites any existing gating')
+    expect(overwriteSummary(new Set(), null)).toBe('')
   })
 })
