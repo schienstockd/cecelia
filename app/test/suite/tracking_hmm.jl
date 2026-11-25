@@ -129,6 +129,35 @@ end
 end
 
 # ── pop_df pop_type="track": gate DIRECTLY on per-track properties (3b) ────────
+# "Add tracked cells" (TRACK_SUBPOP_GATING_PLAN P4) stores the population's tracked cells as an ordinary
+# flow FILTER child, `track_id > 0` — the frontend's `IS_TRACKED` (utils/trackedChild.ts). It must hold
+# exactly the cells the derived `_tracked` does (`_DERIVED_POPS`), or the two "tracked" would disagree.
+@testset "tracked filter child == derived _tracked" begin
+    fx = fixture_for(:cells, :movie, :tracked)
+    if fx === nothing
+        @test_skip "tracked movie fixture (missing)"
+    else
+        td = mktempdir(); pdir = joinpath(td, basename(fx.project)); cp(fx.project, pdir)
+        old = get(Cecelia.cecelia_conf()["dirs"], "projects", nothing)
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = td
+            img = init_object(basename(fx.project), fx.uid); vn = fx.value_name
+            m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+            add_pop!(m, "all"; gate = RectangleGate("area", "area", -1e12, 1e12, -1e12, 1e12))
+            add_pop!(m, "tracked"; parent = "/all", filter_measure = "track_id", filter_fun = "gt", filter_values = 0)
+            save_pop_tree!(m, img)
+            stored  = Set(pop_df(img, "flow", ["$vn/all/tracked"]).label)
+            derived = Set(pop_df(img, "live", ["$vn/all/_tracked"]).label)
+            everyone = Set(pop_df(img, "flow", ["$vn/all"]).label)
+            @test !isempty(stored) && stored == derived
+            @test length(stored) < length(everyone)            # untracked cells (NaN) stay out
+        finally
+            old === nothing ? delete!(Cecelia.cecelia_conf()["dirs"], "projects") :
+                              (Cecelia.cecelia_conf()["dirs"]["projects"] = old)
+        end
+    end
+end
+
 @testset "pop_df pop_type=track (KDIeEm B)" begin
     h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")

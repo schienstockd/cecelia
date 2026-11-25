@@ -23,6 +23,7 @@ These change results when old work is re-run:
 
 ### Added
 
+- **Add tracked cells** (a population's ⋯ menu): its tracked cells as a population to gate under; follows re-tracking.
 - **Tracked only** (viewer Tracks section, on by default): while tracks are drawn, dots of cells with no track are dimmed; ribbon rows show tracked / gated.
 - **Track gating on cell measures:** a track gate can use any shape or channel measure, summarised per track (median by default).
 - **Proximity profile:** which populations sit near a structure (germinal centre, follicle, aggregate), in distance bands, against the image as a whole. Two Spatial plots and MCP `get_proximity_profiles`.
