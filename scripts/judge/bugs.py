@@ -159,6 +159,9 @@ _TEST_VALUE_EVENT, UNTESTED_MARKER = "test_value_finding", "untested"
 #: carried ones whose code or tests changed take any, oldest first, so what waits drains.
 RERUN_BUDGET_S = 3600
 _clock = time.monotonic
+#: The function an untested finding names: its desc opens "`fn`: …" (`test_value.mutation_bullets`).
+_UNTESTED_FN = re.compile(r"`([^`]+)`:")
+
 #: Survivors quoted to the judge per untested bug.
 QUOTED_SURVIVORS = 5
 #: The convention marker swept as a duplicate; the rest are rules-only.
@@ -407,9 +410,10 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
     """Where a finding's code is at `sha`: `{"code", "symbol", "gone"}`.
 
     The function is found at the finding's own commit (the code the reviewer read, so a line that
-    moved since still names the right function), then looked up by name at `sha`. `gone` is the
-    reason when the file or that function no longer exists; `code` is the whole function, or a
-    window around the line when there is none or it's too long.
+    moved since still names the right function; an untested finding names it in its desc), then
+    looked up by name at `sha`. `gone` is the reason when the file or that function no longer
+    exists; `code` is the whole function, or a window around the line when there is none or it's
+    too long.
     """
     file, line = b.get("file"), int(b.get("line") or 0)
     if file == _record.NO_FILE:   # the finding named no location: nothing to excerpt, nothing gone
@@ -420,8 +424,11 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
         there = file and git_output("cat-file", "-t", f"{sha}:{file}", cwd=str(repo)) is not None
         return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file and not there else None}
     then = git_output("show", f"{b['commit']}:{file}", cwd=str(repo)) if b.get("commit") else None
-    found = _enc.enclosing(then, line, file) if then else None
-    if then is not None:
+    # An untested finding names its function, and its line is the change's own: recital logs it
+    # against the commit *before* the change, where a new function isn't yet.
+    named = b.get("kind") == "untested" and _UNTESTED_FN.match(b.get("desc") or "")
+    found = (named[1],) if named else _enc.enclosing(then, line, file) if then else None
+    if then is not None and not named:
         line = _carry(line, file, b["commit"], sha, now, repo)
     symbol, at = (found[0], None) if found else (None, None)
     if symbol:
