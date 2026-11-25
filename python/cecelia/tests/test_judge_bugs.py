@@ -192,9 +192,10 @@ class CandidatesTest(_Repo):
         self.assertEqual([c["key"] for c in backlog], ["conv-00000005", "conv-00000001", "conv-00000003"])
 
 
-def _untested(slug, file="m.py", line=3, marker="untested", **kw):
+def _untested(slug, file="m.py", line=3, marker="untested", fn="f", **kw):
+    # the desc names the function, as `test_value.mutation_bullets` writes it
     return _row("test_value_finding", {"slug": slug, "file": file, "line": line, "marker": marker,
-                                       "desc": f"`f`: 2 of 4 mutants survive {slug}"}, **kw)
+                                       "desc": f"`{fn}`: 2 of 4 mutants survive {slug}"}, **kw)
 
 
 _M_PY = "import os\n\ndef f(a):\n    b = a + 1\n    return b * 2\n\n\ndef g(x):\n    return x - 1\n"
@@ -221,7 +222,7 @@ class UntestedTest(_Repo):
 
     def test_every_untested_finding_is_swept_whatever_its_tag(self):
         events = [_untested("tv-00000001"),
-                  _untested("tv-00000002", line=8), _row("test_value_finding_resolved",
+                  _untested("tv-00000002", line=8, fn="g"), _row("test_value_finding_resolved",
                                                          {"slug": "tv-00000002", "outcome": "fixed_pre_commit"}),
                   _untested("tv-00000003", marker="passes on base"),   # no base after the merge
                   _untested("tv-00000004", ts="2026-09-01T00:00:00Z")]
@@ -259,7 +260,7 @@ class UntestedTest(_Repo):
         self.assertEqual(bugs[0]["status"], "open")
 
     def test_no_rerun_a_failed_one_or_over_the_cap_waits_unjudged(self):
-        events = [_untested("tv-00000001"), _untested("tv-00000002", line=9)]
+        events = [_untested("tv-00000001"), _untested("tv-00000002", line=9, fn="g")]
         bugs, _ = self.sweep(events, previous=_SWEPT_TV)   # no checkout at the pinned SHA
         self.assertEqual({b["status"] for b in bugs}, {"unjudged"})
         self.assertIn("no checkout at the pinned SHA", bugs[0]["why"])
@@ -864,6 +865,30 @@ class LocateTest(_Repo):
         again = self.commit("a.py", "".join(f"more {i}\n" for i in range(300)) + "\n".join(lines) + "\n")
         code = self.b.locate({"file": "a.py", "line": 50, "commit": self.sha}, again, self.repo)["code"]
         self.assertIn("  350      line 50", code)
+
+    def test_an_untested_finding_is_found_by_the_function_it_names(self):
+        # recital logs it against the commit before the change, where the new function isn't yet;
+        # its line is the change's own, so the parent's a.py would put it in no function
+        base = self.commit("b.py", "".join(f"x{i} = {i}\n" for i in range(1, 11)))
+        added = self.commit("b.py", "".join(f"x{i} = {i}\n" for i in range(1, 11))
+                            + "def added(v):\n    return v + 1\n")
+        b = {"kind": "untested", "file": "b.py", "line": 12, "commit": base,
+             "desc": "`added`: 1 of 3 mutants on this change's lines survive the tests ..."}
+        where = self.b.locate(b, added, self.repo)
+        self.assertEqual((where["symbol"], where["gone"]), ("added", None))
+        self.assertIn("return v + 1", where["code"])
+        # a function too long to quote whole: the window is at the finding's line, which is the
+        # change's own, so it isn't carried through the change's own diff
+        tail = "".join(f"z{i} = {i}\n" for i in range(600))
+        before = self.commit("b.py", tail)
+        big = self.commit("b.py", "".join(f"y{i} = {i}\n" for i in range(300)) + "def added(v):\n"
+                          + "".join(f"    v{i} = {i}\n" for i in range(250)) + "    return v\n" + tail)
+        code = self.b.locate({**b, "line": 400, "commit": before}, big, self.repo)["code"]
+        self.assertIn("  400      v98 = 98", code)
+        # and a function since removed is gone, not "no function to mutate again"
+        removed = self.commit("b.py", "x1 = 1\n")
+        self.assertEqual(self.b.locate(b, removed, self.repo)["gone"],
+                         f"`added` isn't in `b.py` at {removed[:8]}")
 
     def test_a_duplicates_canonical_is_carried_too_unless_the_file_is_newer_than_the_finding(self):
         dup = {"file": "a.py", "line": 2, "commit": self.sha, "desc": "reuse `b.py:20` instead"}
