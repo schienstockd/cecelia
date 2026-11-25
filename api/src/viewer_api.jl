@@ -1061,9 +1061,10 @@ function api_viewer_spatial_graphs(req::HTTP.Request)
 end
 
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
-# ?projectUid=&imageUid=&valueName=&popType=flow&colourBy= →
+# ?projectUid=&imageUid=&valueName=&popType=flow&colourBy=&part= →
 #   {nCells, axes, hasT, cells: {label, t, x, y, z, track}, pops: [...],
 #    colourColumns: [...], colourBy, values}
+# `part=pops` → {pops, valueName, popType} alone (after a gate write; see below).
 #
 # Everything the browser viewer needs to draw the h5ad-derived overlays the legacy viewer drew: per-cell
 # centroids, population membership, track ids, and one optional per-cell column to colour by
@@ -1105,6 +1106,25 @@ end
 # per frame, or a binary body) rather than a number to raise again.
 const OVERLAY_MAX_CELLS = 3_000_000
 
+# The payload's populations, from the cached resolver. An image with no gating map answers an empty list
+# rather than an error — an unsegmented or ungated image is a normal state, not a failure.
+# `hasTracks` is a DATA fact ("does this pop hold any tracked cells right now") emitted alongside the
+# typed `isTrack` flag ("was this pop authored as a track-family pop"). The WebGPU viewer treats a pop as
+# ribbon-drawable when `isTrack || hasTracks` — see MULTI_POP_TRACKING_PLAN.md Decision 2 + P3.
+# `uid` carried so the client can pair each pop with its authored `cells.trackSource` rows
+# (MULTI_POP_TRACKING_ORPHANS_PLAN.md → attribution).
+function _viewer_payload_pops(img, pt, vn)
+    try
+        [(; path = p.path, name = p.name, colour = p.colour, uid = p.uid, show = p.show,
+            isTrack = p.is_track, hasTracks = get(p, :has_tracks, false),
+            labels = p.labels)
+         for p in resolve_pops(img, pt; value_name = vn)]
+    catch e
+        @warn "viewer overlays: populations unavailable" value_name = vn exception = e
+        []
+    end
+end
+
 function api_viewer_overlays(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     pu = get(q, "projectUid", ""); iu = get(q, "imageUid", "")
@@ -1118,6 +1138,11 @@ function api_viewer_overlays(req::HTTP.Request)
     vn  = _resolve_vn(img, get(q, "valueName", ""))
     pt  = get(q, "popType", "flow")
     cby = get(q, "colourBy", "")
+    # `part=pops`: the populations alone. A gate write changes membership, never the cells — so the
+    # viewer, which already holds this (segmentation, pop type)'s cells, asks only for these after
+    # one (`utils/viewer/overlayTick.ts`). On a 608k-cell movie that is 12 of 42 MB, and no table read.
+    get(q, "part", "") == "pops" &&
+        return 200, JSON3.write((; pops = _viewer_payload_pops(img, pt, vn), valueName = vn, popType = pt))
 
     try
         lp   = label_props(img; value_name = vn)
@@ -1174,25 +1199,7 @@ function api_viewer_overlays(req::HTTP.Request)
                    track = has("track_id") ? trk_col(C("track_id")) : Int[],
                    trackSource = has("track_source") ? ts_col(C("track_source")) : String[])
 
-        # Populations, from the cached resolver. An image with no gating map answers an empty list
-        # rather than an error — an unsegmented or ungated image is a normal state, not a failure.
-        pops = try
-            # `hasTracks` is a DATA fact ("does this pop hold any tracked cells right now") emitted
-            # alongside the typed `isTrack` flag ("was this pop authored as a track-family pop"). The
-            # WebGPU viewer treats a pop as ribbon-drawable when `isTrack || hasTracks` — see
-            # MULTI_POP_TRACKING_PLAN.md Decision 2 + P3. Defaulting to `false` on legacy servers is
-            # safe: the viewer falls back to today's isTrack-only behaviour.
-            # `uid` carried so the client can pair each pop with its authored `cells.trackSource`
-            # rows (MULTI_POP_TRACKING_ORPHANS_PLAN.md → attribution). Older backends omit it → the
-            # frontend falls back to the labels-only filter that shipped in P0.
-            [(; path = p.path, name = p.name, colour = p.colour, uid = p.uid, show = p.show,
-                isTrack = p.is_track, hasTracks = get(p, :has_tracks, false),
-                labels = p.labels)
-             for p in resolve_pops(img, pt; value_name = vn)]
-        catch e
-            @warn "viewer overlays: populations unavailable" value_name = vn exception = e
-            []
-        end
+        pops = _viewer_payload_pops(img, pt, vn)
 
         # A missing colour value IS meaningful — a cell that was not measured — so it is sent as
         # `null` rather than dropped. NaN has to become null too: it is what a float column actually

@@ -1121,6 +1121,22 @@ things until Apply: the eye toggles (`stagedSel`), and the refreshes gate writes
 Apply, or switching manual apply off, runs everything held; Discard leaves held refreshes alone
 (they are server-side changes). The chip counts both.
 
+**The viewer follows the same rule** — the pop-out has its own stores, so a write reaches it as the
+`cc.viewerOverlaysTick` ping, and the ping names its scope (`utils/viewer/overlayTick.ts`):
+
+- **a colour or show change** (no pop's membership changed) — `look`: the tick carries every pop's
+  colour + show, patched onto the arrays the viewer holds. Nothing is fetched. The colours are the
+  gating map's, as the server's reply has them, so a recording (which reads the map) draws the same.
+- **a gate add / move / delete / rename** — `pops`: only the edited (segmentation, pop type) layer
+  refetches, and only its populations (`/api/viewer/overlays?part=pops`): the cells did not move.
+- **anything else** (a task rewrote the table, the document switched) — `all`, the whole payload,
+  which is also what a bare `<imageUid>:<ts>` tick from an older pinger means.
+
+Held pings widen rather than replace (`widerScope`): a held gate move then a colour change still
+refetches the populations at Apply. Measured on a 608k-cell × 100-frame movie: the payload a gate
+ping fetched was the whole movie (42 MB, 0.12–0.3 s server, ~0.11 s to parse); a membership change
+now fetches 15 MB (0.03–0.05 s, ~0.03 s to parse) and a colour change nothing.
+
 ## Scale
 
 10⁶ cells is a real target (static large images; live ~1000 cells × 180 timepoints).

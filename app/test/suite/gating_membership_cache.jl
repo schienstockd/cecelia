@@ -127,3 +127,18 @@ end
     d1.label[1] = -12345; sort!(d1, :area)               # a caller is free to edit and sort its frame
     @test as_df(lp()).label[1] == first_label
 end
+
+@testset "resolve_pops: the tracking columns are read once per table, not once per map write" begin
+    # `_resolve_pops_compute` reruns on every gating-map write (its stamp hashes the map); the table's
+    # track_id/track_source map only changes with the table, so it is cached on the table's stamp.
+    fx = fixture_for(:cells, :movie)
+    td = mktempdir(); cp(fx.dir, joinpath(td, "img"))
+    img = Cecelia._load_image(joinpath(td, "img")); vn = fx.value_name
+    a = Cecelia._label_track_sources_cached(img, vn)
+    @test a == label_track_sources(img, vn)                 # the uncached reader's answer
+    @test !isempty(a)                                       # the fixture is tracked
+    @test Cecelia._label_track_sources_cached(img, vn) === a  # a map write later: no re-read
+    sleep(0.01); touch(Cecelia.img_label_props_path(img, vn))
+    b = Cecelia._label_track_sources_cached(img, vn)
+    @test b !== a && b == a                                 # a rewritten table is read again
+end
