@@ -107,7 +107,7 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 | **P2** | Track axis picker offers cell-measure aggregates + aggregation dropdown (frontend only). Default `median` | small |
 | **P3** | **Tracked only** dot switch (Decision 9) + per-pop `gated / tracked` count | small |
 | **P4** | Gating under tracked: materialise on first gate (Decision 2); `add_pop!` path, reserved-name writer, `read_pop_type` routing; tests for re-tracking and a later gate under `P` | medium |
-| **P5** | Per-track sub-pop fractions + class on read (`track_pop_fractions(img, vn, parent; level, threshold)` beside `track_props`), threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
+| **P5** | Per-track sub-pop fractions + class on read — reuse the categorical branch of `track_props` (`track_props.jl:131`, already count/`nrow` per category) by feeding child membership as one categorical column built with `pop_membership` (`gating_engine.jl:270`); overlapping sibling gates (not quadrants, but possible) need a rule — first child in tree order, or one indicator column per child. Threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
 | **P6** | Tracks Colour by sub-population + dominant sub-population; level picker; recording parity (`ViewerDrawSpec`) | medium |
 | **P7** | **mostly `<child>`** derived pops (Decision 7) at cell and track grain | medium |
 | **P8** | Cluster tracks **Populations** group (fractions; docs note on compositional sums, no auto-drop) | small |
