@@ -126,7 +126,7 @@ export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTran
 export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, invert_column, transform_key
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
-       RangeGate, BisectorGate, ValleyRule, valley_cut
+       RangeGate, BisectorGate, ValleyRule, valley_cut, FollowRule, follow_mode
 export inside, inside_t, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
@@ -336,6 +336,7 @@ include("gating/transforms.jl")
 include("gating/gates.jl")
 include("gating/split_gates.jl")
 include("gating/hist_gates.jl")
+include("gating/follow_rule.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")

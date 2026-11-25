@@ -1,6 +1,6 @@
 # Rule gating — gates that find their position on each image
 
-Status: planning (2026-11-24) · P1 built (valley bisector, #2469); P2 built (valley range ends, `rule-gating-2`); P3+ open
+Status: planning (2026-11-24) · P1 built (valley bisector, #2469); P2 built (valley range ends, #2482); P4 built (2D follow the mode, `rule-gating-mode`); P3, P5 open
 
 ## Goal
 
@@ -30,13 +30,15 @@ and TACIT is CC BY-NC, so nothing is copied; each method is written from its pap
    there partly cuts on AF. That is a measure/correction step (a new derived intensity), not a gate — but a
    rule gate is only as good as the axis it reads. Build it (where: a measure task writing corrected
    columns?), or gate on raw and accept it?
-2. **Which 2D rule first** (P4)? Options below; recommendation: A.
+2. ~~Which 2D rule first (P4)?~~ Decided: A (below).
 3. **Across-image report** (P5): is a per-image table of where each rule landed (and where it failed) the
    review surface you want, or should the strategy montage carry it?
 
 ## Decisions
 
-(none locked yet — the questions above)
+- **2D rule = A, follow the mode** (Dominik, 2026-11-25). Built: anchor = the mode climbed to from the
+  shape's centre when saved; per parent the shape moves by (mode − anchor); a miss when the mode is weak or
+  further than the shape's own width / height. docs/POPULATION.md → Rule gates in 2D.
 
 ## Rule kinds
 
@@ -71,7 +73,8 @@ microcluster medians; here it fits on the parent's sorted values (or quantile bi
   UI: double-click a range end toggles that end; two windows. Same fallback per end.
 - **P3 — elbow rule** for bisectors (TACIT step 3 on sorted values). Validated on synthetic rare-positive
   mixtures (expected cut from the generating distributions) and on xxHqjQ markers where `valley` declines.
-- **P4 — 2D follow** (option per question 2) for polygon and rectangle.
+- **P4 — 2D follow** (built, `rule-gating-mode`): option A for polygon and rectangle. Scaling to the cloud's
+  spread (A's optional part) not built.
 - **P5 — across-image review**: for every rule gate, where it landed on each image of the set, `rule_ok`,
   and the cell count — one table, sorted by "most different from the set". The reviewer's first stop after
   a copy.
