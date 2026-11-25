@@ -298,14 +298,18 @@ async function setIncluded(img: CciaImage, included: boolean) {
   }
 }
 
-const images = computed(() => {
+// Keeps the PREVIOUS array when the rows are the same objects in the same order: a new array re-renders
+// every row, ~1 s on a 2000-image set even when nothing came or went (a search keystroke that still
+// matches everything, a filter whose result equals no filter). Measured: docs/UI.md → Image search.
+const images = computed<CciaImage[]>(prev => {
   let all = project.sets.find(s => s.uid === props.setUid)?.images ?? []
   if (props.filterUids) {
     const keep = new Set(props.filterUids)
     all = all.filter(i => keep.has(i.uid))
   }
   const s = project.getImageSort(scope.value, props.setUid)
-  return s ? sortImages(all, s.key, s.dir) : all
+  const next = s ? sortImages(all, s.key, s.dir) : all
+  return prev && prev.length === next.length && next.every((img, i) => img === prev[i]) ? prev : next
 })
 
 
