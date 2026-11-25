@@ -35,6 +35,10 @@ end
 const PICK_SEL_PATH   = "/" * "Pick selection"
 const PICK_SEL_NAME   = "Pick selection"
 const PICK_SEL_COLOUR = "#22d3ee"                       # cyan, distinct from gate pops
+# A FIXED uid: the pop is rebuilt on every map load, and clients key a pop's highlight / eye on its uid
+# (`makePopPathRemap`: a uid that vanished = a delete). A fresh uid per load read every new pick as
+# "old pop deleted" and switched its plot highlight off. Not 6 chars, so `gen_uid` never mints it.
+const PICK_SEL_UID    = "pick_selection"
 const _pick_sel       = Dict{Tuple{String,String},Vector{Int}}()
 const _pick_sel_lock  = ReentrantLock()
 
@@ -55,7 +59,7 @@ function _inject_pick_pop!(m::PopulationTree, img::CciaImage)
     (labs === nothing || isempty(labs)) && return m
     has_pop(m, PICK_SEL_PATH) && return m
     add_pop!(m, PICK_SEL_NAME; parent = ROOT, colour = PICK_SEL_COLOUR,
-             explicit_labels = labs, transient = true)
+             explicit_labels = labs, transient = true, uid = PICK_SEL_UID)
     m
 end
 
