@@ -21,6 +21,8 @@ import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef, toRaw } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { resizePaint } from '../../utils/resizePaint'
+import { rafCoalesce } from '../../utils/rafCoalesce'
+import { splatDots, cssRgb, SPLAT_MIN, SPLAT_MAX_RD } from '../../plots/dotSplat'
 import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from './PlotPointOutMark.vue'
@@ -293,13 +295,47 @@ function paintInto(c: CanvasRenderingContext2D, pts: Float32Array, idx: number[]
     for (const i of g) { const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); dot(c, px, py, r) }
   }
 }
+// A large cloud (600k cells) is the SAME dots in the same order, stamped into one image (plots/dotSplat):
+// an arc per point cost ~0.7 s per paint there, and ~2.7 s faceted (the ghost redraws the whole cloud per
+// facet; stamped, it is laid once per cell). Below SPLAT_MIN, past SPLAT_MAX_RD (a hi-res export's big disks), or with no offscreen, the arcs stay.
+function splatPaint(c: CanvasRenderingContext2D, w: number, h: number, pts: Float32Array, cats: Float32Array,
+                    pal: string[], fs: { idx: number[] }[] | null, r: number, alpha: number): boolean {
+  const n = pts.length / 2
+  if ((fs ? n * (fs.length + 1) : n) < SPLAT_MIN || r * c.getTransform().a > SPLAT_MAX_RD) return false
+  const rgb = pal.map(p => cssRgb(c, p)), ghost = cssRgb(c, ghostColour())
+  return splatDots(c, w, h, r, (dot, layer) => {
+    const each = (toPx: (x: number, y: number) => [number, number], idx: number[] | null) => {
+      const groups: number[][] = pal.map(() => [])
+      if (idx) for (const i of idx) { const g = groups[cats[i]]; if (g) g.push(i) }
+      else for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
+      for (let gi = 0; gi < pal.length; gi++) for (const i of groups[gi]) {
+        const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); dot(px, py, rgb[gi])
+      }
+    }
+    if (!fs) { each(rectMap({ px: 0, py: 0, pw: w, ph: h }), null); return }
+    // the ghost is the same cloud in every cell (cells share one size, so a cell's map is the first one
+    // moved): stamped once, laid into each cell before that cell's own points
+    const c0 = facetCell(0, fs.length, w, h)
+    const ghostAt = layer(c0.pw, c0.ph, d => {
+      const toPx = rectMap({ px: 0, py: 0, pw: c0.pw, ph: c0.ph })
+      for (let i = 0; i < n; i++) { const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); d(px, py, ghost) }
+    })
+    for (let fi = 0; fi < fs.length; fi++) {
+      const cell = facetCell(fi, fs.length, w, h)
+      ghostAt(cell.px, cell.py)
+      each(rectMap(cell), fs[fi].idx)
+    }
+  }, { alpha })
+}
 function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
-  const pts = toRaw(points.value), cats = categories.value, pal = palette.value
+  const pts = toRaw(points.value), cats = toRaw(categories.value), pal = palette.value
   if (!pts || !cats || !pal.length) return
   const alpha = dotAlpha.value, r = dotR.value
-  c.globalAlpha = alpha
   const fs = facets.value
-  if (facetBy.value === 'none' || fs.length <= 1) {
+  const single = facetBy.value === 'none' || fs.length <= 1
+  if (splatPaint(c, w, h, pts, cats, pal, single ? null : fs, r, alpha)) return
+  c.globalAlpha = alpha
+  if (single) {
     paintInto(c, pts, null, rectMap({ px: 0, py: 0, pw: w, ph: h }), r)
   } else {
     const n = pts.length / 2
@@ -314,6 +350,10 @@ function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
   }
   c.globalAlpha = 1
 }
+// the box the canvas was last painted at: the observer also reports a change the paint already met (the
+// legend appearing with the data reflows the box before the frame's paint reads it), and repainting that
+// is a second whole-cloud paint for nothing
+let painted = ''
 function redraw() {
   const el = dotsEl.value; if (!el) return
   if (!dctx) dctx = el.getContext('2d')
@@ -321,6 +361,7 @@ function redraw() {
   const dpr = window.devicePixelRatio || 1
   const w = el.clientWidth, h = el.clientHeight
   boxW.value = w; boxH.value = h   // keep the label map in sync with the canvas box
+  painted = `${w}x${h}@${dpr}`
   el.width = Math.max(1, w * dpr); el.height = Math.max(1, h * dpr)
   dctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   dctx.clearRect(0, 0, w, h)
@@ -331,10 +372,14 @@ function redraw() {
 // (SquarePlot), so the stretch keeps the embedding isotropic and the labels — which follow boxW/boxH
 // on EVERY step — stay on their dots.
 const painter = resizePaint(redraw)
-const repaint = () => nextTick(() => painter.paint())
+// one paint per frame however many watchers ask in it: a refetch changes the points, the colours AND the
+// facets, and each used to queue its own whole-cloud paint
+const paintSoon = rafCoalesce(() => painter.paint())
+const repaint = () => paintSoon.schedule()
 function onBoxResize() {
   const el = dotsEl.value
   if (el) { boxW.value = el.clientWidth; boxH.value = el.clientHeight }
+  if (el && painted === `${el.clientWidth}x${el.clientHeight}@${window.devicePixelRatio || 1}`) return
   painter.resized()
 }
 // hi-res export: re-paint at scale× onto an offscreen canvas (crisp; a 2D canvas can't clip)
@@ -542,9 +587,7 @@ async function fetchMap(isCurrent: () => boolean) {
     const cp = usePopIdx.value ? colourPops.value.map(popToken).filter(Boolean) : []
     const feat = useValue.value ? colourFeature.value : ''
     const stride = feat ? 6 : 5
-    const rec: number[] = []
-    const imgOf: number[] = []
-    const vnOf: string[] = []
+    const parts: { f: Float32Array; ui: number }[] = []
     for (let ui = 0; ui < props.imageUids.length; ui++) {
       const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType,
                                       suffix: props.suffix, basis: basis.value, withLabels: '1' })
@@ -555,12 +598,9 @@ async function fetchMap(isCurrent: () => boolean) {
       if (!res.ok) continue
       const f = new Float32Array(await res.arrayBuffer())
       if (!isCurrent()) return
-      for (let i = 0; i < f.length; i++) rec.push(f[i])
-      // per-point image index, and the image uid the highlight bag scopes with.
-      const iuid = props.imageUids[ui]
-      for (let i = 0; i < f.length / stride; i++) { imgOf.push(ui); vnOf.push(iuid) }
+      parts.push({ f, ui })
     }
-    const n = Math.floor(rec.length / stride)
+    const n = parts.reduce((a, p) => a + Math.floor(p.f.length / stride), 0)
     drawnKey = key
     if (n === 0) {
       points.value = null; rawPoints = null; categories.value = null; legend.value = []; centroids.value = []
@@ -572,14 +612,14 @@ async function fetchMap(isCurrent: () => boolean) {
     const pts = new Float32Array(n * 2), codes = new Float32Array(n), popIdx = new Float32Array(n)
     const labs = new Float32Array(n)
     const vals = feat ? new Float32Array(n) : null
-    const img = new Uint16Array(n)
-    for (let i = 0; i < n; i++) {
-      const x = rec[stride * i], y = rec[stride * i + 1]
-      pts[2 * i] = x; pts[2 * i + 1] = y
-      codes[i] = rec[stride * i + 2]; popIdx[i] = rec[stride * i + 3]
-      labs[i] = rec[stride * i + 4]
-      if (vals) vals[i] = rec[stride * i + 5]
-      img[i] = imgOf[i]
+    const img = new Uint16Array(n)   // per-point image index (colour/facet by attribute, the highlight bag)
+    let i = 0
+    for (const { f, ui } of parts) for (let k = 0; k + stride <= f.length; k += stride, i++) {
+      pts[2 * i] = f[k]; pts[2 * i + 1] = f[k + 1]
+      codes[i] = f[k + 2]; popIdx[i] = f[k + 3]
+      labs[i] = f[k + 4]
+      if (vals) vals[i] = f[k + 5]
+      img[i] = ui
     }
     rawPoints = pts
     codesRef.value = codes
@@ -664,7 +704,7 @@ onMounted(() => {
   if (plotBoxEl.value) dro = observeBoxChanges(plotBoxEl.value, onBoxResize)
   repaint()
 })
-onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel(); loader.cancel() })
+onBeforeUnmount(() => { dro?.disconnect(); dro = null; painter.cancel(); paintSoon.cancel(); loader.cancel() })
 
 // ── export (surfaced by the host InteractivePanel via defineExpose) ──
 // PNG composites the 2D dot canvas + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.

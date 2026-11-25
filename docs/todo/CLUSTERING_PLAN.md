@@ -26,7 +26,7 @@ summary `SeriesPicker` and the gating/cluster `PopulationManager` — so the fut
 canvas is mostly assembly.
 
 **Remaining for clustering v1:**
-1. **Sub-clustering (Decision 8)** — the one real feature gap. A run restricted to a parent `clust`
+1. **Sub-clustering (Decision 8)** — the one real feature gap; designed in [`CLUSTER_REFINE_PLAN.md`](CLUSTER_REFINE_PLAN.md). A run restricted to a parent `clust`
    pop (in-process `cells_in_pop`, btrack's gated path) into a NEW `clusters.{suffix}` column, expressed
    as a child in the clust pop-tree (no overwrite — `keepPops`/`merge_new_adata` NOT ported). Needs:
    `popsToCluster` accepting a cluster pop as parent + the membership restriction in both runners +
@@ -194,7 +194,7 @@ a hand-drawn gate.
    normalisation, which didn't really work." Cut it from the param set and the engine. Ordinary
    per-channel/percentile normalisation + the optional `refChannel` divide stay.
 
-8. **`keepPops` → redesign as elegant sub-clustering (don't port `merge_new_adata`).** D: keepPops
+8. **`keepPops` → redesign as elegant sub-clustering (don't port `merge_new_adata`).** _Superseded by [`CLUSTER_REFINE_PLAN.md`](CLUSTER_REFINE_PLAN.md) (2026-11-24)._ D: keepPops
    was "sequential clustering — a kind of gating hierarchy with clustering… it sort of worked to
    subcluster clusters, but it was clunky and overwrote the previous clusters." The new design uses
    the machinery we already have instead of the overwrite-merge crutch:

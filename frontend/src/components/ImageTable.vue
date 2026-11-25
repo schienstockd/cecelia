@@ -26,12 +26,16 @@ import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import CcToggle from './CcToggle.vue'
 import TissueExtent from './TissueExtent.vue'
 import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
 import { profileStorage } from '../utils/profileStorage'
 import { allShown, loadThumb, parseShown, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
 import { setImageAttr } from '../utils/imageAttrApi'
+import { ALWAYS_SHOWN, CHANNELS_GROUP, DEFAULT_PREFS, applyOrder, applyShown, arrangeColumns, columnPrefsKey, groupsOf,
+         orderedGroups, parseColumnPrefs, serializeColumnPrefs, setGroupShown, type ColumnPrefs } from '../utils/imageTableColumns'
 
 const props = defineProps<{
   setUid: string
@@ -467,22 +471,33 @@ const channelCount = computed(() => {
     Math.max(max, img.channelNames?.length ?? 0, img.sizeC ?? 0), 0)
 })
 
-// One column per channel is a lot for a 60-channel multiplex set, so the names fold into the `Ch`
-// count column (header toggle), per project and per person like the thumbnails. Shown by default.
-const channelNamesKey = (projectUid: string) => `cc.imageChannelNames:${projectUid}`
-const channelNamesShown = ref(true)
+// ── Column layout (Columns popover) ─────────────────────────────────────────────
+// Which columns show, their order, and whether the first is frozen — per project and per person like
+// the thumbnails. The pure rules (channel columns move as one group, Name can't be hidden, a column
+// absent from this set keeps its slot) are utils/imageTableColumns.ts.
+const columnPrefs = ref<ColumnPrefs>({ ...DEFAULT_PREFS })
+// the channel-name fold predates the popover and had its own key; read it until the layout is saved
+const legacyChannelNamesKey = (projectUid: string) => `cc.imageChannelNames:${projectUid}`
 watch(() => projectMeta.current?.uid, uid => {
-  channelNamesShown.value = uid ? profileStorage.getItem(channelNamesKey(uid)) !== '0' : true
+  const raw = uid ? profileStorage.getItem(columnPrefsKey(uid)) : null
+  const p = parseColumnPrefs(raw)
+  columnPrefs.value = !raw && uid && profileStorage.getItem(legacyChannelNamesKey(uid)) === '0'
+    ? setGroupShown(p, CHANNELS_GROUP, false) : p
 }, { immediate: true })
-function toggleChannelNames() {
-  channelNamesShown.value = !channelNamesShown.value
+function saveColumnPrefs(next: ColumnPrefs) {
+  columnPrefs.value = next
   const uid = projectMeta.current?.uid
-  if (uid) profileStorage.setItem(channelNamesKey(uid), channelNamesShown.value ? '1' : '0')
+  if (uid) profileStorage.setItem(columnPrefsKey(uid), serializeColumnPrefs(next))
 }
 
-// 1-based channel indices, e.g. [1, 2, 3] — none while the names are folded away
-const channelIndices = computed(() => channelNamesShown.value
-  ? Array.from({ length: channelCount.value }, (_, i) => i + 1) : [])
+// One column per channel is a lot for a 60-channel multiplex set, so the names fold into the `Ch`
+// count column (header toggle). Shown by default; the same switch as the Channel names chip.
+const channelNamesShown = computed(() => !columnPrefs.value.hidden.includes(CHANNELS_GROUP))
+const toggleChannelNames = () =>
+  saveColumnPrefs(setGroupShown(columnPrefs.value, CHANNELS_GROUP, !channelNamesShown.value))
+
+// 1-based channel indices, e.g. [1, 2, 3] — the columns exist even when folded; arrangeColumns drops them
+const channelIndices = computed(() => Array.from({ length: channelCount.value }, (_, i) => i + 1))
 
 // Dimension columns only appear when the set actually has a z-stack / timelapse (mirrors the
 // metadata-warning z>1 / t>1 tests), so 2D single-timepoint sets aren't cluttered with empty columns.
@@ -545,6 +560,38 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   { key: 'tissue', label: 'Tissue', fixed: true, width: 132 },
   ...(props.module ? [{ key: 'status', label: 'Status', fixed: true, width: 90 }] : []),
 ])
+const shownColumns = computed(() => arrangeColumns(COLUMNS.value, columnPrefs.value))
+
+// The picker: one chip per group, in column order — on = shown. A toggle never moves a chip, and every
+// chip (hidden ones too) drags; a drop reports the full order (`update:order`), which is what persists.
+const columnsOpen   = ref(false)
+const columnsAnchor = ref<HTMLElement | null>(null)
+function openColumns(e: MouseEvent) {
+  columnsAnchor.value = e.currentTarget as HTMLElement
+  columnsOpen.value = !columnsOpen.value
+}
+const GROUP_LABELS: Record<string, string> = {
+  thumb: 'Thumbnail', ch: 'Channel count', [CHANNELS_GROUP]: 'Channel names',
+}
+const columnGroups = computed(() => groupsOf(COLUMNS.value))
+const columnOptions = computed<ChipOption[]>(() =>
+  orderedGroups(columnGroups.value, columnPrefs.value).map(g => ({
+    value: g,
+    label: GROUP_LABELS[g] ?? COLUMNS.value.find(c => c.key === g)?.label ?? g,
+    tip: g === ALWAYS_SHOWN ? 'Always shown' : undefined,
+  })))
+const setColumnOrder = (order: string[]) =>
+  saveColumnPrefs(applyOrder(columnGroups.value, columnPrefs.value, order))
+const columnsShown = computed<string[]>({
+  get: () => orderedGroups(columnGroups.value, columnPrefs.value)
+    .filter(g => !columnPrefs.value.hidden.includes(g)),
+  set: v => saveColumnPrefs(applyShown(columnGroups.value, columnPrefs.value, v)),
+})
+const freezeFirst = computed({
+  get: () => columnPrefs.value.freezeFirst,
+  set: v => saveColumnPrefs({ ...columnPrefs.value, freezeFirst: v }),
+})
+const resetColumns = () => saveColumnPrefs({ ...DEFAULT_PREFS })
 
 // The sort, held where it always was — per (scope, set) in the project store, ordered by the pure
 // `sortImages`. The table renders the affordance and reports the cycle; `v-model:sort` is what lets it
@@ -634,7 +681,7 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     fit="content"
     selection-mode="multi"
     :select-all="!singleSelect"
-    :columns="COLUMNS"
+    :columns="shownColumns"
     :rows="images"
     id-key="uid"
     v-model:selected="selectedList"
@@ -648,6 +695,10 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
   >
     <!-- Batch-fix affordances live in the NAME header, where the images they act on are read. -->
     <template #head-name>
+      <button class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': columnsOpen }"
+        @click.stop="openColumns" v-tooltip.bottom="'Columns'">
+        <i class="pi pi-table" />
+      </button>
       <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon"
         :class="{ active: flaggedActive }" @click.stop="selectFlagged"
         v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
@@ -889,6 +940,21 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     </div>
   </TeleportPopover>
 
+  <!-- Columns: show/hide + drag to reorder, and the freeze switch -->
+  <TeleportPopover v-model="columnsOpen" :anchor="columnsAnchor">
+    <div class="columns-pop">
+      <div class="cc-eyebrow cc-fs-2xs">Columns · drag to reorder</div>
+      <ChipSelect :options="columnOptions" v-model="columnsShown" multiple reorderable
+        aria-label="Columns" @update:order="setColumnOrder" />
+      <div class="cc-row columns-foot">
+        <CcToggle v-model="freezeFirst" label="Freeze first column"
+          v-tooltip.bottom="'Keep it in view when scrolling sideways'" />
+        <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="resetColumns"
+          v-tooltip.bottom="'Default columns and order'">Reset</button>
+      </div>
+    </div>
+  </TeleportPopover>
+
   <!-- run-history popover — shared TeleportPopover escapes the table's scroll/transform clip and
        positions from the cog rect (was clipped by the following row) -->
   <TeleportPopover v-model="runLogOpen" :anchor="runLogAnchor">
@@ -1057,6 +1123,8 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 .runlog-cell { position: relative; display: inline-flex; flex-shrink: 0; }
 .runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.columns-pop { display: flex; flex-direction: column; gap: 0.5rem; width: 20rem; }
+.columns-foot { justify-content: space-between; }
 .runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; }   /* padding: TeleportPopover */
 .runlog-hd { margin-bottom: 4px; }
 

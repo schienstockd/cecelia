@@ -66,6 +66,7 @@ import type { PanelHit } from '../../utils/panelSelectionHit'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 import { PAPER } from '../../plots/fixedColours'
 import { columnLetters } from '../../utils/gridOverlay'
+import { useToast } from '../../composables/useToast'
 import { summaryLegend, viewLegend, type SummaryLegendFacts } from '../../utils/panelLegend'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
@@ -286,7 +287,8 @@ const slotTitle = (i: number): string => (entry.value.contents[i]?.state.title a
 function setSlotTitle(i: number, v: string) { const c = entry.value.contents[i]; if (c) c.state.title = v }
 
 // duplicate a slot's plot into the NEXT EMPTY slot (deep-copy its state so you can tweak one thing);
-// no-op if the grid is full.
+// a full grid says so rather than doing nothing silently.
+const toast = useToast()
 function nextEmpty(from: number): number {
   const c = entry.value.contents
   for (let k = 1; k <= c.length; k++) { const j = (from + k) % c.length; if (!c[j]) return j }
@@ -296,7 +298,7 @@ function duplicateSlot(i: number) {
   const src = entry.value.contents[i]
   if (!src) return
   const j = nextEmpty(i)
-  if (j < 0) return
+  if (j < 0) { toast.add({ severity: 'warn', life: 4000, summary: 'No free slot', detail: 'Add a row or column under Grid size first.' }); return }
   layout.setContent(props.canvasKey, j, { kind: src.kind, ref: src.ref, state: JSON.parse(JSON.stringify(src.state)) })
   layout.setActive(props.canvasKey, j)
 }
