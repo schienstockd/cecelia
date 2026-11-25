@@ -3,7 +3,9 @@
   image to other images in the same set. Gates are a JSON copy (server /api/gating/copy REPLACES each
   target's gating sidecar); membership recomputes per image. Optionally also copy the canvas plot
   layout (client-side, via the canvas store). A precheck (imagesWithValueName → /api/images/value-name-check)
-  flags images lacking the segmentation — those are shown separately and never copied to. Ports R "Propagate to Selected".
+  flags images lacking the segmentation — those are shown separately and never copied to — and (with `popType`)
+  which targets already have this gating: those carry a GATED chip, and the footer counts how many picked ones
+  the copy will overwrite (their map is replaced, not merged). Ports R "Propagate to Selected".
   A copied target lacking a column a gate/filter reads (e.g. `clusters.<run>`) gets a `warnings` entry; the
   dialog then stays open to show which populations will be empty there (#1737).
 -->
@@ -17,7 +19,7 @@ import { useLogStore } from '../../stores/log'
 import { imagesWithValueName } from '../../lib/valueNames'
 import CcToggle from '../../components/CcToggle.vue'
 import InlineNote from '../../components/InlineNote.vue'
-import { copyWarningLines, copySkippedLines, copyRemappedLines, renamePanelColumns, copyWarningAction, type CopyWarnings, type CopyWarningLine, type ChannelRemap } from '../../utils/gatingCopyWarnings'
+import { copyWarningLines, copySkippedLines, copyRemappedLines, renamePanelColumns, copyWarningAction, overwriteSummary, type CopyWarnings, type CopyWarningLine, type ChannelRemap } from '../../utils/gatingCopyWarnings'
 
 const props = defineProps<{
   setUid: string
@@ -39,6 +41,8 @@ const siblings = computed(() =>
 // precheck: which siblings have the segmentation (copyable) vs not (flagged, never copied to)
 const checking = ref(true)
 const availableUids = ref<Set<string>>(new Set())
+// targets that already have this gating — the copy replaces it; null = the check could not say
+const gatedUids = ref<Set<string> | null>(null)
 const canCopy = (uid: string) => availableUids.value.has(uid)
 const available = computed(() => siblings.value.filter(i => canCopy(i.uid)))
 const missing   = computed(() => siblings.value.filter(i => !canCopy(i.uid)))
@@ -47,8 +51,9 @@ onMounted(async () => {
   const projectUid = projectMeta.current?.uid
   const uids = siblings.value.map(i => i.uid)
   if (!projectUid || !uids.length) { checking.value = false; return }
-  const { available } = await imagesWithValueName(projectUid, props.valueName, uids)
+  const { available, gated } = await imagesWithValueName(projectUid, props.valueName, uids, props.popType)
   availableUids.value = new Set(available)
+  gatedUids.value = gated && new Set(gated)
   checking.value = false
 })
 
@@ -65,6 +70,7 @@ const allPicked = computed(() => available.value.length > 0 && available.value.e
 function toggleAll() { picked.value = allPicked.value ? new Set() : new Set(available.value.map(i => i.uid)) }
 
 const label = computed(() => props.popType === 'track' ? 'track gating' : 'cell gating')
+const overwriteNote = computed(() => overwriteSummary(picked.value, gatedUids.value))
 const ckey = (uid: string) => `gate:${props.popType}:${uid}:${props.valueName}`
 
 async function copy() {
@@ -106,13 +112,10 @@ async function copy() {
 </script>
 
 <template>
-  <BaseModal width="420px" @close="emit('close')">
+  <BaseModal width="480px" @close="emit('close')">
     <template #title><i class="pi pi-copy" /> Copy {{ label }} to images</template>
 
     <div class="cg-body">
-      <p v-if="!warnLines.length" class="cg-warn cc-callout-warn"><i class="pi pi-exclamation-triangle" />
-        Overwrites the {{ label }} on each selected image ({{ valueName }}) — no undo.</p>
-
       <!-- refused targets, copied ones lacking a column (which populations are empty there), and ones matched by channel name -->
       <div v-if="warnLines.length" class="cg-missing">
         <InlineNote v-for="l in warnLines" :key="l.uid + l.text" :severity="l.info ? undefined : 'warn'" :short="l.text" :detail="l.pops.join(', ')" />
@@ -125,9 +128,12 @@ async function copy() {
         <template v-if="available.length">
           <label class="cg-all" v-tooltip.top="'Tick every listed image at once'"><input type="checkbox" :checked="allPicked" @change="toggleAll" /> Select all</label>
           <div class="cg-list">
-            <label v-for="i in available" :key="i.uid" class="cg-item" v-tooltip.top="'Copy the gating strategy to this image'">
+            <label v-for="i in available" :key="i.uid" class="cg-item"
+              v-tooltip.top="gatedUids?.has(i.uid) ? `Has ${label} on ${valueName} — copying replaces it` : 'Copy the gating strategy to this image'">
               <input type="checkbox" :checked="picked.has(i.uid)" @change="toggle(i.uid)" />
               <span class="cg-name">{{ i.name }}</span>
+              <span class="cc-uid cg-uid">{{ i.uid }}</span>
+              <span v-if="gatedUids?.has(i.uid)" class="cc-label-chip cc-label-chip-amber cg-gated">Gated</span>
             </label>
           </div>
           <CcToggle class="cg-layout" v-model="copyLayout" label="Also copy plot layout"
@@ -146,6 +152,8 @@ async function copy() {
     <template #footer>
       <button v-if="warnLines.length" class="cc-btn cc-btn-primary" @click="emit('close')">Close</button>
       <template v-else>
+        <InlineNote v-if="overwriteNote" class="cg-overwrite" severity="warn" :short="overwriteNote"
+          :detail="`Their ${label} is replaced by this image's, not merged — no undo`" />
         <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
         <button class="cc-btn cc-btn-primary" :disabled="busy || checking || !picked.size" @click="copy">
           <i v-if="busy" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-copy" />
@@ -158,8 +166,6 @@ async function copy() {
 
 <style scoped>
 .cg-body { display: flex; flex-direction: column; gap: 0.7rem; }   /* padding from BaseModal */
-.cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: var(--cc-fs-sm);
-  padding: 0.4rem 0.55rem; line-height: 1.35; }
 .cg-empty { margin: 0; }   /* + .cc-muted */
 .cg-all { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
 .cg-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 240px; overflow: auto;
@@ -167,6 +173,9 @@ async function copy() {
 .cg-item { display: flex; align-items: center; gap: 0.5rem; font-size: var(--cc-fs-md); color: var(--cc-text); cursor: pointer; padding: 0.15rem 0; }
 .cg-item input, .cg-all input, .cg-layout input { accent-color: var(--cc-accent); cursor: pointer; }
 .cg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-uid { flex-shrink: 0; }   /* + .cc-uid */
+.cg-gated { margin-left: auto; }   /* + .cc-label-chip */
+.cg-overwrite { margin-right: auto; }   /* InlineNote, pushed left of the buttons */
 .cg-layout { display: flex; align-items: center; gap: 0.4rem; font-size: var(--cc-fs-md); color: var(--cc-text); cursor: pointer; }
 .cg-missing { display: flex; flex-direction: column; gap: 0.2rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
   border-top: 1px solid var(--cc-border); padding-top: 0.5rem; }
