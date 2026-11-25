@@ -3,8 +3,8 @@
 // `components/GuidesDialog.vue`. Design + decisions: docs/todo/GUIDE_SYSTEM_PLAN.md.
 //
 // This store READS other stores and never writes to them (plan D1) — the guide points and observes.
-// The one thing it persists is which guides you've finished (`cc.guide.<id>.done`, the HintCallout
-// idiom), so the picker can tick them off.
+// The one thing it persists is which guides you've finished (`cc.guide.<id>.done`, a per-profile
+// flag), so the picker can tick them off.
 //
 // Why there is a poll: most gates are predicates over store state and update reactively, but some ask
 // about a control that reports to no store (`TaskRunner`'s function `<select>`) or about whether an

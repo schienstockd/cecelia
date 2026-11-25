@@ -142,7 +142,8 @@ function resolve_rules(g::RangeGate, v::AbstractVector; valley = valley_cut)
     (RangeGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, lo, hi, g.lo_rule, g.hi_rule), flags)
 end
 # the parent's values on `g`'s axis, transformed — only a gate that has rules needs them
-_rule_values(g::Gate, raw) = needs_parent_data(g) ? apply_transform(g.x_transform, raw) : raw
+_rule_values(g::HistGate, raw) = needs_parent_data(g) ? apply_transform(g.x_transform, raw) : raw
+_rule_values(g::Gate, raw) = raw
 
 # A range's ends on transformed values `v` and whether each ruled end's valley is the one used: each moves to
 # its valley inside its `end_window` or keeps its stored value; a found end past the other's stored value
@@ -183,6 +184,12 @@ end
 """`g` with its rule applied to the RAW parent values: a bisector's cut moves to the valley; with no
 valley in the window (or no rule) the stored cut stands. Any other gate is returned as is."""
 resolve_gate(g::Gate, raw) = first(resolve_rules(g, _rule_values(g, raw)))
+# The two-column form every caller uses (a rectangle / polygon's follow rule reads both axes — follow_rule.jl);
+# a 1D gate names its channel twice, so it reads x alone.
+resolve_gate(g::Gate, xraw, yraw) = g
+resolve_gate(g::HistGate, xraw::AbstractVector, yraw) = resolve_gate(g, xraw)
+rule_flags(g::Gate, xraw, yraw) = Dict{String,Any}()
+rule_flags(g::HistGate, xraw::AbstractVector, yraw) = rule_flags(g, xraw)
 
 const VALLEY_GRID = 512        # density evaluation points, at least (more when the span needs them)
 const VALLEY_GRID_MAX = 1 << 16
@@ -296,12 +303,18 @@ with_divider(g::BisectorGate, t::BisectorGate) =
 gate_group(g::BisectorGate) = g.group
 
 rule_spec(r::ValleyRule) = Dict{String,Any}("kind" => "valley", "lo" => r.lo, "hi" => r.hi, "adjust" => r.adjust)
-function rule_from_spec(spec)
+"""A gate's stored `rule` → a `ValleyRule` (a 1D gate's) or a `FollowRule` (a rectangle / polygon's —
+follow_rule.jl), or `nothing`. `want` is the rule type the gate takes; another kind is refused by name."""
+function rule_from_spec(spec, want::Type = ValleyRule)
     spec === nothing && return nothing
     g(k, default = nothing) = get(spec, k, get(spec, Symbol(k), default))
     kind = lowercase(string(g("kind", "")))
-    kind == "valley" || error("Unknown gate rule: $kind")
-    ValleyRule(g("lo"), g("hi"); adjust = something(g("adjust"), 1.0))
+    r = kind == "valley" ? ValleyRule(g("lo"), g("hi"); adjust = something(g("adjust"), 1.0)) :
+        kind == "follow" ? _follow_rule_from_spec(g) : error("Unknown gate rule: $kind")
+    r isa want || error(want === FollowRule ?
+        "A rectangle or polygon's rule is {\"kind\": \"follow\"}, not \"$kind\"" :
+        "A range or bisector's rule is {\"kind\": \"valley\", …}, not \"$kind\"")
+    r
 end
 
 function _hist_spec(g::HistGate, kind)

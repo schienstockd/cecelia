@@ -7,9 +7,12 @@
 // Movies page wants the same question asked of movies joined back to their image. So the rule lives
 // here (pure, tested), the chrome lives in `components/AttrFilterPanel.vue`, and both pages use them.
 //
-// The DRAFT/APPLIED split is the part worth naming. Picking chips does not narrow the list; Apply does.
-// That is deliberate — narrowing on every chip click makes assembling a multi-attribute filter a fight,
-// because each partial selection hides the rows the next chip would have come from.
+// DRAFT vs APPLIED: the chips (draft) update on every click; the list narrows when the draft is
+// applied, which `AttrFilterPanel` does once the clicks pause (`APPLY_WAIT`) — one list re-render per
+// burst of clicks. Why there is no Apply button: docs/UI.md → Filtering rows by attribute.
+
+/** How long after the last chip click the draft is applied (ms). */
+export const APPLY_WAIT = 250
 
 /** Anything carrying a user-attribute bag — an image, or a movie row joined to one. */
 export interface AttrBearing {

@@ -183,7 +183,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         on_log("[ERROR] No image filepath registered on this image — nothing to skeletonise against.")
         return nothing
     end
-    im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))
+    im_path = joinpath(img_zero_dir(img), string(filename))
 
     # Resolve input labels zarr — a segmentation the user chose from `img.labels`. `unversion_value`
     # unwraps the inner-axis versioned entry (P2) to the leaf Vector{String}; on legacy shape it's

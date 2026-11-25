@@ -410,12 +410,12 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
 
     # Every version's store (a versioned entry has one per `vN`). Per store: data dir first, then labels
     # dir (mirrors the old RemoveImage search order).
-    proj_dir = dirname(dirname(img._dir))
-    data_dir = joinpath(proj_dir, "0", img.uid)
+    proj_dir = img_project_dir(img)
+    data_dir = img_zero_dir(img)
     freed    = 0
     for leaf in version_leaves(filename)
         candidates = [joinpath(data_dir, string(leaf)),
-                      joinpath(proj_dir, "1", img.uid, "labels", string(leaf))]
+                      joinpath(obj_meta_dir(proj_dir, img.uid), "labels", string(leaf))]
         target = findfirst(ispath, candidates)
         if isnothing(target)
             on_log("[INFO] File '$leaf' not found on disk — clearing metadata only.")

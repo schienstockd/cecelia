@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { clusterMeasurePrefix, clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale,
-  claimsClusterIds, clusterPopIds } from './clusterMeasure'
+  claimsClusterIds, clusterPopIds, clusterRunOf } from './clusterMeasure'
 
 describe('clusterMeasure', () => {
   it('is behaviour-preserving for the existing cluster pop types', () => {
@@ -66,5 +66,14 @@ describe('clusterPopIds', () => {
   it('no filter or no values owns nothing', () => {
     expect(clusterPopIds(undefined)).toEqual([])
     expect(clusterPopIds({ fun: 'in', values: null })).toEqual([])
+  })
+})
+
+describe('clusterRunOf', () => {
+  it('reads the run back out of a cluster filter measure', () => {
+    expect(clusterRunOf('clust', 'clusters.lymphoid')).toBe('lymphoid')
+    expect(clusterRunOf('region', 'regions.immune')).toBe('immune')
+    expect(clusterRunOf('clust', 'regions.immune')).toBe('')
+    expect(clusterRunOf('clust', undefined)).toBe('')
   })
 })

@@ -110,8 +110,7 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
         return nothing
     end
 
-    proj_dir = dirname(dirname(img._dir))              # {proj}
-    im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
+    im_path  = joinpath(img_zero_dir(img), string(filename))
     if !ispath(im_path)
         on_log("[ERROR] Source image not found: $im_path")
         return nothing

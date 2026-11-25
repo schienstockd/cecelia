@@ -7,6 +7,8 @@ import { isExcluded, isBlocked } from './inclusion'
 import { pixelSizeUm } from './physicalSize'
 import { sortRows, type SortDir } from './sortRows'
 import { toSeconds } from './timeAxis'      // ONE time-unit conversion, shared with the time axis
+import { filterSuggestions } from './suggestInput'
+import { matchesQuery } from './textQuery'
 
 // Total elapsed duration of a timelapse = (frames − 1) × interval — the time span from the FIRST to
 // the LAST frame (an N-frame movie spans N−1 intervals). Returns '' when it isn't a timelapse
@@ -109,4 +111,30 @@ export function imageTableCsvRows(images: CciaImage[], attrKeys: string[]): Reco
     ...Object.fromEntries(attrKeys.map((k, i) => [attrHeaders[i], img.attr?.[k] ?? ''])),
     ...tail(img),
   }))
+}
+
+// ── Search (find one image by uid or name) ──────────────────────────────────────
+// The Filter pane's search box. The ONE list-search rule (`utils/textQuery.ts` `matchesQuery`: every
+// word, case-insensitive substring) over the name and the uid — a uid is what a note, a filename or a
+// task log quotes, a name is what the user remembers. Same answer as the header's jump search.
+
+/** Does this image match the search text? Blank text matches everything. */
+export const matchesImageSearch = (img: { uid: string; name?: string | null }, query: string): boolean =>
+  matchesQuery([img.name, img.uid], query)
+
+/**
+ * What the search box offers while typing: names first, then uids — each matching `query`
+ * (prefix matches ranked first, `filterSuggestions`), de-duplicated, capped at `limit`. Capped because
+ * the box opens on focus with everything on offer, and a 2000-image set would otherwise render 4000
+ * buttons into a popover nobody scrolls; the first keystroke narrows it to what matters.
+ */
+export function imageSearchSuggestions(images: readonly { uid: string; name?: string | null }[],
+                                       query: string, limit = 30): string[] {
+  const names = [...new Set(images.map(i => i.name ?? '').filter(Boolean))]
+  const uids = images.map(i => i.uid)
+  // Ranked substring of the whole text, as SuggestInput itself re-filters what it is given — so a
+  // several-word query ("ln 4h") narrows the TABLE (every word, `matchesImageSearch`) but offers no
+  // suggestion: a suggestion is one name or uid, and the box completes one, not a phrase.
+  const out = [...new Set([...filterSuggestions(names, query), ...filterSuggestions(uids, query)])]
+  return out.slice(0, limit)
 }

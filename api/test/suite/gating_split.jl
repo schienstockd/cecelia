@@ -123,7 +123,7 @@ end
     calls = Ref(0)
     counted(v, lo, hi; adjust) = (calls[] += 1; valley_cut(v, lo, hi; adjust))
     lin = LinearTransform()
-    out = _child_gate_outlines(m, ROOT, "c", "c", lin, lin; parent_raw = raw, valley = counted)
+    out = _child_gate_outlines(m, ROOT, "c", "c", lin, lin; parent_raw = (raw, raw), valley = counted)
     @test calls[] == 2                                       # the group's one cut + the range's ruled end
     byp = Dict(o["path"] => o for o in out)
     for p in ("/hi", "/lo", "/mid")

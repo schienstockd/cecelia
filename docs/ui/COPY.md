@@ -23,7 +23,7 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 | QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
 | Data-patch `description` (`app/src/maintenance.jl`) | title = what it does, description = one line + the one caveat that matters. Capped at 160 chars by `app/test/suite.jl`. Never restate Dry-run/Apply (both are buttons) and never explain HOW it detects — that belongs in the runner |
 | Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** the two *first-run* states (no projects / no images) get title + ≤2 lines + one CTA — bounded in *Onboarding*, which is the rule for them |
-| First-use hint (`HintCallout`) | one line, by construction |
+| Gesture line (`.cc-gesture-line`) | one line naming the gesture: `drag lassoes · Shift-drag a rectangle`. Verbs and keys, no reasons |
 | Guide step (`lib/guides/*.ts`) | **the second carve-out**, and bounded the same way: an optional short `title`, **one** sentence of `text` (≤140 chars), plus **at most four** imperative `bullets` (≤110 chars each). Enforced by `lib/guides/guides.test.ts`. Same reasoning as the first-run states — a guide step is read once, by someone who does not yet know the app, and then never again; it is not sitting on a page they use daily. Anything past the shape is what the budget exists to stop. See *Guides* |
 
 Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself

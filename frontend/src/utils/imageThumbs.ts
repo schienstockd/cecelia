@@ -7,7 +7,11 @@
  * uids in `profileStorage` under `thumbsStorageKey(projectUid)`.
  */
 
+import { escapeHtml } from './escapeHtml'
+
 export const THUMB_PX = 160
+/** The hover preview's render — its own request, so the row's slot never pays for it. */
+export const PREVIEW_PX = 320
 
 export function thumbsStorageKey(projectUid: string): string {
   return `cc.imageThumbs:${projectUid}`
@@ -54,23 +58,25 @@ export function allShown(shown: ReadonlySet<string>, uids: readonly string[]): b
 
 /** Cache key: a new active version, or a new `rev`, is a new thumbnail. `rev` is the image's
  *  `dataVersion` (project store), bumped when a task finishes on it — a re-run that rewrites a store
- *  under the same name changes neither the image record nor its version, only that. */
-export function thumbCacheKey(projectUid: string, imageUid: string, version: string | undefined, rev = 0): string {
-  return `${projectUid}|${imageUid}|${version ?? ''}|${rev}`
+ *  under the same name changes neither the image record nor its version, only that. `size` keeps the
+ *  row's thumbnail and the hover preview apart. */
+export function thumbCacheKey(projectUid: string, imageUid: string, version: string | undefined, rev = 0,
+                              size = THUMB_PX): string {
+  return `${projectUid}|${imageUid}|${version ?? ''}|${rev}|${size}`
 }
 
 const _cache = new Map<string, Promise<string | null>>()
 
 /** The thumbnail as a data URL, or null when the image has none to show (not imported, unreadable).
  *  One request per key per session; a failure is not cached, so the next toggle retries. A new key
- *  drops the image's older ones, so the cache holds one thumbnail per image. */
+ *  drops the image's older ones of the same size, so the cache holds one thumbnail per image and size. */
 export function loadThumb(projectUid: string, imageUid: string, version: string | undefined,
-                          rev = 0): Promise<string | null> {
-  const key = thumbCacheKey(projectUid, imageUid, version, rev)
+                          rev = 0, size = THUMB_PX): Promise<string | null> {
+  const key = thumbCacheKey(projectUid, imageUid, version, rev, size)
   const hit = _cache.get(key)
   if (hit) return hit
-  dropOlderThumbs(projectUid, imageUid, key)
-  const q = new URLSearchParams({ projectUid, imageUid, size: String(THUMB_PX) })
+  dropOlderThumbs(projectUid, imageUid, size, key)
+  const q = new URLSearchParams({ projectUid, imageUid, size: String(size) })
   const p = fetch(`/api/images/thumbnail?${q}`)
     .then(async r => (r.ok ? ((await r.json()).png as string) ?? null : null))
     .catch(() => null)
@@ -82,9 +88,27 @@ export function loadThumb(projectUid: string, imageUid: string, version: string 
   return p
 }
 
-function dropOlderThumbs(projectUid: string, imageUid: string, keep: string) {
-  const prefix = `${projectUid}|${imageUid}|`
-  for (const k of [..._cache.keys()]) if (k.startsWith(prefix) && k !== keep) _cache.delete(k)
+function dropOlderThumbs(projectUid: string, imageUid: string, size: number, keep: string) {
+  const prefix = `${projectUid}|${imageUid}|`, suffix = `|${size}`
+  for (const k of [..._cache.keys()]) if (k.startsWith(prefix) && k.endsWith(suffix) && k !== keep) _cache.delete(k)
+}
+
+/** What the hover preview says under the picture: channels, then Z and T when the image has them. */
+export function previewCaption(img: { channelNames?: string[]; sizeC?: number | null; sizeZ?: number | null;
+                                      sizeT?: number | null }): string {
+  const c = Math.max(img.channelNames?.length ?? 0, img.sizeC ?? 0)
+  const parts = c ? [`${c} channel${c === 1 ? '' : 's'}`] : []
+  if ((img.sizeZ ?? 0) > 1) parts.push(`Z ${img.sizeZ}`)
+  if ((img.sizeT ?? 0) > 1) parts.push(`T ${img.sizeT}`)
+  return parts.join(' · ')
+}
+
+/** The hover preview as `v-tooltip` HTML (`escape: false`, class `thumb-tip`): the larger render —
+ *  or the row's thumbnail while that loads — over the image's name and caption. Every text is escaped. */
+export function previewHtml(url: string, name: string, caption: string): string {
+  const cap = caption ? `<div class="thumb-tip-cap">${escapeHtml(caption)}</div>` : ''
+  return `<img class="thumb-tip-img" src="${escapeHtml(url)}" alt="">`
+       + `<div class="thumb-tip-name">${escapeHtml(name)}</div>${cap}`
 }
 
 /** How many thumbnails the session holds — for tests. */

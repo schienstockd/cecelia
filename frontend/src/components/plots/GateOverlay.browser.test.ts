@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { h, ref } from 'vue'
 import GateOverlay from './GateOverlay.vue'
-import type { GateSpec } from '../../stores/gating'
+import type { GateSpec, GateRule } from '../../stores/gating'
 import { frames, mountInto } from '../../test/browser/mount'
 
 type Mode = 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'
@@ -139,7 +139,7 @@ describe('1D tools (on a histogram)', () => {
     o.fire('mousemove', 80, 20); o.fire('mousedown', 80, 20)
     o.fire('mousemove', 90, 20, window); o.fire('mouseup', 90, 20, window)
     expect(o.edits).toHaveLength(1)
-    expect(Math.abs(o.edits[0].gate.rule!.hi - 90) < 0.6).toBe(true)
+    expect(Math.abs((o.edits[0].gate.rule as GateRule).hi - 90) < 0.6).toBe(true)
   })
 
   it("a double-click on a range's end makes that end follow the valley", async () => {
@@ -149,6 +149,21 @@ describe('1D tools (on a histogram)', () => {
     expect(o.edits).toHaveLength(1)
     expect(o.edits[0].gate.hi_rule).toEqual({ kind: 'valley', lo: 40, hi: 80 })
     expect(o.edits[0].gate.lo_rule).toBeUndefined()
+  })
+})
+
+describe('a rectangle that follows its cloud', () => {
+  it('a double-click inside it switches it to following, and again back to staying put', async () => {
+    const g: Entry = { path: '/r', colour: '#f00', gate: { ...base, kind: 'rectangle', x_min: 20, x_max: 60, y_min: 20, y_max: 60 } }
+    const o = overlay('off', [g]); await frames()
+    o.click(40, 40); o.click(40, 40); o.fire('dblclick', 40, 40)     // what a real double-click sends
+    expect(o.edits).toHaveLength(1)
+    expect(o.edits[0].gate).toMatchObject({ kind: 'rectangle', x_min: 20, x_max: 60, rule: { kind: 'follow' } })
+    const on: Entry = { ...g, gate: { ...o.edits[0].gate, rule_ok: false } }
+    const o2 = overlay('off', [on]); await frames()
+    o2.click(40, 40); o2.click(40, 40); o2.fire('dblclick', 40, 40)
+    expect(o2.edits[0].gate.rule).toBeUndefined()
+    expect(o2.edits[0].gate.rule_ok).toBeUndefined()
   })
 })
 

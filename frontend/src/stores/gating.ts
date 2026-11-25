@@ -37,13 +37,17 @@ export interface GateSpec {
   group?: string                             // split: the id the region populations share
   lo?: number; hi?: number                   // range: the interval
   cut?: number                               // bisector: the cut (side 1 = above it, -1 = at or below)
-  rule?: GateRule                            // bisector: cut at the parent's density valley instead
-  rule_ok?: boolean                          // server outline: the rule found a valley on this parent
+  rule?: GateRule | FollowRule               // bisector: cut at the parent's density valley instead ·
+                                             // rectangle / polygon: move with the cloud it was drawn on
+  rule_ok?: boolean                          // server outline: the rule found its valley / cloud on this parent
   lo_rule?: GateRule; hi_rule?: GateRule     // range: an end that follows its own valley
   lo_rule_ok?: boolean; hi_rule_ok?: boolean // server outline: that end's rule found a valley
 }
 // a bisector's rule: the deepest valley of the parent's density in [lo, hi] (gate coordinates)
 export interface GateRule { kind: 'valley'; lo: number; hi: number; adjust?: number }
+// a rectangle / polygon's rule: on each parent it moves by how far the cloud it was drawn on moved (the
+// server anchors it where it is saved and never sends the anchor — plots/followRule.ts)
+export interface FollowRule { kind: 'follow'; adjust?: number }
 // one AND-ed condition of a compound filter (Decision 15)
 export interface FilterCondition { measure: string; fun: string; values: unknown }
 // a filter spec: the single measure/fun/values (back-compat) plus optional AND-ed `conditions`

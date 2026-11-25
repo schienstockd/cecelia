@@ -513,7 +513,7 @@ function api_task_fun_params(req::HTTP.Request)
         return 400, JSON3.write((; error = "projectUid and fun are required"))
 
     proj_root = joinpath(projects_dir(), proj)
-    dir(u) = joinpath(proj_root, "1", u)
+    dir(u) = obj_meta_dir(proj_root, u)
 
     params, matched = nothing, false
     if !isempty(vname)
@@ -598,7 +598,7 @@ function api_task_fun_params_sources(req::HTTP.Request)
         # 2. run log — retroactive backfill and provider of the `at` timestamp. Newest-first so the
         # first hit per name wins. `task` is nil for an unknown fun, so no log walk at all.
         if !isnothing(task)
-            for e in Iterators.reverse(read_run_log(joinpath(proj_root, "1", uid)))
+            for e in Iterators.reverse(read_run_log(obj_meta_dir(proj_root, uid)))
                 run_entry_status(e) == "done" || continue
                 string(get(e, "fun", get(e, :fun, ""))) == String(fun) || continue
                 p = get(e, "params", get(e, :params, nothing))

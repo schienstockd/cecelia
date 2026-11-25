@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { allShown, loadThumb, parseShown, thumbCacheSize, serializeShown, thumbCacheKey, thumbsStorageKey, toggleAllShown, toggleShown } from './imageThumbs'
+import { allShown, loadThumb, parseShown, PREVIEW_PX, previewCaption, previewHtml, thumbCacheSize, serializeShown, thumbCacheKey, thumbsStorageKey, toggleAllShown, toggleShown } from './imageThumbs'
 
 describe('image table thumbnails — which rows show one', () => {
   it('round-trips through storage, and reads junk as nothing shown', () => {
@@ -53,5 +53,32 @@ describe('image table thumbnails — the fetch cache', () => {
     const before = thumbCacheSize()
     await loadThumb('Pc', 'img', 'default', 2)
     expect(thumbCacheSize()).toBe(before)                                // the older one was dropped
+  })
+
+  it('the hover preview is its own entry: fetching it neither evicts nor reuses the row thumbnail', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (u: string) =>
+      ({ ok: true, json: async () => ({ png: `data:${new URL(u, 'http://x').searchParams.get('size')}` }) })))
+    const row = await loadThumb('Ps', 'img', 'default', 0)
+    const big = await loadThumb('Ps', 'img', 'default', 0, PREVIEW_PX)
+    expect(big).toBe(`data:${PREVIEW_PX}`)
+    expect(row).not.toBe(big)
+    expect(await loadThumb('Ps', 'img', 'default', 0)).toBe(row)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('image table thumbnails — the hover preview', () => {
+  it('names the channels, and Z / T only when the image has more than one', () => {
+    expect(previewCaption({ channelNames: ['a', 'b', 'c'] })).toBe('3 channels')
+    expect(previewCaption({ sizeC: 1, sizeZ: 1, sizeT: 1 })).toBe('1 channel')
+    expect(previewCaption({ sizeC: 2, sizeZ: 12, sizeT: 40 })).toBe('2 channels · Z 12 · T 40')
+    expect(previewCaption({})).toBe('')
+  })
+
+  it('escapes the name — it is the user\'s text, rendered as HTML', () => {
+    const html = previewHtml('data:x', '<b>tumour & "LN"</b>', '')
+    expect(html).not.toContain('<b>')
+    expect(html).toContain('&lt;b&gt;tumour &amp; &quot;LN&quot;&lt;/b&gt;')
+    expect(html).not.toContain('thumb-tip-cap')
   })
 })

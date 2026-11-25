@@ -111,8 +111,8 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
             on_log("[ERROR] $(im.uid): no filepath registered on the default version.")
             return nothing
         end
-        proj_dir = dirname(dirname(im._dir))
-        im_path  = joinpath(proj_dir, "0", im.uid, string(filename))
+        proj_dir = img_project_dir(im)
+        im_path  = joinpath(obj_zero_dir(proj_dir, im.uid), string(filename))
         if !ispath(im_path)
             on_log("[ERROR] $(im.uid): image not found on disk — $im_path")
             return nothing
@@ -127,7 +127,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
     plan    = _register_channel_plan(src_C, reg_channels, p.keepRegChannels)
     total_c = length(plan)
 
-    proj_dir = dirname(dirname(ref_img._dir))
+    proj_dir = img_project_dir(ref_img)
     proj_uid = basename(proj_dir)
     proj    = load_project(proj_uid)
     set_idx = image_set_index(proj, ref_img)
@@ -148,7 +148,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
 
     new_img = add_image!(s; name = derived_image_name(proj, ref_img.name, "registered"), meta = reg_meta)
     out_filename = "ccidRegistered.ome.zarr"
-    im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
+    im_out_path  = joinpath(obj_zero_dir(proj_dir, new_img.uid), out_filename)
     on_log("[INFO] Reference: $(ref_img.uid) ($(ref_img.name))")
     on_log("[INFO] Registering $(length(ordered) - 1) cycle(s) on channel '$reg_channel_name' → $(new_img.uid)")
 

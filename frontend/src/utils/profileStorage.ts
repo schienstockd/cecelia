@@ -10,7 +10,7 @@
 //   • same owner (or none yet — a fresh origin, or a browser from before this mirror existed) → the
 //     bag wins over the mirror for keys it has; mirror-only keys are bootstrapped up into the bag.
 //     If that changed any mirror value, the caller reloads too: hydration is not awaited, so the
-//     guide store and the first page's components (a `HintCallout`'s dismissed flag) have already
+//     guide store and the first page's components (a guide's done flag) have already
 //     read the old mirror and would keep it for the session. One reload per changed bag, not one
 //     reactive signal threaded through every reader.
 //   • different owner → another person used this browser last. Their mirror is cleared, the bag is

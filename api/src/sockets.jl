@@ -873,10 +873,10 @@ function _remember_fun_params(proj_root::String, fun::String, params::Dict{Strin
     try
         vn = Cecelia.task_params_name(fun, params)
         for u in uids
-            write_module_fun_params!(joinpath(proj_root, "1", u), fun, params; value_name = vn)
+            write_module_fun_params!(obj_meta_dir(proj_root, u), fun, params; value_name = vn)
         end
         isempty(set_uid) ||
-            write_module_fun_params!(joinpath(proj_root, "1", set_uid), fun, params; value_name = vn)
+            write_module_fun_params!(obj_meta_dir(proj_root, set_uid), fun, params; value_name = vn)
     catch ex
         @warn "Could not persist funParams" fun exception=ex   # best-effort; never block the run
     end

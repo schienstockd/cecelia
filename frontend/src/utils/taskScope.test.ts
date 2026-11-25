@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { taskInScope, taskProjectLabel, frameTargetsOpenProject, newImageUidsOf } from './taskScope'
+import { taskInScope, taskProjectLabel, frameTargetsOpenProject, newImageUidsOf, frameImageUidsOf } from './taskScope'
 
 const row = (projectUid: string) => ({ projectUid })
 const nameOf = (uid: string) => ({ pA: 'zolIMa', pB: 'exciDR' }[uid])
@@ -86,5 +86,19 @@ describe('newImageUidsOf', () => {
   })
   it('drops malformed entries', () => {
     expect(newImageUidsOf({ newImageUids: ['a', '', null, 3] })).toEqual(['a'])
+  })
+})
+
+describe('frameImageUidsOf', () => {
+  it('reads every member of a set task', () => {
+    expect(frameImageUidsOf({ imageUid: 'a', imageUids: ['a', 'b', 'c'] })).toEqual(['a', 'b', 'c'])
+  })
+  it('falls back to the single image when the member list is empty', () => {
+    expect(frameImageUidsOf({ imageUid: 'a', imageUids: [] })).toEqual(['a'])
+    expect(frameImageUidsOf({ imageUid: 'a' })).toEqual(['a'])
+  })
+  it('a frame naming no image touches none', () => {
+    expect(frameImageUidsOf({ imageUid: '' })).toEqual([])
+    expect(frameImageUidsOf({})).toEqual([])
   })
 })

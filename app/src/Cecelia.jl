@@ -87,7 +87,7 @@ export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
 export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_params!
-export state_file, obj_meta_dir, STATE_FILENAME
+export state_file, obj_meta_dir, obj_zero_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export migrate_qc_findings
 export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
@@ -126,7 +126,7 @@ export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTran
 export apply_transform, invert_transform, transform_spec, transform_from_spec, transform_column, invert_column, transform_key
 export transform_kind, transform_collapses, effective_transform
 export Gate, RectangleGate, PolygonGate, SliceGate, QuadrantGate, quadrant_of, gate_group,
-       RangeGate, BisectorGate, ValleyRule, valley_cut
+       RangeGate, BisectorGate, ValleyRule, valley_cut, FollowRule, follow_mode
 export inside, inside_t, point_in_polygon, gate_channels, gate_spec, gate_from_spec, project_gate
 export Density2D, density_2d, axis_summary, grid_summary
 
@@ -151,8 +151,8 @@ export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_tree!, load_pop_tree, gating_dir, gating_path, stored_pop_tree, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
-export copy_gating!, with_pop_tree_lock
-export co_clustered_value_names, cluster_run_at, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
+export copy_gating!, has_gating, with_pop_tree_lock
+export co_clustered_value_names, cluster_run_at, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
        cluster_id_owners, as_cluster_id
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export category_colours, category_sort_key, pop_label_overrides, POPULATION_PALETTE
@@ -336,6 +336,7 @@ include("gating/transforms.jl")
 include("gating/gates.jl")
 include("gating/split_gates.jl")
 include("gating/hist_gates.jl")
+include("gating/follow_rule.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
@@ -422,6 +423,7 @@ include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/af_cells.jl")      # per-cell AF correction → af_ intensity columns
+include("tasks/segment/af_cells_reapply.jl")   # a re-measure re-applies it
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
 include("tasks/gate/manual_gate.jl")
