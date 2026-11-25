@@ -4,12 +4,13 @@
 // HTML cluster labels must NOT wait for the settle: they follow the box on every step, so they stay on
 // the (stretched) dots.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick, provide, reactive } from 'vue'
+import { defineComponent, h, nextTick, provide, reactive, ref } from 'vue'
 import { routeLocationKey } from 'vue-router'
 import ClusterMapView from './ClusterMapView.vue'
 import { frames, mountInto } from '../../test/browser/mount'
 import { RESIZE_SETTLE_MS } from '../../utils/resizePaint'
 import { activePlotLoads } from '../../utils/plotReady'
+import { SPLAT_MIN } from '../../plots/dotSplat'
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -124,5 +125,126 @@ describe('ClusterMapView colour by feature', () => {
     expect(legend!.textContent).toContain('2')
     expect(legend!.textContent).toContain('8')
     expect(host.querySelector('.leg-row'), 'no cluster legend rows').toBeNull()
+  })
+})
+
+// A cloud past SPLAT_MIN: drawn as one image (plots/dotSplat), painted once per change, and its HTML
+// centroid labels still on their clusters' dots — before and after a resize. Each cluster is a tight
+// blob, so the expected place for its label comes from the data, never from the component's mapping.
+const BLOBS = [{ x: -6, y: 4 }, { x: 5, y: 3 }, { x: 0, y: -5 }]
+const PER = Math.ceil(SPLAT_MIN / BLOBS.length) + 500
+function serveBlobs() {
+  let s = 11
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647)
+  const f = new Float32Array(BLOBS.length * PER * 5)
+  let o = 0
+  BLOBS.forEach((b, code) => {
+    for (let i = 0; i < PER; i++) {
+      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 0.8
+      f.set([b.x + Math.cos(a) * d, b.y + Math.sin(a) * d, code, code < 2 ? code : -1, o / 5 + 1], o)
+      o += 5
+    }
+  })
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => String(url).includes('/api/plots/cluster-map')
+    ? new Response(f.buffer.slice(0))
+    : new Response('[]', { headers: { 'Content-Type': 'application/json' } })))
+}
+// what the canvases are asked to draw
+function countDraws() {
+  const calls = { arc: 0, drawImage: 0, clear: 0 }
+  const proto = CanvasRenderingContext2D.prototype
+  const { arc, drawImage, clearRect } = proto
+  proto.arc = function (...a: Parameters<typeof arc>) { calls.arc++; return arc.apply(this, a) }
+  proto.drawImage = function (...a: unknown[]) { calls.drawImage++; return (drawImage as (...x: unknown[]) => void).apply(this, a) }
+  proto.clearRect = function (...a: Parameters<typeof clearRect>) { calls.clear++; return clearRect.apply(this, a) }
+  return { calls, restore: () => { proto.arc = arc; proto.drawImage = drawImage; proto.clearRect = clearRect } }
+}
+function mountBlobs() {
+  serveBlobs()
+  const width = ref(520), suffix = ref('s'), state = reactive<Record<string, unknown>>({})
+  const host = mountInto({ render: () => h(WithRoute, () => h('div', { style: `width:${width.value}px;height:440px;display:flex;flex-direction:column` },
+    [h(ClusterMapView, { projectUid: 'p', imageUids: ['i'], setUid: null, popType: 'clust', suffix: suffix.value, state })])) })
+  return { host, width, suffix, state }
+}
+async function labelled(host: HTMLElement) {
+  for (let i = 0; i < 200 && host.querySelectorAll('.uv-label').length < BLOBS.length; i++) await wait(25)
+  await wait(300); await frames(3)
+}
+// every centroid chip: the canvas pixel under its centre, against its cluster's legend colour
+function labelsOnTheirDots(host: HTMLElement) {
+  const cv = host.querySelector<HTMLCanvasElement>('.uv-canvas')!
+  const cr = cv.getBoundingClientRect(), sx = cv.width / cr.width, sy = cv.height / cr.height
+  const px = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data
+  const legend = new Map([...host.querySelectorAll('.leg-row')].map(r =>
+    [r.querySelector('.leg-lbl')!.textContent!.trim(), getComputedStyle(r.querySelector('.leg-dot')!).backgroundColor]))
+  const chips = [...host.querySelectorAll<HTMLElement>('.uv-label')]
+  expect(chips).toHaveLength(BLOBS.length)
+  return chips.map(ch => {
+    const r = ch.getBoundingClientRect()
+    const x = Math.round((r.left + r.width / 2 - cr.left) * sx), y = Math.round((r.top + r.height / 2 - cr.top) * sy)
+    const o = (y * cv.width + x) * 4
+    const want = legend.get(`cluster ${ch.textContent!.trim()}`)!.match(/\d+/g)!.map(Number)
+    return { label: ch.textContent!.trim(), off: Math.max(...[0, 1, 2].map(k => Math.abs(px[o + k] - want[k]))), alpha: px[o + 3] }
+  })
+}
+
+describe('ClusterMapView, a cloud past SPLAT_MIN', () => {
+  it('draws one image, painted once, with the labels on their clusters before and after a resize', async () => {
+    const { calls, restore } = countDraws()
+    try {
+      const { host, width } = mountBlobs()
+      await labelled(host)
+      expect(calls.arc).toBe(0)          // no circle per point: the cloud went down as one image
+      expect(calls.drawImage).toBeGreaterThan(0)
+      expect(calls.clear).toBe(1)        // and once — the legend reflowing the box is not a second paint
+      for (const l of labelsOnTheirDots(host)) {
+        expect(l.alpha, `label ${l.label}`).toBeGreaterThan(200)
+        expect(l.off, `label ${l.label}`).toBeLessThan(8)
+      }
+      width.value = 380                  // the labels follow the box; the settled repaint puts the dots back under them
+      await wait(RESIZE_SETTLE_MS + 300); await frames(3)
+      expect(calls.clear).toBe(2)
+      for (const l of labelsOnTheirDots(host)) {
+        expect(l.alpha, `label ${l.label} after resize`).toBeGreaterThan(200)
+        expect(l.off, `label ${l.label} after resize`).toBeLessThan(8)
+      }
+    } finally { restore() }
+  })
+
+  it('a refetch paints once, not once per input it changed', async () => {
+    const { calls, restore } = countDraws()
+    try {
+      const { host, suffix } = mountBlobs()
+      await labelled(host)
+      const before = calls.clear
+      suffix.value = 's2'                // new points, colours, extents and facets — one paint
+      await wait(600); await frames(3)
+      expect(calls.clear - before).toBe(1)
+    } finally { restore() }
+  })
+
+  it('faceted: every cell carries the whole cloud as its ghost, still as one image', async () => {
+    const { calls, restore } = countDraws()
+    try {
+      const { host, state } = mountBlobs()
+      await labelled(host)
+      state.colourPops = ['flow::v/a', 'flow::v/b']
+      state.facetBy = 'population'
+      for (let i = 0; i < 200 && host.querySelectorAll('.uv-facet-title').length < 3; i++) await wait(25)
+      await wait(400); await frames(3)
+      expect(calls.arc).toBe(0)
+      // 3 facets in a 2×2 grid: the inked area of each used cell is the whole cloud's (ghost + its own points)
+      const cv = host.querySelector<HTMLCanvasElement>('.uv-canvas')!
+      const W = cv.width, H = cv.height, px = cv.getContext('2d')!.getImageData(0, 0, W, H).data
+      const inked = (x0: number, y0: number) => {
+        let n = 0
+        for (let y = y0; y < y0 + H / 2; y++) for (let x = x0; x < x0 + W / 2; x++) if (px[(y * W + x) * 4 + 3] > 40) n++
+        return n
+      }
+      const cells = [inked(0, 0), inked(W / 2, 0), inked(0, H / 2)]
+      expect(Math.min(...cells)).toBeGreaterThan(0)
+      expect(Math.max(...cells) / Math.min(...cells)).toBeLessThan(1.05)
+      expect(inked(W / 2, H / 2)).toBe(0)                               // the fourth cell is empty
+    } finally { restore() }
   })
 })
