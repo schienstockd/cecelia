@@ -17,6 +17,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import PlotChart from '../../components/plots/PlotChart.vue'
+import PlotSpinner from '../../components/plots/PlotSpinner.vue'
 import CcToggle from '../../components/CcToggle.vue'
 import { defaultVis, plotDataToCsv, type BuildOpts, type VisProps } from '../../plots/plot'
 import { downloadDataUrl, downloadBlob } from '../../plots/export'
@@ -67,7 +68,7 @@ const features = computed(() => props.state.features ?? [])
 const heatmap = ref<PlotDataResponse | null>(null)
 const loading = ref(false)
 // board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
-useDelayedLoading(loading)
+const showSpinner = useDelayedLoading(loading)   // + the wheel over a heatmap being replaced (run switch)
 const err = ref('')
 // merge the canvas vis (dark-theme, font size, legend, …) over the defaults so the pop-manager
 // styling knobs drive the heatmap too; the matrix-specific fields below stay fixed regardless.
@@ -258,11 +259,12 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
       </select>
     </template>
     <div ref="bodyEl" class="hm-body">
-      <PlotChart v-if="heatmap" ref="plotRef" :data="heatmap" :opts="opts" />
+      <PlotChart v-if="heatmap" ref="plotRef" :data="heatmap" :opts="opts" :host-busy="showSpinner" />
       <div v-else class="hm-empty cc-empty cc-empty-overlay">
         <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-table']" />
         <p>{{ loading ? 'Loading…' : (err || 'Pick features to build the cluster heatmap.') }}</p>
       </div>
+      <PlotSpinner v-if="heatmap && showSpinner" label="Loading…" />
       <template v-for="m in heatmapMarks" :key="m.markerId">
         <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
       </template>

@@ -28,6 +28,7 @@ _mr_axis(c, chans) = (n = only(canonical_channel_columns([string(c)], chans));
 # "A intensity vs B intensity" → "A vs B intensity"
 _mr_axes(x, y) = endswith(x, " intensity") && endswith(y, " intensity") ? "$(x[1:end-10]) vs $y" : "$x vs $y"
 
+# `names`: path → the name a reader tells apart from the set's other populations (`_mr_pop_names`)
 function _mr_pop_detail(p, chans, names::Dict{String,String})::Tuple{Symbol,String}
     pt = string(p.pop_type)
     name_of(path) = get(names, string(path), methods_pop_phrase(string(path)))
@@ -54,23 +55,37 @@ function _mr_pop_detail(p, chans, names::Dict{String,String})::Tuple{Symbol,Stri
     :filter, "$(methods_measure_phrase(f["measure"])) $(something(f["fun"], "")) $(join(string.(vals), ", "))"
 end
 
+# Each label set's population paths, across all the images, as names a reader tells apart
+# (`methods_pop_phrases`): two `OTI`s under different parents read "qc/OTI" and "other/OTI" in every
+# clause and combination, not "OTI without OTI".
+function _mr_pop_names(per_image)::Dict{String,Dict{String,String}}
+    paths = Dict{String,Set{String}}()
+    for (_, pops) in per_image, p in pops
+        push!(get!(Set{String}, paths, p.value_name), p.path)
+    end
+    Dict(vn => (ps = sort!(collect(ps)); Dict(zip(ps, methods_pop_phrases(ps)))) for (vn, ps) in paths)
+end
+
 # Every population on `uids`, grouped across images by (pop type, label set, path)
 function _mr_population_index(proj::CciaProject, uids)::Vector{_MrPop}
     acc = Dict{Tuple{String,String,String},_MrPop}()
+    per_image = Tuple{CciaImage,Vector{Any}}[]
     for uid in uids
         img = try init_object(proj.uid, uid) catch; nothing end
         img isa CciaImage || continue
-        names = Dict{String,String}()
         pops = Any[]
-        _observer_each_population(img) do p
-            push!(pops, p); names[p.path] = p.name
-        end
+        _observer_each_population(p -> push!(pops, p), img)
+        push!(per_image, (img, pops))
+    end
+    names = _mr_pop_names(per_image)
+    for (img, pops) in per_image
         for p in pops
             chans = something(channel_names(img; value_name = p.value_name), String[])
-            kind, d = try _mr_pop_detail(p, chans, names) catch; (:other, "") end
+            ns = names[p.value_name]
+            kind, d = try _mr_pop_detail(p, chans, ns) catch; (:other, "") end
             key = (string(p.pop_type), p.value_name, p.path)
             e = get!(acc, key) do
-                _MrPop(key..., p.name, string(p.parent), kind, Dict{String,Int}(), 0, Any[], false)
+                _MrPop(key..., get(ns, p.path, p.name), string(p.parent), kind, Dict{String,Int}(), 0, Any[], false)
             end
             e.images += 1
             isempty(d) || (e.detail[d] = get(e.detail, d, 0) + 1)

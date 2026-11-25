@@ -388,6 +388,9 @@ onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null; node?.remov
 <template>
   <div ref="host" class="plot-host" :class="{ 'plot-host--stale': redrawing }" :style="{ background: hostBg }">
     <PlotSpinner v-if="redrawing && !hostBusy" label="Redrawing…" />
+    <!-- brushable dots: name the brush gestures on hover (docs/UI.md → *Hidden gestures need a
+         visible surface*); not part of the SVG, so exports never carry it -->
+    <span v-if="data?.pointIdKind" class="pc-gestures cc-gesture-line cc-gesture-line-overlay">drag lassoes · <kbd>Shift</kbd>-drag a rectangle</span>
   </div>
 </template>
 
@@ -396,6 +399,8 @@ onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null; node?.remov
    overlay. color:#111 so any HTML text (legend) is dark on the white ground (not the app's light grey). */
 .plot-host { position: relative; width: 100%; height: 100%; background: var(--cc-paper); border-radius: var(--cc-radius-xs); overflow: hidden; color: var(--cc-paper-ink); }
 .plot-host :deep(svg) { display: block; }
+.pc-gestures { opacity: 0; transition: opacity 0.15s; }
+.plot-host:hover .pc-gestures { opacity: 1; }
 /* the chart on screen is about to be replaced — say so (docs/UI.md → *Plot loading state*) */
 .plot-host--stale > :deep(svg) { opacity: 0.45; }
 /* legend drawn as an absolute overlay (top-right) so it never eats height / clips the x-axis.

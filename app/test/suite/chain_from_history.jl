@@ -137,6 +137,31 @@ end
     rm(proj.root; recursive = true)
 end
 
+@testset "Chain from history — the gate requires what any exemplar read" begin
+    # one cell clustering (`clusters.immune`) on both images; the older run also read /qc/extra, the
+    # newer did not. A conflict on its pops lets the user pick the older value, so the gate step must
+    # ask for /qc/extra too
+    proj, uids = _history_project("a" => "RFtn9f_TKufLV", "b" => "RFtn9f_TKufLV")
+    for (k, at, pops) in (("a", "2026-11-15T15:00:00", ["Tcells/qc/OTI"]),
+                          ("b", "2026-11-15T14:59:00", ["Tcells/qc/OTI", "Tcells/qc/extra"]))
+        img = init_object(proj.uid, uids[k])
+        log = read_run_log(img)
+        e = deepcopy(last(e for e in log if e["fun"] == "behaviour.hmm"))
+        e["fun"] = "clustPops.cluster"; e["taskId"] = "CLU$k"; e["at"] = at
+        e["params"] = Dict{String,Any}("valueNameSuffix" => "immune", "popsToCluster" => pops,
+                                       "clusterMeasures" => ["volume"], "resolution" => 1)
+        push!(log, e)
+        write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+    end
+    r = chain_from_history(proj, [uids["a"], uids["b"]])
+    @test any(c -> c["param"] == "popsToCluster", r["conflicts"])
+    gate = only(n for n in r["template"]["nodes"] if n["id"] == "gate.Tcells")
+    @test "/qc/extra" in split(gate["params"]["requiredPops"], ", ")
+    clu = only(_hnode(r, "clustPops.cluster"))
+    @test _hedge(r, "gate.Tcells", clu["id"])
+    rm(proj.root; recursive = true)
+end
+
 @testset "producesColumns spells the HMM columns the readers use" begin
     for (f, prefix) in (("hmm_states", Cecelia._HMM_STATE_PREFIX), ("hmm_transitions", Cecelia._HMM_TRANS_PREFIX))
         spec = JSON3.read(read(joinpath(pkgdir(Cecelia), "src", "tasks", "behaviour", f * ".json"), String))

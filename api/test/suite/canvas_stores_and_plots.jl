@@ -238,6 +238,16 @@ end
     @test cm("&labelsVersion=") == 404
     @test cm("") == 404
 
+    # one segmentation's records: [x, y, code, popIdx, label, value] per kept row, in row order; a
+    # missing code → -1, a label in no picked pop → -1, a dropped row → absent
+    xy = [1.0 2.0; 3.0 4.0; 5.0 6.0]
+    out = _pack_cluster_map!(Float32[9], 6, [1, 3], xy, Any[7, missing, missing], [10, 11, 12],
+                             Dict(12 => 2), Float32[0.5, 0.6, 0.7], true, true)
+    @test out == Float32[9, 1, 2, 7, -1, 10, 0.5, 5, 6, -1, 2, 12, 0.7]
+    # the plain layout: no label, no value; no pops picked → every popIdx -1
+    @test _pack_cluster_map!(Float32[], 4, [2], xy, [0.0, 3.0, 1.0], [10, 11, 12], Dict{Int,Int}(),
+                             Float32[], false, false) == Float32[3, 4, 3, -1]
+
     # REGRESSION: an entry written BEFORE the `labels` field existed — i.e. any image not re-run since.
     # Reading it must not throw. `something(get(...), nothing)` did: with every argument `nothing`,
     # `something()` raises ArgumentError("No value arguments present"), which surfaced as repeated 500s

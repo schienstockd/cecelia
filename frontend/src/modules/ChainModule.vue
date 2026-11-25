@@ -1703,6 +1703,7 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
         >
           <Background :pattern-color="gridColour" :gap="20" />
         </VueFlow>
+        <div v-if="!restartNodeId && !resumeBusy" class="canvas-hints cc-gesture-line">Click a step to resume from it</div>
 
         <!-- QC expand overlay -->
         <div v-if="qcExpand" class="qc-expand-overlay" @click.self="qcExpand = null">
@@ -1970,8 +1971,12 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
         </div>
       </div>
 
-      <div v-if="activeChain" class="canvas-hints cc-muted cc-fs-2xs">
-        Drag to pan · Scroll to zoom · Double-click edge to remove
+      <!-- the canvas's gestures; an empty chain names how to build one instead (docs/UI.md → *Hidden
+           gestures need a visible surface*) -->
+      <div v-if="activeChain" class="canvas-hints cc-gesture-line">
+        {{ nodes.some(n => n.type !== 'start')
+          ? 'Drag to pan · Scroll to zoom · Double-click edge to remove'
+          : 'Drag a step here from the left · drag between dots to connect' }}
       </div>
     </div>
 
@@ -2412,7 +2417,7 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
 
 .canvas-empty i { font-size: var(--cc-fs-lg); opacity: 0.4; }   /* + .cc-empty .cc-empty-overlay */
 
-.canvas-hints { position: absolute; bottom: 0.5rem; left: 50%; transform: translateX(-50%); opacity: 0.5; pointer-events: none; white-space: nowrap; }
+.canvas-hints { position: absolute; bottom: 0.5rem; left: 50%; transform: translateX(-50%); white-space: nowrap; }
 
 /* ── Right panel: node config + Run ─────────────────────────────────────────── */
 /* fills the right CollapsiblePanel, which owns the width — the same frame as TaskRunner */

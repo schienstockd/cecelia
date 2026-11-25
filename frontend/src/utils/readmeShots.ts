@@ -39,7 +39,7 @@ export function renderReadmeShots(facts: Record<string, number | string>, widths
     const where = xs.length === 2 ? ['Left', 'Right'] : xs.map((_, i) => `${i + 1}`)
     const caps = xs.map(x => caption(x, facts))
     const imgs = xs.map((x, i) => image(x, widths, caps[i], `${Math.floor(98 / xs.length)}%`)).join(' ')
-    return `<p align="center">${imgs}<br><sub>${caps.map((c, i) => `<b>${where[i]}:</b> ${esc(c)}`).join('<br>')}</sub></p>`
+    return `<p align="center">${imgs}<br><sub>${caps.map((c, i) => `<b>${where[i]}:</b> ${esc(c)}`).join(' ')}</sub></p>`
   }
   const lone = (x: Shot) => { const c = caption(x, facts); return `<p align="center">${image(x, widths, c)}<br><sub>${esc(c)}</sub></p>` }
   return [
