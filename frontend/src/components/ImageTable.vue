@@ -42,7 +42,11 @@ const props = defineProps<{
   singleSelect?: boolean // radio-style: at most one image selected (e.g. gating)
   selectionScope?: string // namespace for remembering the selection (e.g. module name)
 }>()
-const emit = defineEmits<{ (e: 'selectionChange', uids: string[]): void }>()
+const emit = defineEmits<{
+  (e: 'selectionChange', uids: string[]): void
+  // the filtered-empty state's "Show all" — the filters belong to the parent that passed `filterUids`
+  (e: 'clearFilters'): void
+}>()
 
 const project     = useProjectStore()
 const kiwi        = useKiwiStore()
@@ -294,8 +298,10 @@ async function setIncluded(img: CciaImage, included: boolean) {
   }
 }
 
+// every image in the set, before `filterUids` — tells "no images" apart from "all filtered out"
+const setImages = computed(() => project.sets.find(s => s.uid === props.setUid)?.images ?? [])
 const images = computed(() => {
-  let all = project.sets.find(s => s.uid === props.setUid)?.images ?? []
+  let all = setImages.value
   if (props.filterUids) {
     const keep = new Set(props.filterUids)
     all = all.filter(i => keep.has(i.uid))
@@ -614,7 +620,15 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 </script>
 
 <template>
-  <div v-if="images.length === 0" class="cc-empty cc-empty-lg">
+  <!-- the set HAS images, the filters hid them all: say so and offer the way out — not "import" -->
+  <div v-if="images.length === 0 && setImages.length > 0" class="cc-empty filtered-empty">
+    <span>All {{ setImages.length }} image{{ setImages.length !== 1 ? 's' : '' }} hidden by filters</span>
+    <button class="cc-btn cc-btn-ghost cc-btn-sm" @click="emit('clearFilters')"
+      v-tooltip.bottom="'Switch every filter off'">
+      <i class="pi pi-filter-slash" /> Show all
+    </button>
+  </div>
+  <div v-else-if="images.length === 0" class="cc-empty cc-empty-lg">
     <i class="pi pi-images empty-icon" />
     <p class="empty-title">No images yet</p>
     <p class="empty-hint">Import your first image to get started.<br>

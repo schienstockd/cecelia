@@ -50,7 +50,8 @@ import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
 import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters, nextRowFilterValue,
-  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, type RowFilterState } from '../utils/rowFilters'
+  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, rowFilterShown, rowFiltersOff,
+  type RowFilterState } from '../utils/rowFilters'
 import { emptyAttrFilter, attrFilterActive, matchesAttrFilter, attrKeysOf,
          type AttrFilterState } from '../utils/attrFilter'
 import AttrFilterPanel from './AttrFilterPanel.vue'
@@ -187,7 +188,8 @@ watch(rowFilterActive, v => {
 // the filters worth showing, with their current count resolved once for the button + its tooltip
 const rowFilters = computed(() => {
   const imgs = activeSet.value?.images ?? []
-  return ROW_FILTERS.filter(f => !f.host && f.visible(imgs))   // a hosted one is drawn by its host
+  // a hosted one is drawn by its host; an ON one is always drawn, or a stale saved filter is stuck on
+  return ROW_FILTERS.filter(f => !f.host && rowFilterShown(f, rowFilterActive.value[f.id], imgs))
     .map(f => ({ def: f, btn: rowFilterButton(f, rowFilterActive.value[f.id], imgs) }))
 })
 // separate from the filter toggle above: the set header always states how many images are excluded,
@@ -234,6 +236,14 @@ const filteredUids = computed<string[] | undefined>(() => {
     })
     .map(img => img.uid)
 })
+
+// "Show all" from the table's filtered-empty state: every row filter, the attribute filter and the
+// processed-with filter off — whichever of them hid the rows.
+function clearFilters() {
+  rowFilterActive.value = rowFiltersOff()
+  attrFilter.value = emptyAttrFilter()
+  procFun.value = ''
+}
 
 // Drop out-of-view selections when filter changes
 watch(filteredUids, (uids) => {
@@ -466,6 +476,7 @@ const visibleUids = computed<string[]>(() =>
               :single-select="singleSelect"
               :filter-uids="filteredUids"
               @selectionChange="onSelectionChange"
+              @clear-filters="clearFilters"
             />
           </CollapsibleSection>
 
