@@ -286,8 +286,8 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* QC findings tooltip (ImageTable's qc-dot → lib/qc.ts qcTooltipHtml). The one tooltip in the app
-   that is structured rather than a phrase: an image can carry findings from several tasks at once, so
+/* QC findings tooltip (ImageTable's qc-dot → lib/qc.ts qcTooltipHtml). A tooltip that is
+   structured rather than a phrase: an image can carry findings from several tasks at once, so
    each is badged with the task that raised it. Scoped to `.qc-tip` — passed via v-tooltip's object
    form — so the block layout can't leak into the ~200 phrase tooltips everywhere else. */
 .cc-tooltip.qc-tip {
@@ -304,6 +304,17 @@ body {
 .qc-tip .qcf-a { color: var(--cc-text-dim); }
 .qc-tip .qcf-a::before { content: '→ '; }
 .qc-tip .cc-module-tag { margin-right: 0.35rem; }
+
+/* Thumbnail hover preview (ImageTable → ThumbSlot, utils/imageThumbs.ts previewHtml): the image larger,
+   its name and channels under it — inside the phrase cap (280px). The picture is a FIXED box, so the
+   tip measures the same before the image has decoded and lands where it should. */
+.thumb-tip .cc-tooltip-text { text-align: left; }
+.thumb-tip-img {
+  display: block; width: 240px; height: 240px; object-fit: contain;
+  background: var(--cc-media-bg); border-radius: var(--cc-radius-xs); margin-bottom: 0.3rem;
+}
+.thumb-tip-name { color: var(--cc-text); max-width: 240px; overflow-wrap: anywhere; }
+.thumb-tip-cap { color: var(--cc-text-dim); }
 
 /* Per-run breakdown behind the image table's module status badge, shown only when an image has more
    than one run in that module (ImageTable's `imageModuleStatusTip`). Plain text — this exists purely

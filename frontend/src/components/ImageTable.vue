@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useObserverStore } from '../stores/observer'
 import { useInlineEdit } from '../composables/useInlineEdit'
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useKiwiStore } from '../stores/kiwi'
@@ -32,7 +32,9 @@ import TissueExtent from './TissueExtent.vue'
 import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
 import { profileStorage } from '../utils/profileStorage'
-import { allShown, loadThumb, parseShown, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
+import { allShown, loadThumb, parseShown, PREVIEW_PX, previewCaption, previewHtml, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
+import ThumbSlot from './ThumbSlot.vue'
+import type { TooltipBinding } from '../utils/tooltipOptions'
 import { setImageAttr } from '../utils/imageAttrApi'
 import { ALWAYS_SHOWN, CHANNELS_GROUP, DEFAULT_PREFS, applyOrder, applyShown, arrangeColumns, columnPrefsKey, groupsOf,
          orderedGroups, parseColumnPrefs, serializeColumnPrefs, setGroupShown, type ColumnPrefs } from '../utils/imageTableColumns'
@@ -639,13 +641,37 @@ const anyThumbShown = computed(() => images.value.some(thumbShown))   // narrow 
 /** uid → data URL ('' = loading, null = nothing to show). */
 const thumbUrls = ref<Record<string, string | null>>({})
 const thumbKeys = new Map<string, string>()    // uid → the version + rev its URL (or request) is for
+/** The slot's `src`: not requested yet reads as loading — the slot is already there, waiting. */
+const thumbSrc = (img: CciaImage) => thumbUrls.value[img.uid] === undefined ? '' : thumbUrls.value[img.uid]
+
+// Lazy: a row's thumbnail is fetched once its slot comes within a screen of the viewport, so showing
+// all on a 200-image set doesn't fire 200 renders at once. Seen stays seen (no refetch on scroll back).
+const thumbsSeen = ref<Set<string>>(new Set())
+const slotUids = new WeakMap<Element, string>()
+const thumbObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
+  const seen: string[] = []
+  for (const e of entries) {
+    const uid = e.isIntersecting ? slotUids.get(e.target) : undefined
+    if (uid) { seen.push(uid); thumbObserver!.unobserve(e.target) }
+  }
+  if (seen.length) thumbsSeen.value = new Set([...thumbsSeen.value, ...seen])
+}, { rootMargin: '100% 0px' })
+onBeforeUnmount(() => thumbObserver?.disconnect())
+function observeSlot(r: unknown, uid: string) {
+  const el = (r as { $el?: Element } | null)?.$el
+  if (!thumbObserver || !el || thumbsSeen.value.has(uid)) return
+  slotUids.set(el, uid)
+  thumbObserver.observe(el)
+}
+
 // `dataVersion` moves when a task finishes on the image, so a store rewritten in place is re-read.
 // (Read per uid: `bumpDataVersion` writes into the record in place, which a watch on the record misses.)
-watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.uid] ?? 0).join()], () => {
+watch([thumbsShown, thumbsSeen, images, () => images.value.map(i => project.dataVersion[i.uid] ?? 0).join()], () => {
   const pu = projectMeta.current?.uid
   if (!pu) return
   for (const img of images.value) {
     if (!thumbShown(img)) continue
+    if (thumbObserver && !thumbsSeen.value.has(img.uid)) continue
     const rev = project.dataVersion[img.uid] ?? 0
     const key = `${img.uid}|${img.filepath ?? ''}|${rev}`
     if (thumbKeys.get(img.uid) === key) continue
@@ -658,6 +684,26 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
     })
   }
 }, { immediate: true })
+
+// Hover preview: a larger render of the same image (`PREVIEW_PX`, its own request, fetched on the first
+// hover) over its name and channels, through the app's tooltip. The row's thumbnail stands in until it lands.
+const previewUrls = ref<Record<string, string | null>>({})
+const previewKey = (img: CciaImage) => `${img.uid}|${img.filepath ?? ''}|${project.dataVersion[img.uid] ?? 0}`
+function loadPreview(img: CciaImage) {
+  const pu = projectMeta.current?.uid
+  const key = previewKey(img)
+  if (!pu || !thumbUrls.value[img.uid] || key in previewUrls.value) return
+  previewUrls.value = { ...previewUrls.value, [key]: null }
+  void loadThumb(pu, img.uid, img.filepath, project.dataVersion[img.uid] ?? 0, PREVIEW_PX)
+    .then(url => { previewUrls.value = { ...previewUrls.value, [key]: url } })
+}
+function thumbTip(img: CciaImage): TooltipBinding {
+  const small = thumbUrls.value[img.uid]
+  if (small === null) return 'No preview'
+  if (!small) return ''
+  const url = previewUrls.value[previewKey(img)] || small
+  return { value: previewHtml(url, img.name, previewCaption(img)), escape: false, class: 'thumb-tip' }
+}
 </script>
 
 <template>
@@ -804,12 +850,9 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
         <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': thumbShown(img) }"
           :disabled="!isImported(img)" @click.stop="toggleThumb(img)"
           v-tooltip.right="thumbShown(img) ? 'Hide thumbnail' : 'Show thumbnail'"><i class="pi pi-image" /></button>
-        <template v-if="thumbShown(img)">
-          <img v-if="thumbUrls[img.uid]" :src="thumbUrls[img.uid]!" class="row-thumb" :alt="img.name"
-            @click.stop="openViewer(img)" v-tooltip.right="'Open this image in the viewer'" />
-          <i v-else-if="thumbUrls[img.uid] === ''" class="pi pi-spin pi-spinner cc-muted cc-fs-xs" />
-          <span v-else class="cc-muted cc-fs-xs">No preview</span>
-        </template>
+        <ThumbSlot v-if="thumbShown(img)" :ref="r => observeSlot(r, img.uid)" :src="thumbSrc(img)"
+          :alt="img.name" :tip="thumbTip(img)" @mouseenter="loadPreview(img)"
+          @click.stop="thumbUrls[img.uid] && openViewer(img)" />
       </span>
     </template>
     <template v-for="idx in channelIndices" :key="'ch-' + idx" #[`cell-ch:${idx}`]="{ row: img }">
@@ -1082,13 +1125,9 @@ watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.ui
 /* exclusion note — editable reason under the uid, only on excluded rows */
 .note-row { display: flex; align-items: center; margin-top: 0.15rem; }
 
-/* Thumbnail column — the table's mini map. Fixed height so a shown row is predictable; the width follows
-   the image's aspect within the column. Clicking it opens the viewer, the same as the eye. */
+/* Thumbnail column — the table's mini map. Each shown row gets the same square slot (ThumbSlot), so rows
+   line up whatever the image's aspect. Clicking it opens the viewer, the same as the eye. */
 .thumb-cell { display: flex; align-items: flex-start; gap: 0.25rem; min-width: 0; }
-.row-thumb {
-  height: 80px; width: auto; max-width: calc(100% - 1.75rem); object-fit: contain; cursor: pointer; display: block;
-  border-radius: var(--cc-radius-xs);
-}
 .note-text {
   font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: text;
   display: inline-flex; align-items: center; gap: 0.25rem;
