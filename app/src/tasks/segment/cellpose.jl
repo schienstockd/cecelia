@@ -181,8 +181,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
         return nothing
     end
 
-    proj_dir = dirname(dirname(img._dir))
-    im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
+    im_path  = joinpath(img_zero_dir(img), string(filename))
     task_dir = img._dir
 
     if !ispath(im_path)

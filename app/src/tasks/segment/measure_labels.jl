@@ -36,8 +36,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
         on_log("[ERROR] No filepath for intensityValueName='$(p.intensityValueName)'")
         return nothing
     end
-    proj_dir = dirname(dirname(task_dir))
-    im_path  = joinpath(proj_dir, "0", img.uid, string(im_filename))
+    im_path  = joinpath(img_zero_dir(img), string(im_filename))
     if !ispath(im_path)
         on_log("[ERROR] Intensity image not found: $im_path")
         return nothing

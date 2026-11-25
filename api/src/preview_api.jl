@@ -431,7 +431,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
                                               version = Cecelia.parse_version_pin(Cecelia.json_native(params)))
     isnothing(filename) &&
         return 404, JSON3.write((; error = "No filepath registered (valueName=$in_value_name). Run a conversion task first."))
-    wanted = joinpath(proj_dir, "0", image_uid, string(filename))
+    wanted = joinpath(obj_zero_dir(proj_dir, image_uid), string(filename))
     # Where the worker writes the scratch store: the image's meta dir, DERIVED here rather than taken
     # from the body's `taskDir` (which only says a viewer is open). It is the same dir the viewer meta
     # route reported as `taskDir` and the one the `preview=1` slab routes read back from.

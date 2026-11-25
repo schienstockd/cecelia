@@ -795,3 +795,47 @@ end
     @test match(list, "const X = (\"flow\", \"track\")") !== nothing
     @test isfile(joinpath(_repo, owner))
 end
+
+@testset "image-path ratchet — image dirs come from the accessors, not from `_dir`" begin
+    # `{proj}/0/{uid}` (data) and `{proj}/1/{uid}` (metadata) are layout knowledge owned by
+    # `app/src/model/image.jl`: `img_project_dir` / `img_zero_dir` for a loaded image, and
+    # `obj_zero_dir` / `obj_meta_dir(proj_dir, uid)` for one known by uid (a route, a task's new output).
+    banned = (
+        r"dirname\(\s*dirname\(\s*[A-Za-z_][\w.]*\._dir\s*\)\s*\)",   # an object's project dir, by hand
+        r"joinpath\([^)\n]*\"[01]\"\s*,\s*[\w.]+\.uid",       # {proj}/0|1/{obj.uid}, by hand
+        # {proj}/0|1/{uid} off a project dir, by hand
+        r"joinpath\(\s*(?:proj\w*|projects_dir\(\)\s*,\s*\w+)\s*,\s*\"[01]\"\s*,",
+    )
+    exempt_dir = joinpath("app", "src", "model")
+
+    offenders = String[]
+    coverage = 0
+    for root in (_app_src, _api_src), (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, _repo)
+        startswith(rel, exempt_dir) && continue
+        coverage += 1
+        for (i, line) in enumerate(split(read(path, String), '\n'; keepempty = true))
+            any(pat -> occursin(pat, line), banned) && push!(offenders, "$rel:$i: `$(strip(line))`")
+        end
+    end
+
+    if !isempty(offenders)
+        @error "image-path ratchet: image dir built by hand. Use `img_project_dir(img)` / " *
+               "`img_zero_dir(img)`, or `obj_zero_dir` / `obj_meta_dir(proj_dir, uid)` for an " *
+               "image known by uid (`app/src/model/image.jl`).\nOffending line(s):\n  " *
+               join(offenders, "\n  ")
+    end
+    @test isempty(offenders)
+    @test coverage >= 100   # a wrong scan root would pass with no offenders
+
+    # The patterns still match what they ban.
+    @test any(pat -> occursin(pat, "proj = dirname(dirname(img._dir))"), banned)
+    @test any(pat -> occursin(pat, "joinpath(proj_dir, \"0\", new_img.uid, f)"), banned)
+    @test any(pat -> occursin(pat, "joinpath(proj_root, \"1\", image_uid)"), banned)
+    @test any(pat -> occursin(pat, "joinpath(projects_dir(), uid, \"1\", String(o))"), banned)
+    @test !any(pat -> occursin(pat, "joinpath(zarr_path, \"0\", \"0\")"), banned)
+    @test any(pat -> occursin(pat, "state_file(dirname(dirname(r.img._dir)), uid)"), banned)
+    @test !any(pat -> occursin(pat, "joinpath(img_zero_dir(img), f)"), banned)
+end
