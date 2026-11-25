@@ -170,7 +170,7 @@ run_channel_names(img::CciaImage, value_name::AbstractString) =
 function _run_image(r::RunChannelNames, uid::AbstractString)
     String(uid) == r.img.uid && return r.img
     get!(r.sibs, String(uid)) do
-        f = state_file(dirname(dirname(r.img._dir)), String(uid))
+        f = state_file(img_project_dir(r.img), String(uid))
         isfile(f) || return nothing
         try _load_image(dirname(f)) catch; nothing end
     end

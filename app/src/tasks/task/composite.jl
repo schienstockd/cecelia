@@ -323,8 +323,7 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
 
     # Remove intermediate files from disk — they were only needed as inputs to the next step
     if !isempty(intermediate_files)
-        proj_dir = dirname(dirname(img._dir))
-        im_dir   = joinpath(proj_dir, "0", img.uid)
+        im_dir   = img_zero_dir(img)
         for fn in intermediate_files
             p = joinpath(im_dir, fn)
             if ispath(p)

@@ -35,7 +35,7 @@ file since, and a copy or bin the source's settings no longer describe.
 function _resync_derived_acquisition!(zarr_meta::Dict{String,Any}, img)::Bool
     ds = _derived_acquisition_source(img.meta)
     isnothing(ds) && return false
-    src_dir = obj_meta_dir(dirname(dirname(img._dir)), ds.uid)
+    src_dir = obj_meta_dir(img_project_dir(img), ds.uid)
     isfile(state_file(src_dir)) || return false          # the source image was deleted
     src = _load_image(src_dir)
     # the source's settings are its CURRENT file's; this image's pixels came from its own `ori_path`

@@ -68,7 +68,7 @@ end
 # {proj}/movies/ for an image (img._dir = {proj}/1/{uid}); created if missing. One place the movies
 # dir is derived — the single-image recorders and the batch path all go through here.
 function _movies_dir(img)::String
-    d = joinpath(dirname(dirname(img._dir)), "movies")
+    d = joinpath(img_project_dir(img), "movies")
     mkpath(d)
     d
 end

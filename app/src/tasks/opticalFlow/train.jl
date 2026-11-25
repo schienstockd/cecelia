@@ -249,7 +249,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
             on_log("[WARN] $(img.uid): no filepath for valueName='$(p.valueName)' — skipped")
             continue
         end
-        im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))
+        im_path = joinpath(img_zero_dir(img), string(filename))
         if !ispath(im_path)
             on_log("[WARN] $(img.uid): image not found, skipped — $im_path")
             continue

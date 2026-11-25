@@ -87,7 +87,7 @@ export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
 export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_params!
-export state_file, obj_meta_dir, STATE_FILENAME
+export state_file, obj_meta_dir, obj_zero_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export migrate_qc_findings
 export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics

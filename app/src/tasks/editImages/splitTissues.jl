@@ -74,8 +74,8 @@ function _run_task(task::SplitTissues, img::CciaImage, params::Dict{String,Any};
         on_log("[ERROR] No filepath for valueName='$(p.valueName)'")
         return nothing
     end
-    proj_dir = dirname(dirname(img._dir))
-    im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
+    proj_dir = img_project_dir(img)
+    im_path  = joinpath(img_zero_dir(img), string(filename))
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
         return nothing
@@ -125,7 +125,7 @@ function _run_task(task::SplitTissues, img::CciaImage, params::Dict{String,Any};
                              meta = meta, attr = img.attr)
         push!(new_imgs, new_img)
         push!(outputs, Dict{String,Any}("label" => Int(t[:label]),
-            "imOutPath" => joinpath(proj_dir, "0", new_img.uid, "ccidImage.ome.zarr")))
+            "imOutPath" => joinpath(obj_zero_dir(proj_dir, new_img.uid), "ccidImage.ome.zarr")))
         on_log("[INFO] Tissue $i ($(round(Float64(t[:areaMm2]); digits = 2)) mm²) → $(new_img.uid)")
     end
     if n > 0
