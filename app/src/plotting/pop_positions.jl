@@ -35,9 +35,14 @@ function pop_index_by_label(img::CciaImage, tokens, default_pop_type::AbstractSt
             continue
         end
         ("value_name" in names(df) && "label" in names(df)) || continue
-        for r in eachrow(df)
-            get!(pop_of, (String(r.value_name), Int(r.label)), pi - 1)
-        end
+        _first_pop_index!(pop_of, df.value_name, df.label, pi - 1)
+    end
+    pop_of
+end
+# A function barrier over the typed columns: `eachrow` over a 600k-row frame dispatched per field.
+function _first_pop_index!(pop_of::Dict{Tuple{String,Int},Int}, vns::AbstractVector, labels::AbstractVector, k::Int)
+    for i in eachindex(vns, labels)
+        get!(pop_of, (String(vns[i]), Int(labels[i])), k)
     end
     pop_of
 end

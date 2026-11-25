@@ -1145,6 +1145,25 @@ function _cluster_map_values(img, vn, path, feature, n)::Vector{Float32}
     Float32[(v isa Real && !ismissing(v)) ? Float32(v) : NaN32 for v in df[!, feature]]
 end
 
+# Append one segmentation's records to `out`. A function barrier: the DataFrame columns arrive untyped
+# in the handler, and packing 600k rows through them there cost ~0.3 s of dynamic dispatch.
+function _pack_cluster_map!(out::Vector{Float32}, stride::Int, idx::Vector{Int}, xy::Matrix{Float64},
+                            codes::AbstractVector, labels::AbstractVector, vn_pop::Dict{Int,Int},
+                            vals::Vector{Float32}, with_labels::Bool, with_value::Bool)
+    base = length(out); resize!(out, base + stride * length(idx))
+    @inbounds for (j, i) in enumerate(idx)
+        o = base + stride * (j - 1)
+        out[o + 1] = Float32(xy[i, 1])
+        out[o + 2] = Float32(xy[i, 2])
+        c = codes[i]
+        out[o + 3] = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
+        out[o + 4] = isempty(vn_pop) ? -1f0 : Float32(get(vn_pop, Int(labels[i]), -1))
+        with_labels && (out[o + 5] = Float32(labels[i]))
+        with_value && (out[o + stride] = vals[i])
+    end
+    out
+end
+
 function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     # The embedding, the codes and the `pop`/`colourPops` membership below all read `_latest`; a
@@ -1208,28 +1227,16 @@ function api_plots_cluster_map(req::HTTP.Request)
             sel  = Set(cells_in_pop(m, pop))
             keep = BitVector(l in sel for l in cdf.label)
         end
-        # per-point popIdx from the resolved (value_name, label) → popIdx map (colour/facet-by-population)
-        popidx = isempty(pop_of) ? fill(-1, size(xy, 1)) :
-                 Int[get(pop_of, (String(vn), Int(l)), -1) for l in cdf.label]
         # drop rows with no embedding — cells/tracks outside the clustered set have NaN UMAP coords
         # (and NaN code); they'd otherwise render as a stray "NaN" cluster.
         @inbounds for i in 1:size(xy, 1)
             (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
         end
         vals = with_value ? _cluster_map_values(img, vn, path, feature, size(xy, 1)) : Float32[]
-        idx = findall(keep)
-        base = length(out); resize!(out, base + stride * length(idx))
-        @inbounds for (j, i) in enumerate(idx)
-            out[base + stride*(j-1) + 1] = Float32(xy[i, 1])
-            out[base + stride*(j-1) + 2] = Float32(xy[i, 2])
-            c = codes[i]
-            out[base + stride*(j-1) + 3] = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
-            out[base + stride*(j-1) + 4] = Float32(popidx[i])
-            if with_labels
-                out[base + stride*(j-1) + 5] = Float32(cdf.label[i])
-            end
-            with_value && (out[base + stride*j] = vals[i])
-        end
+        # per-point popIdx from the resolved (value_name, label) → popIdx map (colour/facet-by-population),
+        # narrowed to this segmentation once so the per-row lookup is a plain Int key
+        vn_pop = Dict{Int,Int}(l => k for ((v, l), k) in pop_of if v == vn)
+        _pack_cluster_map!(out, stride, findall(keep), xy, codes, cdf.label, vn_pop, vals, with_labels, with_value)
     end
     isempty(out) && return _gerr(404, basis == "diffmap" ? "No $emb_key — a track run writes it; re-run clustering" :
                                                          "No $emb_key — run clustering with UMAP enabled")
