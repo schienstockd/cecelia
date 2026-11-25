@@ -20,6 +20,7 @@ import { useTaskStore } from '../stores/tasks'
 import { runningTaskCount } from '../utils/runningTasks'
 import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
 import { matchesQuery } from '../utils/textQuery'
+import { visibleToProfile } from '../utils/projectOwnership'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -103,14 +104,9 @@ onMounted(async () => {
   } catch { /* fall back to defaults — scope stays 'mine', filter treats owner-less projects as visible */ }
 })
 
-// A project is visible under the current profile when it has NO owners recorded (pre-identity
-// default, visible to all) OR the active profile is listed. Currently-open project is always
-// shown so the user can never lose the ability to close/rename what they have in front of them.
+// "Mine" = own + shared + the open project (utils/projectOwnership.ts, shared with the Welcome page).
 function visibleUnderActive(p: { uid: string; owners?: string[] }): boolean {
-  if (scope.value === 'all') return true
-  if (projectMeta.current?.uid === p.uid) return true
-  const os = p.owners
-  return !os || os.length === 0 || os.includes(activeProfile.value)
+  return scope.value === 'all' || visibleToProfile(p, activeProfile.value, projectMeta.current?.uid)
 }
 
 // Free-text search over name, ID and owners — the list grows with every project and agent run, so
@@ -191,7 +187,7 @@ const deletingUid = ref<string | null>(null)
 async function deleteProject(uid: string) {
   deletingUid.value = uid
   try { await projectMeta.deleteProject(uid) } finally { deletingUid.value = null }
-  if (selectedUid.value === uid) selectedUid.value = projectMeta.recent[0]?.uid ?? null
+  if (selectedUid.value === uid) selectedUid.value = scopedProjects.value[0]?.uid ?? null
 }
 
 // ── Export / import (background jobs over the WS task rail — see docs/JOBS.md) ─────────────────
@@ -305,17 +301,17 @@ onMounted(async () => {
     tab.value = 'new'
     newName.value = 'My first project'   // first-project pre-fill; user can rename (P3)
   } else {
-    // Auto-select the most recent project (first in the sorted list)
-    selectedUid.value = projectMeta.current?.uid ?? projectMeta.recent[0].uid
+    // Auto-select the open project, else the first one in scope (the watch below re-picks once the
+    // profile roster lands and the scope narrows)
+    selectedUid.value = projectMeta.current?.uid ?? scopedProjects.value[0]?.uid ?? null
     void nextTick(() => searchEl.value?.focus())   // the row renders once the list is non-empty
   }
 })
 
-// Keep selection in sync if the list reloads
-watch(() => projectMeta.recent, (list) => {
-  if (list.length > 0 && !selectedUid.value) {
-    selectedUid.value = projectMeta.current?.uid ?? list[0].uid
-  }
+// Keep the selection on a listed row: when the list reloads or the scope narrows, a selection that
+// is no longer in scope moves to the first visible project, so "Open" never opens a hidden one.
+watch(scopedProjects, (list) => {
+  if (!list.some(p => p.uid === selectedUid.value)) selectedUid.value = list[0]?.uid ?? null
 })
 
 function formatDate(iso: string | null): string {

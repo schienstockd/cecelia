@@ -13,6 +13,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useAppControlStore } from '../stores/appControl'
+import { visibleToProfile } from '../utils/projectOwnership'
 import { useSetRecipe } from '../composables/useSetRecipe'
 import { resumeStepOf, ranPagesOf, partialPagesOf, recipeChoiceRows, RECIPE_CHOICE_COLUMNS } from '../utils/setRecipe'
 import { formatWhen } from '../utils/formatWhen'
@@ -21,6 +23,7 @@ import ProjectPanel from '../components/ProjectPanel.vue'
 
 const router = useRouter()
 const projectMeta = useProjectMetaStore()
+const appControl = useAppControlStore()
 const { set, own, suggestion, busy, save } = useSetRecipe()
 const showPanel = ref(false)
 
@@ -43,7 +46,11 @@ onMounted(() => { if (projectMeta.recent.length === 0) void projectMeta.fetchRec
 
 // `/api/projects` already orders the list (the profile's own opens first, newest first).
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-const recent = computed(() => projectMeta.recent.slice(0, 6).map(p => ({
+// Own + shared only; other profiles' projects are opened from the Project manager ("All").
+const mine = computed(() => appControl.profileCount > 1
+  ? projectMeta.recent.filter(p => visibleToProfile(p, appControl.activeProfileName, projectMeta.current?.uid))
+  : projectMeta.recent)
+const recent = computed(() => mine.value.slice(0, 6).map(p => ({
   uid: p.uid, name: p.name,
   size: p.nSets == null ? '' : `${plural(p.nSets, 'set')}, ${plural(p.nImages ?? 0, 'image')}`,
   opened: p.lastOpenedAt ? formatWhen(new Date(p.lastOpenedAt)) : '—',
@@ -54,7 +61,7 @@ const RECENT_COLUMNS: SelectionColumn[] = [
   { key: 'opened', label: 'Last opened', width: 110 },
 ]
 // "Open T cells": the most recent project, one click (mock frame 3)
-const topRecent = computed(() => projectMeta.current ? null : projectMeta.recent[0] ?? null)
+const topRecent = computed(() => projectMeta.current ? null : mine.value[0] ?? null)
 // Opening the project that is already open just goes back to it.
 function openRow(uid: string, name: string) {
   if (uid === projectMeta.current?.uid) choosingProject.value = false
