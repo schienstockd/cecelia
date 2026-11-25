@@ -74,7 +74,7 @@ describe('ModuleLayout filter pane', () => {
     }, app => app.use(router))
     return host
   }
-  const names = (host: HTMLElement) => [...host.querySelectorAll('tbody tr')].map(r => r.textContent ?? '')
+  const names = (host: HTMLElement) => [...host.querySelectorAll('tbody tr[data-sel-id]')].map(r => r.textContent ?? '')
   const settle = async () => { await new Promise(r => setTimeout(r, APPLY_WAIT + 50)); await frames() }
   const chip = (host: HTMLElement, v: string) =>
     [...host.querySelectorAll<HTMLElement>('.cc-filter-chips button')].find(b => b.textContent?.trim() === v)!

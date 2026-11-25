@@ -1461,8 +1461,11 @@ image table's search box.
 persisted — a lookup, not a standing view. The Filter button now shows on every set (search needs no
 attributes). Two guards keep a keystroke from re-rendering the table when nothing changed: a filter
 that keeps every image yields `undefined` (no filter), and both `filteredUids` and `ImageTable`'s rows
-keep their previous array when the contents are equal — a new array re-renders every row (~1 s at
-2000 images) even if none came or went.
+keep their previous array when the contents are equal — a new array re-renders the table even if
+no row came or went. The table renders only the rows near the viewport (SelectionTable `windowed`,
+`utils/rowWindow.ts`): with all 2000 in the DOM, any change anywhere on the page cost ~80–130 ms a
+frame (the browser re-laying and re-painting every row — no Vue component re-rendered), and clearing
+a filter took ~2.4 s to mount them back; windowed, both take a frame or two at 500 and 2000 images.
 - The panel shell is `.cc-filter-panel` / `-rows` / `-row` / `-key` / `-chips` in `style.css`, shared
   with `ModuleLayout`'s *Processed with* row, which is the same scenario.
 
