@@ -377,6 +377,7 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     # merge across exemplars → steps; conflicts where their latest params differ
     steps     = HistoryStep[]
     conflicts = Dict{String,Any}[]
+    reads     = Dict{String,Vector{Any}}()     # step id → every exemplar's params, for the wiring
     for ((fn, _), by_img) in sort!(collect(latest); by = kv -> maximum(r.at for r in values(kv[2])))
         last = argmax(r -> r.at, collect(values(by_img)))
         out, ns = _history_output(fn, last.params, leaves_of(fn))
@@ -387,6 +388,7 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         cols, pops = _history_products(last.params, lv)
         push!(steps, HistoryStep(id, fn, deepcopy(_history_current_params(last.params, lv)), last.at,
                                  sort!(collect(keys(by_img))), out, ns, cols, pops))
+        reads[id] = Any[_history_current_params(r.params, lv) for r in values(by_img)]
         length(by_img) > 1 || continue
         cur = Dict(u => _history_current_params(r.params, lv) for (u, r) in by_img)
         for k in sort!(unique(vcat((collect(keys(p)) for p in values(cur))...)))
@@ -397,11 +399,13 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         end
     end
 
-    # wiring: B reads what A made (A ran first; "default" is the raw image, never a step's output)
+    # wiring: B reads what A made (A ran first; "default" is the raw image, never a step's output) —
+    # on ANY exemplar: one image segmented on driftCorrected waits for drift correction even when the
+    # newest run read raw (the conflict lets the user pick; the edge keeps the pick runnable)
     edges = Set{Tuple{String,String}}()
     for a in steps, b in steps
         (a === b || a.at > b.at || a.output == VERSIONED_DEFAULT_VAL) && continue
-        _reads_made(b.params, leaves_of(b.fn), a) && push!(edges, (a.id, b.id))
+        any(p -> _reads_made(p, leaves_of(b.fn), a), reads[b.id]) && push!(edges, (a.id, b.id))
     end
 
     # final outputs = steps nothing else reads; keep those asked for and everything upstream. A final
@@ -436,7 +440,8 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     # gates: populations read but produced by no step → one manual gate step per label set
     gate_ids = String[]
     gate_steps = HistoryStep[]
-    refs = Dict(s.id => _history_pop_refs(s, leaves_of(s.fn)) for s in kept)
+    # every exemplar's pops, as for the wiring: the gate step requires what any image read
+    refs = Dict(s.id => unique!(vcat((gated_pop_refs(p, leaves_of(s.fn)) for p in reads[s.id])...)) for s in kept)
     by_set = Dict{String,Set{String}}()
     for s in kept, (ls, path) in refs[s.id]
         push!(get!(Set{String}, by_set, ls), path)
@@ -493,7 +498,6 @@ end
 # is a population a task produces, not a gate, so that reference is skipped. `all_pickers = true` takes
 # every population picker, track pickers included (`run_gates`: a track analysis on `B/qc/_tracked`
 # reads the flow gate `/qc` too); the caller then resolves which sidecar each path lives in.
-_history_pop_refs(s::HistoryStep, lv) = gated_pop_refs(s.params, lv)
 
 function gated_pop_refs(params::AbstractDict, lv; all_pickers::Bool = false)::Vector{Tuple{String,String}}
     refs = Tuple{String,String}[]
