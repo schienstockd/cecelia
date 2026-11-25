@@ -15,10 +15,10 @@ import { isPlotSketchKind, type PlotSketchKind } from './plotSketchArt'
 import { matchesQuery } from '../utils/textQuery'
 
 export const PLOT_CATEGORIES = [
-  { id: 'compare',  label: 'Compare groups',        blurb: 'A measure between populations, images or treatments' },
+  { id: 'compare',  label: 'Compare groups',        blurb: 'A measure per population, image or treatment' },
   { id: 'time',     label: 'Over time',             blurb: 'How something changes over the movie' },
   { id: 'makeup',   label: 'Make-up',               blurb: 'What fraction falls in each state, class or cluster' },
-  { id: 'profiles', label: 'Clusters & matrices',   blurb: 'Where clusters sit, what defines each, who goes or touches whom' },
+  { id: 'profiles', label: 'Clusters & matrices',   blurb: 'Cluster maps and markers, transitions, contacts' },
   { id: 'look',     label: 'Images & cards',        blurb: 'See the cells, tracks and gates themselves' },
   { id: 'checks',   label: 'Checks & diagnostics',  blurb: 'Did the segmentation, model or tracking work?' },
   { id: 'other',    label: 'Other',                 blurb: 'Plots a plugin added without a category' },
