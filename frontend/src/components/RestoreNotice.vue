@@ -3,9 +3,8 @@
 // a page's controls, with an Undo. Used by the Animation and Batch pages when a movie's saved config is
 // opened for editing (docs/todo/MOVIE_MANAGEMENT_PLAN.md Phase 6).
 //
-// NOT `HintCallout`: that is a first-use hint, dismissed permanently per id, and never says anything
-// specific to what just happened. This is the opposite scenario — it appears because of one action, it
-// names that action, and it carries the way out of it.
+// It appears because of one action, names that action, and carries the way out of it — not a
+// standing hint (docs/UI.md → *Hidden gestures need a visible surface*).
 defineProps<{
   /** What the page was filled in from — named, because the undo is only trustworthy if it is. */
   source: string

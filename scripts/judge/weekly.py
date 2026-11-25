@@ -70,6 +70,7 @@ _rules = _load_sibling("rules")
 _judge = _load_sibling("judge")
 _run_reviews = _load_sibling("run_reviews")
 _fixture_requests = _load_sibling("fixture_requests")
+_coherence = _load_sibling("coherence")
 _issues = _load_sibling("issues")
 _chart = _load_sibling("chart")
 
@@ -358,7 +359,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
            live: bool = True, persist: bool = True, bug_judge: _t.Callable | None = None,
            merged_prs: _t.Callable | None = None, verifier: _t.Callable | None = None,
            assign: _t.Callable | None = None, state: dict | None = None,
-           projects: pathlib.Path | None = None, fixture_projects: pathlib.Path | None = None) -> dict:
+           projects: pathlib.Path | None = None, fixture_projects: pathlib.Path | None = None,
+           coherence: _t.Callable[[pathlib.Path], dict] | None = None) -> dict:
     """Run one pass; returns its record, unwritten.
 
     `live=False` checks the local `ref` without fetching or preparing the worktree (a re-run, a test).
@@ -366,7 +368,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     `projects`: where the agent run records are (default: `run_reviews.projects_dir()`).
     `fixture_projects`: where to look for images meeting fixture requests (default: the
     `fixture_requests.ENV` variable, else the Cecelia config's projects dir; none → the step only lists
-    the open requests). With `persist`, it also stages a cut per matched request outside the repo
+    the open requests). `coherence`: counts the checkout (default `coherence.run` on a live pass; a
+    pass that isn't live counts nothing unless given one). With `persist`, it also stages a cut per matched request outside the repo
     (`fixture_requests.stage_cuts`). `state` is
     updated as it goes (`stage`, `sha`), so a crash can say where it stopped.
     """
@@ -375,6 +378,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     date = date or ts[:10]
     state["stage"] = "pin"
     rerun = None   # an untested bug's function is mutated again in the pinned worktree
+    wt = None
     if live:
         sha = state["sha"] = pin(ref)
         state["stage"] = "worktree"
@@ -407,6 +411,10 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     # open fixture requests against the source projects: counts on the record, names and staged cuts local
     state["stage"] = "fixture requests"
     fixtures = _fixture_requests.run(fixture_projects, write=persist)
+    # whole-repo coherence counts at the pinned SHA, beside the last passes' (counts only, no queue)
+    state["stage"] = "coherence"
+    count = coherence or (_coherence.run if live else None)
+    counts = _coherence.trend(count(wt or _REPO), history) if count else None
     state["stage"] = "bugs"
     sweep_tokens: dict = {}
     failed: dict = {}   # step → why its judge didn't run; a usage limit raises instead
@@ -428,7 +436,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
              "tokens": {**steps, "total": total},
              "finding_bins": bins}
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend,
-                           agent_causes=_run_reviews.agent_causes(reviewed), fixture_requests=fixtures)
+                           agent_causes=_run_reviews.agent_causes(reviewed), fixture_requests=fixtures,
+                           coherence=counts)
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
                          swept=list(_bugs.SOURCES),
                          backlog_last=_record.backlog(previous["bugs"]) if previous else None,

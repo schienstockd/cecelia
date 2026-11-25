@@ -99,8 +99,7 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
 
-    proj_dir       = dirname(dirname(img._dir))
-    im_path        = joinpath(proj_dir, "0", img.uid, string(filename))
+    im_path        = joinpath(img_zero_dir(img), string(filename))
     out_value_name = _spec_output_value_name(task, "denoised")
     out_filename   = "ccidDenoised.ome.zarr"
     im_output_path, store_rel, as_new_version =

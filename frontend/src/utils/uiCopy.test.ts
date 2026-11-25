@@ -79,7 +79,7 @@ describe('tooltipStrings', () => {
 
 describe('hintStrings', () => {
   it('reads the static hint props', () => {
-    expect(hintStrings('<ModuleLayout hint-key="segment" hint="Detect cells here." />'))
+    expect(hintStrings('<X hint-key="segment" hint="Detect cells here." />'))
       .toEqual(['Detect cells here.'])
     expect(hintStrings('<X no-set-hint="Create a set first." />')).toEqual(['Create a set first.'])
   })

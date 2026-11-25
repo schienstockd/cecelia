@@ -22,6 +22,7 @@ import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { addBypassingStaging } from '../../utils/manualApplyStaging'
 import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
+import { watchAppearingTransientPops } from '../../utils/transientPopHighlight'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useViewerStore, type TrackHighlight, type PickHighlight } from '../../stores/viewer'
@@ -470,13 +471,14 @@ watch(() => props.imageUid, () => {
   load()
 })
 // a transient pop (viewer cell selection) appears → auto-highlight it on every plot so the
-// spatially-selected cells light up in channel space immediately (linked brushing). Bypasses
+// spatially-selected cells light up in channel space immediately (linked brushing). Only when it
+// appears — a later pick leaves the user's eye alone (`transientPopHighlight.ts`). Bypasses
 // manual-apply on purpose, so the staged set gets it too — else it reads as a pending removal.
-watch(() => g.transientPaths, (paths) => {
+watchAppearingTransientPops(() => g.transientPaths, (paths) => {
   const next = addBypassingStaging(gHL.value, stagedSel.value, paths, manualApply.value)
   if (next.live !== gHL.value) gHL.value = [...next.live]
   if (next.staged !== stagedSel.value) stagedSel.value = [...next.staged]
-}, { deep: true })
+})
 // a pop disappeared or was renamed → remap highlights (and each panel's parent gate) to the new
 // path, or drop them on delete. `makePopPathRemap` follows uid → new path so a rename doesn't wipe
 // a highlight; a delete drops it, and a fresh mount falls back to path-presence. Without this a
@@ -629,11 +631,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                   @click="navTo(1)" aria-label="Next image">&raquo;</button>
         </div>
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
-                @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
+                @click="showCopy = true"><i class="pi pi-copy" /> Copy to set…</button>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
         <!-- Shown only on an EMPTY canvas: orientation a user needs exactly once (docs/UI.md → UI
              copy). `white-space: nowrap`, so on a full bar it wraps to its own line as one piece. -->
-        <span v-if="!panels.length" class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
+        <span v-if="!panels.length" class="gp-hint cc-gesture-line">drag plots by their title · resize from the corner</span>
         <!-- P3b labels-version pin badge (docs/todo/VN_VERSIONING_PLAN.md → P3b) — only when the
              user has picked "Use pinned vN" on the drift banner below. Sits in the bar so the mode
              is visible at all times, not only when the banner is shown. -->
@@ -755,7 +757,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 .gp-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
-.gp-hint { opacity: 0.7; white-space: nowrap; }
+.gp-hint { white-space: nowrap; }
 /* P3b — see the drift banner block in the template */
 .gp-pin { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
           border-radius: var(--cc-radius-pill); background: var(--cc-surface-2); color: var(--cc-accent);

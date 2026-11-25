@@ -3,6 +3,7 @@
 // + tooltip, mirroring imageMetadataWarnings.ts. Reused by ImageTable, MetadataPanel, and (later) the
 // chain whiteboard so all surfaces agree about the same image.
 import type { CciaImage } from '../stores/project'
+import { escapeHtml } from '../utils/escapeHtml'
 
 export interface QcFinding {
   level: 'info' | 'warn'
@@ -114,10 +115,7 @@ export function summarizeFindings(fs: readonly QcFinding[]): { level: 'info' | '
   return { level, count: fs.length, short, long }
 }
 
-const HTML_ESCAPES: Record<string, string> = {
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-}
-const esc = (s: string) => s.replace(/[&<>"']/g, c => HTML_ESCAPES[c])
+const esc = escapeHtml
 
 // Only `#rrggbb`/`#rrggbbaa` from the MODULE_COLORS palette ever reaches the style attribute below.
 // The palette is a fixed literal so this cannot currently fail — it is here so that the ONE place this

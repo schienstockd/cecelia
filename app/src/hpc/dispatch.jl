@@ -142,7 +142,7 @@ function hpc_dispatch_for(rec::TaskRecord, task::CciaTask, img::CciaImage;
     conn isa HpcSshConn && hpc_load_pending_cancels!()
     root = conn isa HpcLocalConn ? hpc_remote_root(conn, joinpath(config_dir(), "hpc-local")) :
                                    hpc_remote_root(conn)
-    proj = dirname(dirname(img._dir))
+    proj = img_project_dir(img)
     account = read_hpc_project_settings(proj)["account"]
     class = hpc_task_class(task)
     site = hpc_backend_site(backend)

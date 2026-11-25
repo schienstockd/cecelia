@@ -212,9 +212,9 @@ function resolve_image_version(project_uid::AbstractString, image_uid::AbstractS
     fn = unversion_value(inner, version)
     fn === nothing &&
         return (nothing, nothing, "No filepath registered for version $(version)")
-    zp = joinpath(proj_dir, "0", image_uid, string(fn))
+    zp = joinpath(obj_zero_dir(proj_dir, image_uid), string(fn))
     isdir(zp) || return (nothing, nothing, "Zarr not found on disk")
-    (zp, joinpath(proj_dir, "1", image_uid), nothing)
+    (zp, obj_meta_dir(proj_dir, image_uid), nothing)
 end
 
 """
@@ -447,7 +447,7 @@ function api_image_stores(req::HTTP.Request)
             fn = versioned_get_field(raw, "filepath", vn)
             isnothing(fn) && (out[vn] = nothing; continue)
             # bytes = every version's store on disk; codec / format / levels describe the current one
-            data  = joinpath(proj_dir, "0", image_uid)
+            data  = obj_zero_dir(proj_dir, image_uid)
             zp    = joinpath(data, string(Cecelia.unversion_value(fn)))
             entry = Dict{String,Any}("bytes" => sum(Cecelia._path_bytes(joinpath(data, string(l)))
                                                     for l in Cecelia.version_leaves(fn); init = 0))
@@ -491,7 +491,7 @@ function api_image_stores(req::HTTP.Request)
             fns = [fn for leaf in Cecelia.version_leaves(v)   # every vN, not just `_latest`
                    for fn in (leaf isa AbstractVector ? leaf : [leaf])]
             lout[String(k)] = Dict{String,Any}("bytes" => sum(
-                Cecelia._path_bytes(joinpath(proj_dir, "1", image_uid, "labels", string(fn)))
+                Cecelia._path_bytes(joinpath(obj_meta_dir(proj_dir, image_uid), "labels", string(fn)))
                 for fn in fns; init = 0))
         end
     end

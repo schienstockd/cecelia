@@ -87,9 +87,7 @@ function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, 
 end
 
 """Image data directory — {proj}/0/{uid}/"""
-function img_zero_dir(img::CciaImage)::String
-    joinpath(dirname(dirname(img._dir)), "0", img.uid)
-end
+img_zero_dir(img::CciaImage)::String = obj_zero_dir(img_project_dir(img), img.uid)
 
 """Project directory this image lives in — `{projects_dir}/{proj_uid}/` (`img._dir` is `{proj}/1/{uid}/`)."""
 img_project_dir(img::CciaImage)::String = dirname(dirname(img._dir))
@@ -718,6 +716,15 @@ out at each call site.
 """
 obj_meta_dir(proj_dir::AbstractString, obj_uid::AbstractString)::String =
     joinpath(proj_dir, "1", obj_uid)
+
+"""
+    obj_zero_dir(proj_dir, obj_uid) -> String
+
+An image's data directory — `{proj_dir}/0/{obj_uid}/` — by uid, for an image not loaded yet (the
+output of a task that makes a new image). A loaded image asks `img_zero_dir(img)`.
+"""
+obj_zero_dir(proj_dir::AbstractString, obj_uid::AbstractString)::String =
+    joinpath(proj_dir, "0", obj_uid)
 
 """
     state_file(obj)                  -> String   # a loaded image / set / project

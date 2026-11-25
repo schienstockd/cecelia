@@ -1097,9 +1097,8 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   gesture happens, and show it only in the state it applies to (a gate's edit gestures while a gate is
   selected), so the page at rest does not grow. One short line, per [`docs/ui/COPY.md`](ui/COPY.md).
 
-  **There are no pop-up hints, and that is the intended state.** `HintCallout.vue` (a dismissable
-  one-line banner via `ModuleLayout`'s `hint` / `hint-key` props) has no callers and is being deleted.
-  The `ONBOARDING_PLAN.md` P4 set was retired on 2026-08-13: each was a static sentence fired on first
+  **There are no pop-up hints, and that is the intended state.** `HintCallout.vue` and `ModuleLayout`'s
+  `hint` / `hint-key` props were deleted with zero callers (2026-11-25). The `ONBOARDING_PLAN.md` P4 set was retired on 2026-08-13: each was a static sentence fired on first
   visit whatever the state, and most were ordering or prerequisites. Those are **state** questions:
   `lib/guides/prereqs.ts` answers them live in the guide picker, and QC answers them per image after a
   run. A fact about a button belongs next to the button; the gating draw affordance lives in the gating
@@ -1748,6 +1747,11 @@ whether the button is worth showing at all, and a two-state tooltip. `ModuleLayo
 watch + computed + template. Add a `RowFilterDef`; the persistence, the button, the count and the
 `filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
 processed-with filters.
+**An ON filter is always drawn** (`rowFilterShown`) — `visible` only decides whether to OFFER an off
+one. A filter persists, so what offered it can vanish while it is on (unstar every image, restart: the
+saved Scored filter hid the whole set and its button was gone). And when the set has images but the
+filters hide all of them, the image table says so — "All N images hidden by filters" + **Show all**
+(every row, attribute and processed-with filter off) — never the "No images yet / Import" first-run state.
 
 **Rating.** One button per row (`CciaImage.rating`, `imageRating`/`IMAGE_RATINGS` in
 `utils/inclusion.ts`, drawn by `CcCycleButton`) cycles **not rated → good (star) → use with care (half

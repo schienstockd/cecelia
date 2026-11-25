@@ -58,9 +58,9 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
 
-    proj_dir = dirname(dirname(img._dir))              # {proj}
+    proj_dir = img_project_dir(img)
     proj_uid = basename(proj_dir)
-    im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
+    im_path  = joinpath(img_zero_dir(img), string(filename))
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
         return nothing
@@ -108,7 +108,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     # writes into it. The `data/` sidecar copy below makes its own, which is why it still works.
 
     out_filename = "ccidImage.ome.zarr"
-    im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
+    im_out_path  = joinpath(obj_zero_dir(proj_dir, new_img.uid), out_filename)
     on_log("[INFO] Crop source: $im_path")
     on_log("[INFO] New image:   $(new_img.uid) → $im_out_path")
 

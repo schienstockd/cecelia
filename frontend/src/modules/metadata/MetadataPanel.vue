@@ -400,7 +400,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !singleValue"
           @click="assignSingleValue"
           v-tooltip.bottom="'Apply to selected images, or all images if none are selected'">
-          Assign
+          {{ selectedUids.length ? 'Assign' : `Assign to all ${targetUids.length}` }}
         </button>
       </div>
     </section>
@@ -456,7 +456,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           <button class="cc-btn cc-btn-ghost" :disabled="!channelNames.length"
             @click="assignChannelNames"
             v-tooltip.bottom="'Set channel names on the target images'">
-            Assign channels
+            {{ selectedUids.length ? 'Assign channels' : 'Assign to all' }}
           </button>
           <span v-if="channelNames.length" class="cc-readout">{{ channelSplit.apply.length }} image(s)</span>
         </div>

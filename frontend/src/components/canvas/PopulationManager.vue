@@ -1079,10 +1079,10 @@ function addMenuPopsToKiwi() {
 /* .pm-icon → cc-btn cc-btn-bare cc-btn-icon; only the STATE variants are its own (the plain `:hover`
    rule was byte-identical to `.cc-btn-bare:hover` and is gone) */
 .pm-icon.lit { color: var(--cc-accent); }
-/* ⋯ trigger: faintly visible at rest (discoverable without shouting), full on hover/open — the
-   image table's row menu makes the same call. */
+/* ⋯ trigger: faintly visible at rest (discoverable without shouting), full on hover, when open, and
+   on the selected row — the image table's row menu makes the same call. */
 .pm-actions-btn { opacity: 0.55; }
-.pm-row:hover .pm-actions-btn, .pm-actions-btn.on { opacity: 1; }
+.pm-row:hover .pm-actions-btn, .pm-row.active .pm-actions-btn, .pm-actions-btn.on { opacity: 1; }
 /* the menu's own width: a move target is a pop PATH, which can be long — wrap rather than stretch
    the popover across the canvas. */
 .pm-actions { max-width: 260px; }

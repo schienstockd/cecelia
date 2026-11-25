@@ -1,6 +1,10 @@
 # Consistency and coherence audit — Run 1 (mechanical baseline)
 
-**Status:** **draft** (2026-11-25, `origin/main` 96a2a2fc). Trimmed Run 1 of the archived brief
+**Status:** **decisions taken** (2026-11-25): 1 image-path ratchet, 2 weekly counts in the judge
+(`scripts/judge/coherence.py`, `docs/ai-assist/WEEKLY_JUDGE.md` → *Coherence counts*), 4 cleanups —
+each its own PR; 3 Run 2 parked. The weekly step flags a rising check on the record rather than
+filing a review-screen proposal (§6 said proposal): rule proposals are keyed to a `CLAUDE.md` section
+and its findings, which a count has neither. Run 1 itself: (`origin/main` 96a2a2fc). Trimmed Run 1 of the archived brief
 [`../archive/CONSISTENCY_COHERENCE_AUDIT_PROMPT.md`](../archive/CONSISTENCY_COHERENCE_AUDIT_PROMPT.md):
 steps 3–4 only (mechanical sweeps + baseline). Steps 1–2 (guard map, invariants) were already done
 elsewhere — see the brief's banner. Run 2 (judgement, lineage) is parked. Nothing built, no repo

@@ -1,5 +1,6 @@
 import { PAPER, PAPER_INK } from './fixedColours'
 import { fitLongSide } from '../utils/viewer/viewerRequest'
+import { escapeHtml } from '../utils/escapeHtml'
 // Shared plot export helpers — one place for "serialise an SVG to an image URL" and the download
 // plumbing, used by every canvas plot (PlotChart's summary charts + the bespoke cluster HMM panels).
 // Keeping this in one module avoids the divergent re-implementation the codebase warns against: a
@@ -246,9 +247,7 @@ export function rowsToCsv(rows: Record<string, unknown>[]): string {
 // precision is invisible in a figure. `-0` normalises to `0`.
 const r1 = (n: number) => { const v = Math.round(n * 10) / 10; return v === 0 ? 0 : v }
 // XML-escape a text/attribute value (labels can contain & < > " ')
-export function svgEsc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-}
+export const svgEsc = escapeHtml
 
 // assemble a complete <svg> document from a body string (already-built element strings).
 // The `xlink` namespace is declared unconditionally because `svgImage` emits `xlink:href` — see the
