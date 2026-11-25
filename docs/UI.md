@@ -1726,6 +1726,11 @@ whether the button is worth showing at all, and a two-state tooltip. `ModuleLayo
 watch + computed + template. Add a `RowFilterDef`; the persistence, the button, the count and the
 `filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
 processed-with filters.
+**An ON filter is always drawn** (`rowFilterShown`) — `visible` only decides whether to OFFER an off
+one. A filter persists, so what offered it can vanish while it is on (unstar every image, restart: the
+saved Scored filter hid the whole set and its button was gone). And when the set has images but the
+filters hide all of them, the image table says so — "All N images hidden by filters" + **Show all**
+(every row, attribute and processed-with filter off) — never the "No images yet / Import" first-run state.
 
 **Rating.** One button per row (`CciaImage.rating`, `imageRating`/`IMAGE_RATINGS` in
 `utils/inclusion.ts`, drawn by `CcCycleButton`) cycles **not rated → good (star) → use with care (half
