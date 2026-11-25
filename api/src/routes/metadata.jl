@@ -128,7 +128,7 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
     isempty(value_name)  && return 400, JSON3.write((; error="valueName required"))
 
     proj_dir = joinpath(projects_dir(), project_uid)
-    task_dir = joinpath(proj_dir, "1", image_uid)
+    task_dir = obj_meta_dir(proj_dir, image_uid)
     ccid     = state_file(task_dir)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
     isfile(ccid)    || return 404, JSON3.write((; error="Image not found"))

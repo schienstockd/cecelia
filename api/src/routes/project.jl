@@ -342,7 +342,7 @@ function api_projects_canvases(body_bytes::Vector{UInt8})
     objects = get(body, :objects, nothing)
     if objects !== nothing
         for (objUid, data) in pairs(objects)
-            objdir = joinpath(projects_dir(), uid, "1", String(objUid))
+            objdir = obj_meta_dir(joinpath(projects_dir(), uid), String(objUid))
             isdir(objdir) || continue   # object deleted/unknown → skip (no stray files)
             try
                 write_json_atomic(joinpath(objdir, "moduleCanvases.json"), data)

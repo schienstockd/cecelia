@@ -253,6 +253,19 @@ test whether an agent can actually use the framework.
    The count is sessions, not findings: one session's fanout can raise ten findings about a single
    pattern. A finding logged before its section last changed (`git log -L` over the section) doesn't
    count: once a section is tightened, its proposal doesn't recur from the old findings.
+
+   **Coherence counts** (`coherence.py`). Whole-repo numbers at the pinned SHA, each from a
+   deterministic tool: copied blocks (`jscpd`), frontend import cycles without type-only or `import()`
+   edges (`madge`), Python dead code without unused imports (`vulture`), Julia routes nothing outside
+   the tests names, and identifiers `docs/inventory/*.md` cites that no source file has. Tools come
+   through `npx -y` / `uvx` at pinned versions, so nothing is installed into the repo; a missing or
+   failing tool leaves its count empty with the reason, and the others still count (~90 s, no tokens).
+   The record shows each count beside the last pass's, and lists a check that rose on each of the last
+   two passes as *rising*. **Counts only, never a queue item**: a rising check means a shape is
+   spreading, and the fix is a ratchet test that bans it (the image-path ratchet in
+   `app/test/suite/ratchets.jl` is the worked example). Baseline and design:
+   [`../todo/CONSISTENCY_COHERENCE_AUDIT.md`](../todo/CONSISTENCY_COHERENCE_AUDIT.md). Standalone:
+   `python scripts/judge/coherence.py [ROOT]`.
 6. **Record.** Write `~/.cecelia-effectiveness/judge-runs/<date>.json` and, beside it, its rendered
    `<date>.md`. The JSON is the only source; every reader (`judge-review`, fix sessions, the next
    pass) reads it.

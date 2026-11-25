@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters, nextRowFilterValue,
-  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, activeMode,
+  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, activeMode, rowFilterShown, rowFiltersOff,
   type FilterableImage,
 } from './rowFilters'
 
@@ -96,6 +96,20 @@ describe('rowFilters', () => {
     expect(buttons.filter(f => f.visible(clean)).map(f => f.id)).toEqual([])
     expect(buttons.filter(f => f.visible(IMAGES)).map(f => f.id))
       .toEqual(['excluded', 'unimported', 'unstarred'])
+  })
+
+  it('still draws an ON filter whose rows have all gone — else nothing can switch it off', () => {
+    const unscored = [img('a'), img('b')]
+    expect(SCORED.visible(unscored)).toBe(false)
+    expect(rowFilterShown(SCORED, false, unscored)).toBe(false)
+    expect(rowFilterShown(SCORED, 'good', unscored)).toBe(true)
+    for (const f of ROW_FILTERS.filter(f => !f.host)) expect(rowFilterShown(f, true, unscored)).toBe(true)
+  })
+
+  it('rowFiltersOff switches every filter off', () => {
+    const off = rowFiltersOff()
+    expect(Object.keys(off).sort()).toEqual(ROW_FILTERS.map(f => f.id).sort())
+    expect(anyRowFilterActive(off)).toBe(false)
   })
 
   it('keeps the pre-refactor localStorage keys so existing toggle state survives', () => {

@@ -47,7 +47,8 @@ export interface RowFilterDef {
   hides: (img: FilterableImage) => boolean
   /** The number shown on the button. */
   count: (images: FilterableImage[]) => number
-  /** Whether to render the button at all — no point offering a filter with nothing to filter. */
+  /** Whether to offer the button while it is OFF — no point offering a filter with nothing to filter.
+   *  An ON filter is always drawn regardless (`rowFilterShown`). */
   visible: (images: FilterableImage[]) => boolean
   /** Tooltip for the current state. Kept to one short line (docs/ui/COPY.md). */
   tip: (active: boolean, images: FilterableImage[]) => string
@@ -167,6 +168,18 @@ export function rowFilterButton(def: RowFilterDef, v: RowFilterValue | undefined
   if (mode) return { on: true, icon: mode.icon, count: mode.count(images), tip: def.modeTip!(mode, images) }
   const on = !def.modes && !!v
   return { on, icon: on ? def.iconOn : def.iconOff, count: def.count(images), tip: def.tip(on, images) }
+}
+
+/** Whether to draw a filter's button: when it has something to filter, or whenever it is ON. A filter
+ *  persists across sessions, so the thing that offered it can vanish while it is on — unstar every
+ *  image and a saved Scored filter hid the whole set with its button gone, nothing left to switch it off. */
+export function rowFilterShown(def: RowFilterDef, v: RowFilterValue | undefined, images: FilterableImage[]): boolean {
+  return !!v || def.visible(images)
+}
+
+/** Every filter off — the "Show all" of the filtered-empty table. */
+export function rowFiltersOff(): RowFilterState {
+  return Object.fromEntries(ROW_FILTERS.map(f => [f.id, false]))
 }
 
 /** Whether any row filter is on — lets the caller skip building a filtered list at all. */

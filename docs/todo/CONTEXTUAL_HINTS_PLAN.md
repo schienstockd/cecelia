@@ -1,6 +1,10 @@
 # Contextual hints: how a user finds out a hidden gesture exists
 
-**Status:** **planning** (2026-11-24, `origin/main` e703aa12). Audit and plan only, nothing built.
+**Status:** **in progress.** Planned 2026-11-24 (`origin/main` e703aa12). P1 done 2026-11-25: both
+bugs fixed and the visible-surface rule is in `docs/UI.md` → *Hidden gestures need a visible surface*.
+P2 done 2026-11-25 (#2530): `.cc-gesture-line`, every §3 surface and §4 fix, `HintCallout` deleted.
+**P3 re-scored 2026-11-26: 0 of 9 hint targets left without a visible surface, so the hint system
+(§5–§7) is not built.** Reopen it only if use shows people still miss a surfaced gesture.
 **Decided 2026-11-25: clarity first.** Each hidden gesture gets a visible surface (§3, §4) before any
 hint system. The hint system (§5–§7) is kept as a costed fallback, built only if the re-score in §8
 P3 leaves more than five targets that a visible surface cannot fix.
@@ -309,6 +313,15 @@ which this replaces once built):
   a better surface instead. If built, it ships with the §7 tests and the agent rule, and P3 of the old
   phasing (the `get_guide` export, the text-drift lint after replay) follows only if it earns it.
 - **Feature decisions, not this plan:** the §2 gaps (#9, #39, #40).
+
+**P3 result (2026-11-26, read against `main` after #2530).** Every §3 row now has its surface in the
+shipped code: #1 set-row gesture line (`ModuleLayout.vue`), #7 "N flagged" (`ImageTable.vue`), #6
+"Copy from…" (`TaskRunner.vue`), #14 "Copy to set…" (`GatingPlots.vue`), #3 the selected gate's
+gestures (`GateOverlay.vue` + `utils/gateGestures.ts`), #12 the hover lasso line (`PlotChart.vue`),
+#2 "Claim" (`ClaimStrip.vue`), #5 the viewer Shortcuts rows, #15 ⋯ on the selected pop row. Count left
+invisible: 0, below the threshold of five, so §5–§7 stay a reference design. This is a read of the
+code, not of use: if someone still misses a surfaced gesture, fix the surface first, and reconsider
+the hint system only if several do. Still open and outside this plan: the §2 gaps (#9, #39, #40).
 
 ## 9. Risks and decisions
 

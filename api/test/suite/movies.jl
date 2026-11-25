@@ -37,7 +37,7 @@
     # …and this is exactly what the single-image recorder produces for the same image, which is the
     # whole point — the two namers must agree once the batch is asked to name by image
     @test _movie_basename(Dict{String,String}(), "AbC123", String[]; name = "My Image") ==
-          basename(_movie_named_path((; name = "My Image", _dir = joinpath("p", "1", "u")), "AbC123"))
+          basename(_movie_named_path(CciaImage(; uid = "u", name = "My Image", dir = joinpath("p", "1", "u")), "AbC123"))
     # a name of pure punctuation sanitises to nothing, and a file still has to be written
     @test _movie_basename(attr, "AbC123", String[]; name = "()") == "AbC123.mp4"
     @test _movie_basename(attr, "AbC123", String[]; name = "   ") == "AbC123.mp4"
@@ -46,28 +46,28 @@
 end
 
 # The single-image recorders (timelapse / animation) name by IMAGE via the shared _movies_dir +
-# _movie_named_path (img._dir = {proj}/1/{uid} → {proj}/movies/). Mock img with a NamedTuple.
+# _movie_named_path (img._dir = {proj}/1/{uid} → {proj}/movies/).
 @testset "API: single-image movie naming" begin
     mktempdir() do tmp
-        img = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "My Image")
+        img = CciaImage(; uid = "uid7", dir = joinpath(tmp, "proj", "1", "uid7"), name = "My Image")
         @test _movie_named_path(img, "uid7") == joinpath(tmp, "proj", "movies", "My_Image.mp4")
         @test _movie_named_path(img, "uid7"; suffix = "_animation") ==
               joinpath(tmp, "proj", "movies", "My_Image_animation.mp4")
         @test isdir(joinpath(tmp, "proj", "movies"))   # _movies_dir created it
         # blank / unsafe name falls back to the uid
-        blank = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "   ")
+        blank = CciaImage(; uid = "uid7", dir = joinpath(tmp, "proj", "1", "uid7"), name = "   ")
         @test _movie_named_path(blank, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
         # A name ENDING in a character a filename can't hold — the crop task's "(cropped)" is the one
         # that showed up in the movies list — must not leave the separator it collapses to. It used to,
         # and the animation variant then doubled it ("…_cropped__animation.mp4").
-        cropped = (; _dir = joinpath(tmp, "proj", "1", "uid7"),
+        cropped = CciaImage(; uid = "uid7", dir = joinpath(tmp, "proj", "1", "uid7"),
                      name = "M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)")
         @test _movie_named_path(cropped, "uid7") ==
               joinpath(tmp, "proj", "movies", "M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped.mp4")
         @test _movie_named_path(cropped, "uid7"; suffix = "_animation") ==
               joinpath(tmp, "proj", "movies", "M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped_animation.mp4")
         # a name with nothing usable left also falls back to the uid
-        parens = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "()")
+        parens = CciaImage(; uid = "uid7", dir = joinpath(tmp, "proj", "1", "uid7"), name = "()")
         @test _movie_named_path(parens, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
     end
 end

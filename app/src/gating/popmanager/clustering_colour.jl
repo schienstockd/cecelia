@@ -17,6 +17,46 @@ _clustfeatures_path(props_path::AbstractString) = props_sidecar_path(props_path,
 # `regions.immune` region clustering coexist on one segmentation instead of clobbering each other.
 _clustfeatures_key(suffix::AbstractString, family::AbstractString) = "$(family).$(suffix)"
 
+# Persist a clustering run's per-suffix manifest, so the cluster pages can offer EXACTLY the columns
+# the run used (heatmap) and know WHICH images were clustered together (the `partOf` set — mirrors the
+# old R `attr(clustPath, "partOf") <- uIDs` + `valuePartOf`). Stored as a `{props}.clustfeatures.json`
+# sidecar next to the labelProps (cell table for clust, `__tracks` table for trackclust), keyed by
+# suffix as `{features, partOf, family, labels}`; merged so multiple runs/suffixes coexist. Shared by
+# clustPops + clustTracks + clustRegions (read by api_gating_channels). Cluster pops can only be
+# defined for images in `partOf`.
+#
+# `family` is the obs-column family the run wrote (`_cluster_measure_prefix` without the dot:
+# "clusters" for clustPops/clustTracks, "regions" for clustRegions). Two runs of DIFFERENT families may
+# legitimately share a suffix on one segmentation (a `clusters.immune` cell clustering and a
+# `regions.immune` region clustering are different columns) — without `family` the second write would
+# silently clobber the first's features/partOf. Absent `family` reads back as "clusters" (back-compat
+# with sidecars written before this field existed).
+#
+# `labels` optionally maps column name → display label, for runs whose feature columns are machine
+# names but whose meaning is a user-facing string (region composition: `spatial.comp.B_qc__tracked.x`
+# → "B/qc/_tracked"). Empty for the cluster tasks, whose columns are already channel/measure names
+# relabelled via the channels endpoint's nameMap. `behaviour_axes` (track runs only) is the metadata
+# `clustering_utils.behaviour_axes` returns — axis names + path root — stored as `behaviourAxes`
+# (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decision 4). Untyped until a Julia reader needs it.
+# `at` = when the run ran, one value for all its segments — a cluster pop's staleness (`cluster_run_at`).
+# `params` = the task params that shaped the run (resolution, normalisation); `refines` = the cluster
+# population a refine run was restricted to (`refine_source`). docs/todo/CLUSTER_REFINE_PLAN.md
+function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
+                                features::Vector{String}, part_of::Vector{String};
+                                family::AbstractString = "clusters",
+                                labels::AbstractDict = Dict{String,String}(),
+                                behaviour_axes::Union{Nothing,AbstractDict} = nothing,
+                                at::AbstractString = string(Dates.now()),
+                                params::AbstractDict = Dict{String,Any}(),
+                                refines::Union{Nothing,AbstractDict} = nothing)
+    entry = Dict{String,Any}("features" => features, "partOf" => part_of,
+                             "family" => String(family), "labels" => Dict{String,Any}(labels), "at" => String(at))
+    behaviour_axes === nothing || (entry["behaviourAxes"] = behaviour_axes)
+    isempty(params) || (entry["params"] = Dict{String,Any}(params))   # CLUSTER_REFINE_PLAN Decision 3
+    refines === nothing || (entry["refines"] = refines)               # …and Decision 1 (cluster_refine.jl)
+    put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
+end
+
 # Split a sidecar key back into (suffix, family). A LEGACY key is a bare suffix with no family prefix
 # (written before families existed); it returns `nothing` for the family and is then treated as matching
 # ANY requested family — preserving the old single-namespace behaviour for existing sidecars, so this
@@ -130,7 +170,7 @@ run_channel_names(img::CciaImage, value_name::AbstractString) =
 function _run_image(r::RunChannelNames, uid::AbstractString)
     String(uid) == r.img.uid && return r.img
     get!(r.sibs, String(uid)) do
-        f = state_file(dirname(dirname(r.img._dir)), String(uid))
+        f = state_file(img_project_dir(r.img), String(uid))
         isfile(f) || return nothing
         try _load_image(dirname(f)) catch; nothing end
     end

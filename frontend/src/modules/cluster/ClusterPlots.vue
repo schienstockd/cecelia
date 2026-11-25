@@ -45,6 +45,8 @@ import { useCaptureReshowStore } from '../../stores/captureReshow'
 import { resolveStoredAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
+import { useParamHandoffStore } from '../../stores/paramHandoff'
+import { runTreeOrder, runOptionText, refineFormValues } from '../../utils/clusterRefine'
 
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (views read their own keys: umap→labels, heatmap→features).
@@ -102,10 +104,40 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 const {
   suffixes, labelMap, channelNames, clusterIds, clusterRunAt, featureOptions, hmmStateCols, hmmTransitionCols,
   runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes, allFeatures,
+  clusterRuns, clusterFeatures, resolvedVn,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
   popType: computed(() => props.popType), suffix, g,
 })
+
+// Runs in tree order — a refine run under the run it refines (docs/todo/CLUSTER_REFINE_PLAN.md).
+const runOptions = computed(() => runTreeOrder(suffixes.value, clusterRuns.value)
+  .map(r => ({ value: r.suffix, text: runOptionText(r.suffix, r.depth, clusterRuns.value[r.suffix]) })))
+const runStaleWhy = computed(() => clusterRuns.value[suffix.value]?.stale ?? '')
+
+// Refine a population: fill the Cluster cells form (the TaskRunner beside this canvas) with the run's
+// own settings, the population as input, a finer resolution and a new run name. Fills, never runs.
+// The run's saved params are the source; a run without a matched record falls back to what its
+// manifest recorded (params + features).
+const handoff = useParamHandoffStore()
+async function refinePop(pop: { path: string; name: string }) {
+  const run = suffix.value
+  let base: Record<string, unknown> | null = null
+  const anchor = validUids.value[0]
+  if (projectUid.value && anchor) {
+    const qs = new URLSearchParams({ projectUid: projectUid.value, fun: 'clustPops.cluster', imageUid: anchor, valueName: run })
+    if (setUid.value) qs.set('setUid', setUid.value)
+    try {
+      const r = await fetch(`/api/tasks/funparams?${qs.toString()}`)
+      const d = r.ok ? await r.json() as { params?: Record<string, unknown> | null; matched?: boolean } : null
+      if (d?.matched && d.params) base = d.params
+    } catch { /* the manifest below */ }
+  }
+  base ??= { ...(clusterRuns.value[run]?.params ?? {}), clusterMeasures: clusterFeatures.value[run] ?? [] }
+  const values = refineFormValues(base, { popPath: pop.path, popName: pop.name,
+                                          fallbackVn: resolvedVn.value, suffixes: suffixes.value })
+  handoff.offer({ funName: 'clustPops.cluster', values, source: `Refine ${pop.name}` })
+}
 
 // Manual-apply staging — the same "wait for population selection to update plots" toggle the
 // summary hosts offer, wired here via the shared composable. Only affects GLOBAL scope; local
@@ -318,7 +350,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         <label class="cc-row-group">clustering
           <select v-model="suffix" v-tooltip.bottom="'Which clustering run (clusters.&lt;suffix&gt;) to show'">
             <option v-if="!suffixes.length" :value="suffix">{{ suffix }}</option>
-            <option v-for="s in suffixes" :key="s" :value="s">{{ s }}</option>
+            <option v-for="o in runOptions" :key="o.value" :value="o.value">{{ o.text }}</option>
           </select>
         </label>
         <PlotPicker :options="plotTypes" @pick="addKind" />
@@ -336,6 +368,12 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
         <span class="cp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
+      </div>
+
+      <!-- a refine run that no longer matches the population it refines -->
+      <div v-if="runStaleWhy" class="cp-members cc-callout-warn">
+        <i class="pi pi-exclamation-triangle" />
+        <span>Run “{{ suffix }}” is out of date: {{ runStaleWhy }}. Re-run it.</span>
       </div>
 
       <!-- membership: cluster pops only apply to images that were in the run (carry clusters.{suffix}).
@@ -418,7 +456,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
-                             :run-at="clusterRunAt[suffix]"
+                             :run-at="clusterRunAt[suffix]" :runs="clusterRuns"
                              :vis="activeVis" :readout="activeReadout"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
@@ -426,7 +464,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              @update:vis="setVis" @toggle-highlight="toggleHighlight"
                              @update:manualApply="manualApply = $event"
                              @apply:staged="applyStaged" @discard:staged="discardStaged"
-                             @reload="reload" />
+                             @reload="reload" @refine="refinePop" @update:suffix="suffix = $event" />
         </template>
       </FloatingCanvasHost>
     </template>

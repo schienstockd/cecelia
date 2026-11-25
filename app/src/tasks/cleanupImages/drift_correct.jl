@@ -189,8 +189,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
 
-    proj_dir           = dirname(dirname(img._dir))
-    im_path            = joinpath(proj_dir, "0", img.uid, string(filename))
+    im_path            = joinpath(img_zero_dir(img), string(filename))
     # Compute the output target through the shared writer planner — flat overwrite when the toggle
     # is off, next `vN` subdir sibling when it's on. `store_rel` lands verbatim in ccid.json.
     out_value_name = _spec_output_value_name(task, "driftCorrected")

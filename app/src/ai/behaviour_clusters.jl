@@ -174,12 +174,32 @@ holding each run's feature list ONCE instead of on every per-image entry, and `p
 (suffix × granularity × the images it pooled, over every segmentation it ran on) the cluster heatmap's
 matrix — `clusters` (ids), `n` (rows per cluster), `features: [{feature, z}]` with `z` the z-scored
 per-cluster mean (across the run's clusters, `nothing` where undefined), rounded. Computed by
-`plot_summary_data`, the heatmap's own aggregation. Slice D of OBSERVER_DATA_ACCESS_PLAN.md.
+`plot_summary_data`, the heatmap's own aggregation. Slice D of OBSERVER_DATA_ACCESS_PLAN.md. `runs`: per
+cell run its params (resolution, …) and, for a refine run, what it refines (`_cluster_runs_lineage`).
 """
 function cluster_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "")
     feats = Dict{String,Vector{String}}()
     scope = _observer_scope_images(proj, image_uid, set_uid)
     imgs = [_cluster_image(img, feats) for img in scope]
     (; projectUid = proj.uid, images = imgs, featuresByRun = feats,
-       profiles = _cluster_profiles(proj, scope))
+       profiles = _cluster_profiles(proj, scope), runs = _cluster_runs_lineage(scope))
+end
+
+# Per CELL clustering run: the params it was made with and, for a refine run, the population and run it
+# refines and why it is stale — `{suffix => {params, refines?: {pop, run}, stale?}}`, from the first
+# image + segmentation that carries the run (docs/todo/CLUSTER_REFINE_PLAN.md). The run tree the cluster
+# page shows, so an agent reads the levels the user built.
+function _cluster_runs_lineage(scope)::Dict{String,Any}
+    out = Dict{String,Any}()
+    for img in scope, vn in sort(img_value_names(img))
+        props = img_label_props_path(img, vn)
+        sfxs = sort!(collect(setdiff(_clustfeatures_suffixes(props), keys(out))))
+        isempty(sfxs) && continue
+        m = load_pop_tree(img; value_name = vn, pop_type = "clust", backfill_save = false)
+        for sfx in sfxs
+            run = cluster_run_info(img, vn, props, sfx; m = m)
+            run === nothing || (out[sfx] = run)
+        end
+    end
+    out
 end

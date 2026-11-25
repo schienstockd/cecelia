@@ -203,6 +203,13 @@ end
             @test get_(api_gating_stats, "popType=track&pop=/Pick%20selection")[1] == 404
             @test occursin("Pick selection", String(get_(api_gating_pop_tree, "popType=flow")[2]))
             @test !occursin("Pick selection", String(get_(api_gating_pop_tree, "popType=track")[2]))
+            # the NEXT pick keeps the pop's uid: clients key its plot highlight on the uid, and a new uid
+            # read as "deleted" and switched the highlight off on every pick after the first
+            pick_uid() = only(p.uid for p in JSON3.read(get_(api_gating_pop_tree, "popType=flow")[2]).tree.populations
+                              if p.name == "Pick selection")
+            u1 = pick_uid()
+            _set_pick_selection!(img._dir, "B", labs[4:2:81])
+            @test pick_uid() == u1
         finally
             _set_pick_selection!(img._dir, "B", Int[])
         end

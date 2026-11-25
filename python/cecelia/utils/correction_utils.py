@@ -1626,8 +1626,7 @@ def drift_correct_im_per_plane(
 
 def drift_correct_im(
         input_array, dim_utils, phase_shift_channel,
-        timepoints=None, drift_corrected_path=None,
-        upsample_factor=100, shifts=None, chunk_size=None, out=None,
+        timepoints=None, upsample_factor=100, shifts=None, out=None,
         on_progress=None):
     if timepoints is None:
         timepoints = range(dim_utils.dim_val('T'))
@@ -1821,7 +1820,7 @@ def rigid_correct_geometry(input_array, dim_utils, positions, angles):
 
 
 def rigid_correct_im(input_array, dim_utils, positions, angles,
-                     timepoints=None, chunk_size=None, out=None, on_progress=None):
+                     timepoints=None, out=None, on_progress=None):
     """Apply a rigid trajectory to every channel of a timelapse and stream the result into ``out``.
 
     Same streaming pattern as `drift_correct_im`: create the canvas once, fill one timepoint at a

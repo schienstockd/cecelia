@@ -52,9 +52,9 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
 
-    proj_dir = dirname(dirname(img._dir))
+    proj_dir = img_project_dir(img)
     proj_uid = basename(proj_dir)
-    im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
+    im_path  = joinpath(img_zero_dir(img), string(filename))
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
         return nothing
@@ -81,7 +81,7 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "t-$(p.op)"), meta = proj_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
-    im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
+    im_out_path  = joinpath(obj_zero_dir(proj_dir, new_img.uid), out_filename)
     on_log("[INFO] T-project source: $im_path (op='$(p.op)')")
     on_log("[INFO] New image:        $(new_img.uid) → $im_out_path")
 

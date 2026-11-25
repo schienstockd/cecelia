@@ -67,3 +67,75 @@ end
         @test_skip "no multiplex cell table with dyes yet (test-data/NEEDS.toml → multiplex-cells-dyes)"
     end
 end
+
+# A re-measure rebuilds the cell table, which used to drop the `af_` columns a gate or clustering may
+# read (and leave the user to notice). It now re-applies the correction with the last run's settings and
+# records that run, so the record sees corrected columns made from the new table — not stale ones.
+@testset "afCells: a re-measure puts the corrected columns back" begin
+    mktempdir() do dir
+        # `_label_import_project`'s synthetic image, with six markers: two per "cycle" position, so channel
+        # order with 2 markers per cycle gives two groups of three
+        chans = join(["<Channel ID=\"Channel:0:$i\" Name=\"M$i\" SamplesPerPixel=\"1\"/>" for i in 0:5])
+        py = replace(_LABEL_IMPORT_FIXTURE_PY, "T, C, Z, Y, X = 2, 2, 1, 32, 40" => "T, C, Z, Y, X = 1, 6, 1, 32, 40")
+        py = replace(py, r"<Channel ID=\"Channel:0:0\".*?</Pixels>"s => chans * "\n</Pixels>")
+        py = replace(py, "TimeIncrement=\"30\" TimeIncrementUnit=\"s\"" => "")
+        uid = "afRem"; img_dir = joinpath(dir, "1", uid); mkpath(img_dir); data_dir = joinpath(dir, "0", uid)
+        mkpath(data_dir); mkpath(joinpath(dir, "external"))
+        script = joinpath(dir, "make_fixture.py"); write(script, py)
+        paths = (imPath = joinpath(data_dir, "ccidImage.ome.zarr"), basePath = joinpath(dir, "external", "cells.tif"),
+                 nucPath = joinpath(dir, "external", "nuclei.ome.zarr"), badPath = joinpath(dir, "external", "wrong.tif"))
+        flog = String[]
+        @test Cecelia.run_py(script, paths, joinpath(dir, "fixture_tasks"); on_log = l -> push!(flog, l)) ||
+              error(join(flog, "\n"))
+        img = CciaImage(; uid = uid, name = "afrem", dir = img_dir)
+        write(state_file(img), JSON3.write(Dict{String,Any}("uID" => uid,
+            "filepath" => Dict{String,Any}("default" => "ccidImage.ome.zarr", "_active" => "default"))))
+        set_channel_names!(img, ["M$i" for i in 0:5])
+        quiet = _ -> nothing
+        @test Cecelia._run_task(Cecelia.ImportLabels(), img, Dict{String,Any}(
+            "labelsPath" => paths.basePath, "outputValueName" => "cells"); on_log = quiet) !== nothing
+        h5 = joinpath(img._dir, "labelProps", "cells.h5ad")
+        measure = Dict{String,Any}("outputValueName" => "cells", "intensityValueName" => "default")
+        n = Ref(0)
+        # as the scheduler records a run: inputs + replaces, then the outcome
+        function run!(task, fn, vn, p)
+            tid = "t$(n[] += 1)"; pv = run_provenance(fn, img, p)
+            Cecelia.open_run_log!(img, fn, vn, p; task_id = tid, inputs = pv.inputs, replaces = pv.replaces)
+            log = String[]
+            res = Cecelia._run_task(task, img, p; on_log = l -> push!(log, l))
+            close_run_log!(img, tid, res === nothing ? "failed" : "done")
+            res, log
+        end
+        @test run!(Cecelia.MeasureLabels(), "segment.measureLabels", "cells", measure)[1] !== nothing
+        @test !Cecelia.af_cells_had_columns(h5)
+        af = Dict{String,Any}("valueName" => "cells", "groupBy" => "order", "period" => 2)
+        @test run!(Cecelia.AfCells(), "segment.afCells", "cells", af)[1] !== nothing
+        @test Cecelia.af_cells_had_columns(h5)
+        n_af = count(startswith("af_"), col_names(label_props(h5)))
+        @test n_af == 6
+        @test isempty(stale_outputs_for(img).stale)
+
+        # re-measure: the columns come back, from the run's own settings, logged as their own run
+        res, log = run!(Cecelia.MeasureLabels(), "segment.measureLabels", "cells", measure)
+        @test res !== nothing
+        @test count(startswith("af_"), col_names(label_props(h5))) == n_af
+        @test any(l -> occursin("re-applying the autofluorescence correction", l), log)
+        last_af = filter(e -> String(get(e, "fun", "")) == "segment.afCells", read_run_log(img))[end]
+        @test last_af["status"] == "done" && last_af["params"]["groupBy"] == "order" &&
+              last_af["params"]["period"] == 2
+        @test isempty(stale_outputs_for(img).stale)   # made from the new table, not left over
+
+        # a record whose settings no longer validate (an older spec) is not run blind: the user is told
+        Cecelia.append_run_log!(img, "segment.afCells", "cells", "done",
+                                Dict{String,Any}("valueName" => "cells", "groupBy" => "cycle"))
+        res, log = run!(Cecelia.MeasureLabels(), "segment.measureLabels", "cells", measure)
+        @test res !== nothing                                        # the measure itself still succeeds
+        @test any(l -> occursin("no longer apply", l), log)
+        @test !Cecelia.af_cells_had_columns(h5)
+
+        # a table that never had them gets none
+        rm(h5)
+        @test run!(Cecelia.MeasureLabels(), "segment.measureLabels", "cells", measure)[1] !== nothing
+        @test !Cecelia.af_cells_had_columns(h5)
+    end
+end

@@ -56,6 +56,34 @@ describe('ChipSelect picking', () => {
     expect((model.value as string[])[0]).toBe('v2')
     expect([...(model.value as string[])].sort()).toEqual(['v0', 'v1', 'v2'])
   })
+  it('reorderable: a chip clicked off and on again stays in its place', async () => {
+    const { host, model, chip } = chips({ options: opts(4), multiple: true, reorderable: true }, ['v0', 'v1', 'v2', 'v3'])
+    const labels = () => [...host.querySelectorAll('button.chip')].map(b => b.textContent?.trim())
+    await frames()
+    await userEvent.click(chip('Chip 1'))
+    await frames()
+    expect(labels()).toEqual(['Chip 0', 'Chip 1', 'Chip 2', 'Chip 3'])     // off, not sent to the back
+    await userEvent.click(chip('Chip 1'))
+    await frames()
+    expect(model.value).toEqual(['v0', 'v1', 'v2', 'v3'])                   // on, back in its own slot
+  })
+
+  it('reorderable: All picks the rest where they sit, not at the end', async () => {
+    const { model, chip } = chips({ options: opts(3), multiple: true, reorderable: true, selectAll: true }, ['v0', 'v2'])
+    await frames()
+    await userEvent.click(chip('All'))
+    await frames()
+    expect(model.value).toEqual(['v0', 'v1', 'v2'])
+  })
+
+  it('reorderable: an unpicked chip can be dragged into place', async () => {
+    const { host, chip } = chips({ options: opts(3), multiple: true, reorderable: true }, ['v0', 'v1'])
+    await frames()
+    await userEvent.dragAndDrop(chip('Chip 2'), chip('Chip 0'))
+    await frames()
+    expect([...host.querySelectorAll('button.chip')].map(b => b.textContent?.trim()))
+      .toEqual(['Chip 2', 'Chip 0', 'Chip 1'])
+  })
 })
 
 describe('ChipSelect layout', () => {

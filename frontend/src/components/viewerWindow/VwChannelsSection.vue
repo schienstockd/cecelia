@@ -171,8 +171,8 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
                 :aria-label="(isCompact(compact, flips, c) ? 'Expand ' : 'Compact ') + ch.name">
           <i :class="['pi', isCompact(compact, flips, c) ? 'pi-chevron-right' : 'pi-chevron-down']" />
         </button>
-        <span class="vw-ch-name cc-fs-xs"
-              v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
+        <!-- the name ellipsises in a narrow panel; the tip carries it whole -->
+        <span class="vw-ch-name cc-fs-xs" v-tooltip.right="ch.name">{{ ch.name }}</span>
         <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
              the source image, so a corrected/uncorrected mixup is not silent. Click to A/B:
              suspend the swap on THIS channel (badge dims, channel reads source) while the

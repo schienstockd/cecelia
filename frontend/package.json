@@ -21,7 +21,6 @@
     "mermaid": "^12.2.0",
     "pdf-lib": "^1.17.1",
     "pinia": "^4.1.0",
-    "regl-scatterplot": "^1.16.0",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0"
   },

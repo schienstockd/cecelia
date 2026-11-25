@@ -94,3 +94,40 @@ describe('PlotPicker card text', () => {
     expect(clipped).toEqual([])
   })
 })
+
+// Every kind's blurb is one line above its cards — a second line pushes the cards down and reads as a
+// paragraph. The desktop's system font differs from this browser's (the old "Clusters & matrices" blurb
+// measured 291px in Ubuntu Sans for ~290px of room), so a blurb must fit with room to spare.
+const BLURB_HEADROOM = 0.85
+
+describe('PlotPicker kind blurbs', () => {
+  it.each([1280, 560])('every kind\'s blurb fits one line at %ipx', async (w) => {
+    await page.viewport(w, 800)
+    // one option per category, so every kind (plugin 'other' included) is in the column
+    const perKind: PlotOption[] = PLOT_CATEGORIES.map(c => ({ value: c.id, label: c.label, category: c.id, sketch }))
+    const host = mountInto({
+      setup() { useSettingsStore().plotPickerPreviews = true },
+      render: () => h(PlotPicker, { options: perKind }),
+    })
+    await openPicker(host)
+    const kinds = [...document.querySelectorAll<HTMLElement>('.pp-kind')]
+    expect(kinds).toHaveLength(PLOT_CATEGORIES.length)
+    const tooLong: string[] = []
+    for (const kind of kinds) {
+      await userEvent.click(kind)
+      await frames()
+      const b = document.querySelector<HTMLElement>('.pp-blurb')!
+      const cs = getComputedStyle(b)
+      const avail = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      const range = document.createRange()
+      range.selectNodeContents(b)
+      const lines = new Set([...range.getClientRects()].map(r => Math.round(r.top))).size
+      b.style.whiteSpace = 'nowrap'
+      const natural = range.getBoundingClientRect().width
+      b.style.whiteSpace = ''
+      if (lines > 1 || natural > avail * BLURB_HEADROOM)
+        tooLong.push(`${b.textContent} (${Math.round(natural)} of ${Math.round(avail)}px)`)
+    }
+    expect(tooLong).toEqual([])
+  })
+})
