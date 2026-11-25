@@ -74,6 +74,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     # On a cluster the job's own allocation is the budget, not this machine's pool (HPC_PLAN code reality 7).
     n_threads = something(hpc_task_cpus(), n_threads)
     h5ad_path = joinpath(task_dir, "labelProps", "$(p.outputValueName).h5ad")
+    had_af    = af_cells_had_columns(h5ad_path)   # the rebuilt table drops them; put back after
 
     ok = run_py("tasks/segment/measure_labels_run.py",
         (; imPath            = im_path,
@@ -124,6 +125,9 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
         # value_name fallback) defaults to the most recently produced segmentation.
         unversioned_set_field!(raw, "label_props", h5ad_filename, p.outputValueName)
     end
+    # Corrected intensities are built from this table; a gate or clustering on `af_CD4` would lose its
+    # column. Redo them from the new values, as the last correction run did (`af_cells_reapply!`).
+    had_af && af_cells_reapply!(img, p.outputValueName; by = string(get(params, "_by", "")), on_log, on_process)
 
     Dict{String,Any}("outputValueName" => p.outputValueName,
                      "labelValueName"  => p.outputValueName,
