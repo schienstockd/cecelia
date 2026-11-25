@@ -1,8 +1,8 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
-> time. It is not a description of how the code works now, and not instructions to re-run. No
-> `docs/todo/*_PLAN.md` exists for it yet.
+> time. It is not a description of how the code works now, and not instructions to re-run. Current
+> design lives in [`docs/todo/TRACK_SUBPOP_GATING_PLAN.md`](../todo/TRACK_SUBPOP_GATING_PLAN.md).
 >
-> **Outcome:** not run yet (2026-11-25). Read against origin/main 4452532, several premises have moved:
+> **Outcome:** turned into the plan above (2026-11-25); no phase built. Read against origin/main 4452532, several premises have moved:
 >
 > - **Per-track aggregates are not a new primitive.** `track_props` (`app/src/tracking/track_props.jl`)
 >   already computes `.mean/.median/.sum/.qUp/.qLow/.sd` of any cell column per track on read (never
@@ -15,14 +15,11 @@
 >   them; `gating.ts` stores `trackAggregates` and nothing reads it.
 > - **The `tracked` filter population already exists** as the derived `_tracked`
 >   (`pop_df.jl:571`, `track_id gt 0`, parent ∩ tracked, evaluated per query, offered under every
->   tracked (sub)population by `tracked_pop_parents`; `docs/POPULATION.md` §derived pops). But it
->   only reaches TRACK pickers, so the addendum's ask stands at cell grain: derived pops are
->   registered for `live` only (`derived_pop_paths`), a cell plot asks for `flow`
->   (`plot_pop_types`, `picker.jl:41`), and a `live` family is treated as a track family that folds
->   `P/_tracked` into `P`; module pickers class `_tracked` as track-grained (`is_track=true`), so
->   `_accept_permits` drops it from cell scopes. `docs/POPULATION.md` says "cell plots keep the
->   `_tracked` leaf"; the code does not offer it there (maintainer confirmed in the GUI). Hence the
->   hand-made filter workaround. The fix is to surface `_tracked` at cell grain, not new machinery.
+>   tracked (sub)population by `tracked_pop_parents`; `docs/POPULATION.md` §derived pops). Cell plots
+>   reach it through a "Tracked" family (`cell_properties.json`) on Behaviour and the Analysis board,
+>   but Phenotype offers `flow`/`clust` only (maintainer confirmed in the GUI), and nothing can be
+>   gated under it: the derived node is never stored (`add_pop!` → parent not found). Hence the
+>   hand-made filter workaround.
 > - **Flicker has a second cause the brief misses:** a track belongs to a population if *any* of its
 >   cells do (`pop_df.jl:125`), so a flickering track counts in every sub-population it touches.
 > - Partly existing: per-segment colouring is the Tracks `cell` colour mode (by an obs column, not by
