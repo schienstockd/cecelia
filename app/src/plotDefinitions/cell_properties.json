@@ -5,7 +5,7 @@
   "sketch": "cell",
   "answers": "How does a cell measure differ by group?",
   "modules": {
-    "phenotype": ["flow", "clust"],
+    "phenotype": ["flow", "clust", "live"],
     "behaviourAnalysis": ["live", "track", "trackclust"],
     "spatialAnalysis": ["region"]
   },
