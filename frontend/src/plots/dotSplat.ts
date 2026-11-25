@@ -89,15 +89,42 @@ export function cssRgb(c: CanvasRenderingContext2D, css: string): Rgb {
   return [0, 0, 0]
 }
 
+/** Place one dot, in CSS px, in draw order. */
+export type SplatDot = (px: number, py: number, rgb: Rgb) => void
+/**
+ * A picture repeated at several origins (the cluster map's facet ghost: the whole cloud, the same in
+ * every cell). `draw` places its dots once, relative to (0, 0) of a `w`×`h` CSS box; the returned
+ * `place(ox, oy)` composites a copy at that origin, in draw order like a dot. A copy is stamped once per
+ * sub-pixel phase of its origin (the phase a dot snaps to anyway), so an origin on the same phase reuses
+ * it and the dots land exactly where `draw` would have put them there.
+ */
+export type SplatLayer = (w: number, h: number, draw: (dot: SplatDot) => void) => (ox: number, oy: number) => void
+
+/** Composite premultiplied `src` (`ws`×`hs`) source-over premultiplied `dst` (`wd`×`hd`) at integer (`dx`, `dy`). */
+function compositeAt(dst: Uint8ClampedArray, wd: number, hd: number, src: Uint8ClampedArray, ws: number, hs: number,
+                     dx: number, dy: number): void {
+  const y0 = Math.max(0, -dy), y1 = Math.min(hs, hd - dy), x0 = Math.max(0, -dx), x1 = Math.min(ws, wd - dx)
+  for (let y = y0; y < y1; y++) {
+    let si = (y * ws + x0) * 4, di = ((y + dy) * wd + x0 + dx) * 4
+    for (let x = x0; x < x1; x++, si += 4, di += 4) {
+      const a = src[si + 3]
+      if (a === 0) continue
+      const q = 1 - a / 255
+      dst[di] = src[si] + dst[di] * q; dst[di + 1] = src[si + 1] + dst[di + 1] * q
+      dst[di + 2] = src[si + 2] + dst[di + 2] * q; dst[di + 3] = a + dst[di + 3] * q
+    }
+  }
+}
+
 /**
  * Paint dots of radius `r` CSS px onto `c` (which may carry a device scale) as one image. `emit` is
- * called with a `dot(px, py, rgb)` to place each dot in CSS px, in draw order; every dot is drawn at
- * `alpha` (an arc's `globalAlpha`). The image itself is laid down at full opacity, whatever `c`'s
- * `globalAlpha`. Returns false when it could not (a skewed transform, no offscreen) — the caller then
- * draws its arcs.
+ * called with a `dot(px, py, rgb)` to place each dot in CSS px, in draw order, and a `layer` for a
+ * picture repeated at several origins (`SplatLayer`); every dot is drawn at `alpha` (an arc's
+ * `globalAlpha`). The image itself is laid down at full opacity, whatever `c`'s `globalAlpha`. Returns
+ * false when it could not (a skewed transform, no offscreen) — the caller then draws its arcs.
  */
 export function splatDots(c: CanvasRenderingContext2D, w: number, h: number, r: number,
-                          emit: (dot: (px: number, py: number, rgb: Rgb) => void) => void,
+                          emit: (dot: SplatDot, layer: SplatLayer) => void,
                           { alpha = 1, offscreen = domOffscreen }: { alpha?: number; offscreen?: Offscreen } = {}): boolean {
   const t = c.getTransform()
   if (t.b !== 0 || t.c !== 0 || t.a <= 0 || Math.abs(t.a - t.d) > 1e-9) return false
@@ -107,9 +134,26 @@ export function splatDots(c: CanvasRenderingContext2D, w: number, h: number, r: 
   const img = off.ctx.createImageData(wDev, hDev)
   const disk = diskStamps(r * s)
   const d = img.data
+  const layer: SplatLayer = (lw, lh, draw) => {
+    // a margin of the disk's reach, so a dot at the box's edge is not cut where a direct one is not
+    const M = disk.R + 1, ws = Math.ceil(lw * s) + 2 * M + 1, hs = Math.ceil(lh * s) + 2 * M + 1
+    const copies = new Map<number, Uint8ClampedArray>()
+    return (ox, oy) => {
+      const X = ox * s, Y = oy * s, ix = Math.floor(X), iy = Math.floor(Y)
+      const qx = Math.round((X - ix) * PHASES) / PHASES, qy = Math.round((Y - iy) * PHASES) / PHASES
+      const key = qy * (PHASES + 1) * PHASES + qx * PHASES
+      let buf = copies.get(key)
+      if (!buf) {
+        const b = new Uint8ClampedArray(ws * hs * 4)
+        draw((px, py, rgb) => stampDisks(b, ws, hs, disk, px * s + M + qx, py * s + M + qy, rgb, alpha))
+        copies.set(key, (buf = b))
+      }
+      compositeAt(d, wDev, hDev, buf, ws, hs, ix - M, iy - M)
+    }
+  }
   // stamped premultiplied (8 bits, as a canvas keeps its own pixels), then turned into the straight alpha
   // `ImageData` holds
-  emit((px, py, rgb) => stampDisks(d, wDev, hDev, disk, px * s, py * s, rgb, alpha))
+  emit((px, py, rgb) => stampDisks(d, wDev, hDev, disk, px * s, py * s, rgb, alpha), layer)
   for (let o = 0; o < d.length; o += 4) {
     const A = d[o + 3]
     if (A === 0 || A === 255) continue

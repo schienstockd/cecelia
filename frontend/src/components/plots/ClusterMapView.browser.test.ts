@@ -141,7 +141,7 @@ function serveBlobs() {
   BLOBS.forEach((b, code) => {
     for (let i = 0; i < PER; i++) {
       const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 0.8
-      f.set([b.x + Math.cos(a) * d, b.y + Math.sin(a) * d, code, -1, o / 5 + 1], o)
+      f.set([b.x + Math.cos(a) * d, b.y + Math.sin(a) * d, code, code < 2 ? code : -1, o / 5 + 1], o)
       o += 5
     }
   })
@@ -161,10 +161,10 @@ function countDraws() {
 }
 function mountBlobs() {
   serveBlobs()
-  const width = ref(520), suffix = ref('s')
+  const width = ref(520), suffix = ref('s'), state = reactive<Record<string, unknown>>({})
   const host = mountInto({ render: () => h(WithRoute, () => h('div', { style: `width:${width.value}px;height:440px;display:flex;flex-direction:column` },
-    [h(ClusterMapView, { projectUid: 'p', imageUids: ['i'], setUid: null, popType: 'clust', suffix: suffix.value, state: {} })])) })
-  return { host, width, suffix }
+    [h(ClusterMapView, { projectUid: 'p', imageUids: ['i'], setUid: null, popType: 'clust', suffix: suffix.value, state })])) })
+  return { host, width, suffix, state }
 }
 async function labelled(host: HTMLElement) {
   for (let i = 0; i < 200 && host.querySelectorAll('.uv-label').length < BLOBS.length; i++) await wait(25)
@@ -220,6 +220,31 @@ describe('ClusterMapView, a cloud past SPLAT_MIN', () => {
       suffix.value = 's2'                // new points, colours, extents and facets — one paint
       await wait(600); await frames(3)
       expect(calls.clear - before).toBe(1)
+    } finally { restore() }
+  })
+
+  it('faceted: every cell carries the whole cloud as its ghost, still as one image', async () => {
+    const { calls, restore } = countDraws()
+    try {
+      const { host, state } = mountBlobs()
+      await labelled(host)
+      state.colourPops = ['flow::v/a', 'flow::v/b']
+      state.facetBy = 'population'
+      for (let i = 0; i < 200 && host.querySelectorAll('.uv-facet-title').length < 3; i++) await wait(25)
+      await wait(400); await frames(3)
+      expect(calls.arc).toBe(0)
+      // 3 facets in a 2×2 grid: the inked area of each used cell is the whole cloud's (ghost + its own points)
+      const cv = host.querySelector<HTMLCanvasElement>('.uv-canvas')!
+      const W = cv.width, H = cv.height, px = cv.getContext('2d')!.getImageData(0, 0, W, H).data
+      const inked = (x0: number, y0: number) => {
+        let n = 0
+        for (let y = y0; y < y0 + H / 2; y++) for (let x = x0; x < x0 + W / 2; x++) if (px[(y * W + x) * 4 + 3] > 40) n++
+        return n
+      }
+      const cells = [inked(0, 0), inked(W / 2, 0), inked(0, H / 2)]
+      expect(Math.min(...cells)).toBeGreaterThan(0)
+      expect(Math.max(...cells) / Math.min(...cells)).toBeLessThan(1.05)
+      expect(inked(W / 2, H / 2)).toBe(0)                               // the fourth cell is empty
     } finally { restore() }
   })
 })

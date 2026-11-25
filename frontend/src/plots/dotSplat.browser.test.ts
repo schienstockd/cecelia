@@ -75,6 +75,43 @@ describe('splatDots', () => {
     expect(colourDiff / both / 3).toBeLessThan(6)
   })
 
+  // a layer (the cluster map's facet ghost): drawn once per sub-pixel phase of its origins, and each copy
+  // the same pixels as its dots placed directly at that origin
+  for (const dpr of [1, 2]) it(`a layer is stamped once and lands where its dots would (dpr ${dpr})`, () => {
+    const W = 200, H = 160, r = 1.5, alpha = 0.8
+    const pts = cloud(400, 80, 60)
+    const origins = [[4, 15], [104, 15], [4, 95], [104, 95]]          // one phase: one stamping
+    const direct = canvas(W, H, dpr)
+    splatDots(direct, W, H, r, dot => { for (const [ox, oy] of origins) for (const p of pts) dot(ox + p.x, oy + p.y, p.rgb) }, { alpha })
+    let draws = 0
+    const viaLayer = canvas(W, H, dpr)
+    splatDots(viaLayer, W, H, r, (_dot, layer) => {
+      const at = layer(80, 60, d => { draws++; for (const p of pts) d(p.x, p.y, p.rgb) })
+      for (const [ox, oy] of origins) at(ox, oy)
+    }, { alpha })
+    expect(draws).toBe(1)
+    const a = direct.getImageData(0, 0, W * dpr, H * dpr).data, b = viaLayer.getImageData(0, 0, W * dpr, H * dpr).data
+    let diff = 0, ink = 0
+    for (let i = 0; i < a.length; i++) { diff = Math.max(diff, Math.abs(a[i] - b[i])); if (i % 4 === 3) ink += a[i] }
+    expect(ink).toBeGreaterThan(0)
+    expect(diff).toBeLessThanOrEqual(2)                                // the same picture, to 8-bit rounding
+
+    // origins off the pixel grid: a copy per phase, each still where the dots would be (to the phase step)
+    draws = 0
+    const frac = canvas(W, H, dpr), fracDirect = canvas(W, H, dpr)
+    const odd = [[4.5, 15.25], [104.5, 15.25], [4.3, 95.7]]
+    splatDots(fracDirect, W, H, r, dot => { for (const [ox, oy] of odd) for (const p of pts) dot(ox + p.x, oy + p.y, p.rgb) }, { alpha })
+    splatDots(frac, W, H, r, (_dot, layer) => {
+      const at = layer(80, 60, d => { draws++; for (const p of pts) d(p.x, p.y, p.rgb) })
+      for (const [ox, oy] of odd) at(ox, oy)
+    }, { alpha })
+    expect(draws).toBeLessThanOrEqual(odd.length)
+    const c = fracDirect.getImageData(0, 0, W * dpr, H * dpr).data, e = frac.getImageData(0, 0, W * dpr, H * dpr).data
+    let covC = 0, covE = 0
+    for (let i = 3; i < c.length; i += 4) { covC += c[i]; covE += e[i] }
+    expect(Math.abs(covE - covC) / covC).toBeLessThan(0.02)
+  })
+
   it('refuses a skewed transform (the caller draws its arcs)', () => {
     const c = canvas(10, 10, 1); c.setTransform(1, 0.2, 0, 1, 0, 0)
     expect(splatDots(c, 10, 10, 1, () => {})).toBe(false)

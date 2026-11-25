@@ -289,13 +289,13 @@ function paintInto(c: CanvasRenderingContext2D, pts: Float32Array, idx: number[]
 }
 // A large cloud (600k cells) is the SAME dots in the same order, stamped into one image (plots/dotSplat):
 // an arc per point cost ~0.7 s per paint there, and ~2.7 s faceted (the ghost redraws the whole cloud per
-// facet). Below SPLAT_MIN, past SPLAT_MAX_RD (a hi-res export's big disks), or with no offscreen, the arcs stay.
+// facet; stamped, it is laid once per cell). Below SPLAT_MIN, past SPLAT_MAX_RD (a hi-res export's big disks), or with no offscreen, the arcs stay.
 function splatPaint(c: CanvasRenderingContext2D, w: number, h: number, pts: Float32Array, cats: Float32Array,
                     pal: string[], fs: { idx: number[] }[] | null, r: number, alpha: number): boolean {
   const n = pts.length / 2
   if ((fs ? n * (fs.length + 1) : n) < SPLAT_MIN || r * c.getTransform().a > SPLAT_MAX_RD) return false
   const rgb = pal.map(p => cssRgb(c, p)), ghost = cssRgb(c, ghostColour())
-  return splatDots(c, w, h, r, dot => {
+  return splatDots(c, w, h, r, (dot, layer) => {
     const each = (toPx: (x: number, y: number) => [number, number], idx: number[] | null) => {
       const groups: number[][] = pal.map(() => [])
       if (idx) for (const i of idx) { const g = groups[cats[i]]; if (g) g.push(i) }
@@ -305,10 +305,17 @@ function splatPaint(c: CanvasRenderingContext2D, w: number, h: number, pts: Floa
       }
     }
     if (!fs) { each(rectMap({ px: 0, py: 0, pw: w, ph: h }), null); return }
+    // the ghost is the same cloud in every cell (cells share one size, so a cell's map is the first one
+    // moved): stamped once, laid into each cell before that cell's own points
+    const c0 = facetCell(0, fs.length, w, h)
+    const ghostAt = layer(c0.pw, c0.ph, d => {
+      const toPx = rectMap({ px: 0, py: 0, pw: c0.pw, ph: c0.ph })
+      for (let i = 0; i < n; i++) { const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); d(px, py, ghost) }
+    })
     for (let fi = 0; fi < fs.length; fi++) {
-      const toPx = rectMap(facetCell(fi, fs.length, w, h))
-      for (let i = 0; i < n; i++) { const [px, py] = toPx(pts[2 * i], pts[2 * i + 1]); dot(px, py, ghost) }
-      each(toPx, fs[fi].idx)
+      const cell = facetCell(fi, fs.length, w, h)
+      ghostAt(cell.px, cell.py)
+      each(rectMap(cell), fs[fi].idx)
     }
   }, { alpha })
 }
