@@ -91,3 +91,14 @@ export function newImageUidsOf(meta: Record<string, unknown>): string[] {
   const list = Array.isArray(many) ? many : [meta.newImageUid]
   return list.filter((u): u is string => typeof u === 'string' && u !== '')
 }
+
+/**
+ * The images a `task:status` frame's run touched: the full member list (`imageUids`) a set task's
+ * terminal frame carries, else the single `imageUid`. A set task names only its representative in
+ * `imageUid`, so reading that alone leaves every other member stale.
+ */
+export function frameImageUidsOf(data: Record<string, unknown>): string[] {
+  const many = data.imageUids
+  const list = Array.isArray(many) && many.length ? many : [data.imageUid]
+  return list.filter((u): u is string => typeof u === 'string' && u !== '')
+}

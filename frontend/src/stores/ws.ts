@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { useLogStore } from './log'
 import { useTaskStore } from './tasks'
 import { useProjectStore } from './project'
-import { frameTargetsOpenProject, newImageUidsOf } from '../utils/taskScope'
+import { frameTargetsOpenProject, newImageUidsOf, frameImageUidsOf } from '../utils/taskScope'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
@@ -520,21 +520,17 @@ export const useWsStore = defineStore('ws', () => {
             useProjectStore().updateImageStatus(imageUid, status as any)
           }
         }
-        // successful completion → the touched image(s)' data on disk may have changed (in place, same
-        // value_name/suffix → no filepath change to react to). Bump each image's data version so only
-        // the plots showing them refetch (targeted, not project-wide). A set/combined task sends the
-        // full member list in `imageUids` (else fall back to the single `imageUid`) so EVERY member is
-        // invalidated, not just the representative. Replaces the reload buttons.
-        if (status === 'done') {
-          const uids = Array.isArray(data.imageUids) && data.imageUids.length
-            ? (data.imageUids as string[]) : (imageUid ? [imageUid] : [])
-          for (const u of uids) useProjectStore().bumpDataVersion(u)
-          // the task may have changed on-disk metadata (filepaths/labels/value_names) the store
-          // doesn't know yet — refresh the touched image so the viewer/table aren't stale (fixes
-          // legacy-migrate showing "No versions registered"; also import/segmentation/tracking).
-          const projectUid = useProjectMetaStore().current?.uid
-          if (projectUid && imageUid) useProjectStore().refreshImageMeta(projectUid, imageUid)
-        }
+        // A set task names every member in `imageUids` (`imageUid` is only the representative), so act
+        // on all of them. `done` → bump each data version so only the plots showing them refetch.
+        const uids = frameImageUidsOf(data)
+        if (status === 'done') for (const u of uids) useProjectStore().bumpDataVersion(u)
+        // ANY end re-reads each touched image's meta: a done run may have changed filepaths/labels/
+        // value_names, and every end closes the run log's `running` entry, which the module page's
+        // result line reads (it stuck at "running" after a cancel). The runner sends a second terminal
+        // frame AFTER `close_run_log!`; the early `cancelled` from `cancel_task!` races the close.
+        const projectUid = useProjectMetaStore().current?.uid
+        if (projectUid && isTerminalStatus(status))
+          for (const u of uids) useProjectStore().refreshImageMeta(projectUid, u)
       }
     }
 
@@ -634,6 +630,12 @@ export const useWsStore = defineStore('ws', () => {
         // a node that reused a past run instead of running: that run's task id ("Reuse unchanged steps")
         reused:     String(data.reused ?? '') || undefined,
       })
+      // A chain step's end closes its run-log entry like a task's does (see `task:status` above) —
+      // and a chain sends no `task:status`, so this is its only chance to re-read it.
+      const openUid = useProjectMetaStore().current?.uid
+      if (imageUid && openUid && isTerminalStatus(status)
+          && frameTargetsOpenProject(projectUid, openUid))
+        project.refreshImageMeta(openUid, imageUid)
     }
 
     if (type === 'task:result') {
