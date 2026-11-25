@@ -128,6 +128,38 @@ describe('ClusterMapView colour by feature', () => {
   })
 })
 
+// Switching clustering run: the new run's pops arrive at once, its embedding seconds later. Until it
+// lands the old map keeps its OWN labels (no new names over the old dots) under a loading wheel.
+describe('ClusterMapView run switch', () => {
+  it('keeps the old run’s labels under a spinner until the new run’s map arrives', async () => {
+    let release: () => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.startsWith('/api/plots/cluster-map')) {
+        if (new URL(u, location.origin).searchParams.get('suffix') === 'b') await new Promise<void>(r => { release = r })
+        return new Response(new Float32Array([0, 0, 0, -1, 1, 1, 1, 0, -1, 2, 5, 5, 1, -1, 3]).buffer)
+      }
+      return new Response('[]', { headers: { 'Content-Type': 'application/json' } })
+    }))
+    const run = reactive({ suffix: 'a', shownPops: [{ path: 'a/x', name: 'runA', colour: '#ff0000', clusterIds: [0] }] })
+    const host = mountInto(() => h(WithRoute, null, () => h('div', { style: 'width:500px;height:500px' }, [h(ClusterMapView, {
+      projectUid: 'p', imageUids: ['A'], setUid: null, popType: 'clust', suffix: run.suffix, shownPops: run.shownPops, state: {} })])))
+    const legendText = () => host.querySelector('.uv-legend')?.textContent ?? ''
+    await wait(400); await frames(2)
+    expect(legendText()).toContain('runA')
+    run.suffix = 'b'
+    run.shownPops = [{ path: 'b/y', name: 'runB', colour: '#00ff00', clusterIds: [0] }]
+    await wait(700); await frames(2)
+    expect(host.querySelector('.plot-spinner'), 'loading wheel over the old map').toBeTruthy()
+    expect(legendText()).toContain('runA')
+    expect(legendText()).not.toContain('runB')
+    release()
+    await wait(100); await frames(2)
+    expect(host.querySelector('.plot-spinner')).toBeNull()
+    expect(legendText()).toContain('runB')
+  })
+})
+
 // A cloud past SPLAT_MIN: drawn as one image (plots/dotSplat), painted once per change, and its HTML
 // centroid labels still on their clusters' dots — before and after a resize. Each cluster is a tight
 // blob, so the expected place for its label comes from the data, never from the component's mapping.
