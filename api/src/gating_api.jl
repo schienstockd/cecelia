@@ -398,6 +398,7 @@ _can_redo(proj, image_uid, vn, pop_type) = is_gating_pop_type(pop_type) &&
 # WS to be up to know whether it can undo what it just did.
 function _persist_and_broadcast!(m::PopulationTree, img::CciaImage, body, vn, pop_type)
     proj, image_uid, err = _require_ids(body); err === nothing || return err
+    _anchor_follow_rules!(m, img, vn, pop_type)
     _history_record!(proj, image_uid, vn, pop_type, img)
     save_pop_tree!(m, img)
     _inject_pick_pop!(m, img)
@@ -410,6 +411,17 @@ function _persist_and_broadcast!(m::PopulationTree, img::CciaImage, body, vn, po
        missingColumns = pin === nothing ? miss : _missing_columns_by_pop(m, img, vn; labels_version = pin),
        canUndo = _can_undo(proj, image_uid, vn, pop_type),
        canRedo = _can_redo(proj, image_uid, vn, pop_type))
+end
+
+# A rectangle / polygon saved with a follow rule and no anchor (just drawn, toggled on, or edited on the
+# plot — the plot never sends the anchor back) is anchored on THIS image's parent cells before it is
+# written: the cloud it was drawn on (app/src/gating/follow_rule.jl). One with no cloud under it is written
+# unanchored and tried again at each later save of the tree (one extra evaluation per save, only while one
+# is unanchored). Every gate write passes here, and Claude's dry run calls it too, so the counts it reports
+# are the saved gate's.
+function _anchor_follow_rules!(m::PopulationTree, img, vn, pop_type)
+    any(p -> p.gate !== nothing && Cecelia.needs_anchor(p.gate), values(m.pops)) || return m
+    recompute!(m, pop_membership_fetch(img, vn, pop_type); anchor = true)
 end
 
 # POST /api/gating/undo · /api/gating/redo — pop one snapshot off the stack, put the CURRENT state
@@ -916,18 +928,24 @@ end
 # a `project_gate` outline plus its `path` and `colour`. Gates on another channel pair are left out.
 # Shared by plotmeta (the browser plot) and the gate-plot image (`gating_views_api.jl`).
 #
-# `parent_raw` = the displayed population's RAW values on the plot's x channel, when the caller has them:
-# a rule gate (a valley-following bisector or range end) is shown where its rule cuts on those cells — the
-# same cells `recompute!` resolves it on — and says whether each rule found a valley (`rule_flags`).
+# `parent_raw` = the displayed population's RAW values on the plot's (x, y) channels, when the caller has
+# them: a rule gate (a valley-following bisector or range end, a cloud-following shape) is shown where its
+# rule puts it on those cells — the same cells `recompute!` resolves it on — and says whether each rule
+# found its valley / cloud (`rule_flags`). A gate drawn with the axes swapped reads them swapped.
 function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw = nothing)
     gates = Dict{String,Any}[]
     for cpath in direct_children(m, pop)
         p = m.pops[cpath]
         p.gate === nothing && continue
         g, flags = p.gate, nothing
-        if Cecelia.needs_parent_data(g) && parent_raw !== nothing && g.x_channel == x
-            flags = Cecelia.rule_flags(g, parent_raw)
-            g = Cecelia.resolve_gate(g, parent_raw)
+        if Cecelia.needs_parent_data(g) && parent_raw !== nothing
+            px, py = parent_raw
+            gxy = (g.x_channel, g.y_channel) == (x, y) ? (px, py) :
+                  (g.x_channel, g.y_channel) == (y, x) ? (py, px) : nothing
+            if gxy !== nothing
+                flags = Cecelia.rule_flags(g, gxy...)
+                g = Cecelia.resolve_gate(g, gxy...)
+            end
         end
         pj = project_gate(g, x, y, xt, yt)
         pj === nothing && continue
@@ -1025,7 +1043,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     # their outlines land on the dots even when a gate was drawn under a different transform (the client
     # has no transform math). Colour/path travel so the client renders directly. Membership is untouched.
     gates = _child_gate_outlines(load_pop_tree(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt;
-                                 parent_raw = rxp)
+                                 parent_raw = (rxp, ryp))
     # Autoscale to the child gates: a gate edge drawn just beyond the data cloud would otherwise fall
     # outside the axes and be un-grabbable, so grow the display extent to it and re-derive the raw tick
     # range so ticks span the whole axis. Only the side an edge exceeds moves, and only for an edge
@@ -2074,6 +2092,8 @@ function _claude_gate_reply(m::PopulationTree, img::CciaImage, body, vn, path::A
     if !dry
         saved = _persist_and_broadcast!(m, img, body, vn, "flow")
         saved isa Tuple && return saved
+    else
+        _anchor_follow_rules!(m, img, vn, "flow")
     end
     recompute!(m, pop_membership_fetch(img, vn, "flow"))
     p = m.pops[String(path)]
@@ -2236,6 +2256,15 @@ function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,N
     else
         err = _proposed_extra_geometry!(full, kind, g, finite_num)
         err === nothing || return (nothing, err)
+    end
+    if kind in ("rectangle", "polygon") && g("rule") !== nothing
+        # follow the cloud: anchored on the parent's cells when it is added (`_anchor_follow_rules!`)
+        r = g("rule")
+        (r isa AbstractDict && lowercase(string(get(r, "kind", ""))) == "follow") ||
+            return (nothing, "a $kind's rule is {\"kind\": \"follow\"} (it moves with the cloud it is drawn on)")
+        adj = get(r, "adjust", nothing)
+        (adj === nothing || (finite_num(adj) && adj > 0)) || return (nothing, "gate.rule.adjust must be a positive number")
+        full["rule"] = Dict{String,Any}("kind" => "follow", "adjust" => float(something(adj, 1.0)))
     end
     try
         (gate_from_spec(full), nothing)

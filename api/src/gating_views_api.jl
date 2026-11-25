@@ -46,7 +46,7 @@ function api_gating_plot_image(req::HTTP.Request)
     xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
     gates = _child_gate_outlines(m, pop, x, y, xt, yt;
-                                 parent_raw = _plot_xy_raw(img, vn, pt, x, y, pop; labels_version = pin)[1])
+                                 parent_raw = _plot_xy_raw(img, vn, pt, x, y, pop; labels_version = pin))
     gx, gy = _gate_edges(gates)
     # ticks label the data range on an unpadded side, as plotmeta does (`_display_extent`)
     tick_range(t, (lo, hi), r, grew) = (grew[1] ? invert_transform(t, lo) : 0.0, grew[2] ? invert_transform(t, hi) : float(r[2]))
@@ -285,6 +285,8 @@ function api_gating_examples(req::HTTP.Request)
     v = pop_plot_cols(img, "flow", parent, cols; value_name = vn)
     labels = Int.(v[1])
     isempty(labels) && return _gerr(404, "\"$parent\" has no cells")
+    # a rule gate as it applies to these — the parent's — cells: anchored if just proposed, then resolved
+    gate === nothing || (gate = Cecelia.resolve_gate(Cecelia.anchor_rule(gate, v[2], v[3]), v[2], v[3]))
     ins = members !== nothing ? BitVector(l in members for l in labels) : inside(gate, v[2], v[3])
     picks = _example_picks(mode, n, ins, mode == "boundary" ? _gate_edge_distance(gate, v[2], v[3]) : nothing;
                            seed = _wint(body, "seed", 1))
@@ -378,8 +380,7 @@ function _gate_edge_distance(g::Gate, xraw::AbstractVector, yraw::AbstractVector
     end
     sx = span(xt); sy = span(yt)
     if g isa Cecelia.HistGate
-        # one axis: the distance to the nearest end / the cut (a rule's, on these — the parent's — cells)
-        g = Cecelia.resolve_gate(g, xraw)
+        # one axis: the distance to the nearest end / the cut (the caller resolved a rule's on the parent)
         ends = g isa RangeGate ? (g.lo, g.hi) : (g.cut,)
         return [isfinite(v) ? minimum(abs(v - e) for e in ends) / sx : Inf for v in xt]
     end

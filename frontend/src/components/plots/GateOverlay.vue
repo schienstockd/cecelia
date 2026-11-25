@@ -13,7 +13,9 @@
       region populations follow (the server moves the group). A 1D gate (range / bisector, on a
       histogram — plots/histGeometry.ts) is drawn by dragging the interval / clicking the cut; its ends,
       its cut, or a rule's window ends drag sideways, and a double-click on a bisector switches it
-      between a fixed cut and following the density valley (a range's end, its own valley). An outline or
+      between a fixed cut and following the density valley (a range's end, its own valley). A double-click
+      inside a selected rectangle / polygon switches it to following the cloud it was drawn on, per image
+      (plots/followRule.ts; dashed where no such cloud was found). An outline or
       corner grabs on hover; a gate's BODY moves it only once the gate is SELECTED — click inside it
       (the smallest gate there wins, `gateAt`); click outside every gate, outside the plot, or Esc
       deselects — and while nothing is selected, presses inside gates reach the plot (pan/zoom). Live local
@@ -44,6 +46,7 @@ import { handleRadius, distToSeg, HANDLE_R_PX } from '../../utils/drawGeometry'
 import { parseHex, luminance } from '../../utils/colour'
 import { isSplitGate, dividerSegments, splitLabelPoint, armsCcw, defaultArms, withDivider, type Box } from '../../plots/splitGeometry'
 import { isHistGate, histRegion, histHandles, histLines, histWindows, histTip, moveHistHandle, shiftRange, toggleRule } from '../../plots/histGeometry'
+import { follows, toggleFollow, followTip } from '../../plots/followRule'
 import { PAPER_INK, HALO_LIGHT, HALO_DARK, STORED_WHITES, WHITE, NEUTRAL } from '../../plots/fixedColours'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
@@ -243,6 +246,7 @@ let editHandle: Handle | null = null
 let orig: GateSpec | null = null             // gate at drag start
 let dragStart: [number, number] | null = null // cursor data at drag start
 const hover = ref<Handle | null>(null)
+let hoverPx: [number, number] | null = null   // the cursor, for a tip drawn beside it
 
 function gateOf(path: string): { path: string; colour: string; gate: GateSpec } | undefined {
   return (props.gates ?? []).find(g => g.path === path)
@@ -265,6 +269,9 @@ const editIntent = (e: MouseEvent) => props.mode !== 'off' && e.shiftKey && !pro
 function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
   const c = ctx!; c.strokeStyle = colour; c.lineWidth = lw
   if (isHistGate(g)) return strokeHist(g, colour, lw)
+  // a shape following its cloud that found none here stands where it was drawn: dashed, like a 1D miss
+  const missed = follows(g) && g.rule_ok === false
+  if (missed) { c.save(); c.setLineDash([5, 4]) }
   c.beginPath()
   if (isSplitGate(g)) {
     for (const [a, b] of segsPx(g)) { c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]) }
@@ -276,6 +283,7 @@ function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
     c.closePath()
   }
   c.stroke()
+  if (missed) c.restore()
 }
 // a 1D gate: its lines; a range's interval shaded faintly; a rule bisector's search window shaded and
 // its cut dashed when the rule found no valley on this parent (the stored cut stands in)
@@ -349,20 +357,28 @@ function drawGateLabel(l: PlacedLabel) {
 }
 // beside a hovered 1D handle / ruled line: what it is (a window edge, a ruled cut that found its valley or
 // not) — a canvas tip, since v-tooltip anchors to the whole plot. Live canvas only, never exported.
+// The same for a selected rectangle / polygon's body: whether it follows its cloud — beside the cursor.
 function drawHistTip() {
   const h0 = hover.value
-  if (editHandle || !h0 || (h0.kind !== 'hist-handle' && h0.kind !== 'hist-line')) return
+  if (editHandle || !h0) return
   const g = gateOf(h0.path)?.gate; if (!g) return
-  const x = h0.kind === 'hist-handle' ? histHandles(g).find(q => q.part === h0.part)?.x
-                                      : histLines(g).find(l => l.end === h0.end)?.x
-  if (x === undefined) return
-  const text = histTip(g, h0), c = ctx!, { w } = size(), px = dataToPx(x, 0)[0]
+  let text: string, px: number, py = 40
+  if (h0.kind === 'rect-move' || h0.kind === 'poly-move') {
+    if (!hoverPx) return
+    text = followTip(g); [px, py] = [hoverPx[0], hoverPx[1] + 14]
+  } else if (h0.kind === 'hist-handle' || h0.kind === 'hist-line') {
+    const x = h0.kind === 'hist-handle' ? histHandles(g).find(q => q.part === h0.part)?.x
+                                        : histLines(g).find(l => l.end === h0.end)?.x
+    if (x === undefined) return
+    text = histTip(g, h0); px = dataToPx(x, 0)[0]
+  } else return
+  const c = ctx!, { w } = size()
   c.save(); c.font = '11px system-ui, sans-serif'; c.textBaseline = 'top'
   const tw = c.measureText(text).width, right = px + 6 + tw <= w
   c.textAlign = right ? 'left' : 'right'
   const tx = right ? px + 6 : px - 6
-  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo(); c.strokeText(text, tx, 40)
-  c.fillStyle = themed('--cc-text', NEUTRAL); c.fillText(text, tx, 40); c.restore()
+  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo(); c.strokeText(text, tx, py)
+  c.fillStyle = themed('--cc-text', NEUTRAL); c.fillText(text, tx, py); c.restore()
 }
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = WHITE; c.strokeStyle = colour; c.lineWidth = 1.5
@@ -615,7 +631,8 @@ function onEditUp(e: MouseEvent) {
 function onParentMove(e: MouseEvent) {
   if (props.readonly) return   // read-only: overlay never becomes interactive (no move/resize)
   if (props.mode !== 'off' || editHandle) return
-  const h = hitTest(evtPx(e))
+  hoverPx = evtPx(e)
+  const h = hitTest(hoverPx)
   hover.value = h
   pe.value = h ? 'auto' : 'none'
   cursor.value = cursorFor(h)
@@ -706,12 +723,15 @@ function onDblClick(e: MouseEvent) {
   if (props.mode === 'polygon') return finishPolygon()
   if (props.mode === 'slice') return finishSlice()
   // off mode: insert a vertex on the nearest polygon edge — or slice segment — under the cursor; on a
-  // bisector's cut, switch it between a fixed cut and following the valley
+  // bisector's cut, switch it between a fixed cut and following the valley; inside a selected rectangle /
+  // polygon, between staying put and following its cloud
   const p = evtPx(e); const h = hitTest(p)
   const fixedEnd = h?.kind === 'hist-handle' && ['lo', 'hi', 'cut'].includes(h.part) ? h.part as 'lo' | 'hi' | 'cut' : null
   if (h && (h.kind === 'hist-line' || fixedEnd)) {
     const end = h.kind === 'hist-line' ? h.end : fixedEnd!
     const entry = gateOf(h.path); if (entry) emit('edit', { path: h.path, gate: toggleRule(clone(entry.gate), viewBox(), end) })
+  } else if (h && (h.kind === 'rect-move' || h.kind === 'poly-move')) {
+    const entry = gateOf(h.path); if (entry) emit('edit', { path: h.path, gate: toggleFollow(clone(entry.gate)) })
   } else if (h && h.kind === 'poly-edge') {
     const entry = gateOf(h.path); if (!entry?.gate.vertices) return
     const d = clone(entry.gate); const [dx, dy] = pxToData(p[0], p[1])

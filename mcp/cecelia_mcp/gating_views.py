@@ -37,7 +37,8 @@ region) lists as `slice` (`vertices` of a line run on to infinity, `side` 1 = le
 `quadrant` (`centre`, 4 counter-clockwise `arms`, sector `quadrant` 1–4). A 1D gate (x = y = its channel,
 drawn on that channel's histogram) lists as `range` (`lo`, `hi`) or `bisector` (`cut`, `side` 1 = above);
 a bisector with a `rule` cuts at the parent's density valley inside `rule.lo`–`rule.hi`, and `rule_ok`
-says whether it found one."""
+says whether it found one. A rectangle or polygon with `"rule": {"kind": "follow"}` is drawn where it moved
+to follow the cloud it was drawn on; `rule_ok` false = no such cloud here, so it stays where it was drawn."""
 
 GATE_CELLS_VIEW_DOC = """The image with populations marked — the check of a gate where it matters, on the cells.
 One timepoint `t` (default the middle frame) in the saved viewer contrast, with segmentation
@@ -84,7 +85,9 @@ raw tick labels:
 {"kind": "rectangle", "x_channel", "y_channel", "x_transform", "y_transform",
  "x_min", "x_max", "y_min", "y_max"}  or
 {"kind": "polygon", "x_channel", "y_channel", "x_transform", "y_transform",
- "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly)  or
+ "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly) — either may add
+ `"rule": {"kind": "follow"}`: on each image it moves with the cloud it is drawn around (same shape and
+ size; it stays put where that cloud is missing or further than its own width/height away)  or
 a 1D gate on ONE channel (`y_channel` may be left out), drawn on its histogram:
 {"kind": "range", "x_channel", "x_transform", "lo", "hi"}  or
 {"kind": "bisector", "x_channel", "x_transform", "cut"}  — two populations, `name+` above and `name-`;

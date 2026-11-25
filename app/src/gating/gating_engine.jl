@@ -85,9 +85,9 @@ _needed_columns(m::PopulationTree)::Vector{String} =
     unique(String[c for path in m.order for c in _pop_columns(m.pops[path])])
 
 _rename_gate(g::RectangleGate, f) = RectangleGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
-                                                  g.x_min, g.x_max, g.y_min, g.y_max)
+                                                  g.x_min, g.x_max, g.y_min, g.y_max, g.rule)
 _rename_gate(g::PolygonGate, f)   = PolygonGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
-                                                g.vertices)
+                                                g.vertices, g.rule)
 _rename_gate(g::SliceGate, f)     = SliceGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
                                               g.vertices, g.side, g.group)
 _rename_gate(g::QuadrantGate, f)  = QuadrantGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
@@ -166,6 +166,16 @@ gate_axis_scale(m::PopulationTree, col::AbstractString)::Float64 =
     (is_spatial_axis(String(col)) && gates_in_um(m)) ?
         physical_size_for_axis(m.physical_sizes, axis_of(String(col))) : 1.0
 
+# A pop's gate as it applies to this parent: a rule gate resolved on the parent's raw values. With
+# `anchor`, a follow rule saved without its anchor is anchored on them first, and the pop keeps it.
+function _parent_resolved!(p, df, parent_mask, anchor::Bool)
+    g = p.gate
+    needs_parent_data(g) || return g
+    xr = df[parent_mask, g.x_channel]; yr = df[parent_mask, g.y_channel]
+    anchor && needs_anchor(g) && (p.gate = g = anchor_rule(g, xr, yr))
+    resolve_gate(g, xr, yr)
+end
+
 # `parent_mask .& inside(g, x, y)`, tested only on the parent's rows: a child of a 7 % population
 # costs 7 % of a full pass. A slice gate is tested on every row — its half-plane is clipped to a box
 # around the points it is given, and the full column keeps that box exactly what `inside` uses.
@@ -183,9 +193,11 @@ end
 
 Derive membership for every population. `fetch_cols(cols::Vector{String})` must return a
 `DataFrame` with a `label` column plus the requested columns (production wraps
-`label_props`; tests pass an in-memory closure). Result cached on the map.
+`label_props`; tests pass an in-memory closure). Result cached on the map. `anchor = true` anchors each
+follow rule saved without an anchor on its parent's cells and keeps it on the pop (the save path does
+this before writing — follow_rule.jl); otherwise an unanchored follow rule stays where it was drawn.
 """
-function recompute!(m::PopulationTree, fetch_cols::Function)
+function recompute!(m::PopulationTree, fetch_cols::Function; anchor::Bool = false)
     df = fetch_cols(_needed_columns(m))
     "label" in names(df) || error("recompute!: fetch_cols must return a `label` column")
     # ── spatial axes: put the DATA in the same unit as the GATE, here and nowhere else ──
@@ -225,11 +237,10 @@ function recompute!(m::PopulationTree, fetch_cols::Function)
         elseif p.gate !== nothing
             # a gate whose axis column is absent from the fetched frame → no members, not a crash. See
             # the filter case below for the rationale (missing column ≠ hard 500).
-            # a rule gate (a valley-following bisector) is first resolved on its PARENT's cells
+            # a rule gate (a valley-following bisector, a cloud-following shape) is first resolved on its
+            # PARENT's cells; `anchor` first anchors a follow rule saved without one (follow_rule.jl)
             (p.gate.x_channel in cols && p.gate.y_channel in cols) ?
-                _gate_mask(needs_parent_data(p.gate) ?
-                               resolve_gate(p.gate, df[parent_mask, p.gate.x_channel]) : p.gate,
-                           parent_mask, tcol) :
+                _gate_mask(_parent_resolved!(p, df, parent_mask, anchor), parent_mask, tcol) :
                 _missing_col_mask(n, path, string(p.gate.x_channel, " / ", p.gate.y_channel))
         elseif p.filter_conditions !== nothing
             # compound filter (Decision 15): AND every condition's mask. A missing column degrades the

@@ -88,6 +88,10 @@ export function histRegion(g: GateSpec, view: Box): [number, number] | null {
 // `lo_rule` / `hi_rule` (its ends).
 type RuleField = 'rule' | 'lo_rule' | 'hi_rule'
 const END_RULE = { lo: 'lo_rule', hi: 'hi_rule', cut: 'rule' } as const
+// the valley rule held in field `f` (a `rule` may also be a 2D shape's follow rule — not a 1D one)
+const ruleAt = (g: GateSpec, f: RuleField): GateRule | undefined => {
+  const r = g[f]; return r?.kind === 'valley' ? r : undefined
+}
 
 /** A 1D gate's vertical lines: each end / the cut, whether a rule places it, and whether that rule found
  *  its valley on this parent (a miss is drawn dashed — the stored position stands in). */
@@ -95,7 +99,7 @@ export function histLines(g: GateSpec): { end: 'lo' | 'hi' | 'cut'; x: number; r
   const line = (end: 'lo' | 'hi' | 'cut', x: number, rule?: GateRule, ok?: boolean) =>
     ({ end, x, ruled: !!rule, ok: ok !== false })
   if (g.kind === 'range') return [line('lo', g.lo!, g.lo_rule, g.lo_rule_ok), line('hi', g.hi!, g.hi_rule, g.hi_rule_ok)]
-  if (g.kind === 'bisector') return [line('cut', g.cut!, g.rule, g.rule_ok)]
+  if (g.kind === 'bisector') return [line('cut', g.cut!, ruleAt(g, 'rule'), g.rule_ok)]
   return []
 }
 
@@ -103,7 +107,7 @@ export function histLines(g: GateSpec): { end: 'lo' | 'hi' | 'cut'; x: number; r
  *  a range's two end windows split their overlap at its middle, and one ruled end beside a fixed end
  *  stops at that end. An emptied window is left out. */
 export function histWindows(g: GateSpec): [number, number][] {
-  if (g.kind !== 'range') return g.rule ? [[g.rule.lo, g.rule.hi]] : []
+  if (g.kind !== 'range') { const r = ruleAt(g, 'rule'); return r ? [[r.lo, r.hi]] : [] }
   const out: [number, number][] = []
   const L = g.lo_rule, H = g.hi_rule
   if (L) { const b = H ? (H.lo < L.hi ? (H.lo + L.hi) / 2 : L.hi) : Math.min(L.hi, g.hi!); if (b > L.lo) out.push([L.lo, b]) }
@@ -116,7 +120,7 @@ export function histWindows(g: GateSpec): [number, number][] {
 export function histHandles(g: GateSpec): { part: string; x: number }[] {
   const out: { part: string; x: number }[] = []
   for (const l of histLines(g)) {
-    const f = END_RULE[l.end], r = g[f]
+    const f = END_RULE[l.end], r = ruleAt(g, f)
     if (r) out.push({ part: `${f}-lo`, x: r.lo }, { part: `${f}-hi`, x: r.hi })
     else out.push({ part: l.end, x: l.x })
   }
@@ -131,7 +135,7 @@ export function moveHistHandle(g: GateSpec, part: string, x: number): GateSpec {
   }
   if (part === 'cut') return { ...g, cut: x }
   const m = /^(rule|lo_rule|hi_rule)-(lo|hi)$/.exec(part)
-  const f = m?.[1] as RuleField | undefined, r = f ? g[f] : undefined
+  const f = m?.[1] as RuleField | undefined, r = f ? ruleAt(g, f) : undefined
   if (!f || !r) return g
   const lo = m![2] === 'lo' ? x : r.lo, hi = m![2] === 'hi' ? x : r.hi
   return { ...g, [f]: { ...r, lo: Math.min(lo, hi), hi: Math.max(lo, hi) } }
