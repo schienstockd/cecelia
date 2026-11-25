@@ -3,8 +3,9 @@
 > design lives in [`docs/ai-assist/GOVERNANCE_INDEX.md`](../ai-assist/GOVERNANCE_INDEX.md) and the
 > docs it lists.
 >
-> **Outcome:** not run as of archiving (2026-11-25, `origin/main` 96a2a2fc); no
-> `docs/todo/CONSISTENCY_COHERENCE_AUDIT.md` exists. The brief cites none of the earlier work on
+> **Outcome:** a trimmed Run 1 (steps 3–4 only: mechanical sweeps + baseline) is
+> [`../todo/CONSISTENCY_COHERENCE_AUDIT.md`](../todo/CONSISTENCY_COHERENCE_AUDIT.md) (2026-11-25,
+> `origin/main` 96a2a2fc). Steps 1–2 were already covered; Run 2 is parked. The brief cites none of the earlier work on
 > the same question — start from those:
 > [`../todo/DRIFT_PREVENTION_ASSESSMENT.md`](../todo/DRIFT_PREVENTION_ASSESSMENT.md) (a general
 > drift harness declined 2026-09-26, with revisit triggers),
