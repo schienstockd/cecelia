@@ -10,6 +10,7 @@ import ModulePage from '../components/ModulePage.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import InlineNote from '../components/InlineNote.vue'
 import { notebooksApi } from '../utils/serviceApi'
+import { getJson, postJson, tryApi } from '../utils/api'
 
 const projectMeta = useProjectMetaStore()
 
@@ -46,11 +47,8 @@ function stopBuildPoll() { if (buildPoll) { clearInterval(buildPoll); buildPoll 
 async function buildSysimage() {
   if (sysimage.value === 'building' || sysimage.value === 'ready') return
   try {
-    const res = await fetch('/api/notebooks/build-sysimage', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-    })
-    const d = await res.json().catch(() => ({}))
-    if (res.ok) sysimage.value = d.status ?? 'building'
+    const res = await tryApi(postJson<{ status?: SysimageState } | null>('/api/notebooks/build-sysimage', {}, { quiet: [403] }))
+    if (res.ok) sysimage.value = res.data?.status ?? 'building'
     else if (res.status === 403) sysimage.value = 'shared'
   } catch { /* silent — the fallback (slow first plot) still works */ }
   if (sysimage.value === 'building') startBuildPoll()
@@ -79,7 +77,9 @@ function startPolling() {
 
 async function refreshStatus() {
   try {
-    const d = await (await fetch('/api/notebooks/status')).json()
+    // quiet: polled every few seconds; a failure shows as 'stopped'
+    const d = await getJson<{ url?: string; secret?: string; running?: boolean; starting?: boolean; sysimage?: SysimageState;
+                              foreign?: boolean; error?: string }>('/api/notebooks/status', { quiet: true })
     url.value = d.url ?? url.value
     secret.value = d.secret ?? ''
     server.value = d.running ? 'running' : (d.starting ? 'starting' : 'stopped')

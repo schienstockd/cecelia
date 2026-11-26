@@ -47,6 +47,7 @@ import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 import { useParamHandoffStore } from '../../stores/paramHandoff'
 import { runTreeOrder, runOptionText, refineFormValues } from '../../utils/clusterRefine'
+import { getJson } from '../../utils/api'
 
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (views read their own keys: umap→labels, heatmap→features).
@@ -125,11 +126,10 @@ async function refinePop(pop: { path: string; name: string }) {
   let base: Record<string, unknown> | null = null
   const anchor = validUids.value[0]
   if (projectUid.value && anchor) {
-    const qs = new URLSearchParams({ projectUid: projectUid.value, fun: 'clustPops.cluster', imageUid: anchor, valueName: run })
-    if (setUid.value) qs.set('setUid', setUid.value)
     try {
-      const r = await fetch(`/api/tasks/funparams?${qs.toString()}`)
-      const d = r.ok ? await r.json() as { params?: Record<string, unknown> | null; matched?: boolean } : null
+      const d = await getJson<{ params?: Record<string, unknown> | null; matched?: boolean } | null>('/api/tasks/funparams',
+        { query: { projectUid: projectUid.value, fun: 'clustPops.cluster', imageUid: anchor, valueName: run,
+                   setUid: setUid.value || undefined } })
       if (d?.matched && d.params) base = d.params
     } catch { /* the manifest below */ }
   }

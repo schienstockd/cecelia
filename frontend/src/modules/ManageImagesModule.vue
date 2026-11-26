@@ -20,6 +20,7 @@ import { buildRegisterRecords, isProbeableMultiSeriesPath,
 import { primePyramidPeekBatch } from '../tasks/pyramidPeek'
 import { useSettingsStore } from '../stores/settings'
 import { formatSupportRequestUrl } from '../lib/links'
+import { postJson } from '../utils/api'
 
 // The page is 'Manage images', not 'Import': it hosts add/copy/move/delete alongside the import
 // tasks, and now the export ones too. Two categories rather than one — `exportImages` is its own
@@ -102,14 +103,8 @@ function onLegacyImported(images: unknown[]) {
 
 async function probeSeries(filepath: string): Promise<ProbeResult | null> {
   try {
-    const r = await fetch('/api/import/series/probe', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ filepath }),
-    })
-    const d = await r.json()
-    if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
-    return d as ProbeResult
+    // quiet: the catch below logs the failure itself
+    return await postJson<ProbeResult>('/api/import/series/probe', { filepath }, { quiet: true })
   } catch (e) {
     // A probe failure isn't fatal — the file still imports as a single-series file (bf2raw picks
     // series 0 by default). We just skip the picker for it and log the reason.
@@ -199,17 +194,12 @@ async function submitRegister() {
   pendingSetUid.value  = null
   if (records.length === 0) return
   try {
-    const res = await fetch('/api/images/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: projectMeta.current.uid,
-        setUid,
-        filepaths:  records,
-      }),
-    })
-    const body = await res.json().catch(() => ({})) as { images?: any[]; error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    const body = (await postJson<{ images?: any[] }>('/api/images/register', {
+      projectUid: projectMeta.current.uid,
+      setUid,
+      filepaths:  records,
+    }, { quiet: true })) ?? {}
     const imgs = body.images ?? []
     project.addImagesFromApi(setUid, imgs)
     log.info(

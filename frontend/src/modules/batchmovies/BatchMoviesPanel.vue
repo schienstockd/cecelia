@@ -53,6 +53,7 @@ import { lookRestore, missingRefs, restoreNote, restoreTargetSet, type MovieRegi
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import RestoreNotice from '../../components/RestoreNotice.vue'
 import { useMovieSuffixes } from '../../composables/useMovieSuffixes'
+import { getJson, tryApi } from '../../utils/api'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -275,10 +276,10 @@ async function loadPopPaths() {
   const pt = popType.value
   if (!uid || !projectUid || !seg || !pt) { popPaths.value = []; return }
   try {
-    const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(seg)}&popType=${encodeURIComponent(pt)}`
-    const res = await fetch(`/api/gating/pop-tree?${q}`)
+    const res = await tryApi(getJson<{ tree?: PopTree }>('/api/gating/pop-tree',
+      { query: { projectUid, imageUid: uid, valueName: seg, popType: pt } }))
     if (!res.ok) { popPaths.value = []; return }
-    const j = await res.json() as { tree?: PopTree }
+    const j = res.data ?? {}
     const out: { path: string; label: string; uid: string }[] = []
     const walk = (nodes: PopNode[] | undefined, parent: string, depth: number) => {
       for (const n of nodes ?? []) {

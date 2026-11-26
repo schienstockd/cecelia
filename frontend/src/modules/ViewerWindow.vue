@@ -176,6 +176,7 @@ import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
 import { MEDIA_BG } from '../plots/fixedColours'
+import { ApiError, apiFetch, getBuffer, getJson, postJson, tryApi } from '../utils/api'
 
 const route = useRoute()
 const settings = useSettingsStore()
@@ -800,7 +801,7 @@ const presentPopTypes = ref<PresentPopTypes | null>(null)
 async function loadPresentPopTypes() {
   if (!projectUid || !imageUid) return
   try {
-    const res = await fetch(popTypesUrl({ projectUid, imageUid }), { cache: 'no-store' })
+    const res = await fetch(popTypesUrl({ projectUid, imageUid }), { cache: 'no-store' }) // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
     presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Population types')
   } catch { /* keep the last answer: a failed probe must not hide switches */ }
 }
@@ -1156,7 +1157,7 @@ watch(maskTable, () => frame.redraw())
 async function fetchTrackclustPayload(vn: string, cb: string): Promise<OverlayPayload | null> {
   if (!projectUid || !imageUid) return null
   try {
-    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust',
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust', // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
                                           colourBy: cb || undefined }),
                             { cache: 'no-store' })
     return res.ok ? await res.json() as OverlayPayload : null
@@ -1187,7 +1188,7 @@ async function loadMaskColourBy() {
   let payload: OverlayPayload | null = have ?? null
   if (!payload) {
     try {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'flow', colourBy: cb }),
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'flow', colourBy: cb }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
                               { cache: 'no-store' })
       payload = res.ok ? await res.json() as OverlayPayload : null
     } catch { payload = null }
@@ -2186,7 +2187,7 @@ async function loadOverlays(tick: OverlayTick = { imageUid: imageUid ?? '', scop
   const heldLayer = (vn: string, popType: string) => popLayers.value.find(l => l.vn === vn && l.popType === popType)
   const fetched = await Promise.all(wanted.map(async ({ vn, popType }, i): Promise<PopLayer | null> => {
     const whole = async (): Promise<PopLayer> => {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: cb, valueName: vn, popType }),
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: cb, valueName: vn, popType }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
                               { cache: 'no-store' })
       const payload = await readJson<OverlayPayload>(res, 'Overlays')
       layerColourBy.set(`${vn}::${popType}`, cb)
@@ -2196,7 +2197,7 @@ async function loadOverlays(tick: OverlayTick = { imageUid: imageUid ?? '', scop
       // a layer no longer held (its last fetch failed) has no cells to reuse: fetched whole
       if (plan[i] === 'full' || !heldLayer(vn, popType)) return await whole()
       if (plan[i] === 'pops') {
-        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType, part: 'pops' }),
+        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType, part: 'pops' }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
                                 { cache: 'no-store' })
         const { pops } = await readJson<OverlayPopsPayload>(res, 'Overlays')
         const held = heldLayer(vn, popType)
@@ -2346,7 +2347,7 @@ async function loadSkeletons(force = false) {
     const cached = force ? undefined : skeletonPayloads.value.get(vn)
     if (cached) { next.set(vn, cached); return }
     try {
-      const res = await fetch(skeletonsUrl({ projectUid, imageUid, valueName: vn }), { cache: 'no-store' })
+      const res = await fetch(skeletonsUrl({ projectUid, imageUid, valueName: vn }), { cache: 'no-store' }) // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
       if (!res.ok) return
       const payload = await res.json() as SkeletonPayload
       next.set(vn, payload)
@@ -2397,7 +2398,7 @@ async function loadGraphs(force = false) {
     const cached = force ? undefined : graphPayloads.value.get(sfx)
     if (cached) { next.set(sfx, cached); return }
     try {
-      const res = await fetch(spatialGraphsUrl({ projectUid, imageUid, suffix: sfx }), { cache: 'no-store' })
+      const res = await fetch(spatialGraphsUrl({ projectUid, imageUid, suffix: sfx }), { cache: 'no-store' }) // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
       if (!res.ok) return
       const payload = await res.json() as SpatialGraphPayload
       next.set(sfx, payload)
@@ -2431,7 +2432,7 @@ async function loadTracks() {
   const missing = wantVns.filter(vn => !next.has(vn))
   await Promise.all(missing.map(async vn => {
     try {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn }),
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
                               { cache: 'no-store' })
       if (res.ok) next.set(vn, await res.json())
     } catch { /* one vn's failure must not take the others down */ }
@@ -2650,9 +2651,13 @@ async function fetchMaskSlab(
     // The mask's cache-buster for the durable labels store's own rewrites.
     rev: maskRev.value || undefined,
   })
-  const res = await fetch(url, { cache: 'default', signal })
-  if (res.status === 409) return null
-  if (!res.ok) throw new Error(`Mask "${vn}" could not be loaded (${res.status})`)
+  // quiet: the timepoint's catch logs a failure; a 409 is "nothing to draw here", not one
+  let res: Response
+  try { res = await apiFetch(url, { signal, quiet: true }) }
+  catch (e) {
+    if (e instanceof ApiError && e.status === 409) return null
+    throw e
+  }
   const buf = await res.arrayBuffer()
   // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
   // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
@@ -2735,8 +2740,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
           // HTTP cache alongside the client-side atlas.
           rev: cacheClearRev.value || undefined,
         })
-        const res = await fetch(url, { cache: 'default', signal: ac.signal })
-        if (!res.ok) throw new Error(`Slab ${c} failed: ${res.status}`)
+        const res = await apiFetch(url, { signal: ac.signal, quiet: true })   // quiet: the catch below logs it
         const buf = await res.arrayBuffer()
         // The guard, not a formality: a mismatched slab uploads fine and renders the wrong thing. At a
         // coarser level the server returns a smaller frame, so the shape assertion needs the LEVEL's
@@ -3073,8 +3077,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         // Same-store rewrite cache-buster for the tile atlas — see the fetchTimepoint call above.
         rev: cacheClearRev.value || undefined,
       })
-      const res = await fetch(url, { cache: 'default', signal: ac.signal })
-      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}–${cTo}: ${res.status}`)
+      const res = await apiFetch(url, { signal: ac.signal, quiet: true })   // quiet: the catch below logs it
       return { c, parts: splitChannelSlab(await res.arrayBuffer(), cTo - c + 1) }
     }))
     // Indexed by channel; a channel not fetched is a hole.
@@ -3184,11 +3187,14 @@ async function fetchTileLabelOnce(key: TileKey): Promise<boolean> {
       ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince), labelFiles: maskFilesOf(vn),
       rev: maskRev.value || undefined,
     })
-    const res = await fetch(url, { cache: 'default', signal: ac.signal })
-    if (!res.ok) {
+    // quiet: every failure is logged here
+    let res: Response
+    try { res = await apiFetch(url, { signal: ac.signal, quiet: true }) }
+    catch (e) {
+      if (!(e instanceof ApiError) || e.status === 0) throw e
       tileLabelFailed.add(failKey)
       // 409 is "no mask to draw here" (a live store promoted mid-fetch, a short pyramid) — not an error.
-      if (res.status !== 409) vlog('error', `Mask "${vn}" tile ${kStr} could not be loaded (${res.status})`)
+      if (e.status !== 409) vlog('error', `Mask "${vn}" tile ${kStr} could not be loaded (${e.status})`)
       return false
     }
     const ids = widenLabelSlab(await res.arrayBuffer(), labelBpv(res.headers.get('X-Slab-Bpv')))
@@ -3625,11 +3631,10 @@ function pickMaskMismatched(m: ViewerMeta, vn: string): boolean {
 
 /** Log a refused pick: 409 = no mask level at this zoom; 422 = the server's reason (no cell table,
  *  another image version); anything else by status. */
-async function warnPickRefused(res: Response, what: string) {
-  if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
-  const msg = res.status === 422
-    ? ((await res.json().catch(() => ({}))) as { error?: string }).error : undefined
-  vlog('warn', msg ?? `${what} failed: ${res.status}`)
+function warnPickRefused(e: ApiError, what: string) {
+  if (e.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
+  const msg = e.status === 422 ? (e.body as { error?: string } | null)?.error : undefined
+  vlog('warn', msg ?? `${what} failed: ${e.status}`)
 }
 
 /**
@@ -3674,11 +3679,8 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
     imageNX: m.nX, imageNY: m.nY,
   }
   try {
-    const res = await fetch('/api/viewer/pick-cell', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) { await warnPickRefused(res, 'Pick'); return }
+    // quiet: every refusal is logged here
+    const res = await apiFetch('/api/viewer/pick-cell', { json: body, quiet: true })
     // `/Pick selection` membership changed on the server — wake same-window (Pinia ref) and
     // cross-window (localStorage) subscribers. The correction cockpit watches this to re-fetch
     // membership; without it the cockpit only refreshed on mode/vn change, so a pick never
@@ -3687,6 +3689,7 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
     const j = await res.json() as { label?: number; nSelected?: number }
     if (!j.label) vlog('info', 'Pick: background (no cell)')
   } catch (err) {
+    if (err instanceof ApiError && err.status > 0) { warnPickRefused(err, 'Pick'); return }
     vlog('warn', 'Pick error: ' + (err instanceof Error ? err.message : String(err)))
   }
 }
@@ -3752,15 +3755,13 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
     ...(zLo !== undefined && zHi !== undefined ? { zLo, zHi } : {}),
   }
   try {
-    const res = await fetch('/api/viewer/pick-rect', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) { await warnPickRefused(res, 'Rect pick'); return }
+    // quiet: every refusal is logged here
+    const res = await apiFetch('/api/viewer/pick-rect', { json: body, quiet: true })
     viewerStore.bumpPickSelectionTick()  // see the note on the pick-cell twin
     const j = await res.json() as { nLabels?: number; nSelected?: number }
     vlog('info', `Rect picked ${j.nLabels ?? 0} cells (${j.nSelected ?? 0} in selection)`)
   } catch (err) {
+    if (err instanceof ApiError && err.status > 0) { warnPickRefused(err, 'Rect pick'); return }
     vlog('warn', 'Rect pick error: ' + (err instanceof Error ? err.message : String(err)))
   }
 }
@@ -4534,15 +4535,18 @@ const peekRequest = debouncedLatest<{ key: PeekKey; lx: number; ly: number; leve
   async ({ key, lx, ly, level }, isCurrent) => {
     const m = meta.value
     if (!m) return
-    const res = await fetch('/api/viewer/peek', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    // quiet: fires on hover; a refused read shows no readout, and onError logs a backend with no reply
+    let j: { values?: number[]; label?: number | null; labelNote?: string | null } | null
+    try {
+      j = await postJson('/api/viewer/peek', {
         projectUid, imageUid, valueName: key.vn, t: key.t, z: key.z, x: key.x, y: key.y,
         ...(key.labels ? { labels: key.labels, lx, ly, level, imageNX: m.nX, imageNY: m.nY } : {}),
-      }),
-    })
-    if (!res.ok || !isCurrent()) return
-    const j = await res.json() as { values?: number[]; label?: number | null; labelNote?: string | null }
+      }, { quiet: true })
+    } catch (e) {
+      if (e instanceof ApiError && e.status > 0) return
+      throw e
+    }
+    if (!isCurrent() || !j) return
     peeked.value = { key, values: j.values ?? [], label: j.label ?? null, note: j.labelNote ?? null }
   },
   { wait: 150, onError: err => vlog('warn', 'Readout: ' + (err instanceof Error ? err.message : String(err))) },
@@ -4652,9 +4656,8 @@ async function loadOverviewThumbnail() {
         x: 0, xTo: lvl.nX - 1, y: 0, yTo: lvl.nY - 1,
         rev: cacheClearRev.value || undefined,
       })
-      const res = await fetch(url, { cache: 'default' })
-      if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
-      return slabView(await res.arrayBuffer(), m.bytesPerVoxel)
+      // quiet: the catch below logs it
+      return slabView(await getBuffer(url, { quiet: true }), m.bytesPerVoxel)
     }))
     if (overviewLoadedKey !== key) return     // a newer version took over mid-flight
     overviewChans.value = bufs
@@ -5237,16 +5240,19 @@ const propsSink = debouncedSave(async () => {
  */
 async function loadVersion(refit: boolean) {
   starting.value = 'Reading image'
-  let res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
-  // Self-heal a stale valueName pick that survived a re-import (which wipes and re-registers the
-  // zarr store, leaving the persisted `cc.viewerImageVersion` or the frozen URL query pointing at
-  // a name the server no longer knows). One retry with empty so the server resolves to active.
-  if (res.status === 404 && valueName.value) {
+  // quiet: both callers log a failure (vlog)
+  let m: ViewerMeta
+  try {
+    m = await getJson<ViewerMeta>(metaUrl({ projectUid, imageUid, valueName: valueName.value }), { quiet: true })
+  } catch (e) {
+    // Self-heal a stale valueName pick that survived a re-import (which wipes and re-registers the
+    // zarr store, leaving the persisted `cc.viewerImageVersion` or the frozen URL query pointing at
+    // a name the server no longer knows). One retry with empty so the server resolves to active.
+    if (!(e instanceof ApiError && e.status === 404 && valueName.value)) throw e
     settings.setImageVersion(imageUid, '')
     valueName.value = ''
-    res = await fetch(metaUrl({ projectUid, imageUid, valueName: '' }))
+    m = await getJson<ViewerMeta>(metaUrl({ projectUid, imageUid, valueName: '' }), { quiet: true })
   }
-  const m = await readJson<ViewerMeta>(res, 'Metadata')
   // A fresh image arrives all-on; still one channel if one-at-a-time is on.
   applySolo(m)
   meta.value = m
@@ -5960,8 +5966,7 @@ async function applyCacheClear(job: CacheClearJob): Promise<void> {
   // (lo/hi/lut) is preserved: a pixel-only task doesn't change channels.
   let m: ViewerMeta
   try {
-    const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
-    m = await readJson<ViewerMeta>(res, 'Metadata')
+    m = await getJson<ViewerMeta>(metaUrl({ projectUid, imageUid, valueName: valueName.value }), { quiet: true })   // quiet: logged below
   } catch (e) {
     vlog('warn', 'Meta refresh on cache-clear failed: ' + (e instanceof Error ? e.message : String(e)))
     cacheClearRev.value = job.rev   // can't tell what changed — reload, the pre-fingerprint answer
@@ -6215,13 +6220,10 @@ const recomputeLandscapeSched = debouncedLatest<void>(
     if (projectUid) {
       // Fire-and-forget publish for Kiwi's landscape refs (`kiwi_refs.jl`). MCP `get_landscape`
       // does not read this — it asks for `snapshotLandscape()`. A failed publish is harmless.
-      fetch('/api/viewer/landscape', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectUid, imageUid, valueName: valueName.value,
-          t: shownT.value, z: zPlane.value, landscape: result,
-        }),
-      }).catch(() => { /* silent — non-blocking */ })
+      postJson('/api/viewer/landscape', {
+        projectUid, imageUid, valueName: valueName.value,
+        t: shownT.value, z: zPlane.value, landscape: result,
+      }, { quiet: true }).catch(() => { /* silent — non-blocking */ })
     }
   },
   { wait: 200, maxWait: 400 },
@@ -6328,25 +6330,22 @@ async function snapshotLandscape(): Promise<LandscapeResult | null> {
         ? zLoaded.value
         : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
       try {
-        const cRes = await fetch('/api/viewer/landscape/compute', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectUid, imageUid, valueName: valueName.value,
-            t: shownT.value, z: zPlane.value,
-            renderMode: rm, zLo, zHi, view: landscapeView,
-            cols: baseLandscape.grid.cols, rows: baseLandscape.grid.rows,
-            channels: visibleChannels,
-            ...(labelsVn ? { labelsValueName: labelsVn } : {}),
-            ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
-            ...(trackVn ? { tracksValueName: trackVn } : {}),
-          }),
-        })
-        if (cRes.ok) {
-          const cJson = await cRes.json() as {
-            tiles?: AugmentTile[],
-            sourceRun?: LandscapeResult['sourceRun'],
-            viewport?: { renderMode: string; zLo?: number; zHi?: number; view?: L0Rect },
-          }
+        const cRes = await tryApi(postJson<{
+          tiles?: AugmentTile[],
+          sourceRun?: LandscapeResult['sourceRun'],
+          viewport?: { renderMode: string; zLo?: number; zHi?: number; view?: L0Rect },
+        } | null>('/api/viewer/landscape/compute', {
+          projectUid, imageUid, valueName: valueName.value,
+          t: shownT.value, z: zPlane.value,
+          renderMode: rm, zLo, zHi, view: landscapeView,
+          cols: baseLandscape.grid.cols, rows: baseLandscape.grid.rows,
+          channels: visibleChannels,
+          ...(labelsVn ? { labelsValueName: labelsVn } : {}),
+          ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
+          ...(trackVn ? { tracksValueName: trackVn } : {}),
+        }))
+        if (cRes.ok && cRes.data) {
+          const cJson = cRes.data
           if (Array.isArray(cJson.tiles)) {
             landscapeSnapshot = augmentLandscape(baseLandscape, cJson.tiles,
                                                  cJson.sourceRun, cJson.viewport)
@@ -6392,26 +6391,17 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     // what we ask the backend to do and what we do locally afterwards.
     const sendToPaired = captureDest.sendToPaired.value
     const attachToKiwi = captureDest.attachToKiwi.value
-    const res = await fetch('/api/viewer/capture', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, surface: 'viewer_frame', address,
-                             frames: [{ png }], overlay: payload.overlay,
-                             ...(viewStateSnapshot ? { viewStateSnapshot } : {}),
-                             ...(landscapeSnapshot ? { landscape: landscapeSnapshot } : {}),
-                             // Session-wide notes the user typed on DrawSurface — the free-text
-                             // context that travels alongside the pixels + marks. Only sent when
-                             // non-empty; a Save with no notes stays lean.
-                             ...(payload.notes ? { notes: payload.notes } : {}),
-                             ...(sendToPaired ? {} : { noPush: true }) }),
-    })
-    // Response body is a one-shot stream — read once. On !ok extract .error if present; on ok
-    // extract .captureId so the viewer can carry it into CaptureViewSurface.
-    let respJson: Record<string, unknown> | null = null
-    try { respJson = await res.json() as Record<string, unknown> } catch { /* legacy */ }
-    if (!res.ok) {
-      const err = respJson?.error ? String(respJson.error) : `HTTP ${res.status}`
-      throw new Error(err)
-    }
+    // A refusal throws with the server's error text, which the catch below toasts.
+    const respJson = await postJson<Record<string, unknown> | null>('/api/viewer/capture', {
+      projectUid, surface: 'viewer_frame', address,
+      frames: [{ png }], overlay: payload.overlay,
+      ...(viewStateSnapshot ? { viewStateSnapshot } : {}),
+      ...(landscapeSnapshot ? { landscape: landscapeSnapshot } : {}),
+      // Session-wide notes the user typed on DrawSurface — the free-text
+      // context that travels alongside the pixels + marks. Only sent when
+      // non-empty; a Save with no notes stays lean.
+      ...(payload.notes ? { notes: payload.notes } : {}),
+      ...(sendToPaired ? {} : { noPush: true }) })
     const captureId = String(respJson?.captureId ?? '')
     // BIDIR PR #2: backend reports `push: "sent" | "fallback" | "not_paired"`. "sent" means the
     // Julia writer landed the plain-text notification on the paired Claude Code session's inbox
@@ -6462,13 +6452,10 @@ async function onLandscapeRequest(data: Record<string, unknown>) {
   if (!requestId || !meta.value || shownT.value < 0) return
   const snap = await snapshotLandscape()
   if (!snap) return
-  fetch('/api/viewer/landscape', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      projectUid, imageUid, valueName: valueName.value,
-      t: shownT.value, z: zPlane.value, landscape: snap, requestId,
-    }),
-  }).catch(() => { /* the server's wait times out into "no_viewer" */ })
+  postJson('/api/viewer/landscape', {
+    projectUid, imageUid, valueName: valueName.value,
+    t: shownT.value, z: zPlane.value, landscape: snap, requestId,
+  }, { quiet: true }).catch(() => { /* the server's wait times out into "no_viewer" */ })
 }
 
 // MCP `get_viewer_screenshot` / `set_viewer_view` (api/src/viewer_request.jl): the window showing this
@@ -6524,8 +6511,7 @@ onMounted(() => {
   stopImageMetaWatch = onViewerImageMeta(async (ev) => {
     if (ev.imageUid !== imageUid || !meta.value) return
     try {
-      const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
-      const m = await readJson<ViewerMeta>(res, 'Metadata')
+      const m = await getJson<ViewerMeta>(metaUrl({ projectUid, imageUid, valueName: valueName.value }), { quiet: true })   // quiet: logged below
       const chs = meta.value?.channels ?? []
       for (let i = 0; i < Math.min(chs.length, m.channels.length); i++) chs[i].name = m.channels[i].name
     } catch (e) {
