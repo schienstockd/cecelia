@@ -1,6 +1,6 @@
 # TRACK_SUBPOP_GATING_PLAN
 
-Status: planning (2026-11-25) · branch `docs/track-subpop-gating` (#2513) · no phase built.
+Status: in progress (2026-11-25) · plan #2513 · P1 built on `feat/track-subpop-p1`.
 Brief: [`../archive/TRACK_SUBPOP_GATING_PROMPT.md`](../archive/TRACK_SUBPOP_GATING_PROMPT.md) (its
 banner lists the premises that turned out wrong). Reviewed once by a fresh agent (2026-11-25); its
 corrections are folded in.
@@ -42,9 +42,10 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 ## Decisions (proposed 2026-11-25 — D to lock; ★ = needs D's call)
 
 1. ★ **Tracked cells on Phenotype.** Phenotype gets the Tracked family the Behaviour page already
-   has (one line in `cell_properties.json` + spec tests). On a cell plot the row reads
-   **`P › tracked`**, not `P`: there they are different cells (fix the fold for cell grain, and the
-   doc's contradiction). Alternative: inline `P › tracked` rows in the FLOW list (≈7 touchpoints:
+   has (`cell_properties.json`, `population_over_time.json`, `popPositions` in
+   `interactiveViews.ts`). Rows keep the population's name, as on Behaviour: the family switch already
+   reads *Tracked*, so `P` there is P's tracked cells (built 2026-11-25; the doc's "cell plots keep the
+   leaf" was corrected instead of adding a `P › tracked` label — same meaning, no second naming rule). Alternative: inline `P › tracked` rows in the FLOW list (≈7 touchpoints:
    `pop_df` routing, flow enumeration, `is_track_pop`, `_accept_permits`, labels, tests) — not
    recommended, it puts the same cells under two keys (`flow::` and `live::`) on boards.
 2. ★ **Gating under tracked = materialise on first use.** When the user draws the first gate under
@@ -89,8 +90,8 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 ## Workflow, as the user sees it
 
 1. Gate `frags` and its four quadrants; track `frags` (unchanged).
-2. On Phenotype the family switch gains **Tracked**; rows read `frags › tracked`,
-   `mem-TOM+ nuc-GFP+ › tracked`, … with counts. Drawing a gate under one stores it there.
+2. On Phenotype the family switch gains **Tracked**; its rows `frags`, `mem-TOM+ nuc-GFP+`, … are
+   their tracked cells. Drawing a gate under tracked cells stores it there (P4).
 3. In the viewer, **Tracked only** dims untracked dots.
 4. On a track gating plot the axis picker gains Morphology/Channels; choosing `nuc-GFP` shows
    **median ▾** beside it.
@@ -103,7 +104,7 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 
 | Phase | What | Size |
 |---|---|---|
-| **P1** | Tracked family on Phenotype; `P › tracked` label at cell grain; `POPULATION.md` fixed. Tests: spec test; Julia picker test on `fixture_for(:cells, :movie, :tracked)`; label tests (TS + Julia `pop_display_labels`) | small |
+| **P1** ✅ | Tracked family on Phenotype (cell properties, proportion over time, population positions); `POPULATION.md` fold contradiction fixed. Tests: `plot_specs.jl` curation, `interactiveViews.test.ts` | small |
 | **P2** | Track axis picker offers cell-measure aggregates + aggregation dropdown (frontend only). Default `median` | small |
 | **P3** | **Tracked only** dot switch (Decision 9) + per-pop `gated / tracked` count | small |
 | **P4** | Gating under tracked: materialise on first gate (Decision 2); `add_pop!` path, reserved-name writer, `read_pop_type` routing; tests for re-tracking and a later gate under `P` | medium |

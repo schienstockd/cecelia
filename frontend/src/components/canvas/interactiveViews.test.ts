@@ -253,7 +253,7 @@ describe('familiesElsewhere — what a page leaves out, and where it is', () => 
     const label = (popType: string) => popTypeLabel({ popType, granularity: 'cell' })
     expect(out).toContainEqual({ label: label('flow'), pages: ['Phenotype'] })
     expect(out).toContainEqual({ label: label('clust'), pages: ['Phenotype'] })
-    expect(out).toContainEqual({ label: label('live'), pages: ['Behaviour'] })
+    expect(out).toContainEqual({ label: label('live'), pages: ['Phenotype', 'Behaviour'] })
     expect(out.map(f => f.label)).not.toContain(label('region'))
   })
   it('a family on no other page is not offered as elsewhere; no page → nothing', () => {
@@ -261,6 +261,14 @@ describe('familiesElsewhere — what a page leaves out, and where it is', () => 
       .toEqual(expect.arrayContaining(['Phenotype']))
     expect(familiesElsewhere('popPositions', null)).toEqual([])
     expect(familiesElsewhere('motifCards', 'spatialAnalysis')).toEqual([])
+  })
+})
+
+describe('Phenotype offers tracked cells', () => {
+  // A tracked population's cells (`P/_tracked`) are a cell-grain question too: a marker or shape on the
+  // cells the tracker followed. The positions plot lists the Tracked family on Phenotype as on Behaviour.
+  it('the positions plot lists the Tracked family on Phenotype', () => {
+    expect(popTypesFor('popPositions', 'phenotype').map(o => o.popType).sort()).toEqual(['clust', 'flow', 'live'])
   })
 })
 

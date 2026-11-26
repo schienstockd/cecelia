@@ -201,8 +201,9 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     component: PopPositionsView, analysisBoard: true, clusterPage: true, category: 'look', sketch: 'popPositions',
     square: true, rail: 'pops', popTypes: CELL_FAMILIES,
     modules: {
-      // POP-TYPES-OK: per-page curation, the same lists as a summary spec's `modules` (population_summary.json)
-      phenotype: ['flow', 'clust'],
+      // POP-TYPES-OK: per-page curation, the same lists as a cell-grain summary spec's `modules`
+      // (cell_properties.json) — `live` = the Tracked family, a population's tracked cells
+      phenotype: ['flow', 'clust', 'live'],
       // POP-TYPES-OK: per-page curation; `region` too — a movie's regions are built from its behaviour
       // clusters, so where they sit over time is a behaviour question
       behaviourAnalysis: ['live', 'track', 'trackclust', 'region'],
