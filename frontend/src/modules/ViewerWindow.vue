@@ -108,7 +108,7 @@ import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
-  buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
+  buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks, trackedLabelCount,
   filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween,
   type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
   type OverlayPopsPayload,
@@ -863,6 +863,11 @@ const trackColorMode = computed<TrackColorMode>({
   get: () => spec.trackColourMode as TrackColorMode,
   set: (v) => { if (setUid.value) settings.setTrackColorMode(setUid.value, v); rebuildOverlays() },
 })
+/** "Tracked only" (per set, on by default) — `spec.dimUntracked` follows it. */
+const dimUntracked = computed<boolean>({
+  get: () => !setUid.value || settings.getDimUntracked(setUid.value),
+  set: (v) => { if (setUid.value) settings.setDimUntracked(setUid.value, v) },
+})
 /** Set the per-source override colour (Solid mode legend picker). No-op without a setUid, since the
  *  override is per set — a rare viewer opened without one just keeps the palette default. */
 function setTrackSourceColour(vn: string, hex: string) {
@@ -909,6 +914,9 @@ const spec = drawSpecOf(specSource)
 watch(() => shownPopTypes.value.join(','), () => { void loadOverlays() })
 watch(() => [spec.showGatedTracks, !!spec.popVisible.trackclust, ...Object.entries(spec.trackVisible).filter(([, v]) => v).map(([k]) => k)].join(','),
       () => { void loadTracks() })
+// "Tracked only" dims untracked dots of the segmentations whose tracks are drawn — a recolour of the
+// points, so a rebuild, no fetch
+watch(() => spec.dimUntracked.join(','), () => rebuildOverlays())
 
 /**
  * `settings.viewerSelectMode` reactivity ACROSS windows. The popup viewer is its own Pinia
@@ -1342,7 +1350,7 @@ const trackDrawablePops = computed(() =>
     .filter(isTrackDrawable)
     .map(p => ({ vn: l.vn, popType: l.popType, path: p.path, show: p.show,
                  key: popKey(l.vn, l.popType, p.path), name: p.name,
-                 colour: p.colour, count: p.labels.length,
+                 colour: p.colour, count: p.labels.length, tracked: trackedLabelCount(l.payload, p.labels),
                  drawn: popRibbonDrawn(l, p), clusterHeld: trackclustHolds(l.vn) })))
     .sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path)))
 /** The track-cluster pops' ribbon rows — listed while the "Track-cluster ribbons" switch is on (the
@@ -1984,7 +1992,9 @@ const frame = usePlotResize(canvas, () => {
 function rebuildOverlays() {
   // categories (a cluster column) default to the population palette, the one the UMAP and Julia's
   // `category_colours` default to
-  points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })),
+  const dimmed = spec.dimUntracked
+  points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l),
+                                                             dimUntracked: dimmed.includes(l.vn) })),
                                  meta.value, POPULATION_PALETTE)
   pointCount.value = points.count
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
@@ -7029,6 +7039,7 @@ onUnmounted(() => {
 
         <!-- a still image has no tracks -->
         <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" v-model:color-mode="trackColorMode"
+                         v-model:dim-untracked="dimUntracked"
                          :colour-by="colourBy"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"

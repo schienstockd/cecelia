@@ -191,6 +191,8 @@ export function popTypeSwitch(popType: string): string | null {
 export interface TrackPopRow {
   key: string; vn: string; popType: string; path: string; show: boolean
   name: string; colour: string; count: number
+  /** how many of its `count` cells are in a track (gated pops; absent for track-cluster rows) */
+  tracked?: number
   /** its ribbon layer is on */
   drawn: boolean
   /** track clusters are drawing its segmentation, so its own toggle is held */

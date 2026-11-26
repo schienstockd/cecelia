@@ -133,6 +133,8 @@ export interface BatchMovieCfg {
   spatialGraphWidth?: number
   // only the edges between cells of the pops drawn (`spatial_graph_between`)
   spatialGraphPopsOnly?: boolean
+  // the segmentations whose untracked cells' dots are dimmed — a viewer look's "Tracked only"
+  dimUntracked?: string[]
   /** the viewer's scale bar / timestamp (on / off, text px on its canvas of `textCanvasPx` height)
    *  and 3D Steps — a look filled from the viewer. Absent: on, at the movie's own size. */
   showScaleBar?: boolean
@@ -219,6 +221,7 @@ export interface BatchMovieRequestConfig {
   spatialGraphs?: Record<string, string>
   spatialGraphWidth?: number
   spatialGraphPopsOnly?: boolean
+  dimUntracked?: string[]
   showScaleBar?: boolean
   showTimestamp?: boolean
   scaleBarPx?: number
@@ -377,6 +380,7 @@ export function buildBatchMovieConfig(
       ? { spatialGraphs: { ...cfg.spatialGraphs },
           ...(cfg.spatialGraphWidth ? { spatialGraphWidth: cfg.spatialGraphWidth } : {}),
           ...(cfg.spatialGraphPopsOnly ? { spatialGraphPopsOnly: true } : {}) } : {}),
+    ...(cfg.dimUntracked?.length ? { dimUntracked: [...cfg.dimUntracked] } : {}),
     ...(cfg.scaleBarPx ? { scaleBarPx: cfg.scaleBarPx } : {}),
     ...(cfg.timestampPx ? { timestampPx: cfg.timestampPx } : {}),
     ...(cfg.textCanvasPx ? { textCanvasPx: cfg.textCanvasPx } : {}),

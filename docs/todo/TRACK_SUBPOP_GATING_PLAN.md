@@ -1,6 +1,6 @@
 # TRACK_SUBPOP_GATING_PLAN
 
-Status: in progress (2026-11-25) · plan #2513 · P1 built on `feat/track-subpop-p1`, P2 on `feat/track-subpop-p2`.
+Status: in progress (2026-11-25) · plan #2513 · P1–P3 built (`feat/track-subpop-p1`…`-p3`).
 Brief: [`../archive/TRACK_SUBPOP_GATING_PROMPT.md`](../archive/TRACK_SUBPOP_GATING_PROMPT.md) (its
 banner lists the premises that turned out wrong). Reviewed once by a fresh agent (2026-11-25); its
 corrections are folded in.
@@ -106,7 +106,7 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 |---|---|---|
 | **P1** ✅ | Tracked family on Phenotype (cell properties, proportion over time, population positions); `POPULATION.md` fold contradiction fixed. Tests: `plot_specs.jl` curation, `interactiveViews.test.ts` | small |
 | **P2** ✅ | Track gating axes list cell measures (Morphology/Channels) beside motility; a summary select (median default) beside a picked cell measure; `colLabel` names `<channel> median`. Frontend only (`utils/trackAxis.ts`, `GatePlotPanel.vue`, `stores/gating.ts`); backend already gated on aggregates (`pop_plot_cols.jl:119`) | small |
-| **P3** | **Tracked only** dot switch (Decision 9) + per-pop `gated / tracked` count | small |
+| **P3** ✅ | **Tracked only** switch in the viewer Tracks section (per set, on by default): dims untracked dots by `UNTRACKED_DIM` in segmentations whose tracks are drawn; recorded (`dimUntracked` look key → `_overlay_parts`). Ribbon rows read `tracked / gated` | medium (recording parity) |
 | **P4** | Gating under tracked: materialise on first gate (Decision 2); `add_pop!` path, reserved-name writer, `read_pop_type` routing; tests for re-tracking and a later gate under `P` | medium |
 | **P5** | Per-track sub-pop fractions + class on read — reuse the categorical branch of `track_props` (`track_props.jl:131`, already count/`nrow` per category) by feeding child membership as one categorical column built with `pop_membership` (`gating_engine.jl:270`); overlapping sibling gates (not quadrants, but possible) need a rule — first child in tree order, or one indicator column per child. Threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
 | **P6** | Tracks Colour by sub-population + dominant sub-population; level picker; recording parity (`ViewerDrawSpec`) | medium |
