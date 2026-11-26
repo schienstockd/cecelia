@@ -1,289 +1,609 @@
 [
     {
-        "kind": "julia-two-way",
-        "subject": "config ↔ ai+lab log",
-        "rank": 1,
-        "detail": "the weaker side is config → ai+lab log, 1 name: `active_profile_name` (14 the other way)",
+        "kind": "julia-upward",
+        "subject": "56 `CciaTask` subtypes",
+        "rank": -57,
+        "detail": "defined in tasks (tier 6), named from task framework (tier 5) — a list of every subtype; deriving it (`subtypes`, self-registration) closes it",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "hpc ↔ ai+lab log",
-        "rank": 1,
-        "detail": "the weaker side is hpc → ai+lab log, 1 name: `_last_line` (1 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_history_leaves`",
+        "rank": -4,
+        "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "jobs (export, import, maintenance) ↔ ai+lab log",
-        "rank": 1,
-        "detail": "the weaker side is jobs (export, import, maintenance) → ai+lab log, 1 name: `active_profile_name` (2 the other way)",
+        "kind": "julia-upward",
+        "subject": "`Track`",
+        "rank": -3,
+        "detail": "defined in tasks (tier 6), called from gating (tier 4), qc+checks (tier 4), tracking+spatial (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "model ↔ jobs (export, import, maintenance)",
-        "rank": 1,
-        "detail": "the weaker side is model → jobs (export, import, maintenance), 1 name: `store_debris_summary` (5 the other way)",
+        "kind": "julia-upward",
+        "subject": "`active_profile_name`",
+        "rank": -3,
+        "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "python bridge ↔ hpc",
-        "rank": 1,
-        "detail": "the weaker side is python bridge → hpc, 1 name: `_run_py_hpc` (3 the other way)",
+        "kind": "julia-upward",
+        "subject": "`Denoise`",
+        "rank": -2,
+        "detail": "defined in tasks (tier 6), called from qc+checks (tier 4), task framework (tier 5)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "qc+checks ↔ ai+lab log",
-        "rank": 1,
-        "detail": "the weaker side is qc+checks → ai+lab log, 1 name: `append_lab_log!` (8 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_composite_step_names`",
+        "rank": -2,
+        "detail": "defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "task framework ↔ cell data",
-        "rank": 1,
-        "detail": "the weaker side is cell data → task framework, 1 name: `_task_spec` (6 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_history_output`",
+        "rank": -2,
+        "detail": "defined in scheduler+chains (tier 7), called from qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "task framework ↔ qc+checks",
-        "rank": 1,
-        "detail": "the weaker side is task framework → qc+checks, 1 name: `channel_signal_flags` (4 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_task_from_fun_name`",
+        "rank": -2,
+        "detail": "defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tasks ↔ cell data",
-        "rank": 1,
-        "detail": "the weaker side is cell data → tasks, 1 name: `_run_task` (29 the other way)",
+        "kind": "julia-upward",
+        "subject": "`gating_path`",
+        "rank": -2,
+        "detail": "defined in gating (tier 4), called from cell data (tier 3), model (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tasks ↔ gating",
-        "rank": 1,
-        "detail": "the weaker side is gating → tasks, 1 name: `Track` (26 the other way)",
+        "kind": "julia-upward",
+        "subject": "`load_pop_tree`",
+        "rank": -2,
+        "detail": "defined in gating (tier 4), called from model (tier 2), run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tasks ↔ hpc",
-        "rank": 1,
-        "detail": "the weaker side is tasks → hpc, 1 name: `hpc_task_cpus` (1 the other way)",
+        "kind": "julia-upward",
+        "subject": "`roi_suffixes_on`",
+        "rank": -2,
+        "detail": "defined in tracking+spatial (tier 4), called from cell data (tier 3), model (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "cell data ↔ gating",
-        "rank": 2,
-        "detail": "the weaker side is cell data → gating, 2 names: `gating_path`, `is_track_grained` (16 the other way)",
+        "kind": "julia-upward",
+        "subject": "`task_params_name`",
+        "rank": -2,
+        "detail": "defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "cell data ↔ qc+checks",
-        "rank": 2,
-        "detail": "the weaker side is cell data → qc+checks, 2 names: `qc_finding`, `write_qc` (2 the other way)",
+        "kind": "julia-upward",
+        "subject": "`TaskRequest`",
+        "rank": -1,
+        "detail": "defined in runner (tier 8), called from scheduler+chains (tier 7)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "cell data ↔ tracking+spatial",
-        "rank": 2,
-        "detail": "the weaker side is cell data → tracking+spatial, 2 names: `corrections_dir`, `roi_suffixes_on` (19 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_catkey`",
+        "rank": -1,
+        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "model ↔ cell data",
-        "rank": 2,
-        "detail": "the weaker side is model → cell data, 2 names: `_label_name_taken`, `free_label_name` (20 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_clustfeatures_entry`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from model (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "model ↔ tracking+spatial",
-        "rank": 2,
-        "detail": "the weaker side is model → tracking+spatial, 2 names: `load_roi_set`, `roi_suffixes_on` (16 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_clustfeatures_part_of`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from model (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ ai+lab log",
-        "rank": 2,
-        "detail": "the weaker side is scheduler+chains → ai+lab log, 2 names: `_parse_tkey`, `active_profile_name` (27 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_clustfeatures_suffixes`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from model (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ cell data",
-        "rank": 2,
-        "detail": "the weaker side is scheduler+chains → cell data, 2 names: `_stale_reads_names`, `stale_outputs_for` (11 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_comp_col`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ python bridge",
-        "rank": 2,
-        "detail": "the weaker side is python bridge → scheduler+chains, 2 names: `read_local_py_usage`, `record_run_usage!` (3 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_finite`",
+        "rank": -1,
+        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ qc+checks",
-        "rank": 2,
-        "detail": "the weaker side is scheduler+chains → qc+checks, 2 names: `chain_cohort_qc!`, `write_defaulted_scale_qc!` (7 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_fun_name_from_task`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from task framework (tier 5)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ runner",
-        "rank": 2,
-        "detail": "the weaker side is scheduler+chains → runner, 2 names: `TaskRequest`, `execute_task` (18 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_keyed_strings`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ tasks",
-        "rank": 2,
-        "detail": "the weaker side is scheduler+chains → tasks, 2 names: `_str_list`, `validate_params` (9 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_label_name_taken`",
+        "rank": -1,
+        "detail": "defined in cell data (tier 3), called from model (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ hpc",
-        "rank": 3,
-        "detail": "the weaker side is scheduler+chains → hpc, 3 names: `_with_run_target`, `hpc_resources`, `task_runs_on_hpc` (5 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_obs_suffixes`",
+        "rank": -1,
+        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ task framework",
-        "rank": 3,
-        "detail": "the weaker side is task framework → scheduler+chains, 3 names: `_fun_name_from_task`, `list_tasks`, `run_env_of` (27 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_ordered_cats`",
+        "rank": -1,
+        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tasks ↔ plots+boards",
-        "rank": 3,
-        "detail": "the weaker side is tasks → plots+boards, 3 names: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` (10 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_parse_tkey`",
+        "rank": -1,
+        "detail": "defined in ai+lab log (tier 8), called from scheduler+chains (tier 7)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tracking+spatial ↔ plots+boards",
-        "rank": 3,
-        "detail": "the weaker side is tracking+spatial → plots+boards, 3 names: `_catkey`, `_finite`, `_ordered_cats` (6 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_preflight_fields`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "model ↔ config",
-        "rank": 4,
-        "detail": "the weaker side is config → model, 4 names: `img_project_dir`, `img_project_uid`, `json_native`, `read_state_json` (7 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_preflight_has`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "plots+boards ↔ ai+lab log",
-        "rank": 4,
-        "detail": "the weaker side is ai+lab log → plots+boards, 4 names: `boards_doc_path`, `plot_spec_index`, `plot_summary_data`, `read_boards_doc` (5 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_rm_if`",
+        "rank": -1,
+        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "scheduler+chains ↔ gating",
-        "rank": 4,
-        "detail": "the weaker side is gating → scheduler+chains, 4 names: `drop_props_sidecar_keys!`, `props_sidecar_path`, `put_props_sidecar_entry!`, `read_props_sidecar` (11 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_run_py_hpc`",
+        "rank": -1,
+        "detail": "defined in hpc (tier 7), called from python bridge (tier 3)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "gating ↔ tracking+spatial",
-        "rank": 5,
-        "detail": "the weaker side is gating → tracking+spatial, 5 names: `is_tracked`, `track_aggregate_base`, `track_aggregate_measures`, `track_name_sets`, `track_props` (6 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_run_tar`",
+        "rank": -1,
+        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "gating ↔ qc+checks",
-        "rank": 6,
-        "detail": "the weaker side is gating → qc+checks, 6 names: `_cohort_outliers`, `cohort_value_names`, `qc_finding`, `qc_path`, `severity_symbol`, … (13 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_stored_key`",
+        "rank": -1,
+        "detail": "defined in task framework (tier 5), called from qc+checks (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tasks ↔ qc+checks",
-        "rank": 6,
-        "detail": "the weaker side is qc+checks → tasks, 6 names: `Denoise`, `Track`, `import_source_fingerprint`, `ngff_multiscales`, `series_base`, … (18 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_tar_available`",
+        "rank": -1,
+        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "model ↔ gating",
-        "rank": 8,
-        "detail": "the weaker side is model → gating, 8 names: `_clustfeatures_entry`, `_clustfeatures_part_of`, `_clustfeatures_suffixes`, `gating_history_path`, `gating_path`, … (18 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_tar_unpack_cmd`",
+        "rank": -1,
+        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "model ↔ scheduler+chains",
-        "rank": 8,
-        "detail": "the weaker side is model → scheduler+chains, 8 names: `_history_leaves`, `_rl_str`, `_update_run_log!`, `read_run_log`, `read_run_log_archive`, … (18 the other way)",
+        "kind": "julia-upward",
+        "subject": "`_task_spec`",
+        "rank": -1,
+        "detail": "defined in task framework (tier 5), called from cell data (tier 3)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "task framework ↔ tasks",
-        "rank": 8,
-        "detail": "the weaker side is tasks → task framework, 8 names: `ParamValidationError`, `_picked_channels`, `_spec_output_value_name`, `live_outputs`, `manual_check`, … (64 the other way)",
+        "kind": "julia-upward",
+        "subject": "`append_lab_log!`",
+        "rank": -1,
+        "detail": "defined in ai+lab log (tier 8), called from qc+checks (tier 4)",
         "where": [
         ]
     },
     {
-        "kind": "julia-two-way",
-        "subject": "tasks ↔ tracking+spatial",
-        "rank": 8,
-        "detail": "the weaker side is tracking+spatial → tasks, 8 names: `Track`, `_comp_col`, `roi_review_labels`, `store_written_at`, `track_displacement`, … (27 the other way)",
+        "kind": "julia-upward",
+        "subject": "`corrections_dir`",
+        "rank": -1,
+        "detail": "defined in tracking+spatial (tier 4), called from cell data (tier 3)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`default_export_dir`",
+        "rank": -1,
+        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from tasks (tier 6)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`execute_task`",
+        "rank": -1,
+        "detail": "defined in runner (tier 8), called from scheduler+chains (tier 7)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`free_label_name`",
+        "rank": -1,
+        "detail": "defined in cell data (tier 3), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`gated_pop_refs`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`gating_history_path`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`hpc_task_cpus`",
+        "rank": -1,
+        "detail": "defined in hpc (tier 7), called from tasks (tier 6)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`img_project_dir`",
+        "rank": -1,
+        "detail": "defined in model (tier 2), called from config (tier 1)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`img_project_uid`",
+        "rank": -1,
+        "detail": "defined in model (tier 2), called from config (tier 1)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`import_source_fingerprint`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from qc+checks (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`is_bookkeeping_param`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from qc+checks (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`is_gating_pop_type`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from run records (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`is_track_grained`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from cell data (tier 3)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`json_native`",
+        "rank": -1,
+        "detail": "defined in model (tier 2), called from config (tier 1)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`list_tasks`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from task framework (tier 5)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`load_roi_set`",
+        "rank": -1,
+        "detail": "defined in tracking+spatial (tier 4), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`ngff_multiscales`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from qc+checks (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`plugin_roots`",
+        "rank": -1,
+        "detail": "defined in task framework (tier 5), called from python bridge (tier 3)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`pool_status`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from tasks (tier 6)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`pop_gate_hashes`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from run records (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`prune_stale_hmmfit!`",
+        "rank": -1,
+        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`qc_finding`",
+        "rank": -1,
+        "detail": "defined in qc+checks (tier 4), called from cell data (tier 3)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`read_state_json`",
+        "rank": -1,
+        "detail": "defined in model (tier 2), called from config (tier 1)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`rename_label_set_in_params`",
+        "rank": -1,
+        "detail": "defined in scheduler+chains (tier 7), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`resolve_pop_type`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from run records (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`roi_review_labels`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`save_pop_tree!`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`series_base`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from qc+checks (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`store_axis_sizes`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from task framework (tier 5)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`store_debris_summary`",
+        "rank": -1,
+        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`store_rev`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from task framework (tier 5)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`store_written_at`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`task_source_stamp`",
+        "rank": -1,
+        "detail": "defined in task framework (tier 5), called from run records (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`task_writes_into_key`",
+        "rank": -1,
+        "detail": "defined in task framework (tier 5), called from run records (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`track_displacement`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`track_length`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`track_speed`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`track_straightness`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`with_pop_tree_lock`",
+        "rank": -1,
+        "detail": "defined in gating (tier 4), called from model (tier 2)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`write_qc`",
+        "rank": -1,
+        "detail": "defined in qc+checks (tier 4), called from cell data (tier 3)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`zarr_array_meta`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from qc+checks (tier 4)",
         "where": [
         ]
     }

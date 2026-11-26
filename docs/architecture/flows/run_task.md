@@ -10,33 +10,61 @@ goes out to the browser as WS frames. The flow ends when the label stores are re
 the browser gets `task:result` + `task:status done`, and the browser reloads the image's meta over HTTP.
 
 ```mermaid
+%%{init: {"sequence": {"mirrorActors": false, "actorMargin": 40, "messageMargin": 28}}}%%
 sequenceDiagram
   autonumber
-  participant TR as Vue tasks/TaskRunner.vue
-  participant WS as Vue stores/ws.ts + tasks.ts
-  participant API as Julia api/src sockets.jl + server.jl
-  participant SCH as Julia scheduler run.jl pools.jl jobs.jl
-  participant CP as Julia tasks/segment/cellpose.jl
-  participant PY as Python cellpose_run.py
-  participant D as Disk project dir
+  box Vue
+    participant TR as TaskRunner.vue
+    participant WS as ws.ts + tasks.ts
+  end
+  box Julia
+    participant API as sockets.jl
+    participant SCH as scheduler
+    participant CP as cellpose.jl
+  end
+  box Python
+    participant PY as cellpose_run.py
+  end
+  participant D as Disk
 
-  TR->>WS: taskStore.add row as queued, then ws.send task:run
-  WS->>API: WS /ws frame task:run with taskId funName params imageUid projectUid setUid poolName
-  API->>D: _remember_fun_params writes meta.funParams into ccid.json as the form default
-  API->>SCH: Threads.@spawn execute_task with a TaskRequest, then run_task
-  SCH->>SCH: resolve_run_params, validate_params, task_applies, _register_task!, put! on the gpu pool queue
-  SCH->>D: dispatcher takes a gpu slot, _execute_job! sets running, open_run_log! writes runlog.json
-  API-->>WS: task:status queued then running, from on_status_change via ws_status broadcast
-  SCH->>CP: _run_task CellposeSegment img params, through invokelatest
-  CP->>PY: run_py writes stem.hex.params.json to task_run_dir, spawns python cellpose_run.py --params file
-  PY->>D: script_params reads and deletes the params file, open_as_zarr reads the image, staged_store writes labels zarr, segment_counts.json
-  PY-->>CP: stdout lines, PROGRESS n/total parsed by run_py, then exit code and termsignal
-  API-->>WS: task:progress and task:log, from on_progress and on_log via ws_progress and ws_log
-  CP->>D: register_label_files! commits labels into ccid.json via commit_state!, bank_segment_qc! writes QC
-  CP-->>SCH: result Dict, then close_run_log! and final status done
-  API-->>WS: task:result then task:status done, result always before the terminal status
-  WS->>API: setStatus and bumpDataVersion, then refreshImageMeta does HTTP GET /api/images/meta
+  TR->>WS: add row, send task:run
+  WS->>API: task:run frame
+  API->>D: remember funParams
+  API->>SCH: execute_task
+  SCH->>SCH: validate, queue on gpu pool
+  SCH->>D: open run log
+  API-->>WS: task:status running
+  SCH->>CP: _run_task
+  CP->>PY: run_py + params.json
+  PY->>D: read image, write labels
+  PY-->>CP: PROGRESS lines, exit code
+  API-->>WS: task:progress, task:log
+  CP->>D: register labels in ccid.json
+  CP-->>SCH: result, close run log
+  API-->>WS: task:result, task:status done
+  WS->>API: GET /api/images/meta
 ```
+
+## Steps
+
+| # | What happens |
+|---|---|
+| 1 | taskStore.add row as queued, then ws.send task:run |
+| 2 | WS /ws frame task:run with taskId funName params imageUid projectUid setUid poolName |
+| 3 | _remember_fun_params writes meta.funParams into ccid.json as the form default |
+| 4 | Threads.@spawn execute_task with a TaskRequest, then run_task |
+| 5 | resolve_run_params, validate_params, task_applies, _register_task!, put! on the gpu pool queue |
+| 6 | dispatcher takes a gpu slot, _execute_job! sets running, open_run_log! writes runlog.json |
+| 7 | task:status queued then running, from on_status_change via ws_status broadcast |
+| 8 | _run_task CellposeSegment img params, through invokelatest |
+| 9 | run_py writes stem.hex.params.json to task_run_dir, spawns python cellpose_run.py --params file |
+| 10 | script_params reads and deletes the params file, open_as_zarr reads the image, staged_store writes labels zarr, segment_counts.json |
+| 11 | stdout lines, PROGRESS n/total parsed by run_py, then exit code and termsignal |
+| 12 | task:progress and task:log, from on_progress and on_log via ws_progress and ws_log |
+| 13 | register_label_files! commits labels into ccid.json via commit_state!, bank_segment_qc! writes QC |
+| 14 | result Dict, then close_run_log! and final status done |
+| 15 | task:result then task:status done, result always before the terminal status |
+| 16 | setStatus and bumpDataVersion, then refreshImageMeta does HTTP GET /api/images/meta |
 
 **Dev-only detached runner (note).** When the runner is enabled, step 4 does not call `execute_task`
 here. `handle_task_run` first tries `_submit_to_runner`: an HTTP POST `/submit` to the runner process on

@@ -26,7 +26,7 @@ import gaps  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "frontend" / "src"
-OUT = REPO / "docs" / "architecture" / "vue"
+OUT = gaps.ARCH / "vue"
 GENERATED = ("> **Generated** by `scripts/architecture/vue_extract.py` — do not edit; "
              "run `pixi run arch-diagrams`.\n")
 MIN_GROUP = 5
@@ -190,8 +190,8 @@ uses instead. Box also shows how many files import the store.
     # Loops over static imports only: a lazy `import()` is the sanctioned way to break an init-order
     # loop (the weekly judge's madge count drops those edges too).
     store_loops = gaps.cycles(set(stores), lambda s: static_edges.get(s, ()))
-    gaps.record("vue", [{"kind": "store-cycle", "subject": " ↔ ".join(sname(x) for x in c),
-                         "where": ["frontend/src/" + x for x in c]} for c in store_loops])
+    STORE_GAPS = [{"kind": "store-cycle", "subject": " ↔ ".join(sname(x) for x in c),
+                         "where": ["frontend/src/" + x for x in c]} for c in store_loops]
     if store_loops:
         L.append("Stores that import each other statically (a loop; listed in [`gaps.md`](../gaps.md#store-cycle)): "
                  + "; ".join(", ".join(f"`{sname(x)}`" for x in c) for c in store_loops) + "\n")
@@ -237,8 +237,22 @@ The viewer is `{'`, `'.join(VIEWER)}`. Below: what it imports from the rest of t
         st = sorted(sname(t) for t in out_edges.get(vg, ()) if t.startswith("stores/"))
         L.append(f"| {vg} | {', '.join('`'+s+'`' for s in st) or '—'} |")
     L.append("")
+    # Rule: the viewer ENGINE (rendering + its logic, not the pop-out's UI panels) takes inputs and does
+    # not reach into app stores. Its own `viewer` store and the cross-cutting `log` store are allowed.
+    engine = ("lib/webgpu/", "utils/viewer/")
+    allowed = {"stores/viewer.ts", "stores/log.ts"}
+    viewer_store = collections.defaultdict(set)
+    for a, ts in edges.items():
+        if a.startswith(engine):
+            for t in ts:
+                if t.startswith("stores/") and t not in allowed:
+                    viewer_store[t].add("frontend/src/" + a)
+    VIEWER_GAPS = [{"kind": "viewer-store", "subject": f"`{sname(t)}`", "rank": -len(fs),
+                    "detail": f"imported by {len(fs)} viewer file{'s' if len(fs) != 1 else ''}", "where": sorted(fs)}
+                   for t, fs in viewer_store.items()]
     (OUT / "viewer.md").write_text("\n".join(L), encoding="utf-8")
-    print(f"wrote {OUT.relative_to(REPO)}")
+    gaps.record("vue", STORE_GAPS + VIEWER_GAPS)
+    print(f"wrote {OUT}")
     return 0
 
 

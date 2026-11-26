@@ -13,12 +13,17 @@ confirming it in a comment the extractor can see — never editing the JSON.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-DIR = REPO / "docs" / "architecture" / "gaps"
-OUT = REPO / "docs" / "architecture" / "gaps.md"
+# Where every extractor writes. CECELIA_ARCH_OUT redirects all of it — the ratchet test regenerates
+# into a temp dir and never touches the committed files.
+ARCH = Path(os.environ.get("CECELIA_ARCH_OUT") or REPO / "docs" / "architecture")
+DIR = ARCH / "gaps"
+OUT = ARCH / "gaps.md"
+BASELINE = Path(__file__).with_name("gaps_baseline.json")
 
 # kind -> (section, one-line meaning, what closing it means). Order = order in gaps.md.
 KINDS = {
@@ -34,10 +39,13 @@ KINDS = {
                           "delete it, or launch it by a literal name"),
     "shared-file-unguarded": ("Loose contracts", "A data file two languages read, named by no test",
                               "add a parity or schema test that names the file"),
-    "julia-two-way": ("Tangles", "Two Julia areas that each call into the other",
-                      "move the few names on the weaker side to the area that calls them, or to a lower "
-                      "area both can use. Easiest first. One module, so legal — but each pair is two areas "
-                      "that cannot be read apart"),
+    "julia-upward": ("Layers", "A Julia function called from an area below its own in the declared order",
+                     "move it down to the lowest tier that calls it (or a shared lower area), or — if the "
+                     "order is wrong — change `[layers]` in `scripts/architecture/julia_areas.toml`. Most "
+                     "callers first: one move closes every listed call"),
+    "viewer-store": ("Layers", "The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store",
+                     "pass what it needs in as an input instead (`lib/webgpu` already holds this rule). "
+                     "The viewer's own `viewer` store and `log` are allowed"),
     "py-cycle": ("Tangles", "Python modules that import each other", "break the loop"),
     "store-cycle": ("Tangles", "Pinia stores that import each other", "break the loop"),
 }
@@ -82,17 +90,16 @@ def record(source: str, items: list[dict]) -> None:
 
 
 def compose() -> int:
-    items = []
-    for p in sorted(DIR.glob("*.json")):
-        items += [dict(it, source=p.stem) for it in json.loads(p.read_text(encoding="utf-8"))]
+    items = load()
     by_kind = {k: [it for it in items if it["kind"] == k] for k in KINDS}
     sections = list(dict.fromkeys(s for s, _, _ in KINDS.values()))
     L = ["# Coherence gaps\n",
          "> **Generated** by `scripts/architecture/gaps.py` from what the other extractors found — do not "
          "edit; run `pixi run arch-diagrams`. Machine-readable: `gaps/*.json`.\n",
-         "Places where the code does not line up with itself. Static text matching, so an item can be a false "
-         "alarm (a name built at runtime). Close one by fixing the code — or, for a false alarm, by making "
-         "the name visible (a literal) — then regenerate.\n",
+         "Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-are-enforced). Each "
+         "count may only go down: `test_architecture_gaps.py` fails a change that adds one. Static text "
+         "matching, so an item can be a false alarm (a name built at runtime) — close it by making the name "
+         "a literal. After closing gaps: `pixi run arch-diagrams && pixi run arch-gaps-baseline`.\n",
          "| Section | Kind | Count |", "|---|---|---|"]
     for k, (sec, meaning, _) in KINDS.items():
         if by_kind[k]:
@@ -114,9 +121,27 @@ def compose() -> int:
                 L.append(f"- **{it['subject']}**{detail}" + (f" · {where}{more}" if where else ""))
             L.append("")
     OUT.write_text("\n".join(L), encoding="utf-8")
-    print(f"wrote {OUT.relative_to(REPO)} ({len(items)} gaps)")
+    print(f"wrote {OUT} ({len(items)} gaps)")
+    return 0
+
+
+def counts(items) -> dict[str, int]:
+    out = {k: 0 for k in KINDS}
+    for it in items:
+        out[it["kind"]] += 1
+    return out
+
+
+def load(directory: Path = DIR) -> list[dict]:
+    return [it for p in sorted(directory.glob("*.json")) for it in json.loads(p.read_text(encoding="utf-8"))]
+
+
+def write_baseline() -> int:
+    """`pixi run arch-gaps-baseline`: record today's count per kind. Only ever to LOWER it after closing gaps."""
+    BASELINE.write_text(json.dumps(counts(load()), indent=1) + "\n", encoding="utf-8")
+    print(f"wrote {BASELINE.relative_to(REPO)}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(compose())
+    raise SystemExit(write_baseline() if "--baseline" in sys.argv else compose())

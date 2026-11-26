@@ -6,9 +6,9 @@ hand-kept parts rot silently:
 * **Pins** — `system.md` and every `flows/*.md` sequence diagram name the file and symbol behind each
   arrow or step in a *Pins* table. A pin whose file is gone, or whose file no longer contains the
   symbol, fails here. This catches a dead arrow; it cannot catch a new arrow nobody drew.
-* **`scripts/architecture/julia_areas.toml`** — the grouping of Julia files into areas. A new
-  `app/src` or `api/src` file no pattern matches would vanish from the area view, so it fails here and
-  forces a decision in the toml.
+* **`scripts/architecture/julia_areas.toml`** — the grouping of Julia files into areas, and the
+  declared layer order. A new `app/src` or `api/src` file no pattern matches would vanish from the
+  area view, and an area in no tier would escape the upward-call rule, so both fail here.
 
 Run with `pixi run test-py`.
 """
@@ -92,6 +92,14 @@ class TestJuliaAreas(unittest.TestCase):
                         if not mapped(rel):
                             unmapped.append(rel)
         self.assertEqual(unmapped, [], 'add these to scripts/architecture/julia_areas.toml')
+
+    def test_every_package_area_is_in_exactly_one_tier(self):
+        with open(_AREAS, 'rb') as f:
+            spec = tomllib.load(f)
+        areas = [a for a in spec['areas'] if not a.startswith('api:')]
+        placed = [a for tier in spec['layers']['tiers'] for a in tier]
+        self.assertEqual(sorted(placed), sorted(areas),
+                         'every non-api area in [areas] must appear once in [layers].tiers of julia_areas.toml')
 
 
 if __name__ == '__main__':

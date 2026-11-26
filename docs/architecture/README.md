@@ -12,8 +12,8 @@ and the flows) are pinned to the code by a test.
 3. **[`flows/`](flows/)** — four journeys traced step by step across the runtimes:
    [run a task](flows/run_task.md), [run a chain](flows/run_chain.md),
    [open an image in the viewer](flows/viewer_open_image.md), [Claude through MCP](flows/claude_mcp.md).
-4. **[`gaps.md`](gaps.md)** — what does not line up: two ends of a boundary that do not match, routes
-   nothing calls, loops. The list to close to keep the framework coherent.
+4. **[`gaps.md`](gaps.md)** — where the code breaks the rules below: two ends of a boundary that do
+   not match, calls up the layer order, loops. The list to close; its counts may only go down.
 
 ## Inside each runtime
 
@@ -21,7 +21,7 @@ and the flows) are pinned to the code by a test.
 |---|---|
 | [`julia/interfaces.md`](julia/interfaces.md) | Adding a task, gate, transform or HPC backend — the checklist of what a new subtype must implement |
 | [`julia/datamodel.md`](julia/datamodel.md) | Project / Set / Image, and which areas hold the code that works on each |
-| [`julia/areas.md`](julia/areas.md) | Which part of the backend leans on which. A size map; the two-way pairs are the part to act on |
+| [`julia/areas.md`](julia/areas.md) | Which part of the backend leans on which. A size map; the calls up the declared layer order are the part to act on |
 | [`python/packages.md`](python/packages.md) | Runners vs the `cecelia` library vs side processes |
 | [`python/utils.md`](python/utils.md) | The helpers everything depends on (the de-facto API), cycles, class trees |
 | [`vue/layers.md`](vue/layers.md) | How the frontend directories depend on each other (a size map); where HTTP is spoken |
@@ -31,14 +31,33 @@ and the flows) are pinned to the code by a test.
 Lookup tables — every `run_py` script and the params it reads, every route area, every WebSocket
 type with sender and handler — are in [`boundaries_reference.md`](boundaries_reference.md).
 
+## Rules, and how they are enforced
+
+The views show what the code *is*; three declared rules say what it should be. A break of any rule
+is a gap in `gaps.md`, and **the count of each gap kind may only go down**:
+`python/cecelia/tests/test_architecture_gaps.py` (part of `pixi run test-py`, so CI) fails a change
+that adds one, naming it, and fails again once gaps are closed until the ceiling in
+`scripts/architecture/gaps_baseline.json` is lowered to match.
+
+| Rule | Declared in | Gap kind |
+|---|---|---|
+| Both ends of every boundary match: no WebSocket type sent without a handler or handled without a sender, no route nothing calls, no runner nothing launches, every shared data file named by a test | `boundaries_extract.py` | `ws-*`, `route-uncalled`, `runner-unlaunched`, `shared-file-unguarded` |
+| Julia areas call down the declared layer order, never up | `[layers]` in `scripts/architecture/julia_areas.toml` | `julia-upward` |
+| The viewer engine (`lib/webgpu`, `utils/viewer`) takes inputs and imports no app store but its own | `vue_extract.py` | `viewer-store` |
+| No import loops between Python modules or between Pinia stores | `python_extract.py`, `vue_extract.py` | `py-cycle`, `store-cycle` |
+
+The Julia kinds need the package loaded, so the test reads them from the committed
+`gaps/julia.json` rather than regenerating them; `pixi run arch-diagrams` refreshes it.
+
 ## For agents
 
 - **Before changing a boundary** (a route, a WebSocket type, a `run_py` runner's params, a shared data
   file), find its row in `boundaries.md` and change both ends in the same PR.
-- **After a structural change**, run `pixi run arch-diagrams` and read the diff of `gaps/*.json`. A
-  gap your change added gets closed in the same PR, or named in the PR description with the reason.
-- **A gap can be a false alarm** — the extractors read text, so a name built at runtime is invisible.
-  Close it by making the name a literal the extractor can see, not by editing the generated files.
+- **When `test_architecture_gaps.py` fails**, it names the gap your change added and how to close it.
+  A false alarm (a name built at runtime) is closed by making the name a literal the extractor can
+  see — never by raising the baseline.
+- **After closing gaps**, `pixi run arch-diagrams && pixi run arch-gaps-baseline`, and commit both.
+- **After a structural change**, `pixi run arch-diagrams` so the views and `gaps/julia.json` match.
 
 ## Keeping it current
 
@@ -57,7 +76,7 @@ pixi run test-py            # includes test_architecture_docs.py — the pins an
 
 ## Not here yet
 
-- **Declared rules.** These views show what the code *is*. Which arrows are *allowed* — and a test that
-  fails when a gap is added — is the next step, written from what these views show.
-- **Freshness check.** Regenerating is by hand. A test that fails when the generated files are stale
-  comes with the rules.
+- **A shared frontend API client.** 126 frontend files call the backend themselves. Not a rule yet:
+  there is no canonical client for new code to use instead.
+- **Freshness of the views.** The generated pages are refreshed by hand; only the gap counts are
+  checked on every change.

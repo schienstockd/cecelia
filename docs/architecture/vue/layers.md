@@ -10,7 +10,7 @@ arrows show where the code is. The strongest 30 arrows are drawn; the full matri
 ```mermaid
 flowchart LR
   app_root["app root<br/><small>3 files · 0.5k lines</small>"]
-  components__flat_["components (flat)<br/><small>134 files · 26.3k lines</small>"]
+  components__flat_["components (flat)<br/><small>134 files · 26.5k lines</small>"]
   components__other_["components (other)<br/><small>10 files · 2.5k lines</small>"]
   components_canvas["components/canvas<br/><small>24 files · 7.9k lines</small>"]
   components_lightPath["components/lightPath<br/><small>6 files · 0.3k lines</small>"]
@@ -25,9 +25,9 @@ flowchart LR
   plots["plots<br/><small>51 files · 8.7k lines</small>"]
   stores["stores<br/><small>36 files · 7.9k lines</small>"]
   tasks["tasks<br/><small>18 files · 9.5k lines</small>"]
-  utils__flat_["utils (flat)<br/><small>289 files · 35.2k lines</small>"]
+  utils__flat_["utils (flat)<br/><small>290 files · 35.4k lines</small>"]
   utils_viewer["utils/viewer<br/><small>22 files · 2.6k lines</small>"]
-  components__flat_ -->|199| utils__flat_
+  components__flat_ -->|202| utils__flat_
   modules -->|151| utils__flat_
   components__flat_ -->|138| stores
   modules -->|125| components__flat_
@@ -64,7 +64,7 @@ flowchart LR
 | | app root | components (flat) | components (other) | components/canvas | components/lightPath | components/plots | components/viewerWindow | composables | directives | lib (flat) | lib/guides | lib/webgpu | modules | plots | stores | tasks | utils (flat) | utils/viewer |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **app root** | · | 17 | 2 |  |  |  |  | 4 | 2 | 13 |  |  | 30 |  | 16 |  | 2 | 1 |
-| **components (flat)** |  | · | 2 |  | 5 |  |  | 60 |  | 66 | 10 |  |  | 11 | 138 | 2 | 199 | 2 |
+| **components (flat)** |  | · | 2 |  | 5 |  |  | 60 |  | 66 | 10 |  |  | 11 | 138 | 2 | 202 | 2 |
 | **components (other)** |  | 17 | · |  |  |  |  | 12 |  | 8 |  |  |  |  | 23 |  | 25 | 3 |
 | **components/canvas** |  | 37 | 1 | · |  | 16 |  | 26 |  | 3 |  |  | 2 | 52 | 31 |  | 61 | 1 |
 | **components/lightPath** |  |  |  |  | · |  |  |  |  |  |  |  |  |  |  |  |  |  |
@@ -86,7 +86,7 @@ flowchart LR
 
 ## Where the backend is called
 
-Files that call `fetch(`, open a `WebSocket` or an `EventSource`: **118** of 827. There is no single API client — each of these speaks HTTP itself.
+Files that call `fetch(`, open a `WebSocket` or an `EventSource`: **118** of 828. There is no single API client — each of these speaks HTTP itself.
 
 | Group | Files |
 |---|---|

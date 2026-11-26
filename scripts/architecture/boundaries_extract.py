@@ -32,8 +32,6 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / "docs" / "architecture" / "boundaries.md"
-REF = REPO / "docs" / "architecture" / "boundaries_reference.md"
 GENERATED = ("> **Generated** by `scripts/architecture/boundaries_extract.py` — do not edit; "
              "run `pixi run arch-diagrams`.\n")
 
@@ -42,6 +40,9 @@ coherence = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(coherence)
 sys.path.insert(0, str(Path(__file__).parent))
 import gaps  # noqa: E402
+
+OUT = gaps.ARCH / "boundaries.md"
+REF = gaps.ARCH / "boundaries_reference.md"
 
 source_files = lambda dirs, suffixes: coherence._source_files(REPO, dirs, suffixes)  # noqa: E731
 
@@ -208,7 +209,7 @@ def shared_files_section():
     for name in by_name:
         pat = re.compile(r"(?<![\w.-])" + re.escape(name) + r"(?![\w])")
         for s, t in texts.items():
-            if pat.search(t):
+            if name in t and pat.search(t):   # substring first: the regex alone over every file is ~40 s
                 refs[name][LANG[s.suffix]].add(rel(s))
     # A generic name needs its directory named too, or a different file of the same name counts.
     for name in GENERIC & set(refs):
@@ -397,7 +398,7 @@ crossings are in [`flows/`](flows/). Every row of every touchpoint:
         R.append(f"| {label} | {by.get('Julia', '')} | {by.get('Python', '')} | {by.get('TS/Vue', '')} |")
     R.append("")
     REF.write_text("\n".join(R), encoding="utf-8")
-    print(f"wrote {OUT.relative_to(REPO)}, {REF.relative_to(REPO)}")
+    print(f"wrote {OUT}, {REF}")
     return 0
 
 
