@@ -2,7 +2,8 @@
 // and the acquisition settings read against the set's plan. The check runs live on GET (nothing written);
 // saving a plan writes the set's Blackboard entry; the model review (one Kiwi turn) writes its points onto
 // it. Routes: api/src/routes/acq_check.jl, api/src/acq_review.jl; rules: app/src/acq_check.jl.
-import { postJson } from './blackboardApi'
+import { postJsonOrNull } from './blackboardApi'
+import { getJson, tryApi } from './api'
 import type { QcFinding } from '../lib/qc'
 import { parseCategoryLabels, parseReview, type ModelReview } from './modelReview'
 
@@ -105,21 +106,18 @@ export function parseAcqResult(r: Record<string, unknown> | null): AcqCheckResul
 }
 
 export async function fetchAcqCheck(projectUid: string, setUid: string): Promise<AcqCheckResult | null> {
-  try {
-    const res = await fetch(`/api/acqcheck?${new URLSearchParams({ projectUid, setUid })}`)
-    if (!res.ok) return null
-    return parseAcqResult(await res.json() as Record<string, unknown>)
-  } catch { return null }
+  const r = await tryApi(getJson<Record<string, unknown> | null>('/api/acqcheck', { query: { projectUid, setUid } }))
+  return r.ok ? parseAcqResult(r.data) : null
 }
 
 export async function saveAcqPlan(projectUid: string, setUid: string, plan: AcqPlan): Promise<AcqCheckResult | null> {
-  const r = await postJson('/api/acqcheck/plan', { projectUid, setUid, plan: plan as unknown as Record<string, unknown> })
+  const r = await postJsonOrNull('/api/acqcheck/plan', { projectUid, setUid, plan: plan as unknown as Record<string, unknown> })
   return parseAcqResult(r)
 }
 
 /** POST /api/acqcheck/review — start the model review of the set's saved plan on `model` (the one picked
  *  for Kiwi); the turn id, or '' when it couldn't start (Kiwi busy, AI off, no plan). */
 export async function reviewAcqCheck(projectUid: string, setUid: string, model: string): Promise<string> {
-  const r = await postJson('/api/acqcheck/review', { projectUid, setUid, ...(model ? { model } : {}) })
+  const r = await postJsonOrNull('/api/acqcheck/review', { projectUid, setUid, ...(model ? { model } : {}) })
   return typeof r?.turnId === 'string' ? r.turnId : ''
 }

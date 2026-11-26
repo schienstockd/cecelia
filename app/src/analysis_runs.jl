@@ -232,7 +232,10 @@ function _tracks_delete!(img, run; on_log = _ -> nothing)
         return
     end
     rebuild === nothing && error("track set deleted, but $vn still has tracks from other sources — re-run track measures")
-    res = _run_task(TrackMeasures(), img, rebuild; on_log = on_log)
+    # logged as its own track-measures run: the record then says when the track table was last written,
+    # and with what, like every other writer of it
+    res = run_task_logged!(TrackMeasures(), img, "tracking.track_measures", vn, rebuild;
+                           id_prefix = "tracks-delete-rebuild", on_log)
     res === nothing && error("track set deleted, but rebuilding track measures for $vn failed — re-run track measures")
 end
 

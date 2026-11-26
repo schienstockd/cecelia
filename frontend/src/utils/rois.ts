@@ -1,10 +1,11 @@
 // The viewer's ROI list — types, HTTP wrappers and the pure logic behind `RoiSection.vue`
 // (docs/todo/ROI_TRIAGE_PLAN.md §7). Backend: `api/src/rois_api.jl` over `app/src/rois.jl`.
-// Same wrapper pattern as blackboardApi.ts: each call catches its own network error.
+// HTTP through utils/api.ts; each wrapper resolves to a default / the error text instead of throwing.
 
 import type { FocusOnCellTarget } from './viewer/focusOnCell'
 import { nextIndex } from './reviewPager'
 import type { L0Box } from './viewerPick'
+import { getJson, postJson, tryApi } from './api'
 
 export type RoiStatus = 'pending' | 'claude-labelled' | 'accepted' | 'rejected' | 'flagged'
 export const ROI_STATUSES: readonly RoiStatus[] =
@@ -64,17 +65,11 @@ export interface RoiList {
 const EMPTY: RoiList = { suffix: 'default', suffixes: [], labels: [], rois: [] }
 
 export async function fetchRois(projectUid: string, imageUid: string, suffix = ''): Promise<RoiList> {
-  const q = new URLSearchParams({ projectUid, imageUid })
-  if (suffix) q.set('suffix', suffix)
-  try {
-    const res = await fetch(`/api/rois?${q}`)
-    if (!res.ok) return EMPTY
-    const d = await res.json() as RoiList
-    return { ...EMPTY, ...d, rois: Array.isArray(d.rois) ? d.rois : [],
-             labels: Array.isArray(d.labels) ? d.labels : [] }
-  } catch {
-    return EMPTY
-  }
+  const r = await tryApi(getJson<RoiList>('/api/rois', { query: { projectUid, imageUid, suffix: suffix || undefined } }))
+  if (!r.ok || !r.data) return EMPTY
+  const d = r.data
+  return { ...EMPTY, ...d, rois: Array.isArray(d.rois) ? d.rois : [],
+           labels: Array.isArray(d.labels) ? d.labels : [] }
 }
 
 export type RoiChange =
@@ -87,17 +82,8 @@ export type RoiChange =
 export async function postRoiReview(
   projectUid: string, imageUid: string, suffix: string, roiId: string, change: RoiChange,
 ): Promise<string | null> {
-  try {
-    const res = await fetch('/api/rois/review', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid, suffix, roiId, ...change }),
-    })
-    if (res.ok) return null
-    const d = await res.json().catch(() => ({})) as { error?: string }
-    return d.error ?? `HTTP ${res.status}`
-  } catch (e) {
-    return e instanceof Error ? e.message : String(e)
-  }
+  const r = await tryApi(postJson('/api/rois/review', { projectUid, imageUid, suffix, roiId, ...change }))
+  return r.ok ? null : r.error
 }
 
 /** Rows shown under a status filter (`all` = every row), in rank order. */

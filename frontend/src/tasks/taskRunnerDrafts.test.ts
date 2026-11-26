@@ -56,7 +56,7 @@ describe('the run handler and the draft', () => {
   it('still reports a failed load as "leave the form alone"', () => {
     // The other half of the guard, and the reason `{}` and `null` are not the same answer.
     expect(RUNNER).toMatch(/if \(!projectUid\.value\) return null/)
-    expect(RUNNER).toMatch(/if \(!res\.ok\) return null/)
+    expect(RUNNER).toMatch(/if \(!r\.ok\) return null/)
   })
 })
 

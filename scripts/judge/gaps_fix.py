@@ -49,7 +49,7 @@ _rv = _af._rv
 
 #: Gap kinds an agent may close on its own, in the order they are taken.
 CLOSABLE = ("ws-unhandled", "ws-no-emitter", "ws-no-handler", "runner-unlaunched", "shared-file-unguarded",
-            "viewer-store", "store-cycle", "py-cycle", "julia-upward")
+            "viewer-store", "fetch-direct", "store-cycle", "py-cycle", "julia-upward")
 #: Sessions per weekly pass when no --limit is given: a few small PRs a week, not a flood.
 WEEKLY = 3
 

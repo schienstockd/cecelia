@@ -9,6 +9,7 @@
 import { ref, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { getJson } from '../utils/api'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -26,9 +27,7 @@ const { isCopied: copied, copy } = useCopyFlash()
 async function load() {
   loading.value = true; error.value = null
   try {
-    const r = await fetch('/api/diagnostics/packages')
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    data.value = await r.json() as PkgResp
+    data.value = await getJson<PkgResp>('/api/diagnostics/packages')
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {

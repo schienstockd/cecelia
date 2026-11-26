@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { BACKEND_CALL } from './api'
 import { openingTags, templateBlock, sinkOf, rangeControls, undeclaredControls, rearmedTimers,
          driftingTextFields } from './continuousControls'
 
@@ -107,7 +108,7 @@ describe('continuous controls do not fire an un-coalesced effect per event', () 
 
   it('no slider reaches the network straight from its @input', () => {
     const direct = sources.flatMap(s => rangeControls(s.text)
-      .filter(c => /\bfetch\s*\(|\baxios\b/.test(c.handler))
+      .filter(c => BACKEND_CALL.test(c.handler) || /\baxios\b/.test(c.handler))
       .map(() => s.path))
     expect(direct).toEqual([])
   })

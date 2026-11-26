@@ -17,12 +17,16 @@
   `separator` makes it a MULTI-value field (tags): suggestions then complete the token at the caret
   instead of the whole box, so accepting one does not wipe the tags already typed — and a tag already
   in the box drops off the list, so the same one cannot be added twice from it.
+
+  `groups` (instead of `options`) puts a heading over each kind of value when one box offers two —
+  the image search offers names and uids. The arrow keys still walk one list, across the headings.
 -->
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import TeleportPopover from './TeleportPopover.vue'
 import {
-  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken, withoutChosen,
+  filterSuggestions, filterSuggestionGroups, moveHighlight, isExistingOption, activeToken, replaceActiveToken,
+  withoutChosen, type SuggestGroup,
 } from '../utils/suggestInput'
 
 // Two root nodes (the input and the teleported popover), so a caller's attrs — `@blur`,
@@ -32,7 +36,8 @@ defineOptions({ inheritAttrs: false })
 
 const props = defineProps<{
   modelValue: string
-  options: string[]            // what already exists (may be empty — then this is a plain input)
+  options?: string[]           // what already exists (may be empty — then this is a plain input)
+  groups?: SuggestGroup[]      // …or the same, under headings; takes the place of `options`
   placeholder?: string
   tip?: string
   separator?: string           // set for a multi-value field, e.g. "," for tags
@@ -46,17 +51,28 @@ const open = ref(false)
 const highlight = ref(-1)
 
 const query = computed(() => activeToken(props.modelValue ?? '', props.separator))
+const allOptions = computed(() => props.groups ? props.groups.flatMap(g => g.options) : (props.options ?? []))
 // What is still on offer — a multi-value field drops the tags already in the box (no-op otherwise).
 const available = computed(() =>
-  withoutChosen(props.options, props.modelValue ?? '', props.separator))
+  withoutChosen(allOptions.value, props.modelValue ?? '', props.separator))
 // Focus offers EVERYTHING — a field holding `Tcell` would otherwise open filtered to `Tcell`, hiding
 // the one name the user opened it to find. The first keystroke narrows.
 const showAll = ref(false)
+// Grouped: the headed sections, each item carrying its index in the ONE flat list the keys walk.
+const sections = computed(() => {
+  if (!props.groups) return null
+  const keep = new Set(available.value)
+  let i = 0
+  return filterSuggestionGroups(props.groups.map(g => ({ title: g.title, options: g.options.filter(o => keep.has(o)) })),
+                      query.value, showAll.value)
+    .map(g => ({ title: g.title, items: g.options.map(name => ({ name, i: i++ })) }))
+})
 const matches = computed(() =>
-  showAll.value ? available.value : filterSuggestions(available.value, query.value))
+  sections.value ? sections.value.flatMap(g => g.items.map(it => it.name))
+    : showAll.value ? available.value : filterSuggestions(available.value, query.value))
 /** Whether what is typed names something that EXISTS — the reuse vs create distinction. */
 const existing = computed(() =>
-  props.markExisting === true && isExistingOption(props.options, query.value))
+  props.markExisting === true && isExistingOption(allOptions.value, query.value))
 
 // The popover is positioned from the input's rect but sized by its content, so a one-word suggestion
 // under a wide field looks detached. Match the input's width instead.
@@ -165,13 +181,28 @@ function onKeyup(e: KeyboardEvent) {
     <div class="si-menu" :style="{ minWidth: width }" role="listbox">
       <!-- mousedown, not click: the input's @blur fires first and would close the popover before a
            click ever lands. preventDefault keeps focus in the input so accept() can restore it. -->
-      <button
-        v-for="(name, i) in matches" :key="name"
-        class="si-item" :class="{ 'si-hot': i === highlight }"
-        role="option" :aria-selected="i === highlight"
-        @mousedown.prevent="accept(name)"
-        @mouseenter="highlight = i"
-      >{{ name }}</button>
+      <template v-if="sections">
+        <div v-for="g in sections" :key="g.title" class="si-group" role="group" :aria-label="g.title">
+          <!-- the same group heading as SearchSelect's, so the two pickers read alike -->
+          <div class="si-head cc-fs-2xs cc-muted" aria-hidden="true">{{ g.title }}</div>
+          <button
+            v-for="it in g.items" :key="it.name"
+            class="si-item" :class="{ 'si-hot': it.i === highlight }"
+            role="option" :aria-selected="it.i === highlight"
+            @mousedown.prevent="accept(it.name)"
+            @mouseenter="highlight = it.i"
+          >{{ it.name }}</button>
+        </div>
+      </template>
+      <template v-else>
+        <button
+          v-for="(name, i) in matches" :key="name"
+          class="si-item" :class="{ 'si-hot': i === highlight }"
+          role="option" :aria-selected="i === highlight"
+          @mousedown.prevent="accept(name)"
+          @mouseenter="highlight = i"
+        >{{ name }}</button>
+      </template>
     </div>
   </TeleportPopover>
 </template>
@@ -186,6 +217,8 @@ function onKeyup(e: KeyboardEvent) {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .si-item:hover, .si-hot { background: var(--cc-surface-2); }
+.si-group { display: flex; flex-direction: column; }
+.si-head { padding: 0.3rem 0.55rem 0.1rem; font-weight: 600; }
 /* what is typed already exists — this REUSES it rather than creating something new */
 .si-existing { border-color: var(--cc-accent, var(--cc-border)); }
 </style>

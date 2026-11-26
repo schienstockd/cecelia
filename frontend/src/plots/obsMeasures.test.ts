@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import spatialSpec from '../../../app/src/plotDefinitions/spatial_cell_properties.json'
 import { discoverObsMeasures, obsMeasureLabel, isIdLikeColumn, distinctValueNames, mergeColumnSets, type ObsMeasurePattern } from './obsMeasures'
 
 // the patterns the Spatial page's spec declares
@@ -192,5 +193,14 @@ describe('mergeColumnSets', () => {
     // names are BY CHANNEL INDEX: a union of two lists would shift every name after the first difference
     const m = mergeColumnSets([{ channelNames: [] }, { channelNames: ['CD4', 'GFP'] }, { channelNames: ['X', 'Y', 'Z'] }])
     expect(m.channelNames).toEqual(['CD4', 'GFP'])
+  })
+})
+
+describe('the shipped spatial cell properties spec', () => {
+  const shipped = spatialSpec.dataSource.obsMeasurePatterns as ObsMeasurePattern[]
+  it('labels a region run\'s diversity column and window cell count as themselves, not as composition shares', () => {
+    expect(obsMeasureLabel('spatial.comp.effective_types.immune', shipped)).toBe('effective types immune')
+    expect(obsMeasureLabel('spatial.comp.B_qc__tracked.immune', shipped)).toBe('composition B_qc__tracked.immune')
+    expect(obsMeasureLabel('spatial.comp.cells_per_window.immune', shipped)).toBe('cells per window immune')
   })
 })

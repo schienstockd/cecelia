@@ -6,6 +6,7 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSelection'
 import { openViewerWindow } from '../viewerWindow'
 import { buildFocusViewState } from './focusOnCell'
+import { getJson, tryApi, type ApiResult } from '../api'
 
 /**
  * Show tracks in the browser viewer, and fly the camera to the union bbox at the middle timepoint.
@@ -102,26 +103,25 @@ export async function showTracksInViewer(
   let skipReason: string | null = null
   let t = 0
   try {
-    const cp = new URLSearchParams({ projectUid, imageUid, ids: trackIds.join(',') })
-    if (valueName) cp.set('valueName', valueName)
-    // Geometry is per-IMAGE, not per-valueName — voxelUm is a property of the pixels, and a
-    // tracked value name (e.g. "flowTom") has no `filepath` field of its own in the CCID (it
-    // derives from a base segmentation). Passing a tracked valueName here always 404s the way
-    // the handler is written ("No filepath registered"). Omitting valueName ⇒ the handler
-    // resolves the ACTIVE image version, which is what we want for the camera fit anyway.
-    const geomUrl = `/api/images/geometry?projectUid=${encodeURIComponent(projectUid)}` +
-                    `&imageUid=${encodeURIComponent(imageUid)}`
+    // quiet: a failure is reported below, in the one rail line this Show writes (`camera skipped: …`)
     const [rPaths, rGeom] = await Promise.all([
-      fetch(`/api/tracking/paths?${cp}`),
-      fetch(geomUrl),
-    ])
-    if (!rPaths.ok || !rGeom.ok) {
-      skipReason = `paths ${rPaths.status}, geom ${rGeom.status}`
-    } else {
-      const dPaths = await rPaths.json() as {
+      tryApi(getJson<{
         groups?: { imageUids?: string[]; paths?: Record<string, { t: number[]; x: number[]; y: number[]; z?: number[] }> }[]
-      }
-      const dGeom = await rGeom.json() as { voxelUm?: number[] }
+      } | null>('/api/tracking/paths', {
+        query: { projectUid, imageUid, ids: trackIds.join(','), valueName: valueName || undefined }, quiet: true })),
+      // Geometry is per-IMAGE, not per-valueName — voxelUm is a property of the pixels, and a
+      // tracked value name (e.g. "flowTom") has no `filepath` field of its own in the CCID (it
+      // derives from a base segmentation). Passing a tracked valueName here always 404s the way
+      // the handler is written ("No filepath registered"). Omitting valueName ⇒ the handler
+      // resolves the ACTIVE image version, which is what we want for the camera fit anyway.
+      tryApi(getJson<{ voxelUm?: number[] } | null>('/api/images/geometry', { query: { projectUid, imageUid }, quiet: true })),
+    ])
+    const st = (r: ApiResult<unknown>) => r.ok ? '200' : r.status ? String(r.status) : `0 (${r.error})`
+    if (!rPaths.ok || !rGeom.ok) {
+      skipReason = `paths ${st(rPaths)}, geom ${st(rGeom)}`
+    } else {
+      const dPaths = rPaths.data ?? {}
+      const dGeom = rGeom.data ?? {}
       const grp = (dPaths.groups ?? []).find(g => (g.imageUids ?? []).includes(imageUid))
                ?? dPaths.groups?.[0]
       const vu = dGeom.voxelUm

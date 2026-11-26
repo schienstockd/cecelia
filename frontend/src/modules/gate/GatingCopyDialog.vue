@@ -16,6 +16,7 @@ import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useLogStore } from '../../stores/log'
+import { postJson } from '../../utils/api'
 import { imagesWithValueName } from '../../lib/valueNames'
 import CcToggle from '../../components/CcToggle.vue'
 import InlineNote from '../../components/InlineNote.vue'
@@ -80,14 +81,11 @@ async function copy() {
   if (!projectUid) return
   busy.value = true
   try {
-    const res = await fetch('/api/gating/copy', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: props.sourceUid, valueName: props.valueName,
-                             popType: props.popType, toImageUids }),
-    })
-    const d = await res.json().catch(() => ({})) as { copied?: string[]; skipped?: Record<string, string>; warnings?: CopyWarnings;
-                                                       remapped?: Record<string, ChannelRemap[]>; error?: string }
-    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    const d = (await postJson<{ copied?: string[]; skipped?: Record<string, string>; warnings?: CopyWarnings;
+                                remapped?: Record<string, ChannelRemap[]> }>('/api/gating/copy',
+      { projectUid, imageUid: props.sourceUid, valueName: props.valueName, popType: props.popType, toImageUids },
+      { quiet: true })) ?? {}
     const copied = d.copied ?? []
     if (copyLayout.value) for (const uid of copied) {
       canvas.copyEntry(ckey(props.sourceUid), ckey(uid))

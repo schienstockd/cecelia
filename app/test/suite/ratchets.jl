@@ -839,3 +839,38 @@ end
     @test any(pat -> occursin(pat, "state_file(dirname(dirname(r.img._dir)), uid)"), banned)
     @test !any(pat -> occursin(pat, "joinpath(img_zero_dir(img), f)"), banned)
 end
+
+# ── julia-upward ratchet ──────────────────────────────────────────────────────
+# The Julia half of `python/cecelia/tests/test_architecture_gaps.py`: that test regenerates the
+# Python-side gaps live but cannot load the package, so it reads `julia-upward` from the committed
+# `docs/architecture/gaps/julia.json` — a stale file a PR does not refresh. Here the package is
+# loaded already: compute the upward calls from the code as it is, with the extractor's own
+# `upward_gaps` (included into a scratch module; it writes nothing), against the ceiling in
+# `scripts/architecture/gaps_baseline.json`. Rule and areas: docs/architecture/README.md.
+@testset "julia-upward ratchet — no new calls up the declared layer order" begin
+    arch = joinpath(_repo, "scripts", "architecture")
+    X = Module(:ArchJuliaExtract)
+    Base.include(X, joinpath(arch, "julia_extract.jl"))
+    edges = first(Base.invokelatest(X.area_graph))
+    live = Base.invokelatest(X.upward_gaps, edges)
+    ceiling = JSON3.read(read(joinpath(arch, "gaps_baseline.json"), String))["julia-upward"]
+    known = Set(String(g["subject"]) for g in JSON3.read(read(joinpath(_repo, "docs", "architecture", "gaps", "julia.json"), String))
+                if g["kind"] == "julia-upward")
+    n = length(live)
+    if n > ceiling
+        new = [g for g in live if !(g.subject in known)]
+        @error "julia-upward ratchet: this change adds calls up the declared layer order " *
+               "(docs/architecture/gaps.md#julia-upward): $ceiling → $n; new:\n  " *
+               (isempty(new) ? "(regenerate to see: `pixi run arch-diagrams`)" :
+                               join(("$(g.subject) — $(g.detail)" for g in new), "\n  ")) *
+               "\nTo close: move it down to the lowest tier that calls it (or a shared lower area), or — if " *
+               "the order is wrong — change `[layers]` in `scripts/architecture/julia_areas.toml`. A false " *
+               "alarm is closed by making the name visible to the extractor, never by raising the baseline."
+    elseif n < ceiling
+        @error "julia-upward ratchet: gaps were closed ($ceiling → $n) — lock that in: " *
+               "`pixi run arch-diagrams && pixi run arch-gaps-baseline`"
+    end
+    @test n <= ceiling   # rises: the change added an upward call
+    @test n >= ceiling   # falls: lower the ceiling so it stays closed
+    @test length(edges) > 50   # a scan that saw nothing (wrong root, empty area map) would pass the first test
+end

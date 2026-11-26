@@ -8,6 +8,7 @@
  */
 
 import { escapeHtml } from './escapeHtml'
+import { getJson } from './api'
 
 export const THUMB_PX = 160
 /** The hover preview's render — its own request, so the row's slot never pays for it. */
@@ -76,9 +77,9 @@ export function loadThumb(projectUid: string, imageUid: string, version: string 
   const hit = _cache.get(key)
   if (hit) return hit
   dropOlderThumbs(projectUid, imageUid, size, key)
-  const q = new URLSearchParams({ projectUid, imageUid, size: String(size) })
-  const p = fetch(`/api/images/thumbnail?${q}`)
-    .then(async r => (r.ok ? ((await r.json()).png as string) ?? null : null))
+  // 404 = the image has nothing to show (not imported): normal for a table row, so not logged.
+  const p = getJson<{ png?: string } | null>('/api/images/thumbnail', { query: { projectUid, imageUid, size }, quiet: [404] })
+    .then(r => r?.png ?? null)
     .catch(() => null)
     .then(url => {
       if (url === null) _cache.delete(key)

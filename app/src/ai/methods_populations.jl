@@ -74,7 +74,7 @@ function _mr_population_index(proj::CciaProject, uids)::Vector{_MrPop}
         img = try init_object(proj.uid, uid) catch; nothing end
         img isa CciaImage || continue
         pops = Any[]
-        _observer_each_population(p -> push!(pops, p), img)
+        _observer_each_population((p, _) -> push!(pops, p), img)
         push!(per_image, (img, pops))
     end
     names = _mr_pop_names(per_image)

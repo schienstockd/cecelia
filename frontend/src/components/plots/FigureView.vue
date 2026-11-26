@@ -8,6 +8,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { usePushStore } from '../../stores/push'
+import { apiFetch, getJson, tryApi } from '../../utils/api'
 import { movieStreamUrl, movieDisplayName, isFigure, sortMovies, type MovieEntry } from '../../utils/movies'
 
 const props = defineProps<{ projectUid: string; state: { name?: string } }>()
@@ -18,9 +19,8 @@ const loaded = ref(false)
 async function refresh() {
   if (!props.projectUid) { figures.value = []; return }
   try {
-    const res = await fetch(`/api/movies?projectUid=${encodeURIComponent(props.projectUid)}`)
-    const body = await res.json().catch(() => ({}))
-    figures.value = sortMovies(((body.movies ?? []) as MovieEntry[]).filter(isFigure))
+    const r = await tryApi(getJson<{ movies?: MovieEntry[] }>('/api/movies', { query: { projectUid: props.projectUid } }))
+    figures.value = sortMovies(((r.ok ? r.data?.movies : undefined) ?? []).filter(isFigure))
     // a new slot shows the newest figure rather than an empty picker
     if (!props.state.name && figures.value.length) props.state.name = figures.value[0].name
   } finally {
@@ -44,9 +44,9 @@ const src = computed(() => current.value
 // PDF export: the figure file as a data URL — the full-resolution render, not the panel's preview
 async function exportImage(): Promise<string | null> {
   if (!src.value) return null
-  const res = await fetch(src.value)
-  if (!res.ok) return null
-  const blob = await res.blob()
+  const r = await tryApi(apiFetch(src.value))
+  if (!r.ok) return null
+  const blob = await r.data.blob()
   return await new Promise(resolve => {
     const r = new FileReader()
     r.onload = () => resolve(typeof r.result === 'string' ? r.result : null)

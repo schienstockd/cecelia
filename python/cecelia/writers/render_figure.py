@@ -145,27 +145,36 @@ def _columns(s, still=False):
              f'z{p}' + (f' ({(int(p) - int(s["z"])) * step:+g} µm)' if step else '')) for p in s['planes']]
 
 
-def _crop(level0, axes, t, z_lo, z_hi, s):
-    """``(c, y, x)`` — the max-projected crop at ``t``, every channel: what the column's tiles show, for
-    measuring its range. Read through the renderer's own slicer (``_load_at_t``), so the range is
-    measured on exactly the pixels the shader draws."""
+def _crop(levels, level, axes, t, z_lo, z_hi, s, chans):
+    """``{c: (y, x)}`` — the max-projected crop at ``t`` of each channel in ``chans``, read from pyramid
+    ``level`` (the crop box scaled to it): what the column's tiles show, for measuring its range. Read
+    through the renderer's own slicer (``_load_at_t``) at the level it draws, so the range is measured on
+    exactly the pixels the shader draws. One channel at a time, in the store's own dtype: the crop can be
+    a whole section of a many-channel panel."""
+    ax = [a.lower() for a in axes]
+    l0, lv = dict(zip(ax, levels[0].shape)), dict(zip(ax, levels[level].shape))
+    fy, fx = l0.get('y', 1) / lv.get('y', 1), l0.get('x', 1) / lv.get('x', 1)
     cy, cx = (int(round(v)) for v in s['center'])
-    h = s['sizePx'] // 2
-    vol = render_animation_run._load_at_t(level0, t, axes, z_slice=slice(max(0, z_lo), z_hi + 1),
-                                          yx=(slice(max(0, cy - h), cy + h), slice(max(0, cx - h), cx + h)))
-    return vol.astype(np.float64).max(axis=1)
+    h = s['sizePx'] // 2                                     # level 0: the box the tiles show, exactly
+    yx = (slice(max(0, int(round((cy - h) / fy))), int(round((cy + h) / fy))),
+          slice(max(0, int(round((cx - h) / fx))), int(round((cx + h) / fx))))
+    zs = render_animation_run._level_z((max(0, z_lo), max(0, z_hi)), lv.get('z', 1), l0.get('z', 1))
+    return {c: render_animation_run._load_at_t(levels[level], t, axes, z_slice=zs, yx=yx,
+                                               c_slice=slice(c, c + 1))[0].max(axis=0)
+            for c in chans}
 
 
-def display_ranges(s, levels, axes, cols):
-    """``{(c, col) : (lo, hi)}`` — one range per channel over every tile unless ``perTile``. Explicit
-    ``ranges`` win. Returned with the measured values so ``figure.json`` records what was drawn."""
+def display_ranges(s, levels, axes, cols, level=0):
+    """``{(c, col) : (lo, hi)}`` — one range per channel over every tile unless ``perTile``, measured at
+    pyramid ``level`` (the one the frames are drawn from). Explicit ``ranges`` win. Returned with the
+    measured values so ``figure.json`` records what was drawn."""
     disp = s['display']
     chans = sorted({int(ch['c']) for r in s['rows'] for ch in r['channels']})
     explicit = {int(k): tuple(v) for k, v in (disp.get('ranges') or {}).items()}
     p_lo, p_hi = disp.get('percentiles', _DEFAULT_PERCENTILES)
     out = {}
-    by_col = ([_crop(levels[0], axes, t, zl, zh, s) for t, zl, zh, _ in cols]
-              if any(c not in explicit for c in chans) else [])
+    measured = [c for c in chans if c not in explicit]
+    by_col = [_crop(levels, level, axes, t, zl, zh, s, measured) for t, zl, zh, _ in cols] if measured else []
     for c in chans:
         if c in explicit:
             out.update({(c, i): explicit[c] for i in range(len(cols))})
@@ -305,12 +314,21 @@ def tile_mm(style, n_cols):
 
 def tile_px(s, style, n_cols=1):
     """Output tile side: ``tilePx`` if given, else ``tile_mm`` at ``dpi``. In ``pixels`` mode it snaps to a
-    whole multiple of the crop so every native pixel is the same size block."""
+    whole multiple of the crop so every native pixel is the same size block, the largest that stays within
+    ``MAX_TILE_PX``. A crop past ``MAX_TILE_PX`` cannot have blocks (a whole section, 13,100 px, would be a
+    1.1 m tile drawn from level 0 of every channel): its tile is ``want``, drawn from the level the viewer
+    shows at that zoom."""
     want = int(s.get('tilePx') or _px(tile_mm(style, n_cols), style['dpi']))
-    if s['interpolation'] == 'pixels':
-        k = max(1, int(round(want / s['sizePx'])))
+    if s['interpolation'] == 'pixels' and s['sizePx'] <= MAX_TILE_PX:
+        k = min(max(1, int(round(want / s['sizePx']))), MAX_TILE_PX // s['sizePx'])
         return k * s['sizePx']
     return want
+
+
+def canvas_px(s, tile):
+    """The side the renderer draws at: the crop's own pixels for ``smooth`` (resized to the tile after),
+    else the tile. Never past ``MAX_TILE_PX`` — a bigger crop is drawn at the tile, from a coarser level."""
+    return s['sizePx'] if s['interpolation'] == 'smooth' and s['sizePx'] <= MAX_TILE_PX else tile
 
 
 def _legend_parts(s, row):
@@ -393,14 +411,16 @@ def render_figure(spec, host=None, log=None):
     dims = dict(zip([a.lower() for a in axes], levels[0].shape))
     nc = dims.get('c', 1)
     cols = _columns(s, still=dims.get('t', 1) <= 1)
-    ranges = display_ranges(s, levels, axes, cols)
     per_line = grid_columns(len(cols), len(s['rows']), s['layout'])
     # Auto tile width from the FRAME count, whatever the layout: a grid is the strip's tiles rearranged,
     # so its text (fixed pt) keeps the strip's size against the tiles. Sized by its column count, eight
     # frames got 60 mm tiles instead of 22.5 mm and the labels read tiny.
     tile = tile_px(s, style, len(cols))
     style = dict(style, tileMm=tile_mm(style, len(cols)))     # figure.json records what auto picked
-    canvas = s['sizePx'] if s['interpolation'] == 'smooth' else tile
+    canvas = canvas_px(s, tile)
+    # measured on the level the frames are drawn from: the renderer picks it for the crop over the canvas
+    # (L0 px per output px, as the viewer does), so a whole-section crop is measured as it is drawn
+    ranges = display_ranges(s, levels, axes, cols, level=wgpu_host.plane_level(s['sizePx'] / canvas, len(levels)))
     params = {'zarrPath': s['zarrPath'], 'canvasH': canvas, 'canvasW': canvas,
               'zAniso': float(s.get('zAniso', 1.0)), 'renderQuality': 'high'}
     look = _look_params(s, screen_px_scale(style['dpi'], canvas, tile), image_px_scale(canvas, s['sizePx']))
@@ -534,6 +554,13 @@ def main():
         # The message names the field — printed as the run's error so a caller (or Claude) can fix it.
         print(f'[ERROR] figure spec: {e}', flush=True)
         raise SystemExit(2)
+    except Exception as e:
+        # Anything else (out of memory, a GPU limit) also names itself on an [ERROR] line: the caller
+        # returns those lines, and an MCP caller cannot read the log a bare traceback goes to.
+        import traceback
+        traceback.print_exc()
+        print(f'[ERROR] {type(e).__name__}: {e}'.splitlines()[0][:500], flush=True)
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

@@ -317,6 +317,37 @@ end
 # A cluster population's run is the suffix of its `{prefix}{run}` filter column — `clusters.` for cell and
 # track clusters, `regions.` for regions (docs/POPULATION.md, the pop-type table). A pop on any other
 # column, or one that is not a cluster type, belongs to no run; and two ids in one run have one holder each.
+# A cluster pop is stale when the run it picked its ids on was re-run since: both stamps present and
+# different (the manager's `clusterPopStale` rule). A pop built on one — under it, or combining or
+# excluding it — counts the same old ids, so `cluster_pop_stale_in` reports it too.
+@testset "cluster_pop_stale / cluster_pop_stale_in — picked on an earlier run of the clustering" begin
+    td = mktempdir(); lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+    props = joinpath(lpdir, "B.h5ad")
+    Cecelia._write_clust_features!(props, "immune", ["mean_intensity_0"], ["u1"]; at = "2026-11-16T10:00:00.000")
+    img = CciaImage(; dir = td); img.label_props = Dict("B" => "B.h5ad", "_active" => "B")
+    m = Cecelia.PopulationTree(; pop_type = "clust", value_name = "B")
+    add_pop!(m, "T"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1])
+    add_pop!(m, "T sub"; parent = "/T", filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1])
+    add_pop!(m, "B"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [2])
+    add_pop!(m, "not T"; boolean_op = "not", boolean_pops = ["/T"])
+    add_pop!(m, "unstamped"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [3])
+    m.pops["/T"].run_at = "2026-11-16T10:00:00.000"                 # picked on the run as it is
+    m.pops["/B"].run_at = "2026-11-16T10:00:00.000"
+    @test cluster_pop_stale(m.pops["/T"], img) === nothing
+    @test cluster_pop_stale_in(m, "/not T", img) === nothing
+    # the run is re-run under the same name: its stamp moves, the pops keep theirs
+    Cecelia._write_clust_features!(props, "immune", ["mean_intensity_0"], ["u1"]; at = "2026-11-17T09:30:00.000")
+    @test occursin("re-run", cluster_pop_stale(m.pops["/T"], img))
+    @test cluster_pop_stale(m.pops["/unstamped"], img) === nothing  # no stamp of its own: no evidence it moved
+    m.pops["/T/T sub"].run_at = "2026-11-17T09:30:00.000"            # re-picked on the new run…
+    @test cluster_pop_stale(m.pops["/T/T sub"], img) === nothing
+    @test startswith(cluster_pop_stale_in(m, "/T/T sub", img), "/T: ")  # …but its parent was not
+    @test startswith(cluster_pop_stale_in(m, "/not T", img), "/T: ")    # an exclusion counts old ids too
+    m.pops["/T"].run_at = "2026-11-17T09:30:00.000"
+    @test cluster_pop_stale_in(m, "/not T", img) === nothing
+    @test occursin("re-run", cluster_pop_stale(m.pops["/B"], img))     # every pop of the run, not just one
+end
+
 @testset "cluster_pop_suffix / cluster_id_owners — a cluster pop's run and who holds each id" begin
     clust = Cecelia.PopulationTree(; pop_type = "clust", value_name = "B")
     add_pop!(clust, "T"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1, 2.0])

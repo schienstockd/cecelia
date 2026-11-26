@@ -55,6 +55,7 @@ import { selectedTracks as resolvedTracks } from '../../lib/trackCorrection'
 import { KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
 import { buildFocusViewState } from '../../utils/viewer/focusOnCell'
 import { overlaysUrl, type OverlayPayload } from '../../utils/viewerOverlays'
+import { getJson, postJson } from '../../utils/api'
 import {
   sortLabels, nextIndex, prevIndex, clampIndex, pageSummary,
   type ReviewLabel, type ReviewSort,
@@ -153,14 +154,13 @@ async function reloadPicked(): Promise<void> {
   }
   const seq = ++pickReq
   try {
-    const q = `projectUid=${encodeURIComponent(projectUid.value)}` +
-              `&imageUid=${encodeURIComponent(imageUid.value)}` +
-              `&valueName=${encodeURIComponent(valueName.value)}` +
-              `&pops=${encodeURIComponent('/Pick selection')}`
-    const r = await fetch(`/api/gating/membership?${q}`)
-    if (!r.ok) { if (seq === pickReq) pickedLabels.value = []; return }
-    const d = await r.json() as { membership?: Record<string, number[]> }
-    const labs = d.membership?.['/Pick selection'] ?? []
+    // quiet: re-read on every pick tick across windows; a failure just empties the strip
+    const d = await getJson<{ membership?: Record<string, number[]> }>('/api/gating/membership', {
+      query: { projectUid: projectUid.value, imageUid: imageUid.value, valueName: valueName.value,
+               pops: '/Pick selection' },
+      quiet: true,
+    })
+    const labs = d?.membership?.['/Pick selection'] ?? []
     if (seq === pickReq) pickedLabels.value = labs.map(Number).filter(Number.isFinite)
   } catch { if (seq === pickReq) pickedLabels.value = [] }
 }
@@ -205,9 +205,7 @@ async function reloadOverlays(): Promise<void> {
   try {
     const url = overlaysUrl({ projectUid: projectUid.value, imageUid: imageUid.value,
                               valueName: valueName.value })
-    const r = await fetch(url)
-    if (!r.ok) { if (seq === overlayReq) overlays.value = null; return }
-    const j = await r.json() as OverlayPayload
+    const j = await getJson<OverlayPayload>(url)
     if (seq === overlayReq) overlays.value = j
   } catch { if (seq === overlayReq) overlays.value = null }
 }
@@ -376,13 +374,9 @@ async function onStripUpdate(next: string[] | string): Promise<void> {
     // Optimistic paint so the click feels instant; the reload below is authoritative.
     pickedLabels.value = labs
     try {
-      await fetch('/api/viewer/pick-set', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectUid: projectUid.value, imageUid: imageUid.value,
-          valueName: valueName.value, popType: 'flow', labels: labs,
-        }),
+      await postJson('/api/viewer/pick-set', {
+        projectUid: projectUid.value, imageUid: imageUid.value,
+        valueName: valueName.value, popType: 'flow', labels: labs,
       })
     } catch { /* fall through to reload — the reconciler is the source of truth */ }
     await reloadPicked()
@@ -416,13 +410,9 @@ async function clearSelection(): Promise<void> {
     if (!projectUid.value || !imageUid.value || !valueName.value) return
     pickedLabels.value = []
     try {
-      await fetch('/api/viewer/pick-clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectUid: projectUid.value, imageUid: imageUid.value,
-          valueName: valueName.value, popType: 'flow',
-        }),
+      await postJson('/api/viewer/pick-clear', {
+        projectUid: projectUid.value, imageUid: imageUid.value,
+        valueName: valueName.value, popType: 'flow',
       })
     } catch { /* fall through to reload */ }
     await reloadPicked()

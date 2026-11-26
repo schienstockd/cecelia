@@ -5,6 +5,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { setNameTaken } from '../utils/setDestination'
+import { postJson } from '../utils/api'
 import ConfirmButton from './ConfirmButton.vue'
 import SetRecipePicker from './SetRecipePicker.vue'
 
@@ -57,13 +58,9 @@ async function createSet() {
   }
   busy.value = true
   try {
-    const res = await fetch('/api/sets/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectMeta.current.uid, name }),
-    })
-    const body = await res.json().catch(() => ({})) as { uid?: string; error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    const body = await postJson<{ uid?: string }>('/api/sets/create',
+      { projectUid: projectMeta.current.uid, name }, { quiet: true })
     project.addSetFromApi(body.uid!, name)
     log.info(`Created set "${name}".`, { source: 'manageImages' })
     closeNameInput()
@@ -93,13 +90,7 @@ async function renameSet() {
   }
   busy.value = true
   try {
-    const res = await fetch('/api/sets/rename', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectMeta.current.uid, setUid: set.uid, name }),
-    })
-    const body = await res.json().catch(() => ({})) as { error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    await postJson('/api/sets/rename', { projectUid: projectMeta.current.uid, setUid: set.uid, name }, { quiet: true })
     project.renameSet(set.uid, name)
     log.info(`Renamed set to "${name}".`, { source: 'manageImages' })
     closeNameInput()
@@ -118,13 +109,7 @@ async function deleteSet() {
   if (projectUid) {
     busy.value = true
     try {
-      const res = await fetch('/api/sets/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, setUid }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      await postJson('/api/sets/delete', { projectUid, setUid }, { quiet: true })
     } catch (e) {
       log.error(`Failed to delete set: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
       return

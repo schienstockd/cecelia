@@ -831,7 +831,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
     with `image_uid` / `set_uid`, or omit both for the whole project.
 
     Per image `populations` is a flat list; each: `{path, name, parent, popType, valueName, colour,
-    isTrack, gate, filter, boolean}`.
+    isTrack, gate, filter, boolean, stale}`.
+      - `stale` (else null): it, or a cluster pop it is built on (above it, or one it combines or
+        excludes), picked its cluster ids before that clustering was re-run, so they may now be other
+        groups. Its counts are suspect until the named pop is re-picked (set_cluster_pops).
       - `path`/`parent` give the tree (a pop's cells are its gate/filter/combination ∩ its parent).
       - `popType`: flow/track = gate-drawn; clust/trackclust/region = cluster pops; branch = filters on
         skeleton branches (e.g. `branch-type`).
@@ -883,7 +886,9 @@ def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
     Summarised over the MEANINGFUL populations, not the raw segmentation (most labels are usually gated
     out): the user's gated pops when present (e.g. `T/_qc`), else the base `_tracked` population (all
     tracked cells), else all cells. Per image, `summaries` is a list; each:
-      `{population, valueName, kind: phenotype|motility, n, measures: [{name, n, median, q25, q75, mean}]}`.
+      `{population, valueName, kind: phenotype|motility, n, measures: [{name, n, median, q25, q75, mean}], stale}`.
+      - `stale` (else null): as in get_populations — the population is built on cluster ids picked before a
+        re-run of their clustering, so its stats are of whatever those ids mean now.
       - `kind` "phenotype" = per-cell channel intensities (named by channel) + morphology (area, …);
         "motility" = per-track `live.track.*` (speed, displacement, trackLength, straightness, …).
       - A gated cell pop yields BOTH a phenotype row (its cells) and, when tracked, a motility row (its

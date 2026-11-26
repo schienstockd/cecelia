@@ -108,3 +108,22 @@ export function replaceActiveToken(value: string, choice: string, separator?: st
   const head = i < 0 ? '' : value.slice(0, i + separator.length)
   return `${head}${head && !head.endsWith(' ') ? ' ' : ''}${choice}${separator} `
 }
+
+// ── Grouped suggestions ───────────────────────────────────────────────────────
+// One box can offer two KINDS of value — the image search offers names and uids — and as one flat list
+// they read as a single column of look-alike strings. A group puts a heading over each kind.
+
+/** One headed section of a `SuggestInput` list. */
+export interface SuggestGroup { title: string; options: string[] }
+
+/**
+ * Each group's suggestions for `query` (`filterSuggestions`, or everything when `showAll`), with the
+ * groups left empty dropped — a heading over nothing is noise. Group order is the caller's. Same shape
+ * as SearchSelect's `filterGroups` (`utils/searchSelect.ts`) but ranked-prefix matching on plain strings,
+ * since a suggestion completes ONE value rather than matching every word of a label.
+ */
+export function filterSuggestionGroups(groups: readonly SuggestGroup[], query: string, showAll = false): SuggestGroup[] {
+  return groups
+    .map(g => ({ title: g.title, options: showAll ? [...g.options] : filterSuggestions(g.options, query) }))
+    .filter(g => g.options.length > 0)
+}

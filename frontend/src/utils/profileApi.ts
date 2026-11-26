@@ -21,6 +21,8 @@
 // dialog can fail fast without a round-trip. Kept in sync by `profileApi.test.ts` — if the
 // backend rule changes, both must move together.
 
+import { getJson, postJson, tryApi } from './api'
+
 /** A profile as the roster surfaces it. `default` maps to `~/.claude*` (dir === ''); named
  *  profiles live under `<config_dir>/user-profiles/<name>/`. A `retired` profile keeps its data
  *  on disk (D11 immutable-name) but is non-selectable — the picker greys it out. */
@@ -108,38 +110,28 @@ export function profileDisplayName(p: Pick<Profile, 'name' | 'isDefault'>): stri
 export const profileNameLabel = (name: string): string =>
   profileDisplayName({ name, isDefault: name === 'default' })
 
-const _JSON = { 'Content-Type': 'application/json' }
-
-async function _json(res: Response): Promise<any> {
-  try { return await res.json() } catch { return {} }
+/** POST `body`; the reply, or `{ok: false, error}` with the server's message (already logged to the
+ *  rail by `utils/api.ts`). */
+async function _post<T>(path: string, body: object): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  const r = await tryApi(postJson<T>(path, body))
+  return r.ok ? { ok: true, data: (r.data ?? {}) as T } : { ok: false, error: r.error }
 }
 
-/** Fetch the full roster. Any network failure ⇒ empty roster with `default` active — the same
+/** Fetch the full roster. Any failure ⇒ empty roster with `default` active — the same
  *  shape the backend returns on a fresh install, so the picker can render either way. */
-export async function fetchProfiles(apiBase = ''): Promise<ProfileRoster> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await _json(res) as ProfileRoster
-  } catch {
-    return { active: 'default',
-             profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
-             legacyReserved: ['legacy'] }
-  }
+export async function fetchProfiles(): Promise<ProfileRoster> {
+  const r = await tryApi(getJson<ProfileRoster>('/api/kiwi/profiles'))
+  if (r.ok && r.data) return r.data
+  return { active: 'default',
+           profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
+           legacyReserved: ['legacy'] }
 }
 
 /** Switch the server-active profile. Returns `{ok:false, error}` on rejection so the caller
  *  can surface a message; never throws for a non-2xx (the picker needs to reset its select). */
-export async function selectProfile(name: string, apiBase = ''): Promise<SelectProfileResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/select`,
-      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res) as Partial<SelectProfileResult>
-    if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
-    return { ok: true, active: body.active }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
-  }
+export async function selectProfile(name: string): Promise<SelectProfileResult> {
+  const r = await _post<Partial<SelectProfileResult>>('/api/kiwi/profiles/select', { name })
+  return r.ok ? { ok: true, active: r.data.active } : r
 }
 
 /** Retire a profile (D11). Server writes a `.kiwi-retired` marker in the profile's dir so the
@@ -153,17 +145,9 @@ export interface RenameProfileResult {
   active?: string
   error?: string
 }
-export async function renameProfile(oldName: string, newName: string,
-                                    apiBase = ''): Promise<RenameProfileResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/rename`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oldName, newName }),
-    })
-    const body = await _json(res) as Partial<RenameProfileResult>
-    if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` }
-    return { ok: true, oldName: body?.oldName, newName: body?.newName, active: body?.active }
-  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) } }
+export async function renameProfile(oldName: string, newName: string): Promise<RenameProfileResult> {
+  const r = await _post<Partial<RenameProfileResult>>('/api/kiwi/profiles/rename', { oldName, newName })
+  return r.ok ? { ok: true, oldName: r.data.oldName, newName: r.data.newName, active: r.data.active } : r
 }
 
 export interface DeleteProfileResult {
@@ -171,58 +155,33 @@ export interface DeleteProfileResult {
   name?: string
   error?: string
 }
-export async function deleteProfile(name: string, apiBase = ''): Promise<DeleteProfileResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/delete`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-    const body = await _json(res) as Partial<DeleteProfileResult>
-    if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` }
-    return { ok: true, name: body?.name }
-  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) } }
+export async function deleteProfile(name: string): Promise<DeleteProfileResult> {
+  const r = await _post<Partial<DeleteProfileResult>>('/api/kiwi/profiles/delete', { name })
+  return r.ok ? { ok: true, name: r.data.name } : r
 }
 
-export async function retireProfile(name: string, apiBase = ''): Promise<RetireProfileResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/retire`,
-      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res) as Partial<RetireProfileResult>
-    if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
-    return { ok: true, name: body.name, active: body.active,
-             snappedToDefault: body.snappedToDefault, alreadyRetired: body.alreadyRetired }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
-  }
+export async function retireProfile(name: string): Promise<RetireProfileResult> {
+  const r = await _post<Partial<RetireProfileResult>>('/api/kiwi/profiles/retire', { name })
+  if (!r.ok) return r
+  const b = r.data
+  return { ok: true, name: b.name, active: b.active,
+           snappedToDefault: b.snappedToDefault, alreadyRetired: b.alreadyRetired }
 }
 
 /** Create a new profile directory. Success surfaces the terminal one-liner so the caller can
  *  render it immediately — no second GET needed. */
-export async function createProfile(name: string, apiBase = ''): Promise<CreateProfileResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/create`,
-      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res) as Partial<CreateProfileResult>
-    if (!res.ok) return { ok: false, error: body.error ?? `HTTP ${res.status}` }
-    return { ok: true, name: body.name, dir: body.dir, terminalCommand: body.terminalCommand }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
-  }
+export async function createProfile(name: string): Promise<CreateProfileResult> {
+  const r = await _post<Partial<CreateProfileResult>>('/api/kiwi/profiles/create', { name })
+  return r.ok ? { ok: true, name: r.data.name, dir: r.data.dir, terminalCommand: r.data.terminalCommand } : r
 }
 
 /** Fetch the terminal one-liner. Omit `profile` to get the active one. A `prompt` becomes the
  *  session's first message (Kiwi's *Start in terminal* passes its chat starter). */
 export async function fetchTerminalCommand(
-  opts: { profile?: string; prompt?: string } = {}, apiBase = ''): Promise<TerminalCommand | null> {
-  try {
-    const q = new URLSearchParams()
-    if (opts.profile) q.set('profile', opts.profile)
-    if (opts.prompt) q.set('prompt', opts.prompt)
-    const qs = q.size ? `?${q}` : ''
-    const res = await fetch(`${apiBase}/api/kiwi/terminal/command${qs}`)
-    if (!res.ok) return null
-    return await _json(res) as TerminalCommand
-  } catch { return null }
+  opts: { profile?: string; prompt?: string } = {}): Promise<TerminalCommand | null> {
+  const r = await tryApi(getJson<TerminalCommand>('/api/kiwi/terminal/command',
+    { query: { profile: opts.profile || undefined, prompt: opts.prompt || undefined } }))
+  return r.ok ? (r.data ?? ({} as TerminalCommand)) : null
 }
 
 /** Client-side mirror of the backend rule (`_valid_kiwi_profile_name` in
@@ -256,42 +215,25 @@ export interface ClaudeLogin {
 
 /** Who a profile is logged in to Claude as. Omit `profile` for the active one; `fresh` skips the
  *  server's few-second cache (an explicit refresh). Any failure ⇒ `unknown`. */
-export async function fetchClaudeLogin(profile?: string, fresh = false,
-                                       apiBase = ''): Promise<ClaudeLogin> {
+export async function fetchClaudeLogin(profile?: string, fresh = false): Promise<ClaudeLogin> {
   const unknown: ClaudeLogin = { profile: profile ?? '', state: 'unknown', email: '', method: '', org: '' }
-  try {
-    const qs = new URLSearchParams()
-    if (profile) qs.set('profile', profile)
-    if (fresh) qs.set('fresh', '1')
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/auth?${qs}`)
-    if (!res.ok) return unknown
-    return { ...unknown, ...(await _json(res)) } as ClaudeLogin
-  } catch { return unknown }
+  // `quiet`: re-read on every window focus; a failure reads as `unknown`, not a rail line each time.
+  const r = await tryApi(getJson<Partial<ClaudeLogin>>('/api/kiwi/profiles/auth',
+    { query: { profile: profile || undefined, fresh: fresh ? '1' : undefined }, quiet: true }))
+  return r.ok ? { ...unknown, ...r.data } as ClaudeLogin : unknown
 }
 
 /** Log a profile out of Claude (`claude auth logout` in its own config dir). */
-export async function logoutClaude(name: string, apiBase = ''): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/logout`,
-      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res)
-    return res.ok ? { ok: true } : { ok: false, error: body?.error ?? `HTTP ${res.status}` }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
-  }
+export async function logoutClaude(name: string): Promise<{ ok: boolean; error?: string }> {
+  const r = await _post('/api/kiwi/profiles/logout', { name })
+  return r.ok ? { ok: true } : r
 }
 
 /** End a profile's session (sidebar Log out): deletes its Claude conversations when the profile or
  *  the workstation wants that, else a no-op. Fails (409) while `claude` still runs under it. */
-export async function endClaudeSession(name: string, apiBase = ''): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/end-session`,
-      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
-    const body = await _json(res)
-    return res.ok ? { ok: true } : { ok: false, error: body?.error ?? `HTTP ${res.status}` }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
-  }
+export async function endClaudeSession(name: string): Promise<{ ok: boolean; error?: string }> {
+  const r = await _post('/api/kiwi/profiles/end-session', { name })
+  return r.ok ? { ok: true } : r
 }
 
 /** One-line label for a login: the account email, "Not logged in", or `''` when unknown (render
@@ -317,46 +259,29 @@ export interface ClaudeLoginRun {
 const _noRun = (error?: string): ClaudeLoginRun =>
   ({ state: 'failed', url: '', browser: '', message: error ?? '', error })
 
-async function _loginPost(path: string, body: object, apiBase: string): Promise<{ ok: boolean; body: any }> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/login${path}`,
-      { method: 'POST', headers: _JSON, body: JSON.stringify(body) })
-    const b = await _json(res)
-    return { ok: res.ok, body: res.ok ? b : { ...b, error: b?.error ?? `HTTP ${res.status}` } }
-  } catch (e) {
-    return { ok: false, body: { error: e instanceof Error ? e.message : 'Network error' } }
-  }
-}
-
 /** Start logging `name` in to Claude. Returns the run's first status (or a failed one). */
-export async function startClaudeLogin(name: string, apiBase = ''): Promise<ClaudeLoginRun> {
-  const r = await _loginPost('', { name }, apiBase)
-  return r.ok ? { ...(r.body as ClaudeLoginRun) } : _noRun(r.body.error)
+export async function startClaudeLogin(name: string): Promise<ClaudeLoginRun> {
+  const r = await _post<ClaudeLoginRun>('/api/kiwi/profiles/login', { name })
+  return r.ok ? { ...r.data } : _noRun(r.error)
 }
 
 /** Poll a running login. A failed request is reported as `none` with the error — the caller keeps
- *  polling rather than declaring the login failed on one dropped request. */
-export async function fetchClaudeLoginRun(name: string, apiBase = ''): Promise<ClaudeLoginRun> {
-  try {
-    const res = await fetch(`${apiBase}/api/kiwi/profiles/login?profile=${encodeURIComponent(name)}`)
-    const b = await _json(res)
-    if (!res.ok) return { state: 'none', url: '', browser: '', message: '', error: b?.error ?? `HTTP ${res.status}` }
-    return b as ClaudeLoginRun
-  } catch (e) {
-    return { state: 'none', url: '', browser: '', message: '', error: e instanceof Error ? e.message : 'Network error' }
-  }
+ *  polling rather than declaring the login failed on one dropped request (`quiet`: a poll). */
+export async function fetchClaudeLoginRun(name: string): Promise<ClaudeLoginRun> {
+  const r = await tryApi(getJson<ClaudeLoginRun>('/api/kiwi/profiles/login', { query: { profile: name }, quiet: true }))
+  if (!r.ok) return { state: 'none', url: '', browser: '', message: '', error: r.error }
+  return r.data
 }
 
 /** Hand the code from the sign-in page to the waiting login. */
-export async function sendClaudeLoginCode(name: string, code: string, apiBase = ''):
-  Promise<{ ok: boolean; error?: string }> {
-  const r = await _loginPost('/code', { name, code }, apiBase)
-  return r.ok ? { ok: true } : { ok: false, error: r.body.error }
+export async function sendClaudeLoginCode(name: string, code: string): Promise<{ ok: boolean; error?: string }> {
+  const r = await _post('/api/kiwi/profiles/login/code', { name, code })
+  return r.ok ? { ok: true } : r
 }
 
 /** Stop a waiting login (closing the dialog). Best-effort. */
-export async function cancelClaudeLogin(name: string, apiBase = ''): Promise<void> {
-  await _loginPost('/cancel', { name }, apiBase)
+export async function cancelClaudeLogin(name: string): Promise<void> {
+  await _post('/api/kiwi/profiles/login/cancel', { name })
 }
 
 /** The one line the login dialog shows while it waits: where to sign in. */

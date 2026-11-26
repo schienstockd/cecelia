@@ -38,6 +38,7 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { useViewerStore } from '../../stores/viewer'
+import { getJson } from '../../utils/api'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, svgDoc, svgEsc }
   from '../../plots/export'
@@ -267,9 +268,7 @@ async function loadValueNames() {
   try {
     const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}&popType=track` +
               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
-    const r = await fetch(`/api/gating/channels?${q}`)
-    if (!r.ok) return
-    const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]; valueName?: string }
+    const d = await getJson<{ valueNames?: string[]; trackedValueNames?: string[]; valueName?: string }>(`/api/gating/channels?${q}`)
     valueNames.value = d.valueNames ?? []
     trackedNames.value = d.trackedValueNames ?? []
     activeName.value = d.valueName ?? ''
@@ -307,15 +306,13 @@ async function load() {
     // WHY NO SENSIBLE CAP: a path plot caps because 5000 polylines are a hairball; a lane list caps
     // into a LIE. "Pick track 2001" has no answer if track 2001 was never sent, and the panel cannot
     // even tell you it exists.
-    const r = await fetch(`/api/tracking/paths?${q}&occupancy=1&limit=20000`)
-    const d = await r.json()
-    if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
+    const d = await getJson<{ groups?: PathsGroup[] }>(`/api/tracking/paths?${q}&occupancy=1&limit=20000`)
     // THE RESPONSE IS GROUPED (one entry per images × population — see docs/TRACKING.md). The
     // timeline edits ONE image's tracks, so it takes the group that matches its own image and falls
     // back to the first: a track id is only unique within a segmentation, and merging groups here
     // would put two different cells on one lane. Reading the old flat `paths` would report "no
     // tracks" on an image full of them — the same bug the worklist had to be fixed for.
-    const gs = (d.groups ?? []) as PathsGroup[]
+    const gs = d.groups ?? []
     const g = gs.find(x => (x.imageUids ?? []).includes(imageUid.value)) ?? gs[0]
     paths.value = (g?.paths ?? {}) as TrackPathMap
     meta.value = { tracked: !!g?.tracked, total: g?.total ?? 0, shown: g?.shown ?? 0,
@@ -335,12 +332,12 @@ async function load() {
     // each other would be tallied over two different track sets.
     const iq = new URLSearchParams(cp)
     iq.set('imageUid', imageUid.value)
-    const r = await fetch(`/api/tracking/issues?${iq}${thresholdQuery(thr.value, serverThresholds.value)}`)
-    const d = await r.json()
-    issues.value = r.ok ? ((d.issues ?? []) as TrackIssue[]) : []
+    const d = await getJson<{ issues?: TrackIssue[]; thresholds?: TrackThresholds }>(
+      `/api/tracking/issues?${iq}${thresholdQuery(thr.value, serverThresholds.value)}`)
+    issues.value = d?.issues ?? []
     // what the server ACTUALLY used — the panel seeds its knobs from this rather than from a copy of
     // the defaults, so the two can never drift apart
-    if (r.ok && d.thresholds) serverThresholds.value = d.thresholds as TrackThresholds
+    if (d?.thresholds) serverThresholds.value = d.thresholds
   } catch { issues.value = [] }
   // ── untracked lane (P3) ──
   // Separate try: a detections failure MUST NOT blank the tracks below it (same discipline as the
@@ -349,9 +346,8 @@ async function load() {
   try {
     const dq = new URLSearchParams(cp)
     dq.set('imageUid', imageUid.value)
-    const rd = await fetch(`/api/tracking/detections?${dq}`)
-    const dd = await rd.json()
-    detFrames.value = rd.ok ? ((dd.frames ?? []) as DetectionFrame[]) : []
+    const dd = await getJson<{ frames?: DetectionFrame[] }>(`/api/tracking/detections?${dq}`)
+    detFrames.value = dd?.frames ?? []
   } catch { detFrames.value = [] }
   loading.value = false
   await nextTick(); plotBox.redraw()

@@ -1,9 +1,10 @@
-// Typed HTTP wrappers for /api/blackboard/*. Same pattern as kiwiCaptures.ts (kept small, no framework
-// wrapper): every function catches its own network error and returns a defaulted value so the caller
+// Typed HTTP wrappers for /api/blackboard/*, on `utils/api.ts` (failures are logged to the rail there):
+// every function catches its own failure and returns a defaulted value so the caller
 // can render "no entries" / "not found" without a try/catch of its own. Backend contract is in
 // api/src/blackboard_api.jl and the plan is docs/todo/BIDIR_CONTEXT_PLAN.md → Part 4.
 
 import { parseAuthorStamp, type AuthorStamp } from './authorStamp'
+import { getJson, postJson, tryApi } from './api'
 
 /** PROJECT_MEMORY_PLAN Decision 3 — `status ∈ (open | resolved | parked)` on every entry, missing
  *  backfills as "open" server-side; kept as a literal union so a bad enum value gets caught at compile
@@ -237,12 +238,9 @@ export async function listBlackboardEntries(
   projectUid: string, apiBase = '',
 ): Promise<BlackboardEntrySummary[]> {
   if (!projectUid) return []
-  try {
-    const res = await fetch(`${apiBase}/api/blackboard?projectUid=${encodeURIComponent(projectUid)}`)
-    if (!res.ok) return []
-    const json = await res.json() as ListResp
-    return (json.entries ?? []).map(parseSummary).filter((e): e is BlackboardEntrySummary => e !== null)
-  } catch { return [] }
+  const r = await tryApi(getJson<ListResp>(`${apiBase}/api/blackboard`, { query: { projectUid } }))
+  if (!r.ok) return []
+  return (r.data?.entries ?? []).map(parseSummary).filter((e): e is BlackboardEntrySummary => e !== null)
 }
 
 /** GET /api/blackboard/entry — pass `version` to read a historical snapshot; leave off for LIVE. */
@@ -250,28 +248,17 @@ export async function getBlackboardEntry(
   projectUid: string, entryId: string, version?: number, apiBase = '',
 ): Promise<BlackboardEntry | null> {
   if (!projectUid || !entryId) return null
-  try {
-    let url = `${apiBase}/api/blackboard/entry?projectUid=${encodeURIComponent(projectUid)}`
-            + `&entryId=${encodeURIComponent(entryId)}`
-    if (typeof version === 'number') url += `&version=${version}`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const json = await res.json() as EntryResp
-    return parseEntry(json.entry)
-  } catch { return null }
+  const r = await tryApi(getJson<EntryResp>(`${apiBase}/api/blackboard/entry`, {
+    query: { projectUid, entryId, version: typeof version === 'number' ? version : undefined },
+  }))
+  return r.ok ? parseEntry(r.data?.entry) : null
 }
 
-/** POST a JSON body; the parsed reply, or null on a network error or non-2xx. Shared with `claimApi.ts`. */
-export async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) return null
-    return await res.json() as Record<string, unknown>
-  } catch { return null }
+/** POST a JSON body; the parsed reply, or null on a network error or non-2xx (which `utils/api.ts`
+ *  has already logged to the rail, with the server's message). Shared with `claimApi.ts`. */
+export async function postJsonOrNull(url: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  const r = await tryApi(postJson<Record<string, unknown>>(url, body))
+  return r.ok ? r.data : null
 }
 
 /** POST /api/blackboard/create — returns the new entryId, or '' on failure. `kiwiRefs` is the
@@ -286,7 +273,7 @@ export async function createBlackboardEntry(
   if (opts?.kiwiRefs && Object.keys(opts.kiwiRefs).length > 0) body.kiwiRefs = opts.kiwiRefs
   // `kiwi:<turnId>[:claim:<n>]` — the server returns the entry this turn/claim already made, if any.
   if (opts?.sourceKey) body.sourceKey = opts.sourceKey
-  const r = await postJson(`${apiBase}/api/blackboard/create`, body)
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/create`, body)
   return r && typeof r.entryId === 'string' ? r.entryId : ''
 }
 
@@ -297,7 +284,7 @@ export async function reviseBlackboardEntry(
 ): Promise<number> {
   const body: Record<string, unknown> = { projectUid, entryId, content }
   if (attachments !== undefined) body.attachments = attachments
-  const r = await postJson(`${apiBase}/api/blackboard/revise`, body)
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/revise`, body)
   return r && typeof r.version === 'number' ? r.version : 0
 }
 
@@ -305,7 +292,7 @@ export async function reviseBlackboardEntry(
 export async function restoreBlackboardEntry(
   projectUid: string, entryId: string, version: number, apiBase = '',
 ): Promise<number> {
-  const r = await postJson(`${apiBase}/api/blackboard/restore`, { projectUid, entryId, version })
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/restore`, { projectUid, entryId, version })
   return r && typeof r.version === 'number' ? r.version : 0
 }
 
@@ -313,7 +300,7 @@ export async function restoreBlackboardEntry(
 export async function pruneBlackboardEntry(
   projectUid: string, entryId: string, keep: number, apiBase = '',
 ): Promise<number> {
-  const r = await postJson(`${apiBase}/api/blackboard/prune`, { projectUid, entryId, keep })
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/prune`, { projectUid, entryId, keep })
   return r && typeof r.pruned === 'number' ? r.pruned : 0
 }
 
@@ -321,7 +308,7 @@ export async function pruneBlackboardEntry(
 export async function deleteBlackboardEntry(
   projectUid: string, entryId: string, apiBase = '',
 ): Promise<boolean> {
-  const r = await postJson(`${apiBase}/api/blackboard/delete`, { projectUid, entryId })
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/delete`, { projectUid, entryId })
   return r?.deleted === true
 }
 
@@ -331,7 +318,7 @@ export async function deleteBlackboardEntry(
 export async function setBlackboardStatus(
   projectUid: string, entryId: string, status: BlackboardStatus, apiBase = '',
 ): Promise<BlackboardStatus | null> {
-  const r = await postJson(`${apiBase}/api/blackboard/status`, { projectUid, entryId, status })
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/status`, { projectUid, entryId, status })
   return r && typeof r.status === 'string' ? parseStatus(r.status) : null
 }
 
@@ -341,7 +328,7 @@ export async function setBlackboardStatus(
 export async function setBlackboardOutcome(
   projectUid: string, entryId: string, verdict: BlackboardVerdict, note: string, apiBase = '',
 ): Promise<BlackboardOutcome | null> {
-  const r = await postJson(`${apiBase}/api/blackboard/outcome`,
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/outcome`,
     { projectUid, entryId, verdict, note })
   return r ? (parseOutcome(r.outcome) ?? null) : null
 }
@@ -354,7 +341,7 @@ export async function setSectionOutcome(
   projectUid: string, entryId: string, sectionId: string, verdict: SectionVerdict | '', note: string,
   cause?: SectionCause, apiBase = '',
 ): Promise<boolean> {
-  const r = await postJson(`${apiBase}/api/blackboard/section-outcome`,
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/section-outcome`,
     { projectUid, entryId, sectionId, verdict, note, ...(cause ? { cause } : {}) })
   return r?.ok === true
 }
@@ -366,7 +353,7 @@ export async function setBlackboardKnowledge(
   projectUid: string, entryId: string, knowledge: boolean,
   from?: { entryId: string; sectionId: string }, apiBase = '',
 ): Promise<boolean> {
-  const r = await postJson(`${apiBase}/api/blackboard/knowledge`,
+  const r = await postJsonOrNull(`${apiBase}/api/blackboard/knowledge`,
     { projectUid, entryId, knowledge, ...(from ? { from } : {}) })
   return r?.ok === true
 }

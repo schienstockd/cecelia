@@ -17,17 +17,17 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`Track`",
-        "rank": -3,
-        "detail": "defined in tasks (tier 6), called from gating (tier 4), qc+checks (tier 4), tracking+spatial (tier 4)",
+        "subject": "`active_profile_name`",
+        "rank": -4,
+        "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7), task framework (tier 5)",
         "where": [
         ]
     },
     {
         "kind": "julia-upward",
-        "subject": "`active_profile_name`",
+        "subject": "`Track`",
         "rank": -3,
-        "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7)",
+        "detail": "defined in tasks (tier 6), called from gating (tier 4), qc+checks (tier 4), tracking+spatial (tier 4)",
         "where": [
         ]
     },

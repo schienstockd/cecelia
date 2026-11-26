@@ -189,6 +189,10 @@ function _history_inputs(params::Dict{String,Any}, leaves)::String
     join(parts, "&")
 end
 
+# A step's sibling keys, one per image's run: two versions of a task are a sweep when ANY image ran
+# them on the same inputs, not only the newest image (it may have read other populations)
+_history_sibling_keys(fn, runs, leaves) = Set{Tuple{String,String}}((fn, _history_inputs(p, leaves)) for p in runs)
+
 # Every (param key, string) pair inside a run's params, nested groups included (cellpose `models.1.model`).
 function _keyed_strings(params::AbstractDict, key::String = "")::Vector{Tuple{String,String}}
     out = Tuple{String,String}[]
@@ -357,8 +361,8 @@ their models. Returns, all plain JSON:
                   is a real fork (it writes a label set, or runs per population), else the versions
                   are alternatives — keep one; `siblingRead` = another version of this task feeds a
                   later step, so this one was a try the exemplars moved past; `inputs` = the
-                  input names and populations it read (display, `_history_inputs_read`), `inputsKey` = what it read (`_history_inputs`, the
-                  same identity `siblingRead` uses) — alternatives are versions on the same inputs
+                  input names and populations it read (display, `_history_inputs_read`), `inputsKey` = what the newest run read (`_history_inputs`;
+                  `siblingRead` checks every image's run) — alternatives are versions on the same inputs
 - `conflicts`   — `[{nodeId, param, values: {uid => value}}]`: exemplars disagree; the template holds
                   the latest value until the user picks
 - `notReplayed` — `[{fn, imageUid, why}]`; `reusedModels` — `[{fn, model}]`; `gateSteps` — node ids
@@ -413,8 +417,8 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     # exemplars moved past: cluster read HMM movement_3, so movement_2/4/5/6 on those tracks are left
     # out by default — an HMM on other populations is not a sibling
     finals = [s for s in steps if !any(e -> e[1] == s.id, edges)]
-    sibling(s) = (s.fn, _history_inputs(s.params, leaves_of(s.fn)))
-    read_sweeps = Set(sibling(s) for s in steps if any(e -> e[1] == s.id, edges))
+    sibling(s) = _history_sibling_keys(s.fn, reads[s.id], leaves_of(s.fn))
+    read_sweeps = union(Set{Tuple{String,String}}(), (sibling(s) for s in steps if any(e -> e[1] == s.id, edges))...)
     kept_finals = Set(isnothing(keep) ? [s.id for s in finals] : String.(keep))
     keep_ids = Set{String}()
     stack = [s.id for s in finals if s.id in kept_finals]
@@ -479,9 +483,9 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
                                             "detail" => _history_detail(s, leaves_of(s.fn)),
                                             "multi" => _history_forks(s, leaves_of(s.fn)), "at" => s.at,
                                             "imageUids" => s.image_uids, "kept" => s.id in kept_finals,
-                                            "siblingRead" => sibling(s) in read_sweeps,
+                                            "siblingRead" => !isdisjoint(sibling(s), read_sweeps),
                                             "inputs" => _history_inputs_read(s.params, leaves_of(s.fn)),
-                                            "inputsKey" => last(sibling(s)))
+                                            "inputsKey" => _history_inputs(s.params, leaves_of(s.fn)))
                            for s in finals],
         "conflicts"    => [c for c in conflicts if c["nodeId"] in keep_ids],
         "notReplayed"  => not_replayed,

@@ -38,6 +38,7 @@ const _settled = new Map<string, PeekResult | null>()
 // Bumps whenever `_settled` gains an entry, so a Vue computed watching this counter re-runs and
 // the advisor picks up a lazy peek that landed after the wizard was already mounted.
 import { ref } from 'vue'
+import { postJson } from '../utils/api'
 const _rev = ref(0)
 
 /** True if `oriPath` has one of the fast-reader extensions (batch-primed on set-add). Everything
@@ -54,14 +55,8 @@ export function peekPyramid(oriPath: string): Promise<PeekResult | null> {
   if (cached) return cached
   const req = (async () => {
     try {
-      const r = await fetch('/api/import/peek-pyramid', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ paths: [oriPath] }),
-      })
-      if (!r.ok) { _settled.set(oriPath, null); _rev.value++; return null }
-      const body = await r.json() as { results?: PeekResult[] }
-      const result = body.results?.[0] ?? null
+      const body = await postJson<{ results?: PeekResult[] }>('/api/import/peek-pyramid', { paths: [oriPath] })
+      const result = body?.results?.[0] ?? null
       _settled.set(oriPath, result); _rev.value++
       return result
     } catch {
@@ -97,15 +92,9 @@ export async function primePyramidPeekBatch(paths: string[]): Promise<void> {
     return r
   })))
   try {
-    const r = await fetch('/api/import/peek-pyramid', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ paths: fresh }),
-    })
-    if (!r.ok) { resolve!(fresh.map(() => null)); return }
-    const body = await r.json() as { results?: PeekResult[] }
+    const body = await postJson<{ results?: PeekResult[] }>('/api/import/peek-pyramid', { paths: fresh })
     const byPath = new Map<string, PeekResult>()
-    for (const res of body.results ?? []) {
+    for (const res of body?.results ?? []) {
       if (res.path) byPath.set(res.path, res)
     }
     resolve!(fresh.map(p => byPath.get(p) ?? null))

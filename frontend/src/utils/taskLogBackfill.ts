@@ -16,6 +16,8 @@
 // Fetched LAZILY, when a row's log is first opened — twenty adopted rows must not fire twenty requests on
 // connect for output nobody has asked to see.
 
+import { getJson, tryApi } from './api'
+
 /** Text → the store's line array. Trailing blank from the file's final newline is dropped, blanks inside kept. */
 export function logLines(content: string): string[] {
   if (!content) return []
@@ -49,19 +51,15 @@ export interface BackfillTarget {
  */
 export async function fetchLogBackfill(t: BackfillTarget): Promise<string[]> {
   if (!t.projectUid || !t.imageUid || !t.funName || !t.startedAt) return []
-  const qs = new URLSearchParams({
+  const query = {
     projectUid: t.projectUid,
     imageUid:   t.imageUid,
     fun:        t.funName,
     since:      t.startedAt.toISOString().replace(/(\.\d{3})Z$/, '$1Z'),
-  })
-  if (t.until) qs.set('until', t.until.toISOString().replace(/(\.\d{3})Z$/, '$1Z'))
-  try {
-    const r = await fetch(`/api/images/tasklog?${qs.toString()}`)
-    if (!r.ok) return []
-    const d = await r.json() as { exists?: boolean; content?: string }
-    return d.exists ? logLines(String(d.content ?? '')) : []
-  } catch {
-    return []
+    until:      t.until?.toISOString().replace(/(\.\d{3})Z$/, '$1Z'),
   }
+  // quiet on 404: an older backend without the route is "nothing to add", not a failure
+  const r = await tryApi(getJson<{ exists?: boolean; content?: string } | null>(
+    '/api/images/tasklog', { query, quiet: [404] }))
+  return r.ok && r.data?.exists ? logLines(String(r.data.content ?? '')) : []
 }

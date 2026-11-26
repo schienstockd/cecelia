@@ -31,6 +31,7 @@ import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { popRowLabels } from '../../utils/popName'
+import { postJson, tryApi } from '../../utils/api'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -90,9 +91,9 @@ async function load() {
     }
     if (props.setUid) { body.setUid = props.setUid; if (props.imageUids.length) body.imageUids = props.imageUids }
     else if (props.imageUids[0]) body.imageUid = props.imageUids[0]
-    const res = await fetch('/api/plot_data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (!res.ok) { err.value = (await res.json()).error ?? res.statusText; render(); return }
-    const r = await res.json() as { categories?: string[]; series?: { pop?: string; value_name?: string; group?: string; values?: number[] }[] }
+    const res = await tryApi(postJson<{ categories?: string[]; series?: { pop?: string; value_name?: string; group?: string; values?: number[] }[] }>('/api/plot_data', body))
+    if (!res.ok) { err.value = res.error; render(); return }
+    const r = res.data ?? {}
     cats.value = r.categories ?? []
     // pop series come back as "value_name + path"; match to the shown pop for a clean label.
     // two pops sharing a name would merge into one group: name each by as much path as tells it apart

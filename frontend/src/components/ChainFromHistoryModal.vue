@@ -19,6 +19,7 @@ import { suggestUrl, conflictOptions, applyChoices, groupSteps, defaultKeep, gro
 import { downloadText } from '../plots/export'
 import type { ChainTemplate } from '../tasks/types'
 import { formatWhen } from '../utils/formatWhen'
+import { getJson } from '../utils/api'
 
 const props = defineProps<{ projectUid: string; setUid?: string; chainNames: string[] }>()
 const emit = defineEmits<{ close: []; open: [p: { name: string; template: ChainTemplate; valid: boolean; error: string }] }>()
@@ -48,11 +49,8 @@ async function suggest() {
   if (!exemplars.value.length) return
   loading.value = true; failed.value = ''
   try {
-    const res = await fetch(suggestUrl(props.projectUid, exemplars.value,
-                                       { keep: keep.value, retrain: !reuse.value }))
-    const body = await res.json()
-    if (!res.ok) throw new Error(String(body?.error ?? `HTTP ${res.status}`))
-    suggestion.value = body as HistorySuggestion
+    suggestion.value = await getJson<HistorySuggestion>(suggestUrl(props.projectUid, exemplars.value,
+                                                                   { keep: keep.value, retrain: !reuse.value }))
     choices.value = {}
     // first look: keep one version of each step, all versions of a fork — then rebuild towards that
     if (keep.value === undefined) {
@@ -72,11 +70,9 @@ async function exportCsv() {
   if (!exemplars.value.length) return
   exporting.value = true; failed.value = ''
   try {
-    const res = await fetch(historyParamsUrl(props.projectUid, exemplars.value))
-    const body = await res.json()
-    if (!res.ok) throw new Error(String(body?.error ?? `HTTP ${res.status}`))
+    const body = await getJson<{ rows: HistoryParamsRow[] }>(historyParamsUrl(props.projectUid, exemplars.value))
     const set = project.sets.find(s => s.uid === setUid.value)?.name ?? 'set'
-    downloadText(`${set}_parameters.csv`, historyParamsCsv(body.rows as HistoryParamsRow[]), 'text/csv')
+    downloadText(`${set}_parameters.csv`, historyParamsCsv(body.rows), 'text/csv')
   } catch (e) {
     failed.value = String(e instanceof Error ? e.message : e)
   } finally {

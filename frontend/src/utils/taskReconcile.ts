@@ -23,6 +23,7 @@
 // add a third asker.
 
 import { isTerminalStatus } from '../lib/taskStatus'
+import { getJson, tryApi } from './api'
 /** One row of `GET /api/tasks/recent` (snake_case, like `/api/tasks`). */
 export interface RecentTaskOutcome {
   id: string
@@ -137,14 +138,9 @@ export function recoveredTaskFrames(
  * the ws message path.
  */
 export async function fetchRecentOutcomes(since = ''): Promise<RecentTaskOutcome[]> {
-  try {
-    const r = await fetch(`/api/tasks/recent?since=${encodeURIComponent(since)}`)
-    if (!r.ok) return []
-    const rows = await r.json()
-    return Array.isArray(rows) ? rows as RecentTaskOutcome[] : []
-  } catch {
-    return []
-  }
+  // quiet: polled — a restarting backend must not flood the rail
+  const r = await tryApi(getJson<unknown>('/api/tasks/recent', { query: { since }, quiet: true }))
+  return r.ok && Array.isArray(r.data) ? r.data as RecentTaskOutcome[] : []
 }
 
 /** Newest `finished_at` across `rows`, or `fallback` when none is newer. */
