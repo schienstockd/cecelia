@@ -62,7 +62,7 @@ import { createBrickVolumeRenderer, type BrickSource } from '../lib/webgpu/brick
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
-  tileGridDims, tileMaskSourceId, retryWhenMaskMoved, channelRuns, splitChannelSlab,
+  tileGridDims, tileMaskSourceId, retryWhenMaskMoved, channelRuns, splitChannelSlab, planeNeedsTiling,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -1530,28 +1530,13 @@ const renderNX = computed(() =>
   meta.value?.levels?.[slabLevel.value]?.nX ?? meta.value?.nX ?? 0)
 const renderNY = computed(() =>
   meta.value?.levels?.[slabLevel.value]?.nY ?? meta.value?.nY ?? 0)
-/**
- * The tile pipeline turns on for the case it exists to serve — a plane whose L0 whole-fetch doesn't
- * fit in a comfortable single slab (VIEWER_TILES_PLAN.md → Phase C). Below the threshold, the volume
- * renderer's whole-plane path already works: a channel is a few MB, the plan movie plays, and the tile
- * atlas would add pipeline plumbing for no visible win. Above it — the `f8gzA2`-shape whole slide — a
- * whole plane cannot fit period, and the tile pipeline is the only way to interact.
- *
- * Timecourse whole-slide is a case we do not have (no store in the dev projects has both nT > 1 and a
- * plane over the threshold), so the tile path is gated on `nT ≤ 1` — the eviction ranker does not yet
- * penalise cross-timepoint distance, so caching tiles from several timepoints would fight for slots
- * without ordering them. Ship the whole-slide case first; if a timecourse tilescan turns up, add `t` to
- * the key.
- *
- * Threshold: 200 MB per channel-plane, chosen against Chromium/Dawn's 256 MB `maxBufferSize` — a whole
- * plane above this genuinely CANNOT be uploaded in one texture write. Not tuned.
- */
-const PLANE_TILE_THRESHOLD_BYTES = 200e6
+/** Whether the 2D plane goes through the tile pipeline — `planeNeedsTiling` holds the two triggers
+ *  (bytes, and a plane wider than the GPU's 3D-texture limit). The limit comes from
+ *  `stableAdapterReport`, which the GPU probe seeds before the first renderer is built, so the pick does
+ *  not flip once the adapter lands; `undefined` before that falls back to the WebGPU default. */
 const needsTiling = computed(() => {
   const m = meta.value
-  if (!m) return false
-  const nch = Math.min(m.nC, MAX_CHANNELS)
-  return m.nX * m.nY * m.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
+  return m ? planeNeedsTiling(m, stableAdapterReport.value?.maxTextureDimension3D) : false
 })
 const useTiles = computed(() =>
   mode.value === 'plane' && needsTiling.value)

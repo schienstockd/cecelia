@@ -22,6 +22,7 @@ import { useNowTick } from '../composables/useNowTick'
 // `taskElapsed` / `canRerunTask` are still the canonical helpers — they are just called by the row
 // mapper now (utils/taskRows.ts) rather than here, so both lists get the same answer.
 import CcProgressBar from '../components/CcProgressBar.vue'
+import { useQueueReasons } from '../composables/useQueueReasons'
 
 const props = withDefaults(defineProps<{
   module: string
@@ -127,6 +128,8 @@ async function copyLog(t: TaskEntry) {
 // shared 1s clock, so a running task's elapsed advances without a frame arriving. Declared ABOVE
 // `rows`, which reads it — see utils/setupOrder.ts for why order matters.
 const now = useNowTick()
+// what a queued row is waiting behind — possibly another profile's or project's run (utils/queueReason.ts)
+const reasonFor = useQueueReasons(items, now)
 
 // The table reads row FIELDS (and sorts by them), so entries are flattened by the shared mapper — the
 // same one the /tasks manager uses, which is what keeps the two lists from drifting again. The list is
@@ -136,6 +139,7 @@ const rows = computed(() => taskRows(items.value, {
   thisProjectOnly:   true,
   nameOfProject:     () => undefined,
   now:               now.value,
+  queueReason:       reasonFor,
 }))
 // In script, not inline: vue-tsc 3.3.12+ mis-unwraps an imported const inside a template arrow
 // function (`TASK_STATUS.value`, vuejs/language-tools#6305).
@@ -186,7 +190,7 @@ const TL_COLUMNS: SelectionColumn[] = [
         <template #cell-status="{ row: r }">
           <i :class="['pi', TASK_STATUS[r.shownStatus].icon, 'task-icon']"
             :style="{ color: TASK_STATUS[r.shownStatus].color }"
-            v-tooltip.left="r.hpcTip || TIP[r.shownStatus]" />
+            v-tooltip.left="r.hpcTip || r.queuedTip || TIP[r.shownStatus]" />
         </template>
 
         <!-- The original TWO-ROW entry: label on top, image beneath, the running bar under both. One
@@ -209,6 +213,8 @@ const TL_COLUMNS: SelectionColumn[] = [
             <span class="tl-sub cc-muted cc-fs-2xs" v-tooltip.right="`UID: ${r.imageUid}`">
               <span class="cc-uid task-uid">{{ r.imageUid }}</span>{{ r.image }}
             </span>
+            <span v-if="r.queuedReason" class="tl-sub cc-muted cc-fs-2xs"
+              v-tooltip.right="r.queuedTip"><i class="pi pi-hourglass" />{{ r.queuedReason }}</span>
             <CcProgressBar v-if="r.hasProgress" :value="r.progress"
               :aria-label="`${r.task} progress`" />
           </div>

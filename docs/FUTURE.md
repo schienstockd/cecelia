@@ -309,23 +309,6 @@ the kind of surface the hardening audit exists to catch.
 **Reference.** [`docs/SEGMENTATION.md`](SEGMENTATION.md) → extension points;
 [`docs/todo/HARDENING_AUDIT_PLAN.md`](todo/HARDENING_AUDIT_PLAN.md).
 
-## A shared frontend API client
-
-**What.** One typed module (an `api.ts` under `frontend/src/utils/`: JSON get/post, error handling, the API base) that every
-frontend call to the backend goes through, then a rule that counts direct `fetch(` calls and may only
-go down — the same ratchet as the coherence gaps.
-
-**Why deferred — decided 2026-11-26.** 126 frontend files call the backend themselves; only
-`utils/profileApi.ts` wraps a slice. Moving them is a large refactor with no bug behind it, and a rule
-without a canonical client would have nothing to point new code at.
-
-**Revisit when** a cross-cutting change to every call is needed — auth headers, uniform error
-reporting, retries, a request log — and would otherwise touch more than a handful of files. Build the
-client then, use it for that change, and add the ratchet in the same PR.
-
-**Reference.** [`docs/architecture/README.md`](architecture/README.md) → *Not here yet*;
-[`docs/architecture/vue/layers.md`](architecture/vue/layers.md) (where HTTP is spoken).
-
 ## Adding entries
 
 Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a

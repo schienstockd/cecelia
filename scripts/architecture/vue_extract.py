@@ -4,7 +4,8 @@
 
 Views:
   layers.md   — the frontend's directories as groups and the imports between them; where HTTP is
-                spoken (files calling `fetch(` / `new WebSocket`).
+                spoken (files calling the backend — a bare `fetch(` or a `utils/api.ts` shape — or
+                opening a `WebSocket`).
   stores.md   — the Pinia stores: which stores lean on which, and who reads each one.
   viewer.md   — the viewer (lib/webgpu + utils/viewer + components/viewerWindow) and every import
                 it makes into the rest of the app.
@@ -108,7 +109,9 @@ def main() -> int:
                 edges[r].add(t)
                 if m.group(1):
                     static_edges[r].add(t)
-        if re.search(r"\bfetch\(|new WebSocket\(|new EventSource\(", code):
+        # a bare fetch or any `utils/api.ts` shape — the same list as its `BACKEND_CALL` guard regex
+        if re.search(r"\b(?:fetch|apiFetch|getJson|postJson|postJsonOrNull|getBuffer|getText|svcPost)\s*(?:<[^>()]*>)?\s*\("
+                     r"|new WebSocket\(|new EventSource\(", code):
             http[g].append(r)
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -147,8 +150,9 @@ arrows show where the code is. The strongest {MAX_EDGES} arrows are drawn; the f
     L.append("</details>\n")
     nhttp = sum(len(v) for v in http.values())
     L.append("## Where the backend is called\n")
-    L.append(f"Files that call `fetch(`, open a `WebSocket` or an `EventSource`: **{nhttp}** of {len(files)}. "
-             "There is no single API client — each of these speaks HTTP itself.\n")
+    L.append(f"Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` "
+             f"or an `EventSource`: **{nhttp}** of {len(files)}. HTTP calls go through `utils/api.ts` "
+             "(status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.\n")
     L.append("| Group | Files |\n|---|---|")
     for g, fs in sorted(http.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         L.append(f"| {g} | {len(fs)} |")

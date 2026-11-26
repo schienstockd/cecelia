@@ -51,6 +51,28 @@ _hmm_run_gone(props) = !("live.cell.hmm.state.mv" in col_names(label_props(props
     end
 end
 
+# Deleting one of two track sets rebuilds the track measures for the survivor. That rewrite is a
+# track-measures run: unlogged, the record dated the table to the run before the delete.
+@testset "deleting one of two track sets logs the track-measures rebuild as a run" begin
+    if !_have_kdieem_b()
+        @test_skip "KDIeEm B fixture missing"
+    else
+        img = _kdieem_b_img(); props = img_label_props_path(img, "B")
+        _stamp_sources!(props, t -> isodd(t) ? "popA" : "popB")
+        fun = "tracking.track_measures"
+        append_run_log!(img, fun, "B", "done", Dict{String,Any}("valueName" => "B", "dims" => "auto"))
+        n_before = count(e -> Cecelia.run_log_row(e).fn == fun, Cecelia.read_run_log_history(img))
+        @test delete_analysis_run!(img, "tracks", "popA", "B")
+        srcs = values(Cecelia.label_track_sources(img, "B"))
+        @test "popB" in srcs && !("popA" in srcs)
+        rows = [Cecelia.run_log_row(e) for e in Cecelia.read_run_log_history(img)]
+        tm = filter(r -> r.fn == fun, rows)
+        @test length(tm) == n_before + 1
+        @test last(tm).status == "done" && last(tm).params["valueName"] == "B"
+        @test last(tm).params["dims"] == "auto"
+    end
+end
+
 @testset "tracking QC counts only the run's own tracks" begin
     if !_have_kdieem_b()
         @test_skip "KDIeEm B fixture missing"
