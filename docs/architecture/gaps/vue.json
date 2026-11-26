@@ -1,0 +1,10 @@
+[
+ {
+  "kind": "store-cycle",
+  "subject": "animation ↔ projectMeta",
+  "where": [
+   "frontend/src/stores/animation.ts",
+   "frontend/src/stores/projectMeta.ts"
+  ]
+ }
+]
