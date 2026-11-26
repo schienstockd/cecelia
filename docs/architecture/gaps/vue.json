@@ -1,0 +1,48 @@
+[
+ {
+  "kind": "viewer-store",
+  "subject": "`linkedSelection`",
+  "rank": -1,
+  "detail": "imported by 1 viewer file",
+  "where": [
+   "frontend/src/utils/viewer/showTracksInViewer.ts"
+  ]
+ },
+ {
+  "kind": "viewer-store",
+  "subject": "`projectMeta`",
+  "rank": -1,
+  "detail": "imported by 1 viewer file",
+  "where": [
+   "frontend/src/utils/viewer/showTracksInViewer.ts"
+  ]
+ },
+ {
+  "kind": "viewer-store",
+  "subject": "`project`",
+  "rank": -1,
+  "detail": "imported by 1 viewer file",
+  "where": [
+   "frontend/src/utils/viewer/showTracksInViewer.ts"
+  ]
+ },
+ {
+  "kind": "viewer-store",
+  "subject": "`settings`",
+  "rank": -3,
+  "detail": "imported by 3 viewer files",
+  "where": [
+   "frontend/src/utils/viewer/drawSpec.ts",
+   "frontend/src/utils/viewer/showTracksInViewer.ts",
+   "frontend/src/utils/viewer/trackSelectionFromViewer.ts"
+  ]
+ },
+ {
+  "kind": "store-cycle",
+  "subject": "animation ↔ projectMeta",
+  "where": [
+   "frontend/src/stores/animation.ts",
+   "frontend/src/stores/projectMeta.ts"
+  ]
+ }
+]

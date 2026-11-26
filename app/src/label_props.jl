@@ -423,6 +423,28 @@ function canonical_channel_columns(cols, chans; shadow=())::Vector{String}
     out
 end
 
+# Morphology/intensity `var` columns are quantitative by construction — an integer-valued one
+# (`euler_number`, voxel-count `area`) is STILL numeric. The categorical heuristic (`_is_categorical_col`)
+# is only for `obs` columns (hmm.state, clusters, generation — written as anndata categoricals). So the
+# measure type of a var column is always numeric; only an obs measure defers to detection. This is the
+# structural rule that replaces the old R `config.yml parameters.labelStats` per-column map.
+#
+# A channel measure arrives by NAME (`_named_measure`), so the set carries each intensity column's name
+# beside its raw form — otherwise a named channel would fall through to the categorical heuristic, and a
+# marker whose cells sit on a few integer levels would plot as category fractions.
+function _var_measure_set(img::CciaImage, value_name)::Set{String}
+    vn = resolve_value_name(img, value_name)
+    try
+        raw = String.(col_names(label_props(img; value_name=vn); data_type=:vars))
+        Set(vcat(raw, canonical_channel_columns(raw, channel_names(img; value_name=vn); shadow=raw)))
+    catch
+        Set{String}()
+    end
+end
+
+_var_measure_set(imgs::AbstractVector{<:CciaImage}, value_name)::Set{String} =
+    isempty(imgs) ? Set{String}() : _var_measure_set(first(imgs), value_name)
+
 """
     resolve_channel_columns(cols, var_names, chans) -> (; cols, problems)
 

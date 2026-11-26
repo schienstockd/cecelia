@@ -281,7 +281,7 @@ end
         "/api/viewer/plots",      # bidir PR #8 — live plot registry (list_open_plots MCP); POSTs at register/deregister below
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
-        "/api/gating/density", "/api/gating/summary", "/api/gating/membership",
+        "/api/gating/summary", "/api/gating/membership",
         "/api/gating/plotdata", "/api/gating/plotmeta",
         "/api/gating/pop-tree", "/api/gating/stats", "/api/gating/track-classes", "/api/rois",
         "/api/gating/plot-image", "/api/gating/cells-image",   # gating as pictures (gating_views_api.jl)
@@ -437,7 +437,7 @@ end
         "/api/preview/start", "/api/preview/stop",
         "/api/projects/animations", "/api/projects/boards",
         "/api/projects/canvases", "/api/projects/create",
-        "/api/projects/delete", "/api/projects/list",
+        "/api/projects/delete",
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/claim/state", "/api/claim/check", "/api/claim/review", "/api/acqcheck/plan", "/api/acqcheck/review", "/api/repl",
         "/api/repl/config", "/api/sets/create",
@@ -512,7 +512,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 135 && length(POST_ROUTES) == 208
+    @test length(GET_ROUTES) == 134 && length(POST_ROUTES) == 207
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

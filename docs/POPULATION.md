@@ -1166,7 +1166,7 @@ client-side; the server persistence was already correct.
 - **Routes** (synchronous, in-process): `GET /api/gating/pop-tree`; `POST/PUT/DELETE
   /api/gating/pop`; `POST /api/gating/pop/rename`; `GET /api/gating/plotdata`
   (transformed `Float32`, binary + JSON sidecar with extents + axis ticks);
-  `GET /api/gating/density` (2D-histogram fallback); `GET /api/gating/summary` (quantiles + 1D counts
+  `GET /api/gating/summary` (quantiles + 1D counts
   + the joint grid — `axis_summary`/`grid_summary` in `gating/density.jl`); `GET /api/gating/stats`;
   `GET /api/gating/membership` (label IDs; **binary `Int32`** for large pops).
 - **WS**: `gating:pop-tree` broadcast after any mutation (reuses `broadcast_ws`).
@@ -1305,8 +1305,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   separate, more heavily blurred `DENSITY_GRID` (128²) at `CONTOUR_LEVELS`
   (`[0.05, 0.12, 0.24, 0.42, 0.65, 0.88]`) — d3-contour gives clean connected rings where the earlier
   marching-squares pass gave broken ones. Dots and contours deliberately use different grids/blurs
-  (`DOT_*` vs `CONTOUR_*`) because the dot pass wants detail and the ring pass wants smoothness. The
-  `/api/gating/density` endpoint exists but this path doesn't use it.
+  (`DOT_*` vs `CONTOUR_*`) because the dot pass wants detail and the ring pass wants smoothness.
 - **Population overlay reuses `plotdata`, no new endpoint.** For each highlighted pop, the panel
   GETs `plotdata?pop=<path>` — Julia still owns membership; the client only colours the returned
   subset (dots in `points` mode, a contour in `contour` mode). Heavy for very large/low-
