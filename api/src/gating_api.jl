@@ -293,7 +293,7 @@ function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{Stri
                   map_hook = _with_pick_hook(img, pop_type, map_hook))
 end
 
-# transformed Float32 vectors for plotdata/density/plotmeta
+# transformed Float32 vectors for plotdata/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing, map_hook=nothing)
     xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version, map_hook)
     Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv))
@@ -1355,24 +1355,6 @@ function api_plots_pop_positions(req::HTTP.Request)
     200, collect(reinterpret(UInt8, buf))
 end
 
-# ── GET /api/gating/density → binary Float32 grid (bins×bins, row-major) ──────
-function api_gating_density(req::HTTP.Request)
-    q = HTTP.queryparams(HTTP.URI(req.target))
-    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
-    err === nothing || return err
-    vn = _resolve_vn(img, get(q, "valueName", ""))
-    x = get(q, "x", ""); y = get(q, "y", "")
-    (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
-    bins = parse(Int, get(q, "bins", "256"))
-    pop = get(q, "pop", ROOT)
-    xt, yt = _auto_axes(q, img, vn, _read_pop_type(q, img, vn, pop), x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
-                        labels_version = _labels_version_pin(q))
-    xv, yv = _plot_xy(img, vn, _read_pop_type(q, img, vn, pop), x, y, pop, xt, yt;
-                       labels_version = _labels_version_pin(q))
-    d = density_2d(xv, yv; bins = bins)
-    200, collect(reinterpret(UInt8, Float32.(vec(d.counts))))
-end
-
 # ── GET /api/gating/summary → the distribution a gate is chosen from (JSON) ───
 # ?projectUid&imageUid&valueName&x&y[&pop&popType&bins&xt…&yt…] → { n, x:{channel, …axis_summary},
 # y:{…}, grid?:grid_summary } over the SAME read as the gate plot (`_plot_xy`), so the numbers
@@ -1386,7 +1368,7 @@ function api_gating_summary(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     bins = clamp(something(tryparse(Int, get(q, "bins", "30")), 30), 5, 80)
-    pin = _labels_version_pin(q)           # the session pin, threaded like plotdata/density
+    pin = _labels_version_pin(q)           # the session pin, threaded like plotdata
     xt, yt = _auto_axes(q, img, vn, pop_type, x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
                         labels_version = pin)
     xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
@@ -1454,6 +1436,7 @@ end
 function api_gating_pop_add(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "name") || return _gerr(400, "name required")
+    haskey(body, "under") && return _gating_pop_add_under(img, vn, pt, body, body["under"])
     # name-uniqueness guard: reject a name already used by a DIFFERENT pop type in this segmentation, so
     # the mixed-type module picker (which resolves a pop by path alone) is never ambiguous.
     _name = String(body["name"])
@@ -1495,6 +1478,41 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         # a cluster population: its ids are one run's, held by no other population of it (unsaved on refusal)
         taken = _cluster_ids_taken(m, path, m.pops[path].filter_values); taken === nothing || return taken
         stamp_cluster_run!(m.pops[path], img, vn)
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
+    end
+end
+
+# The same filter child under several parents at once — the manager's "Add tracked cells" on a
+# multi-selection. `under: [{parent, colour}, …]` in place of `parent` / `colour`. One save, one
+# broadcast, one undo step; any refusal (a taken name, a missing parent) writes nothing. A filter only:
+# a gate is drawn on one parent's plot, and a boolean names its own terms.
+function _gating_pop_add_under(img, vn, pt, body, under)
+    (under isa AbstractVector && !isempty(under) && all(u -> u isa AbstractDict && haskey(u, "parent"), under)) ||
+        return _gerr(400, "under must be a list of {parent, colour}")
+    flt = get(body, "filter", nothing)
+    (flt isa AbstractDict && get(body, "gate", nothing) === nothing && get(body, "boolean", nothing) === nothing) ||
+        return _gerr(400, "under adds a filter population only")
+    name = String(body["name"])
+    for u in under
+        parent = _wstr(u, "parent", ROOT)
+        conflict = pop_name_conflict(img, vn, pop_path(is_root(parent) ? ROOT : parent, name); pop_type = pt)
+        conflict === nothing || return _gerr(400,
+            "A $conflict population named \"$name\" already exists under $parent — choose another name.")
+    end
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
+        try
+            for u in under
+                add_pop!(m, name; parent = _wstr(u, "parent", ROOT), colour = _wstr(u, "colour", "#ffffff"),
+                         show = _wbool(body, "show", true),
+                         filter_measure = get(flt, "measure", nothing), filter_fun = get(flt, "fun", nothing),
+                         filter_values = get(flt, "values", nothing),
+                         filter_default_all = Bool(get(flt, "default_all", false)),
+                         filter_conditions = get(flt, "conditions", nothing))
+            end
+        catch e
+            return _gerr(400, sprint(showerror, e))      # nothing persisted: `m` is discarded
+        end
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end

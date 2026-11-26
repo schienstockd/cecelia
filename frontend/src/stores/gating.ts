@@ -7,7 +7,7 @@ import { useProjectStore } from './project'
 import { useImageMetaRefresh } from '../composables/useImageMetaRefresh'
 import { clusterMeasure } from '../utils/clusterMeasure'
 import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
-import { channelLabel } from '../utils/channelNames'
+import { measureColumnLabel } from '../utils/trackAxis'
 import { popPath } from '../utils/popName'
 import { gateSignatures, changedPopPaths, booleanDeps, statsToFetch } from '../utils/popChanges'
 import { OVERLAY_TICK_KEY, encodeOverlayTick, lookOf, widerScope, writeScope, type OverlayTickScope } from '../utils/viewer/overlayTick'
@@ -179,12 +179,10 @@ export function createGatingStore(initialPopType: string) {
   // resolve a raw column to its display label: intensity columns → channel name by channel index
   // (channelLabel — `nuc_mean_intensity_2` → "nuc_<ch2>"), centroids → "X position"/"Time"
   // (centroidLabel), everything else (morphology, etc.) stays as-is.
+  // (a per-track summary of a cell measure reads "<channel> median" — utils/trackAxis.ts)
   function colLabel(col: string): string {
-    if (channels.value.includes(col)) {
-      const name = channelLabel(col, channelNames.value)
-      if (name !== col) return name
-    }
-    return centroidLabel(col)
+    return measureColumnLabel(col, { channels: channels.value, channelNames: channelNames.value,
+      cellMeasures: cellMeasures.value, trackAggregates: trackAggregates.value }) ?? centroidLabel(col)
   }
 
   // ── Undo / redo (hand-drawn gating only: flow + track) ────────────────────────
@@ -405,10 +403,14 @@ export function createGatingStore(initialPopType: string) {
       filter: { measure: clusterMeasure(popType.value, suffix), fun: 'in', values: [], default_all: false } })
   // user-defined filter population (Decision 15): a compound AND-ed filter on any obs measures, under a
   // chosen parent, for the current popType. The backend mirrors conditions[1] onto the single fields.
+  const newFilter = (conditions: FilterCondition[]) => ({ conditions, measure: conditions[0]?.measure,
+    fun: conditions[0]?.fun, values: conditions[0]?.values, default_all: false })
   const addFilterPop = (name: string, parent: string, colour: string, conditions: FilterCondition[]) =>
-    _post('/api/gating/pop/add', { name, parent, colour,
-      filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun,
-                values: conditions[0]?.values, default_all: false } })
+    _post('/api/gating/pop/add', { name, parent, colour, filter: newFilter(conditions) })
+  // the same filter child under several parents (bulk "Add tracked cells") — one request, one undo step,
+  // all or none; each child takes the colour given with its parent
+  const addFilterPopUnder = (name: string, under: { parent: string; colour: string }[], conditions: FilterCondition[]) =>
+    _post('/api/gating/pop/add', { name, under, filter: newFilter(conditions) })
   // rewrite a filter pop's conditions (edit) — mirror onto single fields as add does.
   const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
     _post('/api/gating/pop/update', { path,
@@ -595,7 +597,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
+    addPop, addClusterPop, addFilterPop, addFilterPopUnder, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
     renamePop, updatePop, setPopsShown, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,

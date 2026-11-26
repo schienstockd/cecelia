@@ -446,7 +446,11 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `categorical` name the *base* cell columns to aggregate into gateable track properties (numeric →
   `.mean/.median/.sum/.qUp/.qLow/.sd`; categorical → per-category frequency `{m}.{cat}`); the common
   case (motility-only gating) needs neither, and an aggregate named in `pop_cols` (`area.mean`,
-  `live.cell.hmm.state.movement.1`) is derived without them (`track_aggregate_measures`). **Numeric vs categorical is auto-detected** from the
+  `live.cell.hmm.state.movement.1`) is derived without them (`track_aggregate_measures`). In the GUI
+  the track gating axes list the motility measures, then every cell measure once (Morphology /
+  Channels); picking one adds a summary select beside it (median by default, also mean, sum, 95th / 5th
+  percentile, SD) and the axis stores `<base>.<summary>` (`utils/trackAxis.ts`, `GatePlotPanel.vue`).
+  **Numeric vs categorical is auto-detected** from the
   decoded type + values (strings like `hmm.transitions="1.3"` and integer code sets like
   `hmm.state∈{1,2,3}` → categorical; continuous floats like `speed=10.12` → numeric); no config map
   (replaces the old R `config.yml` `labelStats`). `categorical`/`numeric` are escape-hatch overrides
@@ -490,7 +494,15 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   a plain pop with no `_tracked` of its own, and names the root's `/_tracked` *All tracks*. Chips and
   legends follow (`popDisplayLabels(…, { tracks: true })` / `pop_display_labels(…; tracks = true)` →
   `OTI`, `gBT`; summary-plot keys via `dimsOf(…, tracks)` in `plots/plot.ts`). Selections stay stored
-  as `…/_tracked` paths. Cell plots keep the `_tracked` leaf: there the two are different cells.
+  as `…/_tracked` paths. On a cell-grain plot the fold applies too: the family switch reads
+  *Tracked*, so a row named `P` there is P's tracked cells, not all of P. Phenotype offers that family
+  on its cell plots (cell properties, proportion over time, population positions) beside Behaviour.
+  The tracked set is chosen by the tracker, so per-cell readouts on it describe the cells it could
+  follow, not the whole gate.
+- **Gating under tracked cells.** `_tracked` is never stored, so nothing can be gated under it. A
+  population's ⋯ menu offers **Add tracked cells** (flow map of a tracked segmentation): an ordinary
+  filter child `tracked`, rule `track_id > 0` — `_tracked`'s rule, so the two hold the same cells — that
+  follows re-tracking and takes gates like any population (`utils/trackedChild.ts`).
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths
@@ -1142,7 +1154,7 @@ client-side; the server persistence was already correct.
 - **Routes** (synchronous, in-process): `GET /api/gating/pop-tree`; `POST/PUT/DELETE
   /api/gating/pop`; `POST /api/gating/pop/rename`; `GET /api/gating/plotdata`
   (transformed `Float32`, binary + JSON sidecar with extents + axis ticks);
-  `GET /api/gating/density` (2D-histogram fallback); `GET /api/gating/summary` (quantiles + 1D counts
+  `GET /api/gating/summary` (quantiles + 1D counts
   + the joint grid — `axis_summary`/`grid_summary` in `gating/density.jl`); `GET /api/gating/stats`;
   `GET /api/gating/membership` (label IDs; **binary `Int32`** for large pops).
 - **WS**: `gating:pop-tree` broadcast after any mutation (reuses `broadcast_ws`).
@@ -1281,8 +1293,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   separate, more heavily blurred `DENSITY_GRID` (128²) at `CONTOUR_LEVELS`
   (`[0.05, 0.12, 0.24, 0.42, 0.65, 0.88]`) — d3-contour gives clean connected rings where the earlier
   marching-squares pass gave broken ones. Dots and contours deliberately use different grids/blurs
-  (`DOT_*` vs `CONTOUR_*`) because the dot pass wants detail and the ring pass wants smoothness. The
-  `/api/gating/density` endpoint exists but this path doesn't use it.
+  (`DOT_*` vs `CONTOUR_*`) because the dot pass wants detail and the ring pass wants smoothness.
 - **Population overlay reuses `plotdata`, no new endpoint.** For each highlighted pop, the panel
   GETs `plotdata?pop=<path>` — Julia still owns membership; the client only colours the returned
   subset (dots in `points` mode, a contour in `contour` mode). Heavy for very large/low-

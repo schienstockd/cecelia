@@ -350,8 +350,10 @@ function _track_group_values(g::TrackPlotGroup, shown_keys, owner, color_by::Abs
         (color_by in names(tp)) || continue
         col = tp[!, color_by]
         # the ONE measure-type detector (`track_props`' own) — `eltype <: Real` is not it: a joined
-        # column decodes as Union{Missing,Float64} and would read as categorical
-        cat = _is_categorical_col(col, color_by)
+        # column decodes as Union{Missing,Float64} and would read as categorical. A per-track summary of
+        # a var (`euler_number_mesh.sum`) is a quantity whatever its values (`_is_var_measure`).
+        cat = !_is_var_measure(_var_measure_set(s.img, s.value_name), color_by) &&
+              _is_categorical_col(col, color_by)
         kind = cat ? "categorical" : "numeric"
         want = Dict{String,String}(owner[k][2] => k for k in ks)
         for (r, tid) in enumerate(tp[!, :track_id])

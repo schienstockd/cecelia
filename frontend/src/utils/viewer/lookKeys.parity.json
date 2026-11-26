@@ -6,6 +6,7 @@
   "colourBy",
   "colourLabels",
   "colourOverrides",
+  "dimUntracked",
   "hiddenTrackPops",
   "labelContour",
   "labelFilesHidden",

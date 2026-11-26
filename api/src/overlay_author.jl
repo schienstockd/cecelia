@@ -510,7 +510,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                         colour_by::Union{Nothing,AbstractString} = nothing,
                         colour_overrides::Union{Nothing,AbstractDict} = nothing,
                         cb_scale = nothing,
-                        point_on::Function = _shown, track_on::Function = _shown)
+                        point_on::Function = _shown, track_on::Function = _shown,
+                        dim_untracked::Bool = false)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
     pt = string(pop_type)
@@ -625,7 +626,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                 pz = has_z ? cz[i] : 0.0
                 ti = hasT ? Int(round(t)) : 0
                 colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
-                pon && _push_point!(ti, (px, py, pz), colour)
+                pon && _push_point!(ti, (px, py, pz),
+                                    (dim_untracked && hasK && !_is_tracked_id(ck[i])) ? _dim_untracked(colour) : colour)
                 if ton
                     traw = ck[i]
                     isfinite(traw) || continue
@@ -904,8 +906,11 @@ function overlay_track_plan(ov)
     spatial_graph_width = gw isa Real && gw > 0 ? Float64(gw) : SPATIAL_GRAPH_WIDTH
     # only the edges between cells of the pops drawn (a look's `spatialGraphPopsOnly`)
     spatial_graph_pops_only = Bool(something(g("spatialGraphPopsOnly", false), false))
+    # "Tracked only": the segmentations whose untracked cells' dots are dimmed (a viewer look's)
+    du_raw = g("dimUntracked", nothing)
+    dim_untracked = du_raw isa AbstractVector ? Set{String}(String(x) for x in du_raw) : Set{String}()
     rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes,
-              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width, spatial_graph_pops_only)
+              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width, spatial_graph_pops_only, dim_untracked)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -1022,7 +1027,8 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         ribbon_on(path, show) = plan_ribbon_eye(plan, vn, lvn, lpt, path, show)
         parts = _overlay_parts(img; value_name = lvn, pop_type = lpt, pops_filter = lf,
                                include_tracks = ribbons, colour_by, colour_overrides, cb_scale,
-                               point_on, track_on = ribbon_on)
+                               point_on, track_on = ribbon_on,
+                               dim_untracked = lvn in get(plan, :dim_untracked, Set{String}()))
         has_t |= parts.hasT
         add_points!(parts.pts_by_t)
         if get(plan, :spatial_graph_pops_only, false)
@@ -1238,6 +1244,14 @@ end
 
 # A colour `t` of the way from `rgb` to white, in 0–255 bytes rounded as the browser's `mix` rounds
 # (`frontend/src/utils/colour.ts`: `c * (1 - k) + 255 * k`, `Math.round` — half up).
+# "Tracked only" (TRACK_SUBPOP_GATING_PLAN Decision 9): an untracked cell's dot keeps this much of its
+# colour — dimmed, not hidden. The viewer's `UNTRACKED_DIM` (frontend/src/utils/viewerOverlays.ts).
+const UNTRACKED_DIM = 0.35
+_dim_untracked(c::RGB{N0f8})::RGB{N0f8} =
+    RGB{N0f8}(float(c.r) * UNTRACKED_DIM, float(c.g) * UNTRACKED_DIM, float(c.b) * UNTRACKED_DIM)
+# a cell's `track_id` names a track (NaN / ≤ 0 = none, as the overlays route's -1)
+_is_tracked_id(t)::Bool = t isa Real && isfinite(t) && t > 0
+
 function _towards_white(c::RGB{N0f8}, t::Real)::RGB{N0f8}
     k = clamp(Float64(t), 0.0, 1.0)
     byte(x) = clamp(round(Int, Float64(reinterpret(UInt8, x)) * (1 - k) + 255 * k, RoundNearestTiesUp), 0, 255)

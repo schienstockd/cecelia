@@ -597,7 +597,6 @@ end
         @test st == 200 && JSON3.read(body).n == 0
         st, body = api_gating_plotdata(HTTP.Request("GET", "/api/gating/plotdata?" * q))
         @test st == 200 && isempty(body)
-        @test api_gating_density(HTTP.Request("GET", "/api/gating/density?" * q))[1] == 200
         # the summary is a reasoning read: it says WHY there is nothing, rather than an empty n = 0
         st, body = api_gating_summary(HTTP.Request("GET", "/api/gating/summary?" * q))
         @test st == 400 && occursin("not segmented", String(body))

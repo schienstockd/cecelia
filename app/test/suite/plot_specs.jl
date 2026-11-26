@@ -98,10 +98,15 @@
     @test Set(keys(cpf)) == Set(["flow", "clust", "region", "live", "track", "trackclust"])
     @test all(==("cell"), values(cpf))
     cpo = Dict(String(k) => Set(String(x) for x in v) for (k, v) in cp["modules"])
-    @test cpo == Dict("phenotype" => Set(["flow", "clust"]),
+    @test cpo == Dict("phenotype" => Set(["flow", "clust", "live"]),
                       "behaviourAnalysis" => Set(["live", "track", "trackclust"]),
                       "spatialAnalysis" => Set(["region"]))
     @test cp["dataSource"]["channelMeasures"] == true
+    # Phenotype offers tracked cells (`P/_tracked`, the Tracked family) on its cell-grain plots, as
+    # Behaviour does: the proportion-over-time plot too, at cell granularity.
+    po = specs["population_over_time.json"]
+    @test Set(String.(po["modules"]["phenotype"])) == Set(["flow", "clust", "live"])
+    @test any(p -> p["popType"] == "live" && p["granularity"] == "cell", po["dataSource"]["popTypes"])
 
     # A plot's family list is CURATED in its spec (not derived from the data), because "which family
     # can this measure be sliced by" is a judgement the data can't make. The cost of curation is

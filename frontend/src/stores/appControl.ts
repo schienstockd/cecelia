@@ -235,6 +235,14 @@ export const useAppControlStore = defineStore('appControl', () => {
     finally { updateChecking.value = false }
   }
 
+  // An update or a revert is staged on disk: the same state whether this window staged it (the POST's
+  // answer) or another one did (`update:staged` / `update:revert-staged`, api/src/update_api.jl).
+  function markStaged(kind: 'update' | 'revert') {
+    updateAvailable.value = false
+    updateHasPrevious.value = kind === 'update'
+    updatePending.value = true
+  }
+
   async function applyUpdate() {
     if (!updateLatestRef.value || updateBusy.value) return
     updateBusy.value = true; updateMsg.value = ''
@@ -244,7 +252,7 @@ export const useAppControlStore = defineStore('appControl', () => {
       const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
       updateMsg.value = res.ok ? (d.message ?? `Update ${updateLatest.value} staged — restart Cecelia to finish.`)
                                : (d.error ?? 'Update failed.')
-      if (res.ok) { updateAvailable.value = false; updateHasPrevious.value = true; updatePending.value = true }
+      if (res.ok) markStaged('update')
     } catch { updateMsg.value = 'Update failed (could not reach the server).' }
     finally { updateBusy.value = false }
   }
@@ -257,7 +265,7 @@ export const useAppControlStore = defineStore('appControl', () => {
       const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
       updateMsg.value = res.ok ? (d.message ?? 'Revert staged — restart Cecelia to finish.')
                                : (d.error ?? 'Revert failed.')
-      if (res.ok) { updateHasPrevious.value = false; updateAvailable.value = false; updatePending.value = true }
+      if (res.ok) markStaged('revert')
     } catch { updateMsg.value = 'Revert failed (could not reach the server).' }
     finally { updateRevertBusy.value = false }
   }
@@ -373,7 +381,7 @@ export const useAppControlStore = defineStore('appControl', () => {
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
            updateUrl, updateNotes, updatePublished, updateBehindBy, updateMergedPrs, canApplyUpdate,
-           updateHasPrevious, updateRevertBusy, updatePending,
+           updateHasPrevious, updateRevertBusy, updatePending, markStaged,
            checkUpdate, applyUpdate, revertUpdate, dismissUpdate, restartToUpdate,
            refreshDev, refreshStartup, completeSetup, completeProfilePick, markProfileJustPicked,
            logOutClaude, logOutUser, loggedOutPick: _loggedOut,

@@ -828,6 +828,12 @@ Phase 3 shipped 2026-08-20.
   the browser viewer, kept in sync with the gating selection. The source plan's "napari Tracks
   layer" bullet is defunct — napari is being dropped in favour of the browser viewer + the offline
   renderer.
+- **Tracked only.** With a segmentation's tracks drawn (its Tracks eye, or the pops' cell-track
+  ribbons), a gated cell the tracker never followed keeps its dot at `UNTRACKED_DIM` (0.35) of its
+  colour — dimmed, not hidden, so the mismatch stays visible. A per-set switch in the Tracks section, on
+  by default; the draw spec's `dimUntracked` lists the segmentations it applies to, and a recording
+  dims the same dots (`_overlay_parts`, `api/src/overlay_author.jl`). Each ribbon row reads
+  `tracked / gated` cells (`trackedLabelCount`). `docs/todo/TRACK_SUBPOP_GATING_PLAN.md` Decision 9.
 - **Tail fade.** A ribbon fades by age, as napari and Imaris draw tracks: the hop arriving at the
   frame on screen is solid, older hops fade to a floor (`TAIL_ALPHA_FLOOR`) over the tail length,
   so a tail shows which way the cell went. One rule for the viewer and every movie:

@@ -55,7 +55,7 @@ const AID = { notRecorded: 'on-screen aid (maintainer, 2026-11-12)' }
 export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   viewState: 'recorded', channelNames: 'recorded', nZ: 'recorded', version: 'recorded',
   maskValueName: 'recorded', labelFilesHidden: 'recorded', gating: 'recorded', popVisible: 'recorded',
-  trackVisible: 'recorded', trackSourceColours: 'recorded', showGatedTracks: 'recorded',
+  trackVisible: 'recorded', trackSourceColours: 'recorded', showGatedTracks: 'recorded', dimUntracked: 'recorded',
   hiddenTrackPops: 'recorded', popEyes: 'recorded', ribbonEyes: 'recorded', pointSize: 'recorded',
   pointBorder: 'recorded', labelOpacity: 'recorded', pointZTol: 'recorded', trackZTol: 'recorded',
   tailWidth: 'recorded', tailLength: 'recorded', labelContour: 'recorded', maskColour: 'recorded',
@@ -124,6 +124,13 @@ export function drawSpecOf(src: DrawSpecSource): ViewerDrawSpec {
     },
     get trackSourceColours() { return perSet(su => settings.getTrackSourceColours(su), {}) },
     get showGatedTracks() { return perSet(su => settings.getShowGatedTracks(su), false) },
+    // "Tracked only" dims a segmentation's untracked dots while its tracks are drawn — its own Tracks
+    // eye, or the pops' cell-track ribbons (TRACK_SUBPOP_GATING_PLAN Decision 9)
+    get dimUntracked() {
+      if (!perSet(su => settings.getDimUntracked(su), true)) return []
+      const vis = this.trackVisible, ribbons = this.showGatedTracks
+      return src.trackNames.filter(vn => ribbons || !!vis[vn])
+    },
     get hiddenTrackPops() {
       return Object.fromEntries(src.trackNames.map(vn => [vn, [...settings.getTrackPopHidden(src.imageUid, vn)]]))
     },

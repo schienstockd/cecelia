@@ -6,7 +6,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow,
-  isTrackDrawable, zPlaneOf, timeOrder, labelRows,
+  isTrackDrawable, zPlaneOf, timeOrder, labelRows, trackedLabelCount, UNTRACKED_DIM,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -141,6 +141,35 @@ describe('buildPointBuffer', () => {
     const p = payload({ hasT: false, cells: { ...payload().cells, t: [] } })
     const buf = buildPointBuffer(p, meta())
     expect(timepointRange(buf, 0)).toEqual([0, 4])
+  })
+})
+
+describe('Tracked only — dim untracked dots', () => {
+  // cell 12 (pop B, green, t=0) has no track (-1); every other cell has one
+  const green = (buf: { data: Float32Array }) =>
+    Array.from({ length: buf.data.length / POINT_STRIDE }, (_, i) => at(buf, i))
+      .filter(p => p[0] === 3)                      // x = 3 is cell 12
+      .map(p => p.slice(3, 6))
+  it('an untracked cell keeps UNTRACKED_DIM of its colour; tracked cells are untouched', () => {
+    const buf = buildPointBufferLayers([{ payload: payload(), dimUntracked: true }], meta())
+    expect(buf.count).toBe(4)                       // dimmed, never dropped
+    expect(green(buf)).toEqual([[0, UNTRACKED_DIM * 1, 0].map(v => Math.fround(v))])
+    const red = at(buf, 0)                          // cell 10, tracked
+    expect(red.slice(3, 6)).toEqual([1, 0, 0])
+  })
+  it('off, or a segmentation with no tracks, draws every dot at full colour', () => {
+    expect(green(buildPointBufferLayers([{ payload: payload() }], meta()))).toEqual([[0, 1, 0]])
+    const untrackedSeg = payload({ cells: { ...payload().cells, track: [] } })
+    expect(green(buildPointBufferLayers([{ payload: untrackedSeg, dimUntracked: true }], meta()))).toEqual([[0, 1, 0]])
+  })
+})
+
+describe('trackedLabelCount — tracked of gated', () => {
+  it('counts the labels whose cell has a track', () => {
+    expect(trackedLabelCount(payload(), [10, 11])).toBe(2)
+    expect(trackedLabelCount(payload(), [12, 13])).toBe(1)
+    expect(trackedLabelCount(payload(), [99])).toBe(0)          // a label the table does not hold
+    expect(trackedLabelCount(payload({ cells: { ...payload().cells, track: [] } }), [10])).toBe(0)
   })
 })
 
