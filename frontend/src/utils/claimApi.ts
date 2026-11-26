@@ -3,7 +3,7 @@
 // (`POST /api/claim/state`), and the result is a Blackboard entry whose `### sNN` sections are the
 // findings. Re-checks (`/api/claim/check`) and the model review (`/api/claim/review`) act on that entry.
 // Routes: api/src/routes/claim.jl, api/src/claim_review.jl.
-import { postJson } from './blackboardApi'
+import { postJsonOrNull } from './blackboardApi'
 import type { SeriesTarget } from '../plots/types'
 import type { QcFinding } from '../lib/qc'
 import { parseCategoryLabels, parseReview, type ModelReview, type ReviewItem } from './modelReview'
@@ -140,17 +140,17 @@ export async function stateClaim(body: {
   projectUid: string; setUid: string; populations: string[]; measure: string; unitAttrs: string[]; groupAttrs?: string[]; text: string
   entryId?: string; source?: Record<string, unknown>
 }, apiBase = ''): Promise<ClaimResult | null> {
-  return parseClaimResult(await postJson(`${apiBase}/api/claim/state`, body))
+  return parseClaimResult(await postJsonOrNull(`${apiBase}/api/claim/state`, body))
 }
 
 /** POST /api/claim/check — re-check against the current record (rewrites the entry only if it changed). */
 export async function checkClaim(projectUid: string, entryId: string, apiBase = ''): Promise<ClaimResult | null> {
-  return parseClaimResult(await postJson(`${apiBase}/api/claim/check`, { projectUid, entryId }))
+  return parseClaimResult(await postJsonOrNull(`${apiBase}/api/claim/check`, { projectUid, entryId }))
 }
 
 /** POST /api/claim/review — start the model review (a Kiwi turn) on `model`, the one the user picked
  *  for Kiwi; the turn id, or '' when it couldn't. */
 export async function reviewClaim(projectUid: string, entryId: string, model: string, apiBase = ''): Promise<string> {
-  const r = await postJson(`${apiBase}/api/claim/review`, { projectUid, entryId, ...(model ? { model } : {}) })
+  const r = await postJsonOrNull(`${apiBase}/api/claim/review`, { projectUid, entryId, ...(model ? { model } : {}) })
   return typeof r?.turnId === 'string' ? r.turnId : ''
 }
