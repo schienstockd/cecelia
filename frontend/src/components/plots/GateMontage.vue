@@ -35,6 +35,7 @@ import type { RenderMode } from './RenderModeToggle.vue'
 import type { Frame, FrameCell } from '../../plots/frame'
 import { PAPER, PAPER_INK } from '../../plots/fixedColours'
 import { popDisplayLabels } from '../../utils/popName'
+import { getBuffer, getJson } from '../../utils/api'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
@@ -140,11 +141,12 @@ async function loadPanels() {
   // (for the point fetch) and the server-projected child-gate outlines (canonical orientation).
   const metaFor = (o: ReturnType<typeof canonicalOrient>, pop: string) => {
     if (!metaCache.has(o.groupKey)) metaCache.set(o.groupKey, (async () => {
-      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero, true, colour)}`)).json() as {
+      const m = await getJson<{
         xExtent: [number, number]; yExtent: [number, number]; xTicks: Tick[]; yTicks: Tick[]
         usedX?: string; usedY?: string; gates?: SrvGate[]
         zExtent?: [number, number] | null; zTicks?: Tick[]; usedZ?: string
-        xSpec?: TransformSpec; ySpec?: TransformSpec; zSpec?: TransformSpec }
+        xSpec?: TransformSpec; ySpec?: TransformSpec; zSpec?: TransformSpec }>(
+        `/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero, true, colour)}`)
       return { extents: { xMin: m.xExtent[0], xMax: m.xExtent[1], yMin: m.yExtent[0], yMax: m.yExtent[1] },
                xTicks: m.xTicks, yTicks: m.yTicks,
                effA: effSpec(m.usedX, o.ta, m.xSpec), effB: effSpec(m.usedY, o.tb, m.ySpec),
@@ -162,8 +164,8 @@ async function loadPanels() {
                   effZ: ColourBy | null) => {
     const key = `${pop}|${o.groupKey}`
     if (!ptsCache.has(key)) ptsCache.set(key, (async () => {
-      const buf = new Float32Array(await (await fetch(
-        `/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero, false, effZ)}&withLabels=1`)).arrayBuffer())
+      const buf = new Float32Array(await getBuffer(
+        `/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero, false, effZ)}&withLabels=1`))
       // colour-by → QUADS [x,y,z,label]; else TRIPLES [x,y,label]. Same aligned-by-position invariant
       // splitXYZ established. `labels` feeds the highlight overlay in each tile.
       return effZ ? splitXYZL(buf) : (() => { const { points, labels } = splitXYL(buf)
@@ -174,7 +176,7 @@ async function loadPanels() {
   const labelFor = async (c: PanelChild): Promise<string> => {
     if (!statCache.has(c.path)) statCache.set(c.path, (async () => {
       try {
-        const s = await (await fetch(`/api/gating/stats?${idQ(id)}&pop=${encodeURIComponent(c.path)}`)).json() as { pctParent?: number }
+        const s = await getJson<{ pctParent?: number }>(`/api/gating/stats?${idQ(id)}&pop=${encodeURIComponent(c.path)}`)
         return typeof s.pctParent === 'number' ? s.pctParent : undefined   // ALREADY a percentage (backend)
       } catch { return undefined }
     })())

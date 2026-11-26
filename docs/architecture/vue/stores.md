@@ -12,7 +12,7 @@ uses instead. Box also shows how many files import the store.
 ```mermaid
 flowchart LR
   subgraph BASE["base stores"]
-    log["log<br/><small>47 importers</small>"]
+    log["log<br/><small>48 importers</small>"]
     project["project<br/><small>71 importers</small>"]
     projectMeta["projectMeta<br/><small>60 importers</small>"]
     settings["settings<br/><small>65 importers</small>"]
@@ -93,7 +93,7 @@ Stores that import each other statically (a loop; listed in [`gaps.md`](../gaps.
 | `project` | 71 | components (flat) 22, modules 15, components/plots 9, composables 7, stores 5, components/canvas 4, components (other) 2, tasks 2, utils (flat) 2, app root 1, lib (flat) 1, utils/viewer 1 |
 | `settings` | 65 | components (flat) 15, modules 10, components/viewerWindow 9, composables 8, stores 6, components/canvas 5, components (other) 3, tasks 3, utils/viewer 3, app root 2, components/plots 1 |
 | `projectMeta` | 60 | modules 19, components (flat) 17, stores 11, components/canvas 3, composables 3, tasks 3, components (other) 2, app root 1, utils/viewer 1 |
-| `log` | 47 | modules 16, components (flat) 13, stores 5, app root 2, components/canvas 2, composables 2, tasks 2, utils/viewer 2, components/plots 1, lib (flat) 1, utils (flat) 1 |
+| `log` | 48 | modules 16, components (flat) 13, stores 5, app root 2, components/canvas 2, composables 2, tasks 2, utils (flat) 2, utils/viewer 2, components/plots 1, lib (flat) 1 |
 | `viewer` | 39 | modules 11, components/plots 9, composables 5, components (flat) 4, utils/viewer 3, stores 2, app root 1, components (other) 1, components/canvas 1, components/viewerWindow 1, tasks 1 |
 | `ws` | 30 | components (flat) 8, composables 6, modules 6, stores 4, tasks 2, utils (flat) 2, app root 1, lib (flat) 1 |
 | `tasks` | 25 | components (flat) 8, modules 5, tasks 3, utils (flat) 3, composables 2, stores 2, app root 1, lib (flat) 1 |
