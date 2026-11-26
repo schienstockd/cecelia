@@ -951,8 +951,12 @@ end
 # them: a rule gate (a valley-following bisector or range end, a cloud-following shape) is shown where its
 # rule puts it on those cells — the same cells `recompute!` resolves it on — and says whether each rule
 # found its valley / cloud (`rule_flags`). A gate drawn with the axes swapped reads them swapped.
-function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw = nothing)
+function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw = nothing, valley = Cecelia.valley_cut)
     gates = Dict{String,Any}[]
+    # one transformed parent column per rule transform and one valley search per window, across the
+    # children: a bisector group's two halves are one cut (`resolve_rules`)
+    vcols = Dict{Tuple{String,String},Vector{Float64}}()
+    searches = Dict{Tuple{String,String,Float64,Float64,Float64},Union{Nothing,Float64}}()
     for cpath in direct_children(m, pop)
         p = m.pops[cpath]
         p.gate === nothing && continue
@@ -961,7 +965,12 @@ function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw =
             px, py = parent_raw
             gxy = (g.x_channel, g.y_channel) == (x, y) ? (px, py) :
                   (g.x_channel, g.y_channel) == (y, x) ? (py, px) : nothing
-            if gxy !== nothing
+            if gxy !== nothing && g isa Cecelia.HistGate
+                key = (String(g.x_channel), transform_key(g.x_transform))
+                v = get!(() -> transform_column(g.x_transform, gxy[1]), vcols, key)
+                memo(v, lo, hi; adjust) = get!(() -> valley(v, lo, hi; adjust), searches, (key..., lo, hi, adjust))
+                g, flags = Cecelia.resolve_rules(g, v; valley = memo)
+            elseif gxy !== nothing
                 flags = Cecelia.rule_flags(g, gxy...)
                 g = Cecelia.resolve_gate(g, gxy...)
             end

@@ -747,7 +747,7 @@ body {
    already shared these rules inline, which is what made a third consumer need them promoted rather
    than copied.
 
-   The shell only. What the rows CONTAIN, and the Apply/Reset/Invert bar under them, belong to whoever
+   The shell only. What the rows CONTAIN, and the Reset/Invert bar under them, belong to whoever
    renders them (`components/AttrFilterPanel.vue`). See docs/UI.md → Filtering rows by attribute. */
 .cc-filter-panel {
   flex-shrink: 0;

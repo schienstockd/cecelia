@@ -935,6 +935,8 @@ two-population markers — cytokeratin, a CD20+ tissue, CD68 in two tissues — 
 markers now get no cut). With no valley in the window the stored `cut` stands and the outline carries
 `rule_ok: false` (drawn dashed). `recompute!` resolves the rule on `parent_mask` cells (`resolve_gate`);
 plotmeta resolves it on the same parent's values for the outline (`_child_gate_outlines(…; parent_raw)`).
+Both go through `resolve_rules` (the gate and its flags from one search per ruled end) with the search
+memoised per parent and window, so a bisector group's two halves cost one valley search, not four.
 
 The window matters: a whole-axis window treats the pile of zero-intensity cells at the axis floor as a
 population. A new rule's window is a fifth of the view either side of the clicked cut
