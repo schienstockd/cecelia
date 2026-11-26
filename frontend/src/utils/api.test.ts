@@ -62,6 +62,9 @@ describe('api client', () => {
     expect(JSON.parse(init.body)).toEqual({ name: 'p' })
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     expect(await postJson('/api/x', {})).toBeNull()
+    fetchMock.mockResolvedValueOnce(jsonReply(200, {}))
+    await getJson('/api/health', { cache: 'no-store' })
+    expect(fetchMock.mock.calls[2][1].cache).toBe('no-store')
   })
 
   it('a 409 the caller handles is quiet, and its body (the current state) reaches the caller', async () => {
