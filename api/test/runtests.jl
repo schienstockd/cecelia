@@ -316,6 +316,7 @@ include(joinpath(@__DIR__, "suite", "spatial_graph_stale.jl"))   # RESULT-REVIEW
 include(joinpath(@__DIR__, "suite", "spatial_graph_pops.jl"))
 include(joinpath(@__DIR__, "suite", "tracked_only_dots.jl"))
 include(joinpath(@__DIR__, "suite", "tracked_children.jl"))
+include(joinpath(@__DIR__, "suite", "track_classes_api.jl"))
 
 # ── /api/tasks/validate + /api/cell_cards + _require_ids testsets ─
 # Three testsets: /api/tasks/validate wiring (form-time advisory), /api/cell_cards metadata + sidecar

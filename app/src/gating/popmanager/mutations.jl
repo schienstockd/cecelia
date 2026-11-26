@@ -20,6 +20,7 @@ function add_pop!(m::PopulationTree, name::AbstractString;
                   created_by::Union{AbstractDict,Nothing}=nothing,
                   updated_by::Union{AbstractDict,Nothing}=nothing,
                   run_at::Union{AbstractString,Nothing}=nothing,   # see `Population.run_at`
+                  track_class::Union{AbstractDict,Nothing}=nothing, # see `Population.track_class`
                   reserved_ok::Bool=false, validate_refs::Bool=true)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
     # injection (reserved_ok=true) may create them, so a hand-drawn gate can't shadow one.
@@ -55,7 +56,7 @@ function add_pop!(m::PopulationTree, name::AbstractString;
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
                               explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient,
                               _stamp_dict(created_by), _stamp_dict(updated_by),
-                              run_at === nothing ? nothing : String(run_at))
+                              run_at === nothing ? nothing : String(run_at), _stamp_dict(track_class))
     m.uid_index[resolved_uid] = path
     push!(m.order, path)
     _invalidate!(m)

@@ -802,6 +802,37 @@ function api_gating_stats(req::HTTP.Request)
     200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
 end
 
+# ── GET /api/gating/track-classes?...&pop=/frags[&threshold=0.6][&level=2][&tracks=1] ─────────────
+# Each track of a `flow` population called one of its sub-populations, or mixed (`track_classes`,
+# app/src/tracking/track_classes.jl; docs/todo/TRACK_SUBPOP_GATING_PLAN.md P5). `threshold` / `level`
+# preview a setting without storing it (the stored one is `pop/update` `trackClass`). `tracks=1` adds
+# the per-track call: `trackIds` and `classes` (index into `children`, -1 = mixed).
+function api_gating_track_classes(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", "")); pop = get(q, "pop", ROOT)
+    m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+    (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
+    th = tryparse(Float64, get(q, "threshold", "")); lv = tryparse(Int, get(q, "level", ""))
+    s = track_class_settings(is_root(pop) ? nothing : m.pops[pop])
+    bad = Cecelia.track_class_setting_error(something(th, s.threshold), something(lv, s.level))
+    bad === nothing || return _gerr(400, bad)
+    r = track_classes(img; value_name = vn, parent = pop, threshold = th, level = lv)
+    sm = Cecelia.track_class_summary(r)
+    kids = [(; path = c, name = pop_name(c), colour = m.pops[c].colour, tracks = n)
+            for (c, n) in zip(r.children, sm.counts)]
+    out = Dict{String,Any}("pop" => r.parent, "threshold" => r.threshold, "level" => r.level,
+                           "maxLevel" => r.max_level, "children" => kids, "mixed" => sm.mixed,
+                           "total" => sm.total, "mixedPct" => isnan(sm.mixed_pct) ? nothing : sm.mixed_pct)
+    if get(q, "tracks", "") in ("1", "true")
+        idx = Dict(c => i - 1 for (i, c) in enumerate(r.children))
+        out["trackIds"] = r.table.track_id
+        out["classes"] = [get(idx, c, -1) for c in r.table.class]
+    end
+    200, JSON3.write(out)
+end
+
 # ── GET /api/gating/membership?...&pops=/a,/b[&binary=1] ──────────────────────
 function api_gating_membership(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -2511,6 +2542,19 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
         any(haskey(body, k) for k in ("colour", "filter", "boolean", "runChecked")) && stamp_edit!(m, String(body["path"]))
         haskey(body, "colour") && (p.colour = String(body["colour"]))
         haskey(body, "show")   && (p.show = Bool(body["show"]))
+        # how its tracks are called one of its sub-populations (`trackClass` {threshold, level}); null = defaults
+        if haskey(body, "trackClass")
+            tc = body["trackClass"]
+            if tc === nothing
+                p.track_class = nothing
+            else
+                tc isa AbstractDict || return _gerr(400, "trackClass must be {threshold, level}")
+                cur = track_class_settings(p)
+                th = get(tc, "threshold", cur.threshold); lv = get(tc, "level", cur.level)
+                bad = Cecelia.track_class_setting_error(th, lv); bad === nothing || return _gerr(400, bad)
+                p.track_class = Dict{String,Any}("threshold" => Float64(th), "level" => Int(lv))
+            end
+        end
         # filter update — the tick-cluster-into-population UX toggles which cluster IDs belong to a
         # `clust`/`trackclust` pop by rewriting its filter (typically filter_values). Mutates only the
         # keys present in the `filter` dict, so a `{values:[…]}` tick leaves measure/fun untouched.
