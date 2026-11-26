@@ -505,7 +505,7 @@ function api_images_tasklog(req::HTTP.Request)
 
     proj_dir = joinpath(projects_dir(), project_uid)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
-    img_dir = joinpath(proj_dir, "1", image_uid)
+    img_dir = obj_meta_dir(proj_dir, image_uid)
     isfile(state_file(img_dir)) ||
         return 404, JSON3.write((; error="Image not found: $image_uid"))
 

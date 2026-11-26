@@ -108,30 +108,48 @@ needs_parent_data(g::RangeGate) = g.lo_rule !== nothing || g.hi_rule !== nothing
 """The rule's cut on these RAW parent values, or `nothing` (no rule, or no valley in its window)."""
 resolve_cut(::Gate, raw) = nothing
 function resolve_cut(g::BisectorGate, raw::AbstractVector)
-    g.rule === nothing && return nothing
-    _rule_cut(g.rule, apply_transform(g.x_transform, raw))
+    r, flags = resolve_rules(g, _rule_values(g, raw))
+    get(flags, "rule_ok", false) ? r.cut : nothing
 end
-_rule_cut(r::Nothing, v) = nothing
-_rule_cut(r::ValleyRule, v) = valley_cut(v, r.lo, r.hi; adjust = r.adjust)
+_rule_cut(r::Nothing, v, valley = valley_cut) = nothing
+_rule_cut(r::ValleyRule, v, valley = valley_cut) = valley(v, r.lo, r.hi; adjust = r.adjust)
 
 """For a display: whether each of `g`'s rules found its valley on these RAW parent values — `rule_ok` for a
 bisector, `lo_rule_ok` / `hi_rule_ok` for a range's ruled ends; empty for a gate without rules."""
-rule_flags(::Gate, raw) = Dict{String,Any}()
-rule_flags(g::BisectorGate, raw::AbstractVector) =
-    g.rule === nothing ? Dict{String,Any}() : Dict{String,Any}("rule_ok" => resolve_cut(g, raw) !== nothing)
-function rule_flags(g::RangeGate, raw::AbstractVector)
-    _, _, lo_ok, hi_ok = _resolved_ends(g, apply_transform(g.x_transform, raw))
-    out = Dict{String,Any}()
-    g.lo_rule === nothing || (out["lo_rule_ok"] = lo_ok)
-    g.hi_rule === nothing || (out["hi_rule_ok"] = hi_ok)
-    out
+rule_flags(g::Gate, raw) = last(resolve_rules(g, _rule_values(g, raw)))
+
+"""
+    resolve_rules(g, v; valley = valley_cut) -> (gate, flags)
+
+`resolve_gate` and `rule_flags` from ONE valley search per ruled end, on the parent's TRANSFORMED values
+`v` (`transform_column(g.x_transform, raw)`). `valley(v, lo, hi; adjust)` is the search: a caller that
+resolves several gates on one parent passes a memoised `valley_cut`, so the two halves of a bisector group
+— same rule, same cells — share one search (`recompute!`, `_child_gate_outlines`).
+"""
+resolve_rules(g::Gate, v; valley = valley_cut) = (g, Dict{String,Any}())
+function resolve_rules(g::BisectorGate, v::AbstractVector; valley = valley_cut)
+    g.rule === nothing && return (g, Dict{String,Any}())
+    c = _rule_cut(g.rule, v, valley)
+    r = c === nothing ? g : BisectorGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, c, g.side, g.group, g.rule)
+    (r, Dict{String,Any}("rule_ok" => c !== nothing))
 end
+function resolve_rules(g::RangeGate, v::AbstractVector; valley = valley_cut)
+    needs_parent_data(g) || return (g, Dict{String,Any}())
+    lo, hi, lo_ok, hi_ok = _resolved_ends(g, v, valley)
+    flags = Dict{String,Any}()
+    g.lo_rule === nothing || (flags["lo_rule_ok"] = lo_ok)
+    g.hi_rule === nothing || (flags["hi_rule_ok"] = hi_ok)
+    (RangeGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, lo, hi, g.lo_rule, g.hi_rule), flags)
+end
+# the parent's values on `g`'s axis, transformed — only a gate that has rules needs them
+_rule_values(g::HistGate, raw) = needs_parent_data(g) ? apply_transform(g.x_transform, raw) : raw
+_rule_values(g::Gate, raw) = raw
 
 # A range's ends on transformed values `v` and whether each ruled end's valley is the one used: each moves to
 # its valley inside its `end_window` or keeps its stored value; a found end past the other's stored value
 # (that one missed) is not used — both stored ends stand, both flagged. One answer for membership and display.
-function _resolved_ends(g::RangeGate, v)
-    a, b = _end_cut(g, :lo, v), _end_cut(g, :hi, v)
+function _resolved_ends(g::RangeGate, v, valley = valley_cut)
+    a, b = _end_cut(g, :lo, v, valley), _end_cut(g, :hi, v, valley)
     lo, hi = something(a, g.lo), something(b, g.hi)
     lo <= hi || return (g.lo, g.hi, false, false)
     (lo, hi, a !== nothing, b !== nothing)
@@ -156,27 +174,22 @@ function end_window(g::RangeGate, e::Symbol)
 end
 
 # A range end's valley on transformed values `v` inside its `end_window`, or `nothing`.
-function _end_cut(g::RangeGate, e::Symbol, v)
+function _end_cut(g::RangeGate, e::Symbol, v, valley = valley_cut)
     w = end_window(g, e)
     (w === nothing || !(w[2] > w[1])) && return nothing
     r = e === :lo ? g.lo_rule : g.hi_rule
-    valley_cut(v, w[1], w[2]; adjust = r.adjust)
+    valley(v, w[1], w[2]; adjust = r.adjust)
 end
 
 """`g` with its rule applied to the RAW parent values: a bisector's cut moves to the valley; with no
 valley in the window (or no rule) the stored cut stands. Any other gate is returned as is."""
-resolve_gate(g::Gate, raw) = g
-function resolve_gate(g::BisectorGate, raw::AbstractVector)
-    c = resolve_cut(g, raw)
-    c === nothing ? g : BisectorGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, c, g.side, g.group, g.rule)
-end
-# each ruled end moves to its valley inside its `end_window`, or keeps its stored value
-function resolve_gate(g::RangeGate, raw::AbstractVector)
-    needs_parent_data(g) || return g
-    v = apply_transform(g.x_transform, raw)
-    lo, hi = _resolved_ends(g, v)
-    RangeGate(g.x_channel, g.y_channel, g.x_transform, g.y_transform, lo, hi, g.lo_rule, g.hi_rule)
-end
+resolve_gate(g::Gate, raw) = first(resolve_rules(g, _rule_values(g, raw)))
+# The two-column form every caller uses (a rectangle / polygon's follow rule reads both axes — follow_rule.jl);
+# a 1D gate names its channel twice, so it reads x alone.
+resolve_gate(g::Gate, xraw, yraw) = g
+resolve_gate(g::HistGate, xraw::AbstractVector, yraw) = resolve_gate(g, xraw)
+rule_flags(g::Gate, xraw, yraw) = Dict{String,Any}()
+rule_flags(g::HistGate, xraw::AbstractVector, yraw) = rule_flags(g, xraw)
 
 const VALLEY_GRID = 512        # density evaluation points, at least (more when the span needs them)
 const VALLEY_GRID_MAX = 1 << 16
@@ -290,12 +303,18 @@ with_divider(g::BisectorGate, t::BisectorGate) =
 gate_group(g::BisectorGate) = g.group
 
 rule_spec(r::ValleyRule) = Dict{String,Any}("kind" => "valley", "lo" => r.lo, "hi" => r.hi, "adjust" => r.adjust)
-function rule_from_spec(spec)
+"""A gate's stored `rule` → a `ValleyRule` (a 1D gate's) or a `FollowRule` (a rectangle / polygon's —
+follow_rule.jl), or `nothing`. `want` is the rule type the gate takes; another kind is refused by name."""
+function rule_from_spec(spec, want::Type = ValleyRule)
     spec === nothing && return nothing
     g(k, default = nothing) = get(spec, k, get(spec, Symbol(k), default))
     kind = lowercase(string(g("kind", "")))
-    kind == "valley" || error("Unknown gate rule: $kind")
-    ValleyRule(g("lo"), g("hi"); adjust = something(g("adjust"), 1.0))
+    r = kind == "valley" ? ValleyRule(g("lo"), g("hi"); adjust = something(g("adjust"), 1.0)) :
+        kind == "follow" ? _follow_rule_from_spec(g) : error("Unknown gate rule: $kind")
+    r isa want || error(want === FollowRule ?
+        "A rectangle or polygon's rule is {\"kind\": \"follow\"}, not \"$kind\"" :
+        "A range or bisector's rule is {\"kind\": \"valley\", …}, not \"$kind\"")
+    r
 end
 
 function _hist_spec(g::HistGate, kind)

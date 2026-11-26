@@ -109,3 +109,28 @@
         end
     end
 end
+
+# plotmeta's outlines of a bisector group: its two halves are one cut, so one valley search, and each
+# outline carries that cut and its `rule_ok` — the same as resolving each half alone on the parent's cells
+@testset "plotmeta outlines: one valley search per bisector group" begin
+    rng = Cecelia.Random.Xoshiro(4)
+    raw = [randn(rng, 3000); 6.0 .+ randn(rng, 3000)]
+    m = PopulationTree(pop_type = "flow", value_name = "B")
+    for (name, side) in (("hi", 1), ("lo", -1))
+        add_pop!(m, name; gate = BisectorGate("c", 1.0; side, group = "g", rule = ValleyRule(-10, 10)))
+    end
+    add_pop!(m, "mid"; gate = RangeGate("c", -1.0, 4.0; hi_rule = ValleyRule(1.0, 5.0)))
+    calls = Ref(0)
+    counted(v, lo, hi; adjust) = (calls[] += 1; valley_cut(v, lo, hi; adjust))
+    lin = LinearTransform()
+    out = _child_gate_outlines(m, ROOT, "c", "c", lin, lin; parent_raw = (raw, raw), valley = counted)
+    @test calls[] == 2                                       # the group's one cut + the range's ruled end
+    byp = Dict(o["path"] => o for o in out)
+    for p in ("/hi", "/lo", "/mid")
+        g = m.pops[p].gate
+        want = project_gate(Cecelia.resolve_gate(g, raw), "c", "c", lin, lin)
+        merge!(want, Cecelia.rule_flags(g, raw))
+        @test all(k -> isequal(byp[p][k], want[k]), keys(want))
+    end
+    @test byp["/hi"]["rule_ok"] && abs(byp["/hi"]["cut"] - 3.0) < 0.3
+end

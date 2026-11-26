@@ -958,6 +958,8 @@ two-population markers — cytokeratin, a CD20+ tissue, CD68 in two tissues — 
 markers now get no cut). With no valley in the window the stored `cut` stands and the outline carries
 `rule_ok: false` (drawn dashed). `recompute!` resolves the rule on `parent_mask` cells (`resolve_gate`);
 plotmeta resolves it on the same parent's values for the outline (`_child_gate_outlines(…; parent_raw)`).
+Both go through `resolve_rules` (the gate and its flags from one search per ruled end) with the search
+memoised per parent and window, so a bisector group's two halves cost one valley search, not four.
 
 The window matters: a whole-axis window treats the pile of zero-intensity cells at the axis floor as a
 population. A new rule's window is a fifth of the view either side of the clicked cut
@@ -980,6 +982,39 @@ A Claude-moved split region (MCP set-own-gate on one half / sector) keeps its re
 (`with_divider`), so its siblings follow. A divider re-sent the other way round (reversed slice vertices,
 quadrant arms from another start) is turned back so each name keeps its cells; another kind or swapped
 axes is refused (`_keep_split_region`).
+
+### Rule gates in 2D — a rectangle or polygon that follows its cloud
+
+A rectangle or polygon may carry `rule: {kind: "follow", anchor?, adjust?}` (`app/src/gating/follow_rule.jl`).
+The drawn shape is a template: on each parent it moves by how far the cloud it was drawn on moved, so a
+strategy copied across a set follows each image's clouds. Its shape and size are the user's; only its
+position follows.
+
+- **Anchor.** When a follow gate is saved without an `anchor` — drawn, switched on, dragged on the plot,
+  or added by Claude — the save path anchors it on that image's parent cells: from the shape's centre
+  (a rectangle's middle, a polygon's area centroid), climb the parent's 2D density to the nearest mode
+  and store that mode (`_anchor_follow_rules!` → `recompute!(…; anchor = true)` → `anchor_rule`). With
+  no cloud found there (too few cells, a rare population, a centre on empty space) it stays unanchored:
+  it stays where it was drawn on every image, flagged, and is tried again at its next save — anchoring
+  on the centre instead would snap it onto whatever mode a climb reached elsewhere, though nothing moved.
+  A copy of an unanchored gate is anchored on each target image's own cells at that image's next save.
+  The plot never receives the anchor (`_rule_disp`), so an
+  edit sent back from it is a new template, anchored again where it is saved. A copy to other images
+  carries the anchor.
+- **Following.** `resolve_gate` climbs from the anchor on the current parent and translates the shape by
+  (mode − anchor). On the image it was saved on the climb ends where it started, so it does not move.
+- **Density.** A binned 2D Gaussian KDE on a grid over each axis's 0.1–99.9 % range, bandwidth per axis
+  0.9·min(sd, IQR/1.34)·n^(-1/6) × `adjust` (Silverman's rule in two dimensions); steepest ascent over
+  each grid point's eight neighbours (`follow_mode`). openCyto's per-sample idea (Finak et al. 2014,
+  doi:10.1371/journal.pcbi.1003806) as plain mode-seeking; nothing copied.
+- **Miss.** Fewer than 20 cells, a mode under 5 % of the tallest, or a mode further from the anchor than
+  the shape's own width / height: the stored position stands, the outline carries `rule_ok: false` and is
+  drawn dashed. A gate jumping to a neighbouring cloud would be worse than one that stayed put.
+
+On the plot: a double-click inside a selected rectangle / polygon switches it between staying put and
+following (`plots/followRule.ts`); off, it stays where the rule last moved it. Hovering its body writes
+what it does beside the cursor (`followTip`). Plotmeta resolves it on the displayed parent's (x, y)
+values, swapped when the gate's axes are (`_child_gate_outlines`).
 
 ## Undo / redo
 

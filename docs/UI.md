@@ -1429,19 +1429,43 @@ Rationale + the sketch-act format: `docs/todo/SKETCH_ENGINE_PLAN.md`.
 
 `frontend/src/components/AttrFilterPanel.vue` + `frontend/src/utils/attrFilter.ts`
 
-A chip row per attribute key, then **Apply / Reset / Invert**. Two surfaces use it: the image table's
+A chip row per attribute key, then **Reset / Invert**. Two surfaces use it: the image table's
 Filter dropdown (`ModuleLayout`) and the Movies list. It was the image table's alone and inline; nothing
 about it is about images, so it takes `:rows` — anything carrying an `attr` bag — and a `noun` for its
-tooltips. It renders **nothing** when the rows have no attributes, so a host can place it unguarded.
+tooltips. It renders **nothing** when the rows have no attributes (and the host passes no `#lead`
+slot), so a host can place it unguarded. `#lead` is a host's own first row in the same shell — the
+image table's search box.
 
-- **Draft vs applied is deliberate.** Picking chips does not narrow the list; Apply does. Narrowing on
-  every click makes a multi-attribute filter a fight, because each partial selection hides the rows the
-  next chip would have come from. `AttrFilterState` carries both, plus `invert`.
+- **Live, debounced — no Apply button.** A chip click updates the draft at once (the chip lights) and
+  the panel applies it once the clicks pause (`APPLY_WAIT`, 250 ms). There used to be an Apply button,
+  on the theory that narrowing per click hides the rows the next chip comes from; it never could, since
+  both hosts derive the chips from the UNFILTERED rows. What it did buy was ONE list re-render per burst
+  of clicks, and the debounce keeps that. The re-render is the whole cost — measured on the image table
+  (headless Chromium, dev build, loaded 32-core box): narrowing 100 / 500 / 2000 images ≈ 20 / 70 /
+  400 ms, bringing rows back ≈ 90 / 280 / 1500 ms (~1–2 ms per row mounted). `AttrFilterState` still
+  carries `draft` + `applied`, plus `invert`.
 - **ALL keys, ANY value within a key** — a row is "control AND 4h", and picking two values of one
   attribute means either. A missing attribute reads as `''`, which is what makes the "never annotated"
   chip (rendered `—`) work. `invert` flips the whole verdict, not each clause.
 - The host owns **whether it is open** (its own Filter button, in its own button idiom) and where the
-  state lives — per module in `localStorage` for the image table, `cc.movies.attrFilter` for Movies.
+  state lives — in memory per page for the image table (reset on a set switch), `cc.movies.attrFilter`
+  for Movies.
+
+### Image search — the Filter pane's first row
+
+`ModuleLayout` puts a `SuggestInput` in `AttrFilterPanel`'s `#lead`: the one list-search rule
+(`matchesQuery` — every word, case-insensitive substring) over the image **name and uid**
+(`utils/imageTable.ts` `matchesImageSearch`; same answer as the header's jump search), suggestions from
+`imageSearchSuggestions` (names, then uids, capped at 30 so focusing on a 2000-image set doesn't render
+4000 buttons). The box updates per key; the table follows after the same `APPLY_WAIT` pause. Not
+persisted — a lookup, not a standing view. The Filter button now shows on every set (search needs no
+attributes). Two guards keep a keystroke from re-rendering the table when nothing changed: a filter
+that keeps every image yields `undefined` (no filter), and both `filteredUids` and `ImageTable`'s rows
+keep their previous array when the contents are equal — a new array re-renders the table even if
+no row came or went. The table renders only the rows near the viewport (SelectionTable `windowed`,
+`utils/rowWindow.ts`): with all 2000 in the DOM, any change anywhere on the page cost ~80–130 ms a
+frame (the browser re-laying and re-painting every row — no Vue component re-rendered), and clearing
+a filter took ~2.4 s to mount them back; windowed, both take a frame or two at 500 and 2000 images.
 - The panel shell is `.cc-filter-panel` / `-rows` / `-row` / `-key` / `-chips` in `style.css`, shared
   with `ModuleLayout`'s *Processed with* row, which is the same scenario.
 
@@ -1494,12 +1518,12 @@ Owns the full two-column layout, SetBar, image selection state, attr filtering, 
 
 **Selection is remembered across navigation.** The run-table checkbox selection is persisted in the project store (`getImageSelection`/`setImageSelection`, keyed by `${module}|${setUid}`), so leaving a module page and coming back restores it. `ImageTable` is the writer (seeds from the store on mount / set switch, commits on every toggle); `ModuleLayout` reads it to initialise `selectedUids` and to restore on set switch. Keying by module name keeps each page's selection its own (e.g. gating's single-select doesn't bleed into segment). It's in-memory/session-scoped and cleared on project load/close. This is generic — every module page gets it for free via `ModuleLayout`.
 
-The filter panel renders automatically when `show-filter="true"` and the active set has either images with `attr` values or images with a run history. It disappears when there is neither, so it is safe to leave enabled even for modules that may or may not have attrs.
+With `show-filter="true"` (the default) the Filter button shows on every set: its pane always has the name/uid search row, then attribute chips when the set has `attr` values. The *Processed with* row (⋯ menu) is offered only when the set has a run history.
 
 **Two filter families in the one dropdown:**
-- **Attributes** — chips per attr key/value (Apply/Reset/Invert). The shared `AttrFilterPanel` (above),
+- **Search + attributes** — a name/uid search box, then chips per attr key/value (Reset/Invert; applied live after a pause). The shared `AttrFilterPanel` (above),
   not this component's own; `ModuleLayout` holds the state and decides what it narrows.
-- **Processed with** — a function picker + an *ever* / *last run* mode, to narrow the list to the images a given function has been run on. This answers "which images have I already denoised/segmented?" It is **derived** from each image's automatic run log (`CciaImage.runLog`) via the pure helpers in `frontend/src/utils/runLog.ts` (`wasProcessedWith`, `funsRunAcross`) — there is deliberately **no** separate persisted status attribute to keep in sync; the run log is the single source of truth. Only functions that have actually been run across the set are offered, and both modes ignore **failed** runs (a failed run left no output). The same run log backs the **run tag** shown beside each image's UID in `ImageTable` — a task-manager-style module pill for the image's last **successful** run (`lastSuccessfulRun` + `taskDefs.labelFor`, coloured from the shared `frontend/src/utils/taskModule.ts` palette that also colours the task manager) — and the per-row run-history cog popover. All three filter/hide states persist per module in `localStorage`.
+- **Processed with** — a function picker + an *ever* / *last run* mode, to narrow the list to the images a given function has been run on. This answers "which images have I already denoised/segmented?" It is **derived** from each image's automatic run log (`CciaImage.runLog`) via the pure helpers in `frontend/src/utils/runLog.ts` (`wasProcessedWith`, `funsRunAcross`) — there is deliberately **no** separate persisted status attribute to keep in sync; the run log is the single source of truth. Only functions that have actually been run across the set are offered, and both modes ignore **failed** runs (a failed run left no output). The same run log backs the **run tag** shown beside each image's UID in `ImageTable` — a task-manager-style module pill for the image's last **successful** run (`lastSuccessfulRun` + `taskDefs.labelFor`, coloured from the shared `frontend/src/utils/taskModule.ts` palette that also colours the task manager) — and the per-row run-history cog popover. The row filters and the processed-with pick persist per module (`profileStorage`); the search and the attribute chips are in memory and reset on a set switch.
 
 **Collapsible chrome (free up working space).** Two persisted toggles, both in the `settings` store (`localStorage`):
 - **Left nav** — the `pi-bars` button in `AppHeader` toggles `settings.sidebarCollapsed`; `AppSidebar` `v-show`s its `<nav>` off, so the main canvas reclaims the full width. (The `v-show` lives on the `<nav>`, not on the `<AppSidebar>` element — the component has two root nodes, so a component-level `v-show` has no single root to bind and silently no-ops.)
@@ -1726,6 +1750,11 @@ whether the button is worth showing at all, and a two-state tooltip. `ModuleLayo
 watch + computed + template. Add a `RowFilterDef`; the persistence, the button, the count and the
 `filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
 processed-with filters.
+**An ON filter is always drawn** (`rowFilterShown`) — `visible` only decides whether to OFFER an off
+one. A filter persists, so what offered it can vanish while it is on (unstar every image, restart: the
+saved Scored filter hid the whole set and its button was gone). And when the set has images but the
+filters hide all of them, the image table says so — "All N images hidden by filters" + **Show all**
+(every row, attribute and processed-with filter off) — never the "No images yet / Import" first-run state.
 
 **Rating.** One button per row (`CciaImage.rating`, `imageRating`/`IMAGE_RATINGS` in
 `utils/inclusion.ts`, drawn by `CcCycleButton`) cycles **not rated → good (star) → use with care (half

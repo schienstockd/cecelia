@@ -185,3 +185,38 @@ end
     pj = project_gate(g, "c", "c", LinearTransform(), LinearTransform())
     @test pj["lo_rule"]["lo"] == 0.5 && pj["hi_rule"]["hi"] == 7.5
 end
+
+# A bisector group's two halves are one cut on one parent, so an evaluation searches for its valley once;
+# a range's ruled ends search their own windows. Counted through `recompute!`'s `valley` (the search).
+@testset "rule gates: one valley search per window per parent in an evaluation" begin
+    rng = MersenneTwister(23)
+    n = 6000
+    df = DataFrame("label" => collect(1:n), "c" => two_pops(rng, 3000, 0.0, 1.0, 3000, 6.0, 1.0),
+                   "d" => [two_pops(rng, 2000, 0.0, 0.7, 2000, 4.0, 0.7); 8.0 .+ 0.7 .* randn(rng, 2000)])
+    function tree()
+        m = PopulationTree(pop_type = "flow", value_name = "B")
+        add_pop!(m, "hi"; gate = BisectorGate("c", 1.0; side = 1, group = "g", rule = ValleyRule(-10, 10)))
+        add_pop!(m, "lo"; gate = BisectorGate("c", 1.0; side = -1, group = "g", rule = ValleyRule(-10, 10)))
+        add_pop!(m, "mid"; gate = RangeGate("d", 1.0, 7.0; lo_rule = ValleyRule(0.5, 3.5), hi_rule = ValleyRule(4.5, 7.5)))
+        add_pop!(m, "mid_hi"; parent = "/mid", gate = BisectorGate("c", 1.0; side = 1, group = "h", rule = ValleyRule(-10, 10)))
+        add_pop!(m, "mid_lo"; parent = "/mid", gate = BisectorGate("c", 1.0; side = -1, group = "h", rule = ValleyRule(-10, 10)))
+        m
+    end
+    calls = Ref(0)
+    counted(v, lo, hi; adjust) = (calls[] += 1; valley_cut(v, lo, hi; adjust))
+    m = recompute!(tree(), _ -> df; valley = counted)
+    # root's group: 1, the range's two ends: 2, /mid's group (another parent, so its own search): 1
+    @test calls[] == 4
+    # membership as each gate resolved alone on its parent's raw values (the definition)
+    for p in ("/hi", "/lo", "/mid", "/mid/mid_hi", "/mid/mid_lo")
+        pop = m.pops[p]; par = pop.parent == ROOT ? trues(n) : pop_membership(m, pop.parent)
+        g = Cecelia.resolve_gate(pop.gate, df[par, pop.gate.x_channel])
+        @test pop_membership(m, p) == par .& inside(g, df[!, g.x_channel], df[!, g.y_channel])
+    end
+    @test count(pop_membership(m, "/hi")) + count(pop_membership(m, "/lo")) == n
+    # rule_flags / resolve_gate are one resolution: the flags say which end's valley the gate used
+    g = pop_at(m, "/mid").gate
+    r, flags = Cecelia.resolve_rules(g, df.d)
+    @test r.lo == Cecelia.resolve_gate(g, df.d).lo && flags == Cecelia.rule_flags(g, df.d) &&
+          flags == Dict("lo_rule_ok" => true, "hi_rule_ok" => true) && abs(r.lo - 2.0) < 0.3 && abs(r.hi - 6.0) < 0.3
+end

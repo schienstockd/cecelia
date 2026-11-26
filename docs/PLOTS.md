@@ -40,6 +40,9 @@ order everywhere (`plots/plotPicker.ts` → `PLOT_CATEGORIES`):
 | `checks` | Checks & diagnostics | did it work (segmentation QC, HMM state count, flow model views, track diagnostics) |
 | `other` | Other | a plugin spec without a category — the fallback, never set on a built-in |
 
+Each category's `blurb` heads its cards on ONE line, with ~15% to spare for a wider system font —
+`PlotPicker.browser.test.ts` fails a blurb that would wrap.
+
 The category is declared on the plot — `category` in a spec's JSON, `category` on an
 `INTERACTIVE_VIEWS` / `CLUSTER_PANELS` entry (required by the type). The old optgroups
 (Summary / Interactive / Clustering / Image) grouped by how a plot is BUILT, which tells a user nothing.

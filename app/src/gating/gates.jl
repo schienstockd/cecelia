@@ -7,6 +7,20 @@
 
 abstract type Gate end
 
+"""A rectangle or polygon that follows the cloud it was drawn on (follow_rule.jl): on each parent it moves
+by how far that cloud's density mode lies from `anchor` — the mode it was drawn around, in transformed
+coordinates, set when the gate is saved (`nothing` until then). `adjust` scales the kernel bandwidth."""
+struct FollowRule
+    anchor::Union{Nothing,Tuple{Float64,Float64}}
+    adjust::Float64
+end
+function FollowRule(; anchor = nothing, adjust::Real = 1.0)
+    adjust > 0 || error("a follow rule's adjust must be positive")
+    a = anchor === nothing ? nothing : (float(anchor[1]), float(anchor[2]))
+    (a === nothing || all(isfinite, a)) || error("a follow rule's anchor must be finite")
+    FollowRule(a, float(adjust))
+end
+
 struct RectangleGate <: Gate
     x_channel::String
     y_channel::String
@@ -16,13 +30,17 @@ struct RectangleGate <: Gate
     x_max::Float64
     y_min::Float64
     y_max::Float64
+    rule::Union{Nothing,FollowRule}
 end
+RectangleGate(xc::String, yc::String, xt::AxisTransform, yt::AxisTransform, a::Float64, b::Float64, c::Float64, d::Float64) =
+    RectangleGate(xc, yc, xt, yt, a, b, c, d, nothing)
 
 function RectangleGate(x_channel, y_channel, x_min, x_max, y_min, y_max;
                        x_transform::AxisTransform=LinearTransform(),
-                       y_transform::AxisTransform=LinearTransform())
+                       y_transform::AxisTransform=LinearTransform(),
+                       rule::Union{Nothing,FollowRule}=nothing)
     RectangleGate(String(x_channel), String(y_channel), x_transform, y_transform,
-                  float(x_min), float(x_max), float(y_min), float(y_max))
+                  float(x_min), float(x_max), float(y_min), float(y_max), rule)
 end
 
 struct PolygonGate <: Gate
@@ -31,13 +49,17 @@ struct PolygonGate <: Gate
     x_transform::AxisTransform
     y_transform::AxisTransform
     vertices::Vector{Tuple{Float64,Float64}}   # transformed coords, in order
+    rule::Union{Nothing,FollowRule}
 end
+PolygonGate(xc::String, yc::String, xt::AxisTransform, yt::AxisTransform, v::Vector{Tuple{Float64,Float64}}) =
+    PolygonGate(xc, yc, xt, yt, v, nothing)
 
 function PolygonGate(x_channel, y_channel, vertices;
                      x_transform::AxisTransform=LinearTransform(),
-                     y_transform::AxisTransform=LinearTransform())
+                     y_transform::AxisTransform=LinearTransform(),
+                     rule::Union{Nothing,FollowRule}=nothing)
     verts = [(float(v[1]), float(v[2])) for v in vertices]
-    PolygonGate(String(x_channel), String(y_channel), x_transform, y_transform, verts)
+    PolygonGate(String(x_channel), String(y_channel), x_transform, y_transform, verts, rule)
 end
 
 gate_channels(g::Gate) = (g.x_channel, g.y_channel)
@@ -92,24 +114,24 @@ end
 # ── (De)serialisation — JSON-friendly Dicts, readable by Python ─────────────────
 
 function gate_spec(g::RectangleGate)::Dict{String,Any}
-    Dict{String,Any}(
+    _with_follow_spec(g, Dict{String,Any}(
         "kind" => "rectangle",
         "x_channel" => g.x_channel, "y_channel" => g.y_channel,
         "x_transform" => transform_spec(g.x_transform),
         "y_transform" => transform_spec(g.y_transform),
         "x_min" => g.x_min, "x_max" => g.x_max,
         "y_min" => g.y_min, "y_max" => g.y_max,
-    )
+    ))
 end
 
 function gate_spec(g::PolygonGate)::Dict{String,Any}
-    Dict{String,Any}(
+    _with_follow_spec(g, Dict{String,Any}(
         "kind" => "polygon",
         "x_channel" => g.x_channel, "y_channel" => g.y_channel,
         "x_transform" => transform_spec(g.x_transform),
         "y_transform" => transform_spec(g.y_transform),
         "vertices" => [[x, y] for (x, y) in g.vertices],
-    )
+    ))
 end
 
 function gate_from_spec(spec::AbstractDict)::Gate
@@ -120,10 +142,11 @@ function gate_from_spec(spec::AbstractDict)::Gate
     if kind == "rectangle"
         RectangleGate(g("x_channel"), g("y_channel"),
                       g("x_min"), g("x_max"), g("y_min"), g("y_max");
-                      x_transform=xt, y_transform=yt)
+                      x_transform=xt, y_transform=yt, rule=rule_from_spec(g("rule"), FollowRule))
     elseif kind == "polygon"
         verts = [(float(v[1]), float(v[2])) for v in g("vertices")]
-        PolygonGate(g("x_channel"), g("y_channel"), verts; x_transform=xt, y_transform=yt)
+        PolygonGate(g("x_channel"), g("y_channel"), verts; x_transform=xt, y_transform=yt,
+                    rule=rule_from_spec(g("rule"), FollowRule))
     elseif kind == "slice"
         SliceGate(g("x_channel"), g("y_channel"), g("vertices");
                   side = Int(something(g("side"), 1)), group = string(something(g("group"), "")),
@@ -175,14 +198,14 @@ end
 function _projected(g::RectangleGate, to_disp, swap)
     (ax, ay) = to_disp(g.x_min, g.y_min)
     (bx, by) = to_disp(g.x_max, g.y_max)
-    Dict{String,Any}("kind" => "rectangle",
+    _with_follow_disp(g, Dict{String,Any}("kind" => "rectangle",
         "x_min" => min(ax, bx), "x_max" => max(ax, bx),
-        "y_min" => min(ay, by), "y_max" => max(ay, by))
+        "y_min" => min(ay, by), "y_max" => max(ay, by)))
 end
 # Map corners 1:1. A cross-transform view (gate stored under transform A, shown under B) draws
 # edges straight in the DISPLAY transform, not the gate's — a mild outline drift near a curve.
 # Membership is untouched (`inside` uses the stored transform). Never densify: the client sends
 # this list back on any handle drag, and a densified round-trip would silently multiply the
 # vertex count on every edit until the gate is un-editable (12× per cross-transform round-trip).
-_projected(g::PolygonGate, to_disp, swap) =
-    Dict{String,Any}("kind" => "polygon", "vertices" => [collect(to_disp(vx, vy)) for (vx, vy) in g.vertices])
+_projected(g::PolygonGate, to_disp, swap) = _with_follow_disp(g,
+    Dict{String,Any}("kind" => "polygon", "vertices" => [collect(to_disp(vx, vy)) for (vx, vy) in g.vertices]))

@@ -733,9 +733,10 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             </div>
             <!-- Star and tags compose with each other and with the column sort — one never replaces
                  another. Both persist, so coming back to compare two movies doesn't mean re-filtering. -->
-            <div v-if="starredCount || filterOptions.length || filterAttrKeys.length"
+            <!-- an ON star filter stays drawn with nothing starred: it persists, and hidden it hides every row -->
+            <div v-if="starredCount || starredOnly || filterOptions.length || filterAttrKeys.length"
                  class="mov-filters cc-row cc-row-tight">
-              <button v-if="starredCount" class="cc-btn cc-btn-ghost cc-btn-micro"
+              <button v-if="starredCount || starredOnly" class="cc-btn cc-btn-ghost cc-btn-micro"
                       :class="{ 'cc-btn-on cc-btn-on-tint': starredOnly }"
                       @click="starredOnly = !starredOnly"
                       v-tooltip.bottom="starredOnly ? `Show all ${nouns.many}` : `Show only starred ${nouns.many}`">

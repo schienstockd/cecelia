@@ -155,8 +155,7 @@ function _run_task(task::SegmentCorrect, img::CciaImage, params::Dict{String,Any
         on_log("[ERROR] No image filepath registered — cannot derive dims for labels correction")
         return nothing
     end
-    proj_dir = dirname(dirname(task_dir))
-    im_path  = joinpath(proj_dir, "0", img.uid, string(im_filename))
+    im_path  = joinpath(img_zero_dir(img), string(im_filename))
     ispath(im_path) ||
         (on_log("[ERROR] Image not found: $im_path"); return nothing)
 

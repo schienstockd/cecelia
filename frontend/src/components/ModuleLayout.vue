@@ -44,18 +44,21 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUpdated, onBeforeUnmount, useSlots } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
+import { debouncedSave } from '../utils/debouncedSave'
 import { onRevealPlots, setSectionOpen, useStoredSectionOpen } from '../utils/sectionOpen'
 import { usePlotFullscreen, reportCanvasMaximised } from '../composables/usePlotFullscreen'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
 import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters, nextRowFilterValue,
-  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, type RowFilterState } from '../utils/rowFilters'
-import { emptyAttrFilter, attrFilterActive, matchesAttrFilter, attrKeysOf,
+  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, rowFilterShown, rowFiltersOff,
+  type RowFilterState } from '../utils/rowFilters'
+import { emptyAttrFilter, attrFilterActive, matchesAttrFilter, attrKeysOf, APPLY_WAIT,
          type AttrFilterState } from '../utils/attrFilter'
 import AttrFilterPanel from './AttrFilterPanel.vue'
 import { funsRunAcross, wasProcessedWith, funModuleLabel, type ProcMode } from '../utils/runLog'
-import { imageTableCsvRows } from '../utils/imageTable'
+import { imageTableCsvRows, matchesImageSearch, imageSearchSuggestions } from '../utils/imageTable'
+import SuggestInput from './SuggestInput.vue'
 import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
 import ChecksCluster from './ChecksCluster.vue'
@@ -179,7 +182,8 @@ watch(rowFilterActive, v => {
 // the filters worth showing, with their current count resolved once for the button + its tooltip
 const rowFilters = computed(() => {
   const imgs = activeSet.value?.images ?? []
-  return ROW_FILTERS.filter(f => !f.host && f.visible(imgs))   // a hosted one is drawn by its host
+  // a hosted one is drawn by its host; an ON one is always drawn, or a stale saved filter is stuck on
+  return ROW_FILTERS.filter(f => !f.host && rowFilterShown(f, rowFilterActive.value[f.id], imgs))
     .map(f => ({ def: f, btn: rowFilterButton(f, rowFilterActive.value[f.id], imgs) }))
 })
 // separate from the filter toggle above: the set header always states how many images are excluded,
@@ -211,21 +215,57 @@ const procActive = computed(() => !!procFun.value && runFuns.value.includes(proc
 // one-column-per-attribute layout; the chips themselves are the panel's.
 const attrKeys = computed(() => attrKeysOf(activeSet.value?.images ?? []))
 
+// Search: find one image by uid or name (every word, `matchesImageSearch`) — the first row of the Filter
+// pane, filtering as you type. Not persisted: it is a lookup, not a standing view of the set.
+// The box updates at once; the TABLE follows once typing pauses (`appliedQuery`) — each table
+// re-render is the whole cost (measured: up to ~2 ms per row brought back), so a word typed quickly
+// re-renders it once, not per letter.
+const imageQuery = ref('')
+const appliedQuery = ref('')
+const applyQuery = debouncedSave(() => { appliedQuery.value = imageQuery.value }, { wait: APPLY_WAIT })
+watch(imageQuery, () => applyQuery.schedule())
+onBeforeUnmount(() => applyQuery.cancel())
+const searchActive = computed(() => props.showFilter && appliedQuery.value.trim() !== '')
+const searchSuggestions = computed(() =>
+  imageSearchSuggestions(activeSet.value?.images ?? [], imageQuery.value))
+
 const hasApplied = computed(() => attrFilterActive(attrFilter.value))
-const filteredUids = computed<string[] | undefined>(() => {
+// Returns the PREVIOUS array when the visible uids did not change (`prev`, Vue ≥3.4): every new array
+// re-renders the whole table, which on a 2000-image set is ~1 s even when no row came or went — and
+// typing a search ("M", "Mo", "Mou" … all matching every image) would pay that on every keystroke.
+const filteredUids = computed<string[] | undefined>(prev => {
+  const next = computeFilteredUids()
+  return next && prev && next.length === prev.length && next.every((u, i) => u === prev[i]) ? prev : next
+})
+function computeFilteredUids(): string[] | undefined {
   const attrActive = props.showFilter && hasApplied.value
   const procOn     = props.showFilter && procActive.value
+  const searchOn   = searchActive.value
   // Nothing narrowing the list → let ImageTable show everything (excluded still render, greyed).
-  if (!attrActive && !procOn && !anyRowFilterActive(rowFilterActive.value)) return undefined
+  if (!attrActive && !procOn && !searchOn && !anyRowFilterActive(rowFilterActive.value)) return undefined
   const imgs = activeSet.value?.images ?? []
-  return imgs
+  const kept = imgs
     .filter(img => {
       if (hiddenByRowFilters(img, rowFilterActive.value)) return false
       if (procOn && !wasProcessedWith(img.runLog, procFun.value, procMode.value)) return false
+      if (searchOn && !matchesImageSearch(img, appliedQuery.value)) return false
       return !attrActive || matchesAttrFilter(img.attr, attrFilter.value)
     })
-    .map(img => img.uid)
-})
+  // A filter that keeps every image is no filter: `undefined` leaves the table untouched, where a full
+  // uid list re-renders all of it (a search's first letters usually match everything).
+  return kept.length === imgs.length ? undefined : kept.map(img => img.uid)
+}
+
+// "Show all" from the table's filtered-empty state: every row filter, the attribute filter, the
+// processed-with filter and the search off — whichever of them hid the rows.
+function clearFilters() {
+  rowFilterActive.value = rowFiltersOff()
+  attrFilter.value = emptyAttrFilter()
+  procFun.value = ''
+  applyQuery.cancel()
+  imageQuery.value = ''
+  appliedQuery.value = ''
+}
 
 // Drop out-of-view selections when filter changes
 watch(filteredUids, (uids) => {
@@ -242,6 +282,8 @@ watch(filteredUids, (uids) => {
 // and emits too; reading the store here keeps the slot props correct without an intermediate empty)
 watch(activeSet, (s) => {
   attrFilter.value   = emptyAttrFilter()
+  imageQuery.value   = ''
+  appliedQuery.value = ''
   selectedUids.value = s ? project.getImageSelection(selScope.value, s.uid) : []
   emit('selectionChange', selectedUids.value)
 })
@@ -345,12 +387,12 @@ const visibleUids = computed<string[]>(() =>
               <span class="filter-label">{{ f.def.label }} {{ f.btn.count }}</span>
             </button>
             <!-- Filter: filter to images by attribute value (own dropdown) -->
-            <button v-if="showFilter && attrKeys.length > 0"
-              class="filter-toggle" :class="{ active: hasApplied || filtersOpen }"
+            <button v-if="showFilter"
+              class="filter-toggle" :class="{ active: hasApplied || searchActive || filtersOpen }"
               @click="filtersOpen = !filtersOpen"
-              v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute'">
+              v-tooltip.left="filtersOpen ? 'Hide filters' : attrKeys.length ? 'Search images, filter by attribute' : 'Search images by name or ID'">
               <i class="pi pi-filter" />
-              <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
+              <span class="filter-label">Filter{{ hasApplied || searchActive ? ' •' : '' }}</span>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
             <!-- an active processed-with filter stays visible after its toggle moved into ⋯ -->
@@ -434,10 +476,21 @@ const visibleUids = computed<string[]>(() =>
           </div>
         </div>
 
-        <!-- Filter dropdown: attribute-value chips — only when open. The panel renders nothing when
-             the set has no attributes, so the guard here is just "is it open". -->
+        <!-- Filter dropdown: the search box, then attribute-value chips — only when open. -->
         <AttrFilterPanel v-if="showFilter && activeSet && filtersOpen" noun="images"
-          :rows="activeSet.images" v-model="attrFilter" />
+          :rows="activeSet.images" v-model="attrFilter">
+          <template #lead>
+            <div class="cc-filter-row">
+              <span class="cc-filter-key cc-eyebrow cc-fs-sm">Search</span>
+              <span class="image-search">
+                <SuggestInput v-model="imageQuery" :options="searchSuggestions"
+                  placeholder="Name or ID…" tip="Show only images whose name or ID contains these words" />
+              </span>
+              <button v-if="imageQuery" class="cc-btn cc-btn-ghost cc-btn-icon" aria-label="Clear search"
+                @click="imageQuery = ''" v-tooltip.top="'Clear search'"><i class="pi pi-times" /></button>
+            </div>
+          </template>
+        </AttrFilterPanel>
 
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
@@ -459,6 +512,7 @@ const visibleUids = computed<string[]>(() =>
               :single-select="singleSelect"
               :filter-uids="filteredUids"
               @selectionChange="onSelectionChange"
+              @clear-filters="clearFilters"
             />
           </CollapsibleSection>
 
@@ -511,6 +565,9 @@ const visibleUids = computed<string[]>(() =>
 </template>
 
 <style scoped>
+/* the Filter pane's search box: fills its row up to a readable width (the input is SuggestInput's) */
+.image-search { flex: 1; min-width: 0; max-width: 22rem; display: flex; }
+.image-search :deep(input) { flex: 1; min-width: 0; }
 .module-root {
   display: flex;
   flex-direction: column;

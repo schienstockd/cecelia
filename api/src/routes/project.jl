@@ -342,7 +342,7 @@ function api_projects_canvases(body_bytes::Vector{UInt8})
     objects = get(body, :objects, nothing)
     if objects !== nothing
         for (objUid, data) in pairs(objects)
-            objdir = joinpath(projects_dir(), uid, "1", String(objUid))
+            objdir = obj_meta_dir(joinpath(projects_dir(), uid), String(objUid))
             isdir(objdir) || continue   # object deleted/unknown → skip (no stray files)
             try
                 write_json_atomic(joinpath(objdir, "moduleCanvases.json"), data)
@@ -358,6 +358,8 @@ end
 # Partition images by whether they carry the labelProps value_name (segmentation) — a generic
 # building block for any feature that must skip images lacking a value_name (e.g. copy gating across
 # images). Just a value_name-presence check per image (img_has_value_name); returns {available, missing}.
+# Optional `popType` (a gating type, flow/track) adds `gated`: the available images that already have
+# that gating on the value_name (`has_gating`) — what a gating copy would replace.
 function api_images_value_name_check(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body
@@ -365,17 +367,21 @@ function api_images_value_name_check(body_bytes::Vector{UInt8})
     vn   = _wstr(body, :valueName)
     uids = get(body, :imageUids, nothing)
     (uids isa AbstractVector) || return 400, JSON3.write((; error="imageUids required"))
+    pt   = _wstr(body, :popType)
+    (isempty(pt) || is_gating_pop_type(pt)) ||
+        return 400, JSON3.write((; error="Not a gating population type: $pt (only flow/track)"))
     isdir(joinpath(projects_dir(), proj)) || return 404, JSON3.write((; error="Project not found: $proj"))
-    available = String[]; missing = String[]
+    available = String[]; missing = String[]; gated = String[]
     for u in uids
         uid = String(u)
-        ok = try
-            img = init_object(proj, uid)
-            img isa CciaImage && img_has_value_name(img, vn)
-        catch; false end
-        ok ? push!(available, uid) : push!(missing, uid)
+        img = try init_object(proj, uid) catch; nothing end
+        ok = img isa CciaImage && (try img_has_value_name(img, vn) catch; false end)
+        ok || (push!(missing, uid); continue)
+        push!(available, uid)
+        # an unreadable map is still a file the copy would overwrite → counted as gated
+        !isempty(pt) && (try has_gating(img, vn, pt) catch; true end) && push!(gated, uid)
     end
-    200, JSON3.write((; available, missing))
+    200, isempty(pt) ? JSON3.write((; available, missing)) : JSON3.write((; available, missing, gated))
 end
 
 # ── Project ownership (USER_PROFILE_PLAN Phase 5) ─────────────────────────────────

@@ -240,8 +240,10 @@ corrected copy of every channel on a dye with ≥ 3 markers as a feature column.
   < 3 channels and is left alone.
 - **Scanner AF subtraction does not cover it.** The validation data had `afSubtracted` on every channel
   and still carried it; unlike the image-level AF correction this task does not skip those channels.
-- **Re-measuring drops the columns.** `segment.measureLabels` rewrites the table and the correction
-  composite carries obs only, so re-run this task after either. A re-run clears every `af_` column first.
+- **Re-measuring re-applies it.** `segment.measureLabels` rebuilds the table, which drops the `af_`
+  columns; when the old table had them, the re-measure re-runs this task on the new values with its last
+  run's settings (`af_cells_reapply!`), logged as its own run so nothing reads as stale. A re-run clears
+  every `af_` column first.
 - **QC.** `sameDyeBefore` / `sameDyeAfter`: mean Spearman between markers on one dye. A warning when no
   dye has 3 markers, or when less than half of the shared signal went (the grouping is probably wrong).
 
@@ -254,6 +256,16 @@ reached 0.02, but that divided at the bright end (the same positive read half as
 cell); `test_result_review_af_units.py` pins it. Removing a spatial background instead (10th percentile
 of the 300 nearest cells), or smoothing the per-cell estimate over 25 µm, left 0.42 / 0.32: the
 autofluorescence follows cell types, not a field across the tissue.
+
+**Across the set** (the same panel, 8 images, 808–171,845 cells; dye groups from the acquisition record):
+same-dye 0.38–0.44 → 0.06–0.11 on seven, 0.17 on the eighth (a small, stroma-heavy image with a third of
+the others' DAPI, other-dye 0.35 → 0.14). CD4–MUC2 0.69–0.91 → 0.14–0.66. What is left is cycle-ordered:
+same-dye markers in ADJACENT cycles still correlate 0.16–0.29, markers ≥ 3 cycles apart 0.03–0.08. Part
+of that is the panel (related markers sit in consecutive cycles: IgM–CD20, CD3–CD8), part looks like
+carry-over on a few pairs (CD20 → CD3, FAP → CD163), but it has no consistent direction (59 % of
+adjacent pairs lean forward). Three variants were tried and rejected: a second pass removing a component
+shared across ALL dyes (no change — the residual is not cross-dye), and a background from the ±2 / ±4
+nearest cycles only (same-dye 0.09 → 0.14, distant pairs rose, and it cut IgM–CD20 0.57 → 0.30).
 
 ---
 

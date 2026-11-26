@@ -11,6 +11,7 @@
 
 import { sanitizeHtml } from './sanitizeHtml'
 import { marked, Marked, type Tokens } from 'marked'
+import { escapeHtml } from './escapeHtml'
 
 marked.setOptions({ gfm: true, breaks: false })
 
@@ -30,10 +31,6 @@ const _BB_ANCHOR  = _BB_OPEN
 
 interface BbWikiToken extends Tokens.Generic { type: 'bbWiki'; id: string }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-}
 
 /** Build a Marked instance that resolves `[[bb-…]]` against `titleById`. Instantiated per-render
  *  so the closure over `titleById` stays local — no global state, no cross-render bleed. */
