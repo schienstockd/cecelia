@@ -165,6 +165,7 @@ export pop_positions, pop_index_by_label
 export image_metric_frame, image_metric_summary, IMAGE_METRIC_SOURCES
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
+export track_classes, track_class_table, track_class_children, track_class_settings, track_class_summary
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
 # `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
 # the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.
@@ -356,6 +357,7 @@ include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plo
 include("tracking/track_windows.jl")      # fixed-duration (tracklet) measures (pure; used by trackMeasures)
 include("tracking/track_approach.jl")     # approach toward a contacts target (pure; used by trackMeasures)
 include("tracking/track_cohort.jl")       # (images × population) grouping for the two track plots
+include("tracking/track_classes.jl")      # one sub-population call per track (on read; TRACK_SUBPOP_GATING_PLAN P5)
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")

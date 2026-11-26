@@ -63,6 +63,10 @@ mutable struct Population
     # `at` now marks the population stale until someone re-picks. `nothing` = not a cluster pop, or one
     # picked before runs were stamped (never shown stale).
     run_at::Union{String,Nothing}
+    # How a tracked population calls each of its tracks one of its sub-populations (`trackClass`:
+    # `threshold`, `level` — `track_class_settings`, app/src/tracking/track_classes.jl). `nothing` =
+    # the defaults; stored here so a change re-stamps the map like any gate edit.
+    track_class::Union{Dict{String,Any},Nothing}
 end
 
 # ── PopulationTree (a tree for one value_name) ────────────────────────────────────

@@ -503,6 +503,17 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   population's ⋯ menu offers **Add tracked cells** (flow map of a tracked segmentation): an ordinary
   filter child `tracked`, rule `track_id > 0` — `_tracked`'s rule, so the two hold the same cells — that
   follows re-tracking and takes gates like any population (`utils/trackedChild.ts`).
+- **Track class — one sub-population per track.** A tracked cell flickers between sub-populations
+  near a gate line, so a track gets one call: `track_classes(img; value_name, parent)`
+  (`app/src/tracking/track_classes.jl`) gives each track of `parent` (any cell in it) the fraction of
+  its cells in each sub-population and the one fraction **above** the threshold (default 0.5, a strict
+  majority), else `mixed`; a tie is mixed. The denominator is every cell of the track, so a cell now
+  outside every sub-population counts against purity; overlapping sub-populations are each counted.
+  Sub-populations are the children `level` levels down (default 1; a leaf above stands for itself),
+  minus the `tracked` child. `threshold` / `level` are stored on the parent (`trackClass`, set by
+  `pop/update`), so a change re-stamps the map. `GET /api/gating/track-classes` answers the counts and
+  `mixedPct`. The fraction moves with the gate: for a population near a line, a track gate on
+  `<channel> median` (the track axis picker) is the steadier classifier.
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths

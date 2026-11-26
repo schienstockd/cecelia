@@ -1,6 +1,6 @@
 # TRACK_SUBPOP_GATING_PLAN
 
-Status: in progress (2026-11-25) · plan #2513 · P1–P4 built (`feat/track-subpop-p1`…`-p4`).
+Status: in progress (2026-11-26) · plan #2513 · P1–P4 merged (#2516, #2534, #2537, #2538) · P5 built.
 Brief: [`../archive/TRACK_SUBPOP_GATING_PROMPT.md`](../archive/TRACK_SUBPOP_GATING_PROMPT.md) (its
 banner lists the premises that turned out wrong). Reviewed once by a fresh agent (2026-11-25); its
 corrections are folded in.
@@ -111,7 +111,7 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 | **P2** ✅ | Track gating axes list cell measures (Morphology/Channels) beside motility; a summary select (median default) beside a picked cell measure; `colLabel` names `<channel> median`. Frontend only (`utils/trackAxis.ts`, `GatePlotPanel.vue`, `stores/gating.ts`); backend already gated on aggregates (`pop_plot_cols.jl:119`) | small |
 | **P3** ✅ | **Tracked only** switch in the viewer Tracks section (per set, on by default): dims untracked dots by `UNTRACKED_DIM` in segmentations whose tracks are drawn; recorded (`dimUntracked` look key → `_overlay_parts`). Ribbon rows read `tracked / gated` | medium (recording parity) |
 | **P4** ✅ | **Add tracked cells** in a population's ⋯ menu (flow map of a tracked segmentation, once per population): a filter child `tracked`, `track_id > 0`, in the parent's colour (`utils/trackedChild.ts`, `PopulationManager.vue`). Test: it holds exactly the derived `_tracked`'s cells | small |
-| **P5** | Per-track sub-pop fractions + class on read — reuse the categorical branch of `track_props` (`track_props.jl:131`, already count/`nrow` per category) by feeding child membership as one categorical column built with `pop_membership` (`gating_engine.jl:270`); overlapping sibling gates (not quadrants, but possible) need a rule — first child in tree order, or one indicator column per child. Threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
+| **P5** ✅ | `track_classes` (`app/src/tracking/track_classes.jl`): per-child fraction of a track's cells + class, strict majority over the threshold; overlapping children each counted (no order rule); threshold + level stored on the parent (`trackClass`); `GET /api/gating/track-classes` (counts, `mixedPct`). Measured on `7HDUcJ` `frags` (4,561 tracks): mixed 2.8 % at 0.5, 13.2 % at 0.6, 21.9 % at 0.7, 35.4 % at 0.8 — 0.5 kept. Was: Per-track sub-pop fractions + class on read — reuse the categorical branch of `track_props` (`track_props.jl:131`, already count/`nrow` per category) by feeding child membership as one categorical column built with `pop_membership` (`gating_engine.jl:270`); overlapping sibling gates (not quadrants, but possible) need a rule — first child in tree order, or one indicator column per child. Threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
 | **P6** | Tracks Colour by sub-population + dominant sub-population; level picker; recording parity (`ViewerDrawSpec`) | medium |
 | **P7** | **mostly `<child>`** derived pops (Decision 7) at cell and track grain | medium |
 | **P8** | Cluster tracks **Populations** group (fractions; docs note on compositional sums, no auto-drop) | small |
@@ -121,7 +121,7 @@ P1–P3 are independent and safe in the hardening phase. P5 gates P6–P8.
 ## Risks and open questions for D
 
 - Decisions 1 and 2 (★).
-- **Threshold default** (Decision 5): measure % mixed on `7HDUcJ` in P5 before locking 0.5.
+- **Threshold default** (Decision 5): locked at 0.5 — 2.8 % of `7HDUcJ`'s `frags` tracks mixed (P5).
 - **Fractions near a gate line** move with the gate; the median-intensity track gate is the answer
   for borderline pops — say so in `docs/POPULATION.md`.
 - **Real switching vs flicker**: a fragment that loses TOM is biology and the class hides it.
