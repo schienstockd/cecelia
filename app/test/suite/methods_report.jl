@@ -315,3 +315,15 @@ end
     @test !occursin("logged \"third\"", set_md)
     rm(proj.root; recursive = true)
 end
+
+@testset "Methods report — a sweep version is a trial when any image ran it beside the one read" begin
+    # the same case as chain_from_history's: movement_5 last ran on one image's OTI alone, but the other
+    # image ran it on the tracks the clustering's movement_3 read — still a try, not the method
+    proj, s, imgs = _mr_project("RFtn9f_TKufLV", 2)
+    _hmm_m5_on_oti!(proj, imgs[1].uid)
+    r = methods_report(proj; set_uid = s.uid)
+    usage = [row["usage"] for row in r["table"]
+             if row["task"] == "behaviour.hmm" && occursin("colName=movement_5", row["changedFromDefault"])]
+    @test !isempty(usage) && all(==("trial"), usage)
+    rm(proj.root; recursive = true)
+end

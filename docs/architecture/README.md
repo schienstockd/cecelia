@@ -89,8 +89,8 @@ pixi run test-py            # includes test_architecture_docs.py — the pins an
 
 ## Not here yet
 
-- **A shared frontend API client.** 126 frontend files call the backend themselves. Not a rule yet:
-  there is no canonical client for new code to use instead. Deferred, with its trigger, in
-  [FUTURE.md](../FUTURE.md#a-shared-frontend-api-client).
+- **A rule for the frontend API client.** `frontend/src/utils/api.ts` is the client
+  (`frontend/CLAUDE.md`); the remaining bare `fetch(` calls are being moved onto it, one PR per
+  directory. A ratchet on their count lands when they are done.
 - **Freshness of the views.** The generated pages are refreshed by hand; only the gap counts are
   checked on every change (the Julia upward calls by `test-pkg`, the rest by `test-py`).

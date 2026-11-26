@@ -25,10 +25,10 @@ flowchart LR
   plots["plots<br/><small>51 files · 8.7k lines</small>"]
   stores["stores<br/><small>36 files · 7.9k lines</small>"]
   tasks["tasks<br/><small>18 files · 9.5k lines</small>"]
-  utils__flat_["utils (flat)<br/><small>292 files · 35.5k lines</small>"]
+  utils__flat_["utils (flat)<br/><small>293 files · 35.7k lines</small>"]
   utils_viewer["utils/viewer<br/><small>22 files · 2.7k lines</small>"]
   components__flat_ -->|202| utils__flat_
-  modules -->|152| utils__flat_
+  modules -->|153| utils__flat_
   components__flat_ -->|138| stores
   modules -->|125| components__flat_
   modules -->|103| stores
@@ -43,7 +43,7 @@ flowchart LR
   components_canvas -->|52| plots
   components_plots -->|50| composables
   tasks -->|47| utils__flat_
-  components_plots -->|45| utils__flat_
+  components_plots -->|46| utils__flat_
   modules -->|45| plots
   modules -->|39| components_canvas
   components_canvas -->|37| components__flat_
@@ -68,29 +68,29 @@ flowchart LR
 | **components (other)** |  | 17 | · |  |  |  |  | 12 |  | 8 |  |  |  |  | 23 |  | 25 | 3 |
 | **components/canvas** |  | 37 | 1 | · |  | 16 |  | 26 |  | 3 |  |  | 2 | 52 | 31 |  | 62 | 1 |
 | **components/lightPath** |  |  |  |  | · |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| **components/plots** |  | 21 |  | 1 |  | · |  | 50 |  | 4 |  |  |  | 98 | 23 |  | 45 | 3 |
+| **components/plots** |  | 21 |  | 1 |  | · |  | 50 |  | 4 |  |  |  | 98 | 23 |  | 46 | 3 |
 | **components/viewerWindow** |  | 26 | 2 |  |  |  | · | 6 |  | 2 |  |  |  | 3 | 11 |  | 15 | 6 |
 | **composables** |  |  |  |  |  |  |  | · |  | 3 |  |  |  | 7 | 53 |  | 61 | 7 |
 | **directives** |  |  |  |  |  |  |  |  | · |  |  |  |  |  |  |  | 3 |  |
 | **lib (flat)** |  |  |  |  |  |  |  |  |  | · |  |  |  |  | 5 |  | 6 |  |
 | **lib/guides** |  |  |  | 1 |  |  |  |  |  | 4 | · |  | 1 |  |  |  | 4 |  |
 | **lib/webgpu** |  |  |  |  |  |  |  |  |  |  |  | · |  |  |  |  | 26 |  |
-| **modules** |  | 125 | 1 | 39 |  | 10 | 14 | 67 |  | 14 |  | 3 | · | 45 | 103 | 19 | 152 | 22 |
+| **modules** |  | 125 | 1 | 39 |  | 10 | 14 | 67 |  | 14 |  | 3 | · | 45 | 103 | 19 | 153 | 22 |
 | **plots** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | · |  |  | 14 | 2 |
 | **stores** | 1 |  |  |  |  |  |  | 3 |  | 11 | 4 |  |  | 2 | · |  | 67 | 5 |
 | **tasks** |  | 20 | 1 |  |  |  |  | 5 |  | 7 |  |  |  |  | 20 | · | 47 | 1 |
-| **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 9 | 8 | · | 1 |
+| **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 10 | 8 | · | 1 |
 | **utils/viewer** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | 1 | 11 |  | 23 | · |
 
 </details>
 
 ## Where the backend is called
 
-Files that call `fetch(`, open a `WebSocket` or an `EventSource`: **118** of 830. There is no single API client — each of these speaks HTTP itself.
+Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` or an `EventSource`: **121** of 831. HTTP calls go through `utils/api.ts` (status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.
 
 | Group | Files |
 |---|---|
-| utils (flat) | 26 |
+| utils (flat) | 28 |
 | components (flat) | 21 |
 | modules | 16 |
 | stores | 15 |
@@ -98,7 +98,7 @@ Files that call `fetch(`, open a `WebSocket` or an `EventSource`: **118** of 830
 | components/plots | 11 |
 | components/canvas | 4 |
 | tasks | 4 |
-| utils/viewer | 3 |
+| utils/viewer | 4 |
 | lib (flat) | 2 |
 | components (other) | 1 |
 | components/viewerWindow | 1 |
