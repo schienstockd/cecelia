@@ -44,6 +44,7 @@ that adds one, naming it, and fails again once gaps are closed until the ceiling
 | Both ends of every boundary match: no WebSocket type sent without a handler or handled without a sender, no route nothing calls, no runner nothing launches, every shared data file named by a test | `boundaries_extract.py` | `ws-*`, `route-uncalled`, `runner-unlaunched`, `shared-file-unguarded` |
 | Julia areas call down the declared layer order, never up | `[layers]` in `scripts/architecture/julia_areas.toml` | `julia-upward` (live in `test-pkg`) |
 | The viewer engine (`lib/webgpu`, `utils/viewer`) takes inputs and imports no app store but its own | `vue_extract.py` | `viewer-store` |
+| The frontend calls the backend through `frontend/src/utils/api.ts` (status checked, failures logged), never a bare `fetch(` | `vue_extract.py`; `frontend/CLAUDE.md` | `fetch-direct` |
 | No import loops between Python modules or between Pinia stores | `python_extract.py`, `vue_extract.py` | `py-cycle`, `store-cycle` |
 
 The Julia kind needs the package loaded, so `test_architecture_gaps.py` reads it from the committed
@@ -89,8 +90,5 @@ pixi run test-py            # includes test_architecture_docs.py — the pins an
 
 ## Not here yet
 
-- **A rule for the frontend API client.** `frontend/src/utils/api.ts` is the client
-  (`frontend/CLAUDE.md`); the remaining bare `fetch(` calls are being moved onto it, one PR per
-  directory. A ratchet on their count lands when they are done.
 - **Freshness of the views.** The generated pages are refreshed by hand; only the gap counts are
   checked on every change (the Julia upward calls by `test-pkg`, the rest by `test-py`).

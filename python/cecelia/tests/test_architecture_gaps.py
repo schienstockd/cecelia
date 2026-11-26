@@ -78,5 +78,34 @@ class TestGapRatchet(unittest.TestCase):
                                     "`pixi run arch-diagrams && pixi run arch-gaps-baseline`\n" + "\n".join(loose))
 
 
+
+class TestBareFetchScan(unittest.TestCase):
+    """`fetch-direct` counts direct calls of the global `fetch` — the scan must see a call however it is
+    written, and must not count a method of that name, a comment, or an exempt line."""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("arch_vue", _SCRIPTS / "vue_extract.py")
+        cls.v = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(_SCRIPTS))   # vue_extract imports its sibling `gaps`
+        try:
+            spec.loader.exec_module(cls.v)
+        finally:
+            sys.path.remove(str(_SCRIPTS))
+
+    def test_a_call_is_seen(self):
+        for ln in ["const r = await fetch('/api/x')", "fetch(url, { method: 'POST' })",
+                   "  return (await fetch (`/api/a`)).json()", "x = fetch(u)"]:
+            self.assertTrue(self.v.BARE_FETCH.search(ln) and not self.v.METHOD_SIG.match(ln), ln)
+
+    def test_a_method_named_fetch_is_not(self):
+        self.assertIsNone(self.v.BARE_FETCH.search("await io.fetch(t)"))
+        self.assertIsNone(self.v.BARE_FETCH.search("prefetch(t)"))
+        self.assertIsNotNone(self.v.METHOD_SIG.match("  fetch(t: number): Promise<boolean>"))
+
+    def test_the_exempt_marker_is_the_one_routes_use(self):
+        self.assertEqual(self.v.EXEMPT, "ARCH-EXEMPT:")
+
+
 if __name__ == "__main__":
     unittest.main()
