@@ -19,7 +19,8 @@
 // through a `debouncedLatest` pump.
 
 import type { MaskStore } from './viewerLabels'
-import type { ViewerLevel, ViewerMeta } from './volumeViewer'
+import { MAX_CHANNELS, type ViewerLevel, type ViewerMeta } from './volumeViewer'
+import { WEBGPU_DEFAULT_DIM3D } from './webgpuProbe'
 
 /** A tile at timepoint `t`, plane `z`, level `level`, tile-grid coordinates `(tx, ty)`. Channels are
  *  stacked inside the slot, so there is no per-channel key. `t` used to be viewer state ("flush on
@@ -366,4 +367,27 @@ export function splitChannelSlab(buf: ArrayBuffer, n: number): ArrayBuffer[] {
   }
   const per = buf.byteLength / n
   return Array.from({ length: n }, (_, i) => buf.slice(i * per, (i + 1) * per))
+}
+
+/** Plane bytes above which the whole-plane fetch goes tiled: 200 MB, chosen against Chromium/Dawn's
+ *  256 MB `maxBufferSize` — a plane above this genuinely CANNOT be uploaded in one texture write. Not
+ *  tuned. (VIEWER_TILES_PLAN.md → Phase C; the `f8gzA2`-shape whole slide.) */
+export const PLANE_TILE_THRESHOLD_BYTES = 200e6
+
+/**
+ * Whether the 2D plane view needs the tile pipeline rather than the flat renderer's whole-plane path.
+ * Below both triggers the whole-plane path works and the atlas adds plumbing for no visible win.
+ *
+ *  1. BYTES — the L0 plane (all shown channels) over `PLANE_TILE_THRESHOLD_BYTES`.
+ *  2. WIDTH — L0 wider than `dim3D` (the adapter's `maxTextureDimension3D`) on either axis. The flat
+ *     renderer holds the plane as ONE 3D texture, so on a 2048-limit (integrated) GPU a 2576² frame is
+ *     refused at `createTexture` however few bytes it is, and every frame after draws nothing. Tiles
+ *     are chunk-sized, so they fit.
+ *
+ * Timepoints are part of the tile key (Phase F), so a timecourse is fine on the tile path.
+ */
+export function planeNeedsTiling(meta: ViewerMeta, dim3D: number = WEBGPU_DEFAULT_DIM3D): boolean {
+  const nch = Math.min(meta.nC, MAX_CHANNELS)
+  return meta.nX * meta.nY * meta.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
+    || meta.nX > dim3D || meta.nY > dim3D
 }
