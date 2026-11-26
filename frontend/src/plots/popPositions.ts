@@ -8,8 +8,6 @@
  */
 import type { SeriesTarget } from './types'
 import { categoricalColours } from './plot'
-import { measurePickGroups, type SearchGroup } from '../utils/searchSelect'
-import { lensLabel } from '../utils/viewer/lensQuery'
 
 /** Floats per cell on the wire: x, y, t, popIdx, value. */
 export const POS_STRIDE = 5
@@ -69,17 +67,6 @@ export function positionLayers(buf: Float32Array, frame: number | null, nPops: n
   }
   return { base: Float32Array.from(base), values: Float32Array.from(values),
            pops: pops.map(p => Float32Array.from(p)), n: base.length / 2 }
-}
-
-/** The colour-by picker's groups: the lens scores first (Find similar's score maps — the reason the
- *  setting exists), then every other cell column; '' = colour by populations. */
-export function colourByGroups(columns: readonly string[], lensNames: Record<string, string> = {}): SearchGroup[] {
-  const lens = columns.filter(c => c.startsWith('spatial.lens.'))
-  const rest = columns.filter(c => !c.startsWith('spatial.lens.'))
-  return measurePickGroups([{ title: 'Lens scores', cols: lens }, { title: 'Cell measures', cols: rest }]
-                             .filter(g => g.cols.length),
-                           c => (lens.includes(c) ? lensLabel(c, lensNames) : c),
-                           [{ value: '', label: 'Populations' }])
 }
 
 /** ONE colour scale over every tile, so one colour is one value on every image: the span of the tiles'

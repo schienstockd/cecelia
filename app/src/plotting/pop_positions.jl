@@ -83,8 +83,9 @@ function pop_positions(img::CciaImage, value_name, tokens; default_pop_type::Abs
     for vn in vns
         path = img_label_props_path(img, vn)
         (path === nothing || !isfile(path)) && continue
-        cb = !isempty(colour_by) && colour_by in col_names(label_props(path); data_type = :obs)
-        df = label_props(path) |> v -> view_centroid_cols(v; order = [:x, :y]) |>
+        # a result column or a marker by name (`CD4`, `af_CD4`) — the image's view knows its channel names
+        cb = !isempty(colour_by) && !isempty(selectable_cols(label_props(img; value_name = vn), [colour_by]))
+        df = label_props(img; value_name = vn) |> v -> view_centroid_cols(v; order = [:x, :y]) |>
              v -> (cb ? select_cols(v, [String(colour_by)]) : v) |> as_df
         ("centroid_x" in names(df) && "centroid_y" in names(df)) || continue
         # only a calibrated image is scaled: a missing axis defaults to 1.0, so scaling a half-calibrated

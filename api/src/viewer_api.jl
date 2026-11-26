@@ -1156,7 +1156,8 @@ function api_viewer_overlays(req::HTTP.Request)
         extra = String[]
         ("track_id"     in obs) && push!(extra, "track_id")
         ("track_source" in obs) && push!(extra, "track_source")
-        (!isempty(cby) && cby in obs) && push!(extra, String(cby))
+        # a result column or a marker by name (`CD4`, `af_CD4`) — whatever the read can resolve
+        (!isempty(cby) && !isempty(selectable_cols(lp, [cby]))) && push!(extra, String(cby))
         view_centroid_cols(lp; order = [:x, :y, :z])
         isempty(extra) || select_cols(lp, extra)
         df = as_df(lp)
@@ -1223,7 +1224,8 @@ function api_viewer_overlays(req::HTTP.Request)
         # The levels (categorical) or the range (numeric) the client maps onto — computed here for the
         # same reason, so the legend agrees with what a plot of this column would show. The movie
         # reads a column's scale through the same `_cb_scale_of`.
-        scale = used === nothing ? nothing : _cb_scale_of([vals], used; kind_col = df[!, used])
+        scale = used === nothing ? nothing : _cb_scale_of([vals], used; kind_col = df[!, used],
+                                                          feature = !(used in obs))
         kind = scale === nothing ? nothing : (scale.continuous ? "numeric" : "categorical")
         levels = kind == "categorical" ? scale.levels : nothing
         range_ = (kind == "numeric" && scale.range !== nothing) ? collect(scale.range) : nothing

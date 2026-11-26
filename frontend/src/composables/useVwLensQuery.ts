@@ -59,7 +59,7 @@ export function useVwLensQuery(d: VwLensQueryDeps) {
   async function refreshColumns() {
     if (!d.projectUid || !d.imageUid) return
     const out: Record<string, string[]> = {}
-    for (const vn of d.segmentations()) out[vn] = await fetchColourByColumns(d.projectUid, d.imageUid, vn)
+    for (const vn of d.segmentations()) out[vn] = (await fetchColourByColumns(d.projectUid, d.imageUid, vn)).cells
     columns.value = out
   }
   // fetched once a lens is pinned (the only time the button shows), and again after a query wrote
