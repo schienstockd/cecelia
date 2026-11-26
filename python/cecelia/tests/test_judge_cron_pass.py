@@ -59,7 +59,7 @@ class CronPassTest(unittest.TestCase):
                "STUB_DIR": str(self.tmp), "STATE_DIR": str(self.tmp / "state"),
                "CECELIA_EFFECTIVENESS_LOG": str(self.tmp / "state" / "events.jsonl"),
                "CECELIA_EVAL_CRON_LOG_DIR": str(self.tmp / "cron"), "CECELIA_JUDGE_SLEEP": "fake-sleep",
-               "JUDGE_DEPS_FIX": "0", **env_extra}   # its own tests switch it on
+               "JUDGE_DEPS_FIX": "0", "JUDGE_GAPS_FIX": "0", **env_extra}   # their own tests switch them on
         return subprocess.run(["bash", str(_SCRIPT), mode], env=env, capture_output=True, text=True,
                               encoding="utf-8", timeout=60, check=False)
 
@@ -158,6 +158,21 @@ class CronPassTest(unittest.TestCase):
                 proc = self.run_wrapper(plan, JUDGE_DEPS_FIX="1")
                 self.assertEqual((proc.returncode, len(self.lines("calls"))), (0, 3))
                 self.assertIn(said, proc.stderr)
+
+    def test_coherence_gaps_are_worked_last_with_the_same_deadline(self):
+        proc = self.run_wrapper("0,0,0", JUDGE_GAPS_FIX="1")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        calls = self.lines("calls")
+        self.assertEqual(len(calls), 3, calls)
+        self.assertTrue(calls[1].startswith(" run judge-review --auto --until "), calls)
+        self.assertTrue(calls[2].startswith(" run judge-gaps --until "), calls)
+        self.assertEqual(calls[1].split()[-1], calls[2].split()[-1])
+        self.assertTrue(list((self.tmp / "cron").glob("gaps-*.log")))
+
+    def test_a_failed_gaps_fix_never_fails_the_pass(self):
+        proc = self.run_wrapper("0,0,1", JUDGE_GAPS_FIX="1")
+        self.assertEqual((proc.returncode, len(self.lines("calls"))), (0, 3))
+        self.assertIn("judge-gaps exited 1", proc.stderr)
 
     def test_no_deps_fix_after_a_failed_pass(self):
         self.assertEqual(self.run_wrapper("1", JUDGE_DEPS_FIX="1").returncode, 1)
