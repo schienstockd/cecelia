@@ -9,6 +9,7 @@
 import { ref, computed, watch } from 'vue'
 import ChipSelect from './ChipSelect.vue'
 import { useToast } from '../composables/useToast'
+import { getJson, postJson, tryApi } from '../utils/api'
 import { HOUSE_STYLE, STYLE_LIMITS, effectiveStyle, styleOverrides, figureLayout, sampleTimeLabel,
          type FigureStyle } from '../utils/figureStyle'
 
@@ -23,9 +24,8 @@ const error = ref('')
 
 async function load() {
   error.value = ''
-  const res = await fetch(`/api/figures/style?projectUid=${encodeURIComponent(props.projectUid)}`)
-  const body = await res.json().catch(() => ({}))
-  draft.value = effectiveStyle(body.style)
+  const r = await tryApi(getJson<{ style?: Partial<FigureStyle> }>('/api/figures/style', { query: { projectUid: props.projectUid } }))
+  draft.value = effectiveStyle(r.ok ? r.data?.style : undefined)   // no saved style / a failure → the house style
   saved.value = JSON.stringify(draft.value)
 }
 watch(() => props.projectUid, load, { immediate: true })
@@ -34,13 +34,9 @@ async function save(style: Partial<FigureStyle>) {
   busy.value = true
   error.value = ''
   try {
-    const res = await fetch('/api/figures/style', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, style }),
-    })
-    const body = await res.json().catch(() => ({}))
-    if (!res.ok) { error.value = body.error ?? `HTTP ${res.status}`; return }
-    draft.value = effectiveStyle(body.style)
+    const r = await tryApi(postJson<{ style?: Partial<FigureStyle> }>('/api/figures/style', { projectUid: props.projectUid, style }))
+    if (!r.ok) { error.value = r.error; return }
+    draft.value = effectiveStyle(r.data?.style)
     saved.value = JSON.stringify(draft.value)
     toast.add({ severity: 'success', summary: 'Figure style saved', life: 2500 })
     emit('saved')
