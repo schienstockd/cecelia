@@ -72,7 +72,7 @@ Subtypes by where they are defined:
 
 ## `Gate`
 
-Defined in `app/src/gating/gates.jl:8` · 6 subtypes · 4 required, 5 with a default, 11 subtype-specific
+Defined in `app/src/gating/gates.jl:8` · 6 subtypes · 4 required, 4 with a default, 11 subtype-specific
 
 **To add a subtype** — implement the required and expected functions; override an optional one only to change its default.
 
@@ -84,7 +84,6 @@ Defined in `app/src/gating/gates.jl:8` · 6 subtypes · 4 required, 5 with a def
 | `inside_t` | **required** | BisectorGate, PolygonGate, QuadrantGate, RangeGate, RectangleGate, SliceGate |
 | `gate_group` | optional | BisectorGate |
 | `needs_parent_data` | optional | BisectorGate, RangeGate |
-| `resolve_cut` | optional | BisectorGate |
 | `resolve_rules` | optional | BisectorGate, RangeGate |
 | `with_divider` | optional | BisectorGate, QuadrantGate, SliceGate |
 
@@ -108,7 +107,6 @@ classDiagram
     +mirror_region()
     +needs_parent_data()
     +quadrant_of()
-    +resolve_cut()
     +resolve_rules()
     +template_centre()
     +template_size()
@@ -122,7 +120,6 @@ classDiagram
     +gate_spec()
     +inside_t()
     +needs_parent_data()
-    +resolve_cut()
     +resolve_rules()
     +with_divider()
   }

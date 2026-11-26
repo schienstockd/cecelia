@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { BACKEND_CALL } from '../utils/api'
 
 // COVERAGE ratchet for the task-refresh framework (docs/todo/TASK_DATA_REFRESH_PLAN.md).
 //
@@ -88,7 +89,7 @@ describe('task-refresh coverage', () => {
       .filter(s => !s.text.includes('useDataRefresh'))
       .filter(s => !(s.path in EXEMPT))
       // pure helpers/types name the routes in comments or builders but fetch nothing themselves
-      .filter(s => /fetch\(/.test(s.text))
+      .filter(s => BACKEND_CALL.test(s.text))
       .map(s => s.path)
     expect(unaccounted).toEqual([])
   })

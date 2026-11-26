@@ -105,12 +105,6 @@ needs_parent_data(::Gate) = false
 needs_parent_data(g::BisectorGate) = g.rule !== nothing
 needs_parent_data(g::RangeGate) = g.lo_rule !== nothing || g.hi_rule !== nothing
 
-"""The rule's cut on these RAW parent values, or `nothing` (no rule, or no valley in its window)."""
-resolve_cut(::Gate, raw) = nothing
-function resolve_cut(g::BisectorGate, raw::AbstractVector)
-    r, flags = resolve_rules(g, _rule_values(g, raw))
-    get(flags, "rule_ok", false) ? r.cut : nothing
-end
 _rule_cut(r::Nothing, v, valley = valley_cut) = nothing
 _rule_cut(r::ValleyRule, v, valley = valley_cut) = valley(v, r.lo, r.hi; adjust = r.adjust)
 

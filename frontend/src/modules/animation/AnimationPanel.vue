@@ -36,6 +36,7 @@ import PaneExpandBar from '../../components/PaneExpandBar.vue'
 import TaskSummaryLine from '../../tasks/TaskSummaryLine.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import { useMovieSuffixes } from '../../composables/useMovieSuffixes'
+import { postJson } from '../../utils/api'
 
 const props = defineProps<{ selectedUids: string[]; setUid?: string }>()
 
@@ -100,21 +101,14 @@ async function screenshot(what: string): Promise<{ assetId?: string; viewState?:
     return null
   }
   try {
-    const res = await fetch('/api/viewer/thumbnail', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: projectUid.value, imageUid: uid,
-        // The version the viewer is showing (same rule as `readViewerLook`), not the active one —
-        // `vs` was captured off those pixels, and the render reads the viewer's version too.
-        valueName: (isOpen.value ? viewer.openImage?.valueName : '') || activeImage.value?.activeValueName,
-        viewState: vs,
-      }),
-    })
-    if (!res.ok) {
-      log.error(`${what} failed: ${(await res.json().catch(() => ({}))).error ?? res.status}`, { source: 'movies' })
-      return null
-    }
-    const j = (await res.json()) as { assetId?: string; imageUid?: string }
+    // quiet: the catch below logs the failure itself
+    const j = (await postJson<{ assetId?: string; imageUid?: string }>('/api/viewer/thumbnail', {
+      projectUid: projectUid.value, imageUid: uid,
+      // The version the viewer is showing (same rule as `readViewerLook`), not the active one —
+      // `vs` was captured off those pixels, and the render reads the viewer's version too.
+      valueName: (isOpen.value ? viewer.openImage?.valueName : '') || activeImage.value?.activeValueName,
+      viewState: vs,
+    }, { quiet: true })) ?? {}
     // Freeze a deep clone of the viewer state HERE so a subsequent viewer edit doesn't mutate the
     // captured keyframe (the store's ref is the live view — a Pinia reactive proxy that isn't
     // safe to hand out by reference). Use a JSON round-trip rather than `structuredClone`: the
@@ -172,10 +166,8 @@ async function updateSelected() {
     sel.original = JSON.parse(JSON.stringify(j.viewState ?? {}))   // new baseline (no longer "edited")
     sel.assetId = j.assetId
     if (oldAsset && oldAsset !== j.assetId && !anim.snapshots.some(o => o.assetId === oldAsset)) {
-      fetch('/api/board-assets/delete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: projectUid.value, assetId: oldAsset }),
-      }).catch(() => {})
+      // best-effort cleanup: quiet, as before
+      postJson('/api/board-assets/delete', { projectUid: projectUid.value, assetId: oldAsset }, { quiet: true }).catch(() => {})
     }
   } catch (e) {
     log.error(`Update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })

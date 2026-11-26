@@ -36,6 +36,34 @@ function _run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,
     error("$(typeof(task)) does not support set-scope execution (scope=\"set\")")
 end
 
+"""
+    run_task_logged!(task, img, fun_name, value_name, params; by, caller, id_prefix,
+                     on_log, on_progress, on_process) -> result
+
+Run `task` on `img` OUTSIDE the scheduler and log it as its own run, the way the scheduler logs a job:
+provenance (inputs, replaces, gates) at open, `done`/`failed` at close on every path. For a rebuild
+another action triggers: a re-measure re-applying afCells, a track-set delete rebuilding track
+measures. `by`/`caller` default to whoever is asking now. Rethrows what the task throws.
+"""
+function run_task_logged!(task, img::CciaImage, fun_name::AbstractString, value_name::AbstractString,
+                          params::Dict{String,Any};
+                          by::AbstractString = active_profile_name(), caller::AbstractDict = caller_stamp(),
+                          id_prefix::AbstractString = "inline",
+                          on_log::Function = line -> println(line), on_progress::Function = (n, t) -> nothing,
+                          on_process::Function = _ -> nothing)
+    pv  = run_provenance(fun_name, img, params)
+    tid = "$(id_prefix)-" * string(rand(UInt32); base = 16)
+    open_run_log!(img, fun_name, value_name, params; task_id = tid, by, caller,
+                  inputs = pv.inputs, replaces = pv.replaces, gates = pv.gates)
+    res = try
+        _run_task(task, img, params; on_log, on_progress, on_process)
+    catch
+        close_run_log!(img, tid, "failed"); rethrow()
+    end
+    close_run_log!(img, tid, res === nothing ? "failed" : "done")
+    res
+end
+
 include("task/spec.jl")
 include("task/registry.jl")
 include("task/validate.jl")

@@ -130,7 +130,7 @@ Both directions present (any n). In one module these are legal, but each pair is
 | jobs (export, import, maintenance) ↔ ai+lab log | 1: `active_profile_name` | 2: `_kill_proc_tree`, `write_stored_zip` |
 | config ↔ ai+lab log | 1: `active_profile_name` | 14: `_pid_alive`, `_pretty_json`, `api_token_path`, `cecelia_conf`, … |
 | run records ↔ scheduler+chains | 6: `_history_leaves`, `_history_output`, `_keyed_strings`, `_preflight_fields`, … | 20: `RunUsage`, `_rl_get`, `_rl_str`, `_run_has_output`, … |
-| run records ↔ task framework | 5: `_composite_step_names`, `_task_from_fun_name`, `task_params_name`, `task_source_stamp`, … | 1: `run_env_of` |
+| run records ↔ task framework | 5: `_composite_step_names`, `_task_from_fun_name`, `task_params_name`, `task_source_stamp`, … | 4: `close_run_log!`, `open_run_log!`, `run_env_of`, `run_provenance` |
 | run records ↔ gating | 4: `is_gating_pop_type`, `load_pop_tree`, `pop_gate_hashes`, `resolve_pop_type` | 4: `drop_props_sidecar_keys!`, `props_sidecar_path`, `put_props_sidecar_entry!`, `read_props_sidecar` |
 | scheduler+chains ↔ task framework | 24: `CompositeTask`, `ParamValidationError`, `TaskApplicabilityError`, `_clamp_to_spec`, … | 2: `_fun_name_from_task`, `list_tasks` |
 | scheduler+chains ↔ tasks | 2: `_str_list`, `validate_params` | 1: `pool_status` |
@@ -139,13 +139,14 @@ Both directions present (any n). In one module these are legal, but each pair is
 | scheduler+chains ↔ qc+checks | 2: `chain_cohort_qc!`, `write_defaulted_scale_qc!` | 3: `_history_leaves`, `_history_output`, `is_bookkeeping_param` |
 | scheduler+chains ↔ hpc | 3: `_with_run_target`, `hpc_resources`, `task_runs_on_hpc` | 4: `_fun_name_from_task`, `_task_pool_name`, `is_cancelled`, `iso_utc` |
 | scheduler+chains ↔ ai+lab log | 2: `_parse_tkey`, `active_profile_name` | 18: `_cache_dir`, `_chains_dir`, `_history_leaves`, `_history_param_defaults`, … |
-| task framework ↔ tasks | 59: `AfCells`, `AfCorrect`, `AggregatesMeshes`, `BayesianTracking`, … | 5: `ParamValidationError`, `_picked_channels`, `_spec_output_value_name`, `register_param_validator!`, … |
+| task framework ↔ tasks | 59: `AfCells`, `AfCorrect`, `AggregatesMeshes`, `BayesianTracking`, … | 6: `ParamValidationError`, `_picked_channels`, `_spec_output_value_name`, `register_param_validator!`, … |
 | task framework ↔ cell data | 6: `SegmentStalenessReport`, `TrackingStalenessReport`, `label_props`, `n_obs`, … | 1: `_task_spec` |
 | task framework ↔ qc+checks | 1: `channel_signal_flags` | 4: `_composite_step_names`, `_stored_key`, `_task_from_fun_name`, `task_params_name` |
+| task framework ↔ ai+lab log | 1: `active_profile_name` | 6: `CompositeTask`, `_composite_step_names`, `_composite_steps`, `_show_if_satisfied`, … |
 | tasks ↔ gating | 25: `Population`, `_clustfeatures_entry`, `_clustfeatures_path`, `_group_pops_by_value_name`, … | 1: `Track` |
 | tasks ↔ tracking+spatial | 27: `_basis_name`, `_basis_segments`, `append_corrections!`, `apply_track_ops!`, … | 8: `Track`, `_comp_col`, `roi_review_labels`, `store_written_at`, … |
 | tasks ↔ qc+checks | 18: `_cal_num`, `_cluster_run_env`, `_saturation_channels`, `acquisition_technology`, … | 6: `Denoise`, `Track`, `import_source_fingerprint`, `ngff_multiscales`, … |
-| tasks ↔ plots+boards | 3: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` | 10: `Branching`, `Track`, `TrackMeasures`, `_motiffeatures_path`, … |
+| tasks ↔ plots+boards | 3: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` | 9: `Branching`, `Track`, `TrackMeasures`, `_motiffeatures_path`, … |
 | tasks ↔ hpc | 1: `hpc_task_cpus` | 1: `zarr_group_meta_files` |
 | python bridge ↔ hpc | 1: `_run_py_hpc` | 3: `_app_dir`, `_py_task_env`, `pixi_env_name` |
 | cell data ↔ gating | 2: `gating_path`, `is_track_grained` | 16: `_split_channel_column`, `as_df`, `axis_of`, `canonical_channel_columns`, … |
@@ -182,15 +183,15 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **config** | 4 |  | · |  |  |  |  |  |  |  |  |  |  |  |  | 1 |  |  |
 | **run records** | 5 |  | 6 | · | 6 | 5 |  |  |  |  | 4 |  |  |  |  |  |  |  |
 | **scheduler+chains** | 15 | 1 | 14 | 20 | · | 24 | 2 | 2 | 3 | 2 | 8 |  | 2 |  | 3 | 2 | 1 |  |
-| **task framework** | 13 | 3 | 8 | 1 | 2 | · | 59 |  |  | 6 |  |  | 1 |  |  |  |  |  |
-| **tasks** | 63 | 1 | 36 | 8 | 1 | 5 | · |  | 2 | 29 | 25 | 27 | 18 | 3 | 1 |  |  |  |
+| **task framework** | 13 | 3 | 9 | 4 | 2 | · | 59 |  |  | 6 |  |  | 1 |  |  | 1 |  |  |
+| **tasks** | 63 | 1 | 36 | 5 | 1 | 6 | · |  | 2 | 29 | 25 | 27 | 18 | 3 | 1 |  |  |  |
 | **runner** | 4 | 1 | 13 |  | 18 | 2 |  | · |  |  |  |  |  |  |  | 1 | 6 |  |
 | **python bridge** |  |  | 7 | 2 |  | 1 |  |  | · |  |  |  |  |  | 1 |  |  |  |
 | **cell data** | 20 |  | 7 | 10 | 1 | 1 |  |  | 2 | · | 2 | 2 | 2 |  |  |  |  |  |
 | **gating** | 18 |  | 12 | 4 |  |  | 1 |  |  | 16 | · | 5 | 6 |  |  |  |  |  |
 | **tracking+spatial** | 16 |  | 1 |  |  |  | 8 |  |  | 20 | 6 | · | 1 | 3 |  |  |  |  |
 | **qc+checks** | 17 |  | 5 | 4 | 3 | 4 | 6 |  |  | 2 | 13 |  | · |  |  | 1 |  |  |
-| **plots+boards** | 39 |  | 7 | 4 | 2 | 4 | 10 |  | 2 | 9 | 31 | 7 | 7 | · |  | 5 |  |  |
+| **plots+boards** | 39 |  | 7 | 4 | 2 | 5 | 9 |  | 2 | 9 | 31 | 7 | 7 | · |  | 5 |  |  |
 | **hpc** | 2 | 1 | 12 | 1 | 4 | 1 | 1 |  | 3 |  |  |  |  |  | · |  |  |  |
 | **ai+lab log** | 24 | 2 | 14 | 9 | 18 | 6 | 2 |  |  | 6 | 27 | 1 | 8 | 4 | 1 | · |  |  |
 | **logging** |  |  | 1 |  |  |  |  |  |  |  |  |  |  |  |  |  | · |  |

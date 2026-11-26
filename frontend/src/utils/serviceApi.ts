@@ -5,51 +5,25 @@
 // lifecycle (quit / update / dev restart) stays in appControl — this is only the per-service
 // start/stop/restart controls.
 import type { AiSetBy } from './aiSwitch'
+import { getJson, postJson, tryApi, type ApiError } from './api'
 
 /**
- * A failed service call. `code` is the backend's machine-readable reason (see docs/API.md); a caller
- * that must react differently per reason — a different severity, a different label — switches on
- * `code`, NEVER on the message text, which is prose and free to change.
+ * A failed service call — the client's `ApiError` (utils/api.ts): `status` (0 = no reply), `code` the
+ * backend's machine-readable reason (see docs/API.md) or `'timeout'`. A caller that must react
+ * differently per reason — a different severity, a different label — switches on `code`, NEVER on
+ * the message text, which is prose and free to change.
  */
-export interface SvcError extends Error {
-  status: number
-  code?: string
-}
+export type SvcError = ApiError
 
-/** POST JSON to a service endpoint. Returns the parsed body; throws `SvcError` (server message |
- *  HTTP n, plus `status`/`code`) on a non-2xx response so callers can surface failures in their
- *  own UI state.
+/** POST JSON to a service endpoint. Returns the parsed body (`{}` for an empty reply); throws
+ *  `SvcError` (server message | HTTP n, plus `status`/`code`) on a non-2xx response so callers can
+ *  surface failures in their own UI state.
  *
  *  `timeoutMs` bounds the wait. Worth setting for anything whose UI shows a busy state: a request
  *  that never settles leaves that state stuck with no way out, and "still working" is the one
  *  failure mode a user cannot distinguish from a hang. Rejects with `code: 'timeout'`. */
 export async function svcPost(url: string, body?: object, timeoutMs?: number): Promise<any> {
-  let res: Response
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body ?? {}),
-      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
-    })
-  } catch (e) {
-    // an abort is our own deadline, and must not read like a network error
-    if (timeoutMs && e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
-      const t = new Error(`No answer within ${Math.round(timeoutMs / 1000)} s`) as SvcError
-      t.status = 0
-      t.code = 'timeout'
-      throw t
-    }
-    throw e
-  }
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const err = new Error((data as any)?.error ?? `HTTP ${res.status}`) as SvcError
-    err.status = res.status
-    err.code = (data as any)?.code
-    throw err
-  }
-  return data
+  return (await postJson(url, body ?? {}, { timeoutMs })) ?? {}
 }
 
 /** Pluto notebooks server (port 7660). */
@@ -69,11 +43,8 @@ export const notebooksApi = {
  * `imageUid` for the backend to CHECK, not to select — a mismatch is a 409, never a silent switch.
  */
 export const previewApi = {
-  status: async (): Promise<any> => {
-    const res = await fetch('/api/preview/status')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  },
+  /** Polled (Settings every 4 s, the preview store on each schedule) — quiet; callers catch. */
+  status: (): Promise<any> => getJson('/api/preview/status', { quiet: true }),
   /** Warm the worker. `funName`/`params` name the task about to be previewed, so the worker starts in
    *  the env its model needs (cellpose 3 models run in `cellpose-v3`) rather than paying a second
    *  warm-up switching over on the first request. */
@@ -124,10 +95,8 @@ export const observerApi = {
   /** Availability (drives the disabled-with-why UI) + where the CLI was found, the model allow-list, and whether the user's own
    *  terminal is set up. Never throws → unavailable on error. */
   status: async (): Promise<{ available: boolean; cliPath?: string; models?: string[]; defaultModel?: string; mcpConfigPath?: string; terminal?: ObserverTerminal; ai?: { enabled: boolean; setBy: AiSetBy } }> => {
-    try {
-      const res = await fetch('/api/observer/status')
-      return res.ok ? await res.json() : { available: false }
-    } catch { return { available: false } }
+    const r = await tryApi(getJson<any>('/api/observer/status', { quiet: true }))
+    return r.ok ? r.data : { available: false }
   },
   /** One-click terminal setup: register (or re-sync) the observer MCP in the user's own Claude Code
    *  config so plain `claude` has the tools. Idempotent. Returns { ok, available, name, message, error }. */

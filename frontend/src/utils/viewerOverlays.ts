@@ -19,6 +19,7 @@ import { parseOverlays } from './overlayLayers'
 import { channelLegend, type LegendItem } from './viewLegend'
 import { WHITE, OVERLAY_GREY } from '../plots/fixedColours'
 import { categoryColours, categoryKey, compareCategories } from '../plots/categoryColours'
+import { postJson, tryApi } from './api'
 
 // ── Capture-view legend (shared: analysis-board strip + movie title card) ───────
 // The ONE path that turns a captured viewState snapshot into legend pieces: channels from the
@@ -43,14 +44,11 @@ export async function captureViewLegend(
                  ...(o.colour !== undefined ? { colour: o.colour } : {}) }))
   let populations: CapturedViewLegend['populations'] = []
   let cby: CapturedViewLegend['colourBy'] | undefined
-  const res = await fetch('/api/viewer/overlay-legend', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUid, colourBy, overlayPops, colourOverrides }),
-  }).catch(() => undefined)
-  if (res?.ok) {
-    const j = await res.json().catch(() => ({})) as CapturedViewLegend & { ok?: boolean }
-    populations = j.populations ?? []
-    cby = j.colourBy
+  const r = await tryApi(postJson<CapturedViewLegend | null>('/api/viewer/overlay-legend',
+    { projectUid, imageUid, colourBy, overlayPops, colourOverrides }))
+  if (r.ok) {
+    populations = r.data?.populations ?? []
+    cby = r.data?.colourBy
   }
   return { channels, populations, colourBy: cby }
 }
@@ -133,9 +131,22 @@ export function overlaysUrl(q: {
   return '/api/viewer/overlays?' + p.toString()
 }
 
+/** Tracks on a segmentation whose population was deleted (`orphan_track_sources`): no pop can draw
+ *  them until tracking is re-run. `path` = where that pop last was, null when the history doesn't say. */
+export interface OrphanTracks { valueName: string; path: string | null; cells: number }
 /** `/api/viewer/pop-types` — which stored pop types this image has pops of, and whether any of its
- *  segmentations is tracked. What the "On the image" switches are filtered by (`onImageSwitches`). */
-export interface PresentPopTypes { popTypes: string[]; tracked: boolean }
+ *  segmentations is tracked. What the "On the image" switches are filtered by (`onImageSwitches`).
+ *  `orphanTracks` is absent from a server older than it. */
+export interface PresentPopTypes { popTypes: string[]; tracked: boolean; orphanTracks?: OrphanTracks[] }
+/** The Tracks section's line for orphaned tracks — the problem; `orphanTracksTip` is the fix. No
+ *  population's ribbon draws them, but the segmentation's own tracks button (On the image) draws
+ *  every track it has, theirs included; re-tracking gives them to a current population. */
+export function orphanTracksLine(o: OrphanTracks): string {
+  return `${o.valueName} tracks came from ${o.path ?? 'a population'} — deleted since`
+}
+export function orphanTracksTip(o: OrphanTracks): string {
+  return `Show them with the ${o.valueName} tracks button under On the image, or re-run tracking`
+}
 export function popTypesUrl(q: { projectUid: string; imageUid: string }): string {
   return '/api/viewer/pop-types?' + new URLSearchParams({ projectUid: q.projectUid, imageUid: q.imageUid }).toString()
 }

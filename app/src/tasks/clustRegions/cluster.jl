@@ -62,6 +62,11 @@ _comp_col(basis_pop::AbstractString, suffix::AbstractString) =
 # A window graph's density column — the cells in each cell's window, beside its composition.
 const WINDOW_DENSITY_NAME = "cells per window"
 
+# Local diversity beside the composition: the effective number of basis types around each cell
+# (`spatial_utils.effective_types`). A per-cell measure, not a clustering feature — it is derived from
+# the composition, so clustering on it too would count the same thing twice.
+const DIVERSITY_NAME = "effective types"
+
 # Did the runner skip the "other" composition column? It does so when the graph holds nothing outside
 # the basis, so the column would be all-zero (see cluster_run.py). Pure read of the run's QC json;
 # defaults to `false` (column written) if the file is missing or unreadable, matching the old behaviour.
@@ -125,11 +130,19 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     # ringed by unlabelled cells is indistinguishable from one ringed by basis cells (see
     # spatial_utils.neighbourhood_composition).
     other_col = _comp_col(OTHER_BASIS_NAME, p.valueNameSuffix)
+    diversity_col = _comp_col(DIVERSITY_NAME, p.valueNameSuffix)
+    density_col = _comp_col(WINDOW_DENSITY_NAME, p.valueNameSuffix)
+    # the run's own columns share the namer with the basis — a population named like one would overwrite it
+    reserved = filter(c -> c in comp_cols, [diversity_col, density_col, (p.includeOther ? [other_col] : String[])...])
+    isempty(reserved) ||
+        (on_log("[ERROR] clustRegions: a basis population is named like the run's own column " *
+                "$(join(reserved, ", ")) — rename that population"); return nothing)
     task_params = Dict{String,Any}(
         "suffix" => p.valueNameSuffix, "segments" => segments, "basis" => basis,
         "graphPaths" => graph_paths, "graphSuffix" => p.graphSuffix,
         "compCols" => comp_cols, "otherCol" => other_col,
-        "densityCol" => _comp_col(WINDOW_DENSITY_NAME, p.valueNameSuffix),
+        "densityCol" => density_col,
+        "diversityCol" => diversity_col,
         "includeOther" => p.includeOther,
         "pooling" => p.pooling,
         "clusterMethod" => p.clusterMethod,
@@ -158,7 +171,6 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     labels = Dict{String,String}(comp_cols[i] => basis[i] for i in eachindex(basis))
     other_written && (labels[other_col] = OTHER_BASIS_NAME)
     if _region_qc_flag(qc_out_path, "windowGraph")
-        density_col = _comp_col(WINDOW_DENSITY_NAME, p.valueNameSuffix)
         feat_cols = vcat(feat_cols, density_col); labels[density_col] = WINDOW_DENSITY_NAME
     end
     at = string(Dates.now())                  # one stamp for the whole run

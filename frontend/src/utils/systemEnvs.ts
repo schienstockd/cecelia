@@ -8,6 +8,8 @@
 //
 // Shape mirrors `api_system_envs` in `api/src/system_api.jl`.
 
+import { getJson, postJson, tryApi } from './api'
+
 export interface SystemEnvInfo {
   installed: boolean
   supported: boolean
@@ -26,13 +28,8 @@ let _cache: Promise<SystemEnvsPayload | null> | null = null
 export function getSystemEnvs(): Promise<SystemEnvsPayload | null> {
   if (_cache) return _cache
   _cache = (async () => {
-    try {
-      const res = await fetch('/api/system/envs')
-      if (!res.ok) return null
-      return await res.json() as SystemEnvsPayload
-    } catch {
-      return null
-    }
+    const r = await tryApi(getJson<SystemEnvsPayload>('/api/system/envs'))
+    return r.ok ? r.data : null
   })()
   return _cache
 }
@@ -63,20 +60,12 @@ export type EnvInstallResult =
 /** Request the install for the named env. Mirrors `api_system_envs_install` in
  *  `api/src/system_api.jl`: 202 + jobId, 200 + `alreadyPresent`, or an error body. */
 export async function requestEnvInstall(env: string): Promise<EnvInstallResult> {
-  try {
-    const res = await fetch('/api/system/envs/install', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ env }),
-    })
-    const d = await res.json().catch(() => null)
-    if (!res.ok) return { status: 'error', error: d?.error ?? `HTTP ${res.status}` }
-    if (d?.alreadyPresent) {
-      invalidateSystemEnvs()
-      return { status: 'present' }
-    }
-    return { status: 'started', jobId: String(d?.jobId ?? '') }
-  } catch (e) {
-    return { status: 'error', error: String(e) }
+  const r = await tryApi(postJson<{ alreadyPresent?: boolean; jobId?: string } | null>('/api/system/envs/install', { env }))
+  if (!r.ok) return { status: 'error', error: r.error }
+  const d = r.data
+  if (d?.alreadyPresent) {
+    invalidateSystemEnvs()
+    return { status: 'present' }
   }
+  return { status: 'started', jobId: String(d?.jobId ?? '') }
 }

@@ -1,3 +1,4 @@
+import { getJson, tryApi } from '../api'
 import { measurePickGroups, type SearchGroup } from '../searchSelect'
 import { lensLabel } from './lensQuery'
 import { isAfColumn } from '../measureGroups'
@@ -34,11 +35,9 @@ export const allColourBy = (c: ColourByColumns): string[] => [...c.cells, ...c.m
 /** [] on any failure — an empty picker hides itself */
 export async function fetchColourByColumns(projectUid: string, imageUid: string, valueName: string): Promise<ColourByColumns> {
   if (!projectUid || !imageUid || !valueName) return NO_COLOUR_BY
-  try {
-    const q = `projectUid=${projectUid}&imageUid=${imageUid}&valueName=${encodeURIComponent(valueName)}`
-    const res = await fetch(`/api/gating/channels?${q}`)
-    return res.ok ? colourByColumns(await res.json()) : NO_COLOUR_BY
-  } catch { return NO_COLOUR_BY }
+  const r = await tryApi(getJson<Parameters<typeof colourByColumns>[0] | null>(
+    '/api/gating/channels', { query: { projectUid, imageUid, valueName } }))
+  return r.ok && r.data ? colourByColumns(r.data) : NO_COLOUR_BY
 }
 
 /** The colour-by picker's groups: the lens scores first (Find similar's score maps), then every other

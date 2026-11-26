@@ -25,7 +25,7 @@ describe('fetchLogBackfill', () => {
     startedAt: new Date('2026-08-04T05:00:04.000Z'),
   }
   const ok = (body: unknown) =>
-    vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(body) })
+    vi.fn().mockImplementation(async () => new Response(JSON.stringify(body), { status: 200 }))
 
   it('asks for that run\'s slice only', async () => {
     const f = ok({ exists: true, content: 'line one\nline two\n' })
@@ -72,7 +72,7 @@ describe('fetchLogBackfill', () => {
 
   // Fails CLOSED: this fills a display gap from a click handler, so nothing here may throw.
   it('is empty on a non-ok response, a throw, or a junk payload', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) }))
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('{}', { status: 500 })))
     expect(await fetchLogBackfill(target)).toEqual([])
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     expect(await fetchLogBackfill(target)).toEqual([])
