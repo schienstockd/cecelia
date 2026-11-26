@@ -156,18 +156,18 @@ describe('fetchRecentOutcomes', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('passes since through, url-encoded', async () => {
-    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => [] })
+    const f = vi.fn().mockImplementation(async () => new Response('[]', { status: 200 }))
     vi.stubGlobal('fetch', f)
     await fetchRecentOutcomes('2026-07-31T04:50:00.000Z')
-    expect(f).toHaveBeenCalledWith('/api/tasks/recent?since=2026-07-31T04%3A50%3A00.000Z')
+    expect(f.mock.calls[0][0]).toBe('/api/tasks/recent?since=2026-07-31T04%3A50%3A00.000Z')
   })
 
   // Fails CLOSED: a backstop for a lossy channel must never throw into the ws message path, and an
   // older backend has no such route at all.
   it('returns [] on a 404, a non-array body, or a network error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }))
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('{}', { status: 500 })))
     expect(await fetchRecentOutcomes()).toEqual([])
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ error: 'x' }) }))
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify({ error: 'x' }), { status: 200 })))
     expect(await fetchRecentOutcomes()).toEqual([])
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     expect(await fetchRecentOutcomes()).toEqual([])

@@ -27,6 +27,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useLogStore } from '../../stores/log'
 import type { TrackSelection } from '../../lib/trackCorrection'
 import { selectedTracks } from '../../lib/trackCorrection'
+import { ApiError, getJson } from '../api'
 
 /** Arm the viewer's "next drag = pick rectangle" mode, and hint the user in the log rail. */
 export function armViewerSelectMode(source: string): void {
@@ -69,19 +70,14 @@ export async function readTrackSelection(o: ReadTrackSelectionInput): Promise<Tr
   if (!o.projectUid || !o.imageUid) return null
   const log = useLogStore()
   try {
-    const q = `projectUid=${encodeURIComponent(o.projectUid)}` +
-              `&imageUid=${encodeURIComponent(o.imageUid)}` +
-              `&valueName=${encodeURIComponent(o.valueName)}`
-    const r = await fetch(`/api/tracking/selection?${q}`)
-    if (!r.ok) {
-      log.info(`Read failed: ${r.status} ${r.statusText}`, { source: o.source })
-      return null
-    }
-    const sel = await r.json() as TrackSelection
+    // quiet: this function writes its own rail line for a failure, under the caller's source
+    const sel = await getJson<TrackSelection>('/api/tracking/selection', {
+      query: { projectUid: o.projectUid, imageUid: o.imageUid, valueName: o.valueName }, quiet: true })
     log.info(readSelectionMessage(sel), { source: o.source })
     return sel
   } catch (e) {
-    log.info(`Read threw: ${e instanceof Error ? e.message : String(e)}`, { source: o.source })
+    if (e instanceof ApiError && e.status > 0) log.info(`Read failed: ${e.status} ${e.message}`, { source: o.source })
+    else log.info(`Read threw: ${e instanceof Error ? e.message : String(e)}`, { source: o.source })
     return null
   }
 }
