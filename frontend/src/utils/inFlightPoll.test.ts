@@ -6,7 +6,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('inFlightPoll', () => {
   it('runs one interval while anyone is subscribed, and clears the snapshot after the last leaves', async () => {
     vi.useFakeTimers()
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => [{ id: 't1', status: 'running' }] }))
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify([{ id: 't1', status: 'running' }]), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const a = subscribeInFlightPoll()
     const b = subscribeInFlightPoll()

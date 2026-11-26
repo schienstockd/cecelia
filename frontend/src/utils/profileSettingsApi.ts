@@ -29,7 +29,7 @@ export interface ProfileSettingsResult {
  */
 export async function fetchProfileSettings(apiBase = ''): Promise<ProfileSettingsResult> {
   const r = await tryApi(getJson<Partial<ProfileSettingsResult> | null>(
-    `${apiBase}/api/profile/settings`, { timeoutMs: 5000 }))
+    `${apiBase}/api/profile/settings`, { timeoutMs: 5000, cache: 'no-store' }))
   const body = r.ok ? r.data : null
   if (!body?.profile) return { profile: 'default', settings: {}, ok: false }
   return { profile: body.profile, settings: body.settings ?? {}, ok: true }
