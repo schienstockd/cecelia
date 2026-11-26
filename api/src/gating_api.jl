@@ -815,7 +815,9 @@ function api_gating_stats(req::HTTP.Request)
     m = _live_map(img, vn, _read_pop_type(q, img, vn, pop); labels_version = _labels_version_pin(q))
     (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     s = pop_stats(m, pop)
-    200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
+    # a stale cluster pop (or one under it) still counts — the ids it picks may now be other clusters
+    stale = is_root(pop) ? nothing : cluster_pop_stale_in(m, pop, img)
+    200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent, stale = stale))
 end
 
 # ── GET /api/gating/membership?...&pops=/a,/b[&binary=1] ──────────────────────
@@ -1359,6 +1361,9 @@ function api_gating_summary(req::HTTP.Request)
         "x" => merge(Dict{String,Any}("channel" => x, "transform" => transform_spec(xt)), axis_summary(xv; bins = bins)),
         "y" => merge(Dict{String,Any}("channel" => y, "transform" => transform_spec(yt)), axis_summary(yv; bins = bins)))
     x != y && (out["grid"] = grid_summary(xv, yv))
+    # the distribution of a stale cluster pop (or one built on it) is of whatever its old ids mean now
+    out["stale"] = is_root(pop) ? nothing :
+        cluster_pop_stale_in(_live_map(img, vn, pop_type; labels_version = pin), pop, img)
     200, JSON3.write(out)
 end
 

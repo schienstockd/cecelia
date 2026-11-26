@@ -36,7 +36,7 @@ function _normalise_boolean(op, pops, nots; self::Union{AbstractString,Nothing}=
     haskey(_BOOL_MEMBERSHIP_PARSE, raw) ||
         error("boolean pop: unknown operator \"$op\" — one of $(join(sort(collect(keys(_BOOL_MEMBERSHIP_PARSE))), ", ")) or \"not\"")
     (isempty(ps) && isempty(ns)) &&
-        error("boolean pop: pick at least one population to combine")
+        error("boolean pop: pick a population to combine or exclude (with neither, it is just the parent)")
     (self !== nothing && (String(self) in ps || String(self) in ns)) &&
         error("boolean pop: a population cannot reference itself")
     (_BOOL_MEMBERSHIP_PARSE[raw], ps, ns)
