@@ -237,3 +237,83 @@ end
 
 """Name of the "mostly <child>" population for sub-population `child`."""
 track_class_pop_name(child::AbstractString) = "mostly " * pop_name(child)
+
+# ── Population fractions as track features (Cluster tracks' "Populations" group) ───────────────────
+# A feature token `popfrac:<flow pop path>` = the share of a track's cells in that population, over
+# every cell of the track (the class's denominator). The shares of a population's sub-populations sum
+# to at most 1 per track (exactly 1 when they tile it), so together they carry one redundant column —
+# kept, as a clustering on cell fractions would; docs/POPULATION.md → *Track class*.
+
+const POP_FRACTION_PREFIX = "popfrac:"
+is_pop_fraction(col::AbstractString) = startswith(col, POP_FRACTION_PREFIX)
+pop_fraction_token(path::AbstractString) = POP_FRACTION_PREFIX * String(path)
+# a feature label for each token — its pop's display label among the picked ones (`pop_display_labels`:
+# the leaf name, climbing the path where two picked pops share it) + " share" — stored with the run
+function pop_fraction_labels(tokens)::Dict{String,String}
+    path(t) = t[ncodeunits(POP_FRACTION_PREFIX)+1:end]
+    lab = pop_display_labels([path(t) for t in tokens])
+    Dict{String,String}(t => lab[path(t)] * " share" for t in tokens)
+end
+
+"""The `popfrac:` tokens a Cluster tracks run on segmentation `vn` can pick: one per stored flow pop."""
+function track_pop_fraction_options(img::CciaImage, vn::AbstractString)::Vector{String}
+    is_tracked(img; value_name = vn) || return String[]
+    m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+    String[pop_fraction_token(p) for p in m.order if !m.pops[p].transient]
+end
+
+"""
+    track_pop_fractions(img; value_name, pop) -> Union{Nothing, Dict{track_id => share}}
+
+Each track's share of cells in flow population `pop` (cells in it / all the track's cells — the
+`track_class_table` fraction with `pop` as the one child). A track with no cell in it reads 0.
+`nothing` when the image lacks `pop`, so a caller can tell "not there" from "0 %". Untracked → empty.
+"""
+function track_pop_fractions(img::CciaImage; value_name::Union{AbstractString,Nothing} = nothing,
+                             pop::AbstractString)::Union{Nothing,Dict{Int,Float64}}
+    vn = resolve_value_name(img, value_name)
+    has_pop(load_pop_tree(img; value_name = vn, pop_type = "flow"), pop) || return nothing
+    is_tracked(img; value_name = vn) || return Dict{Int,Float64}()
+    df = pop_df(img, "flow", [ROOT, String(pop)]; value_name = vn, pop_cols = ["track_id"], unique_labels = false)
+    nrow(df) == 0 && return Dict{Int,Float64}()
+    in_pop = Set(df.label[df.pop .== String(pop)])
+    rows = [i for i in 1:nrow(df) if df.pop[i] == ROOT && (t = df.track_id[i]; t isa Real && isfinite(t) && t > 0)]
+    tab = track_class_table(Int[Int(df.track_id[i]) for i in rows], [BitVector(df.label[i] in in_pop for i in rows)],
+                            [String(pop)])
+    Dict(zip(tab.track_id, tab[!, "frac.$pop"]))
+end
+
+"""
+    track_pop_fraction_column(img, vn, token, track_ids) -> Union{Nothing, Vector{Float64}}
+
+The `popfrac:<path>` column for these tracks of one segmentation — `nothing` when the image lacks the
+population. `_pop_df_tracks` (plots, the cluster heatmap), the behaviour cards and Cluster tracks read it.
+"""
+function track_pop_fraction_column(img::CciaImage, vn::AbstractString, token::AbstractString, track_ids)
+    fr = track_pop_fractions(img; value_name = vn, pop = token[ncodeunits(POP_FRACTION_PREFIX)+1:end])
+    fr === nothing ? nothing : Float64[get(fr, Int(t), NaN) for t in track_ids]
+end
+
+"""
+    add_track_pop_fractions!(df, imgs, tokens) -> Vector{String}
+
+One column per `popfrac:<path>` token on a pooled per-track frame (`uID`, `value_name`, `label` =
+track id). Returns the problems — each `uid/segmentation` that has no such population: its share
+would be missing, and the clustering would read it as 0 %, so the caller refuses the run.
+"""
+function add_track_pop_fractions!(df, imgs, tokens)::Vector{String}
+    by_uid = Dict(img.uid => img for img in imgs)
+    problems = String[]
+    for tok in tokens
+        col = fill(NaN, nrow(df))
+        for g in groupby(df, [:uID, :value_name]; sort = false)
+            uid, vn = string(first(g.uID)), string(first(g.value_name))
+            img = get(by_uid, uid, nothing)
+            v = img === nothing ? nothing : track_pop_fraction_column(img, vn, tok, g.label)
+            v === nothing && (push!(problems, "$uid/$vn has no $(tok[ncodeunits(POP_FRACTION_PREFIX)+1:end])"); continue)
+            col[parentindices(g)[1]] = v
+        end
+        df[!, tok] = col
+    end
+    problems
+end

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitTrackAxis, trackAxisColumn, measureColumnLabel, TRACK_AGG_DEFAULT } from './trackAxis'
+import { splitTrackAxis, trackAxisColumn, measureColumnLabel, popFractionGroup, TRACK_AGG_DEFAULT } from './trackAxis'
 
 // what `/api/gating/channels` returns for a track pop type (api/src/gating_api.jl)
 const AGGS = ['mean', 'median', 'sum', 'qUp', 'qLow', 'sd']
@@ -55,5 +55,19 @@ describe('measureColumnLabel', () => {
     expect(measureColumnLabel('mean_intensity_1.qUp', ctx)).toBe('nuc-GFP 95th pct')
     expect(measureColumnLabel('area.sd', ctx)).toBe('area SD')
     expect(measureColumnLabel('live.track.speed', ctx)).toBeNull()
+  })
+})
+
+describe('popFractionGroup — Cluster tracks "Populations" chips', () => {
+  it('one chip per population token, named; parents only where two share a name', () => {
+    expect(popFractionGroup(['popfrac:/qc/frags', 'popfrac:/qc/frags/TOM+', 'popfrac:/qc/cells/TOM+'])).toEqual([{
+      title: 'Populations',
+      opts: [{ label: 'frags', value: 'popfrac:/qc/frags' }, { label: 'frags/TOM+', value: 'popfrac:/qc/frags/TOM+' },
+             { label: 'cells/TOM+', value: 'popfrac:/qc/cells/TOM+' }],
+    }])
+  })
+  it('no group without tokens', () => {
+    expect(popFractionGroup(undefined)).toEqual([])
+    expect(popFractionGroup(['area'])).toEqual([])
   })
 })

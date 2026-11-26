@@ -114,6 +114,26 @@ end
                              if t isa Real && isfinite(t) && Int(t) in big)
             got = Set(pop_df(img, "flow", ["$vn/all/mostly big"]).label)
             @test got == want_cells
+            # Cluster tracks' "Populations" feature: a track's share of cells in a pop, over all its cells
+            fr = track_pop_fractions(img; value_name = vn, pop = "/all/big")
+            t1 = first(r.table.track_id)
+            xs1 = [x for (t, x) in zip(frames.track_id, frames.area) if t isa Real && isfinite(t) && Int(t) == t1]
+            @test fr[t1] ≈ count(>=(cut), xs1) / length(xs1)
+            @test length(fr) == nrow(r.table) && all(0 .<= values(fr) .<= 1)
+            @test track_pop_fractions(img; value_name = vn, pop = "/nope") === nothing   # not there ≠ 0 %
+            tok = Cecelia.pop_fraction_token("/all/big")
+            @test Cecelia.is_pop_fraction(tok) && !Cecelia.is_pop_fraction("area")
+            @test tok in Cecelia.track_pop_fraction_options(img, vn)
+            @test Cecelia.pop_fraction_labels([tok]) == Dict(tok => "big share")
+            # two picked pops sharing a leaf name climb their paths, as every list of pops does
+            @test Cecelia.pop_fraction_labels(["popfrac:/a/TOM+", "popfrac:/b/TOM+"]) ==
+                  Dict("popfrac:/a/TOM+" => "a/TOM+ share", "popfrac:/b/TOM+" => "b/TOM+ share")
+            pooled = DataFrame(uID = [img.uid, img.uid], value_name = [vn, vn], label = [t1, 10^9])
+            @test isempty(Cecelia.add_track_pop_fractions!(pooled, [img], [tok]))
+            @test pooled[1, tok] ≈ fr[t1] && isnan(pooled[2, tok])     # no such track → NaN
+            # a track plot asking for the share column gets it (the cluster heatmap's read)
+            tdf = pop_df(img, "flow", ["$vn/all"]; granularity = :track, pop_cols = [tok])
+            @test tok in names(tdf) && all(r -> r[tok] ≈ fr[Int(r.track_id)], eachrow(tdf))
             # its own tracks are exactly those
             @test nrow(r.table) == nrow(track_classes(img; value_name = vn, parent = "/all").table)   # not a sub-population
         finally

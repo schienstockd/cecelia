@@ -147,6 +147,12 @@ function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::Ab
         if !(pop_cols === nothing || isempty(pop_cols))
             keep = intersect(unique(vcat("label", "track_id", "num_cells", String.(pop_cols))), names(ttab))
             select!(ttab, keep)
+            # a track's share of cells in a population (`popfrac:<path>`, Cluster tracks' features) —
+            # NaN on an image without that population
+            for tok in String.(pop_cols)
+                is_pop_fraction(tok) || continue
+                ttab[!, tok] = something(track_pop_fraction_column(img, vn, tok, ttab.label), fill(NaN, nrow(ttab)))
+            end
         end
 
         # cell-level gate membership (Julia is the evaluator), then cell label → track_id
