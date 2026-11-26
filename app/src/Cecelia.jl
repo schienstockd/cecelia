@@ -30,7 +30,7 @@ export viewer_chunk_cache_setting, viewer_chunk_cache_bytes, viewer_chunk_cache_
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic, append_jsonl!, read_jsonl
-export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources, orphan_track_sources
+export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources, orphan_track_sources, pop_track_sources
 export write_http_body!
 export safe_name_part, name_suffix, NAME_SUFFIX_MAX, numbered_name, derived_image_name
 

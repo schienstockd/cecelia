@@ -208,6 +208,9 @@ export function createGatingStore(initialPopType: string) {
   // choice — `null` = follow `_latest` (default), `"vN"` = pin every gating request to that vN.
   // Reset on `selectImage` so a per-image drift resolution doesn't leak across images.
   const authoredLabelsVersion = ref<string | null>(null)
+  // uids of the flow pops whose tracking run made this segmentation's tracks (`pop_track_sources`):
+  // deleting one warns that its tracks stop drawing as ribbons
+  const trackSources = ref<string[]>([])
   const currentLatestLabelsVersion = ref<string | null>(null)
   const labelsVersionPin = ref<string | null>(null)
   const driftDetected = computed(() =>
@@ -343,13 +346,15 @@ export function createGatingStore(initialPopType: string) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean;
         missingColumns?: Record<string, string[]>
-        authoredLabelsVersion?: string | null; currentLatestLabelsVersion?: string | null }
+        authoredLabelsVersion?: string | null; currentLatestLabelsVersion?: string | null
+        trackSources?: string[] }
       setTree(d.tree, d.missingColumns, true)
       _setHistory(d)
       // P3b: capture the breadcrumb pair. `undefined` (a pre-P3b backend) reads the same as `null`
       // → no drift banner, unchanged behaviour. Once populated, `driftDetected` drives the module.
       authoredLabelsVersion.value = d.authoredLabelsVersion ?? null
       currentLatestLabelsVersion.value = d.currentLatestLabelsVersion ?? null
+      trackSources.value = d.trackSources ?? []
     } catch (e) {
       log.error(`Gating population tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
     }
@@ -602,7 +607,7 @@ export function createGatingStore(initialPopType: string) {
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,
     pingViewerAfterApply: _pingViewerAfterApply,
     // P3b — labels-version pin
-    authoredLabelsVersion, currentLatestLabelsVersion, labelsVersionPin, driftDetected,
+    authoredLabelsVersion, currentLatestLabelsVersion, labelsVersionPin, driftDetected, trackSources,
     pinToAuthored, clearLabelsVersionPin,
   }
 }
