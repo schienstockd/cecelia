@@ -41,7 +41,7 @@ import {
   MAX_CHANNELS, LUT_STOPS, lutTextureBytes, writeLens,
   type ViewerMeta, type ViewerChannel, type ViewerLens,
 } from '../../utils/volumeViewer'
-import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
+import { acquireGpuDevice, WebGpuUnavailable, WEBGPU_DEFAULT_DIM3D, type AdapterReport } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
 import type { LabelTable } from '../../utils/maskPopTable'
 import { createLabelColourTexture } from './labelColourTexture'
@@ -501,7 +501,7 @@ export async function createTileRenderer(
     // Every candidate cap. The tightest wins; each is measured against a real error, not tuned.
     const perSlot = chunkX * chunkY * nC * bpv
     const fromBudget = Math.max(1, Math.floor(budgetBytes / Math.max(perSlot, 1)))
-    const dim3D = report.maxTextureDimension3D ?? 2048
+    const dim3D = report.maxTextureDimension3D ?? WEBGPU_DEFAULT_DIM3D
     const fromAdapter = Math.max(1, Math.floor(dim3D / nC))
     // `maxBufferSize` bites even for TEXTURES on Dawn: a 3D texture's staging buffer must fit under it,
     // and the atlas is one big buffer's worth. The first f8gzA2 mount tripped this exact validation
