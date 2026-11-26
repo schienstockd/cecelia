@@ -12,9 +12,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
   afterEach(() => { globalThis.fetch = _fetch })
 
   const mockFetch = (results: unknown[]) => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ results }),
-    }) as unknown as typeof fetch
+    globalThis.fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ results }))) as unknown as typeof fetch
   }
 
   it('cachedPyramidRecommendation is UNDEFINED for a path we never asked about', () => {
@@ -30,7 +28,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
   })
 
   it('caches NULL after a failed peek — a settled "nothing to say" answer, not "still loading"', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false }) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch
     await peekPyramid('/x.ims')
     expect(cachedPyramidRecommendation('/x.ims')).toBeNull()
   })
@@ -43,9 +41,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
   })
 
   it('de-dupes concurrent requests for the same path onto one in-flight fetch', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ results: [{ path: '/x.ims', reader: 'h5py', recommendedPyramidLevels: 3 }] }),
-    })
+    const fetchSpy = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ results: [{ path: '/x.ims', reader: 'h5py', recommendedPyramidLevels: 3 }] })))
     globalThis.fetch = fetchSpy as unknown as typeof fetch
     // Two callers, one HTTP request.
     await Promise.all([peekPyramid('/x.ims'), peekPyramid('/x.ims'), peekPyramid('/x.ims')])
@@ -67,9 +63,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
     // recommendation the user only ever sees for the first image in the wizard. So the batch
     // primer filters to fast-reader paths only; JVM extensions stay unsettled until the advisor
     // asks for them.
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ results: [{ path: '/a.ims', reader: 'h5py', recommendedPyramidLevels: 3 }] }),
-    })
+    const fetchSpy = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ results: [{ path: '/a.ims', reader: 'h5py', recommendedPyramidLevels: 3 }] })))
     globalThis.fetch = fetchSpy as unknown as typeof fetch
     await primePyramidPeekBatch(['/a.ims', '/b.czi', '/c.oir', '/d.nd2'])
     // Only /a.ims was in the outgoing request.
@@ -111,7 +105,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
     expect(isPeekInFlight('/x.czi')).toBe(false)
     const req = peekPyramid('/x.czi')
     expect(isPeekInFlight('/x.czi')).toBe(true)
-    resolveFetch!({ ok: true, json: async () => ({ results: [{ path: '/x.czi', reader: 'showinf', recommendedPyramidLevels: 4 }] }) })
+    resolveFetch!(new Response(JSON.stringify({ results: [{ path: '/x.czi', reader: 'showinf', recommendedPyramidLevels: 4 }] })))
     await req
     expect(isPeekInFlight('/x.czi')).toBe(false)
     expect(pyramidPeekRev()).toBeGreaterThan(before)
@@ -123,9 +117,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
     // If the batch is already in flight for a path, a singular call for that path MUST NOT fire a
     // second HTTP request — it should resolve to the batch's result. Otherwise adding N images
     // would trigger 1 batch + N singulars once every form opens.
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true, json: async () => ({ results: [{ path: '/x.ims', reader: 'h5py', recommendedPyramidLevels: 5 }] }),
-    })
+    const fetchSpy = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ results: [{ path: '/x.ims', reader: 'h5py', recommendedPyramidLevels: 5 }] })))
     globalThis.fetch = fetchSpy as unknown as typeof fetch
     const batchPromise = primePyramidPeekBatch(['/x.ims'])
     const singularPromise = peekPyramid('/x.ims')

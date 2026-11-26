@@ -38,6 +38,7 @@ import type { OverlayMark, CaptureAddress } from '../utils/captureAddress'
 import type { CaptureSurface } from '../utils/kiwiCaptures'
 import FrameAnnotator from './FrameAnnotator.vue'
 import { letterboxFrame, type Frame } from '../plots/frame'
+import { postJson, tryApi } from '../utils/api'
 
 const props = withDefaults(defineProps<{
   projectUid: string
@@ -143,33 +144,30 @@ async function onReannotateSave(payload: { overlay: OverlayMark[]; composedPng: 
     const newNotes = (payload.notes ?? '').trim()
     const mergedNotes = originalNotes && newNotes ? `${originalNotes}\n---\n${newNotes}`
                       : (newNotes || originalNotes)
-    const res = await fetch('/api/viewer/capture', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: props.projectUid,
-        surface: props.surface,
-        // Address is inherited — the user is still discussing the same frame.
-        address: props.address,
-        frames: [{ png: composited }],
-        overlay: mergedOverlay,
-        previousCaptureId: props.captureId,
-        // Inherit the ORIGINAL viewStateSnapshot verbatim so a later Refocus on the refined
-        // capture restores the exact camera / channels the original share was framed on.
-        ...(props.viewStateSnapshot ? { viewStateSnapshot: props.viewStateSnapshot } : {}),
-        ...(mergedNotes ? { notes: mergedNotes } : {}),
-        // Surface-specific inherited fields — plot captures pass `{ panels }` here so the
-        // refined capture carries the same per-panel structure the original had.
-        ...(props.extraPostFields ?? {}),
-      }),
-    })
+    const res = await tryApi(postJson<{ captureId?: string }>('/api/viewer/capture', {
+      projectUid: props.projectUid,
+      surface: props.surface,
+      // Address is inherited — the user is still discussing the same frame.
+      address: props.address,
+      frames: [{ png: composited }],
+      overlay: mergedOverlay,
+      previousCaptureId: props.captureId,
+      // Inherit the ORIGINAL viewStateSnapshot verbatim so a later Refocus on the refined
+      // capture restores the exact camera / channels the original share was framed on.
+      ...(props.viewStateSnapshot ? { viewStateSnapshot: props.viewStateSnapshot } : {}),
+      ...(mergedNotes ? { notes: mergedNotes } : {}),
+      // Surface-specific inherited fields — plot captures pass `{ panels }` here so the
+      // refined capture carries the same per-panel structure the original had.
+      ...(props.extraPostFields ?? {}),
+    }))
     if (!res.ok) {
       // A silent failure would leave the user in re-annotate mode wondering why nothing happened;
-      // exit the mode and let the toast/log system elsewhere flag the error path.
+      // exit the mode — the client has logged the failure to the rail.
       reannotating.value = false
       return
     }
-    const body = await res.json() as { captureId?: string }
-    if (!body.captureId) { reannotating.value = false; return }
+    const body = res.data
+    if (!body?.captureId) { reannotating.value = false; return }
     reannotating.value = false
     emit('reannotate', {
       captureId: body.captureId,

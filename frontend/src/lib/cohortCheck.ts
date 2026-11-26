@@ -4,6 +4,7 @@
 // fetch orchestration is the thin live wrapper. See docs/todo/QC_OBSERVER_PLAN.md (A3).
 import type { Severity } from './severity'
 import type { CohortState } from './checks'
+import { getJson, postJson, tryApi } from '../utils/api'
 
 export interface CohortDoc {
   funName?: string
@@ -54,12 +55,8 @@ export interface CohortRun { run: string; valueNames: string[] }
 // no runs (segment/tracking). Cheap — no cohort math server-side.
 export async function fetchCohortRuns(projectUid: string, setUid: string,
                                       funName: string): Promise<CohortRun[]> {
-  try {
-    const p = new URLSearchParams({ projectUid, setUid, funName })
-    const res = await fetch(`/api/qc/cohort/runs?${p}`)
-    if (!res.ok) return []
-    return (await res.json())?.runs ?? []
-  } catch { return [] }
+  const r = await tryApi(getJson<{ runs?: CohortRun[] } | null>('/api/qc/cohort/runs', { query: { projectUid, setUid, funName } }))
+  return r.ok ? r.data?.runs ?? [] : []
 }
 
 // LIVE: POST a check per fun_name and summarise. A fun with no banked metrics for this set yet just
@@ -69,17 +66,12 @@ export async function runCohortCheck(projectUid: string, setUid: string,
                                      funNames: string[], run = ''): Promise<CohortSummary> {
   const docs: CohortDoc[] = []
   for (const funName of funNames) {
-    try {
-      const res = await fetch('/api/qc/cohort/check', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, setUid, funName, ...(run ? { run } : {}) }),
-      })
-      if (!res.ok) continue
-      // No valueName sent → the server checks EVERY value_name the fun banked and returns a
-      // `byValueName` map (clustering is per label set T/B; segment/tracking under "default"), per step
-      // for a composite. Fold each cohort into the summary.
-      docs.push(...cohortDocsOf(await res.json()))
-    } catch { /* skip this fun; others still report */ }
+    const r = await tryApi(postJson('/api/qc/cohort/check', { projectUid, setUid, funName, ...(run ? { run } : {}) }))
+    if (!r.ok) continue   // skip this fun; others still report
+    // No valueName sent → the server checks EVERY value_name the fun banked and returns a
+    // `byValueName` map (clustering is per label set T/B; segment/tracking under "default"), per step
+    // for a composite. Fold each cohort into the summary.
+    docs.push(...cohortDocsOf(r.data))
   }
   return summariseCohortResult(docs)
 }
@@ -88,9 +80,7 @@ export async function runCohortCheck(projectUid: string, setUid: string,
 // the Checks cluster's Cohort button shows on load, so the verdict survives a reload. null on failure.
 export async function fetchCohortState(projectUid: string, setUid: string,
                                        funNames: string[]): Promise<CohortState | null> {
-  try {
-    const p = new URLSearchParams({ projectUid, setUid, funNames: funNames.join(',') })
-    const res = await fetch(`/api/qc/cohort/state?${p}`)
-    return res.ok ? await res.json() as CohortState : null
-  } catch { return null }
+  const r = await tryApi(getJson<CohortState | null>('/api/qc/cohort/state',
+    { query: { projectUid, setUid, funNames: funNames.join(',') } }))
+  return r.ok ? r.data : null
 }

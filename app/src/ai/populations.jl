@@ -13,19 +13,22 @@ const _POP_SUMMARY_CAP = 300   # hard cap per image (plan: caps on every list); 
 # One population → its definition (names/tree links + the gate geometry, the filter spec, or the
 # combination — a boolean pop has neither gate nor filter, and without `boolean` reads as empty; a
 # "mostly <child>" pop is `trackClassOf`, the sub-population its tracks are mostly in).
-function _pop_summary(p::Population)
+# `stale` says why its cells may come from other clusters than were picked: it, or a cluster pop it is
+# built on, picked ids before a re-run — the manager's warning, which an assistant would otherwise never see.
+function _pop_summary(p::Population, m::PopulationTree, img::CciaImage)
     gate = p.gate === nothing ? nothing : gate_spec(p.gate)
     (; path = p.path, name = p.name, parent = p.parent, popType = string(p.pop_type),
        valueName = p.value_name, colour = p.colour, isTrack = is_track_pop(p.pop_type, p.path), gate = gate,
        filter = filter_spec(p),        # every AND-ed condition, not just the first (`conditions`)
-       boolean = boolean_spec(p), trackClassOf = p.track_class_of)
+       boolean = boolean_spec(p), trackClassOf = p.track_class_of,
+       stale = cluster_pop_stale_in(m, p.path, img))
 end
 
 # Every persisted population defined on an image (via the shared enumerator), capped.
 function _image_populations(img::CciaImage)
     out = Vector{Any}(); truncated = false
-    _observer_each_population(img) do p
-        length(out) >= _POP_SUMMARY_CAP ? (truncated = true) : push!(out, _pop_summary(p))
+    _observer_each_population(img) do p, m
+        length(out) >= _POP_SUMMARY_CAP ? (truncated = true) : push!(out, _pop_summary(p, m, img))
     end
     (out, truncated)
 end

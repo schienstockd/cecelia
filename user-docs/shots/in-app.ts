@@ -22,6 +22,7 @@ export const IN_APP_SHOTS: ShotSet = {
       id: 'app-checks',
       project: 'spleen',
       route: '/segment',
+      actions: [{ open: 'checks.toggle' }],   // collapsed by default — names show expanded
       crop: ['images.checks'],
       expect: [{ anchor: 'images.checks', text: 'Checks' }, { anchor: 'images.checks', text: 'Acquisition' }, { anchor: 'images.checks', text: 'Cohort' }],
     },

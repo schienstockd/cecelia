@@ -14,6 +14,7 @@
 
 import type { KiwiRef, KiwiRefResult, ViewerRefLens } from './kiwiRef'
 import { svcPost } from './serviceApi'
+import { ApiError, getJson } from './api'
 import { formatTaskDuration } from './taskElapsed'
 import { fmtCompact } from './compactNumber'
 import { NAV_GROUPS, navItemFor, prettifyCategory } from '../lib/navGroups'
@@ -379,10 +380,15 @@ export function clearKiwiTurns(projectUid: string): Promise<unknown> {
 }
 
 export async function fetchKiwiTurns(projectUid: string): Promise<{ turns: KiwiTurn[]; running: KiwiTurn | null }> {
-  const res = await fetch(`/api/kiwi/turns?projectUid=${encodeURIComponent(projectUid)}`)
-  if (!res.ok) return { turns: [], running: null }
-  const data = await res.json() as { turns?: KiwiTurn[]; running?: KiwiTurn | null }
-  return { turns: data.turns ?? [], running: data.running ?? null }
+  let data: { turns?: KiwiTurn[]; running?: KiwiTurn | null } | null
+  try {
+    data = await getJson('/api/kiwi/turns', { query: { projectUid } })
+  } catch (e) {
+    // A refusal reads as no turns; no reply at all (status 0) still throws, leaving the list as it was.
+    if (e instanceof ApiError && e.status > 0) return { turns: [], running: null }
+    throw e
+  }
+  return { turns: data?.turns ?? [], running: data?.running ?? null }
 }
 
 // ── Typed search (the "+" in the prompt box) ───────────────────────────────────────────────────────

@@ -18,6 +18,44 @@ def _spec(**kw):
     return s
 
 
+class _ReadLog:
+    """A level that records which channels each read asked for (a zarr level reads lazily; a slice of
+    every channel is what made a whole-section figure of a 60-marker panel ask for 66.7 GiB)."""
+    def __init__(self, a):
+        self.a, self.ndim, self.shape, self.channels = a, a.ndim, a.shape, []
+
+    def __getitem__(self, idx):
+        self.channels.append(range(self.shape[1])[idx[1]])      # axes t c z y x
+        return self.a[idx]
+
+
+class TestDisplayRanges(unittest.TestCase):
+    def test_reads_only_the_shown_channels_and_measures_them(self):
+        rng = np.random.default_rng(0)
+        a = rng.integers(0, 255, size=(2, 5, 3, 20, 20), dtype=np.uint8)     # t c z y x
+        lvl = _ReadLog(a)
+        s = rf.validate(_spec(zHalf=1, z=1, rows=[{'channels': [{'c': 3, 'colour': '#ff00ff'}]}]))
+        cols = rf._columns(s, still=False)
+        out = rf.display_ranges(s, [lvl], ['t', 'c', 'z', 'y', 'x'], cols)
+        self.assertEqual({tuple(r) for r in lvl.channels}, {(3,)})        # channel 3 only, never all five
+        lo_p, hi_p = s['display'].get('percentiles', rf._DEFAULT_PERCENTILES)
+        allv = np.concatenate([a[t, 3, 0:3, 0:20, 0:20].max(axis=0).ravel() for t in (0, 1)])
+        self.assertEqual(out[(3, 0)], (float(np.percentile(allv, lo_p)), float(np.percentile(allv, hi_p))))
+        self.assertEqual(out[(3, 0)], out[(3, 1)])                         # one range over every tile
+
+    def test_measures_the_level_the_frames_are_drawn_from(self):
+        # a crop drawn from level 1 (a ×2 pyramid) is measured on level 1, in the box scaled to it
+        rng = np.random.default_rng(1)
+        l0 = rng.integers(0, 50, size=(1, 2, 1, 40, 40), dtype=np.uint8)
+        l1 = rng.integers(100, 255, size=(1, 2, 1, 20, 20), dtype=np.uint8)   # unlike l0 on purpose
+        s = rf.validate(_spec(center=[20, 20], sizePx=20, frames=[0]))
+        cols = rf._columns(s, still=True)
+        out = rf.display_ranges(s, [l0, l1], ['t', 'c', 'z', 'y', 'x'], cols, level=1)
+        lo_p, hi_p = s['display'].get('percentiles', rf._DEFAULT_PERCENTILES)
+        box = l1[0, 0, 0, 5:15, 5:15]                                      # level-0 box 10..30, halved
+        self.assertEqual(out[(0, 0)], (float(np.percentile(box, lo_p)), float(np.percentile(box, hi_p))))
+
+
 class TestFigureSpec(unittest.TestCase):
     def test_defaults(self):
         s = rf.validate(_spec())
@@ -27,6 +65,20 @@ class TestFigureSpec(unittest.TestCase):
         self.assertEqual(rf.tile_mm(dict(rf.STYLE, tileMm=35), 9), 35)          # a chosen width wins
         self.assertEqual(rf.tile_px(s, rf.STYLE, 9), 240)   # 20 mm at 300 dpi = 236 px, snapped to 12 x 20 px
         self.assertEqual(rf.tile_px(s, rf.STYLE, 1), 940)   # 80 mm = 945 px → 47 x 20
+
+    def test_a_crop_past_the_tile_limit_is_drawn_at_the_tile(self):
+        # native-pixel blocks need a tile ≥ the crop; a whole section (13,100 px) would be a 13,100 px
+        # tile drawn from level 0 of every channel — so past MAX_TILE_PX it is the wanted tile instead
+        big = rf.validate(_spec(sizePx=13100))
+        tile = rf.tile_px(big, rf.STYLE, 1)
+        self.assertEqual(tile, 945)                               # 80 mm at 300 dpi, as `smooth` would be
+        self.assertEqual(rf.canvas_px(big, tile), tile)
+        smooth = rf.validate(_spec(sizePx=13100, interpolation='smooth'))
+        self.assertEqual(rf.canvas_px(smooth, rf.tile_px(smooth, rf.STYLE, 1)), 945)
+        # under the limit nothing changes: blocks in `pixels`, the crop's own pixels in `smooth`
+        small = rf.validate(_spec(sizePx=1000))
+        self.assertEqual(rf.tile_px(small, rf.STYLE, 1), 1000)
+        self.assertEqual(rf.canvas_px(rf.validate(_spec(sizePx=1000, interpolation='smooth')), 945), 1000)
 
     def test_errors_name_the_field(self):
         cases = [(dict(kind='montage'), 'kind'), (dict(frames=[]), 'frames'),

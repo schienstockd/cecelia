@@ -4,13 +4,10 @@
 // `setImageAttr` returns what was STORED: the route trims values, so a caller updates its state from
 // the reply, never from what it sent (`docs/API.md` → `attr/*`).
 
+import { postJson } from './api'
+
 async function post(path: string, body: unknown): Promise<{ values?: Record<string, string> }> {
-  const res = await fetch(path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  })
-  const reply = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!res.ok) throw new Error(reply.error ?? `HTTP ${res.status}`)
-  return reply
+  return (await postJson<{ values?: Record<string, string> }>(path, body)) ?? {}
 }
 
 /** Add attribute `attrName` (empty) to every image in `imageUids` — the column then exists. */

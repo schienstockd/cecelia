@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router'
 import { useAppControlStore } from '../stores/appControl'
 import { useLogStore } from '../stores/log'
 import { debouncedLatest } from '../utils/debouncedLatest'
+import { apiFetch, getJson, postJson } from '../utils/api'
 
 const router = useRouter()
 const appCtl = useAppControlStore()
@@ -19,15 +20,16 @@ const restarting = ref(false)   // fallback path: backend asked for a restart (D
 // typed path doesn't hit the backend once per keystroke; docs/UI.md → *Continuous controls*)
 const check = ref<{ ok: boolean; message: string; willCreate: boolean } | null>(null)
 const validateRun = debouncedLatest<string>(async (p, isCurrent) => {
-  const res = await fetch(`/api/setup/validate?path=${encodeURIComponent(p)}`)
-  const d = await res.json()
+  // quiet: per-keystroke feedback; a failure just leaves the hint unchecked
+  const d = await getJson<{ ok: boolean; message: string; willCreate: boolean }>('/api/setup/validate',
+    { query: { path: p }, quiet: true })
   if (isCurrent()) check.value = d
 }, { wait: 300, onError: () => { /* leave check null; submit still guards server-side */ } })
 onUnmounted(() => validateRun.cancel())
 
 onMounted(async () => {
   try {
-    const d = await (await fetch('/api/setup/defaults')).json()
+    const d = await getJson<{ projectsDir?: string }>('/api/setup/defaults')
     path.value = d.projectsDir ?? ''
   } catch { path.value = '' }
 })
@@ -44,12 +46,9 @@ async function submit() {
   if (!p || submitting.value) return
   submitting.value = true
   try {
-    const res = await fetch('/api/setup/init', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectsDir: p }),
-    })
-    const body = await res.json().catch(() => ({})) as { projectsDir?: string; restartRequired?: boolean; error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    const body = (await postJson<{ projectsDir?: string; restartRequired?: boolean }>('/api/setup/init',
+      { projectsDir: p }, { quiet: true })) ?? {}
     appCtl.completeSetup()
     if (body.restartRequired) {
       // config couldn't hot-reload — wait for the backend to come back, then enter the app (D3)
@@ -69,7 +68,7 @@ async function waitForBackend(timeoutMs = 60000) {
   await new Promise(r => setTimeout(r, 1500))
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
-    try { if ((await fetch('/api/health', { cache: 'no-store' })).ok) return } catch { /* not up yet */ }
+    try { await apiFetch('/api/health', { cache: 'no-store', quiet: true }); return } catch { /* not up yet */ }
     await new Promise(r => setTimeout(r, 800))
   }
 }

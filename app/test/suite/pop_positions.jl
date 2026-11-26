@@ -54,3 +54,25 @@
     # a segmentation with no cell table → empty, not an error
     @test isempty(pop_positions(img, "no-such-segmentation", String[]).x)
 end
+
+# A colour-by can name a MARKER (`CD4`, `nuc_CD4`, `af_CD4`), not just a result column: the feature is
+# read by its channel name. Expected values are the raw intensity column the name resolves to.
+@testset "colour by a marker: pop_positions reads it by name" begin
+    fx = fixture_for(:cells, Symbol("marker-names"))
+    if fx === nothing
+        @test_skip "no fixture with marker names"
+    else
+        img = Cecelia._load_image(fx.dir); vn = fx.value_name
+        lp  = Cecelia.label_props(img; value_name = vn)
+        raw_cols = channel_columns(lp)
+        names = something(channel_names(img; value_name = vn), String[])
+        named = Cecelia.canonical_channel_columns(raw_cols, names)
+        k = findfirst(i -> named[i] != raw_cols[i], eachindex(named))
+        @test k !== nothing                                  # the fixture has a marker by name
+        marker, raw = named[k], raw_cols[k]
+        df = Cecelia.as_df(Cecelia.label_props(img; value_name = vn) |> v -> select_cols(v, [raw]))
+        want = Float32[(v isa Real && !ismissing(v)) ? Float32(v) : NaN32 for v in df[!, raw]]
+        got = pop_positions(img, vn, String[]; colour_by = marker).value
+        @test isequal(got, want) && any(isfinite, got)
+    end
+end

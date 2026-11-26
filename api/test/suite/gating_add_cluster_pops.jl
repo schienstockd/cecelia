@@ -121,6 +121,24 @@
         record_run!(at2)
         @test String(channels().clusterRunAt[:immune]) == at2
         @test clustmap(a).pops["/T"].run_at == at1
+        # the readers that never see the manager say so too: the MCP's stats and population definitions
+        stats(pop) = JSON3.read(api_gating_stats(HTTP.Request("GET",
+            "/x?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=clust&pop=$(HTTP.escapeuri(pop))"))[2])
+        # (the per-image builder of /api/analysis/populations: testpr has no sets, so the route lists none)
+        clust_def(path) = only(p for p in Cecelia._population_image(a).populations
+                               if p.popType == "clust" && p.path == path)
+        @test occursin("re-run", String(stats("/T").stale)) && stats("/T").count > 0
+        @test occursin("re-run", clust_def("/T").stale)
+        # a combination built on it inherits the reason, naming the stale one
+        @test gui(api_gating_pop_add, Dict("name" => "not T", "boolean" => Dict("op" => "not", "pops" => ["/T"])))[1] == 200
+        @test startswith(clust_def("/not T").stale, "/T: ") && startswith(String(stats("/not T").stale), "/T: ")
+        # …and the measure summaries (get_measure_summary's per-image builder)
+        meas(path) = only(s for s in Cecelia._measures_image(a; kind = "phenotype").summaries
+                          if s.population == path && s.valueName == "B")
+        @test startswith(meas("/T").stale, "/T: ") && meas("/T").n > 0
+        summary(pop) = JSON3.read(api_gating_summary(HTTP.Request("GET",
+            "/x?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=clust&pop=$pop&x=mean_intensity_0&y=mean_intensity_0"))[2])
+        @test occursin("re-run", String(summary("/T").stale)) && summary("/T").n > 0
         # a tick on a stale population leaves its old-numbered ids, so it does NOT clear the warning…
         @test gui(api_gating_pop_update, Dict("path" => "/T", "filter" => Dict("values" => [c2, c4])))[1] == 200
         @test clustmap(a).pops["/T"].run_at == at1
@@ -131,6 +149,7 @@
         # …only the user saying its clusters are checked does (the stale icon's click)
         @test gui(api_gating_pop_update, Dict("path" => "/T", "runChecked" => true))[1] == 200
         @test clustmap(a).pops["/T"].run_at == at2
+        @test stats("/T").stale === nothing && clust_def("/T").stale === nothing
         @test gui(api_gating_pop_update, Dict("path" => "/T", "filter" => Dict("values" => [c2])))[1] == 200
         # the GUI's new (empty) cluster pop is stamped with the run it was made on
         @test gui(api_gating_pop_add, Dict("name" => "Pop 3", "filter" => Dict("measure" => "clusters.immune",

@@ -15,8 +15,9 @@
 import { computed, ref, toRef, watch } from 'vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
+import SearchSelect from '../SearchSelect.vue'
 import { useViewerStore, type LabelsDimMismatch } from '../../stores/viewer'
-import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
+import { allColourBy, colourByGroups, fetchColourByColumns, NO_COLOUR_BY, type ColourByColumns } from '../../utils/viewer/colourByColumns'
 import { useTrackValueNames } from '../../composables/useTrackValueNames'
 import { segRows, segRowActive, flipMaskVisibility, flipTracks, mismatchTip, shortLevelsTip } from '../../utils/viewer/segRows'
 import { useSettingsStore } from '../../stores/settings'
@@ -108,15 +109,17 @@ function setShownFiles(vn: string, shown: string[]) {
 }
 
 // ── Colour by: a column of the segmentation's table (the column is a pick; recolouring is a look) ──
-const colourCols = ref<string[]>([])
+const colourCols = ref<ColourByColumns>(NO_COLOUR_BY)
 // `columnsTick`: a column was just written (the lens's Find similar) — refetch so it can be picked
 watch(() => [props.projectUid, props.imageUid, props.version, props.columnsTick] as const,
       async ([p, i, v]) => { colourCols.value = await fetchColourByColumns(p, i, v) }, { immediate: true })
 // per set; shown only when this image's table has it (segmentations differ across a set)
 const colourBy = computed(() => {
   const c = props.setUid ? settings.getColourBy(props.setUid) : ''
-  return colourCols.value.includes(c) ? c : ''
+  return allColourBy(colourCols.value).includes(c) ? c : ''
 })
+// a long list on a 60-marker panel: searchable, cell columns and markers grouped
+const colourGroups = computed(() => colourByGroups(colourCols.value, {}, 'population'))
 const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(props.setUid, c) }
 
 /** the folded pill's summary: the population types and ribbon families that are on */
@@ -207,14 +210,10 @@ const summary = computed(() => [
         <CcToggle v-if="switches.trackClusterRibbons" class="cc-fs-2xs" label="Track-cluster ribbons" :model-value="popOn('trackclust')"
                   @update:model-value="v => setPop('trackclust', v)" />
       </div>
-      <div v-if="colourCols.length" class="vw-onimg-group">
+      <div v-if="colourGroups.length > 1" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Colour tracks and labels by a cell property'">Colour by</div>
-        <select class="cc-fs-2xs" :value="colourBy" aria-label="Colour by"
-                v-tooltip.bottom="'Column that colours tracks and labels'"
-                @change="setColourBy(($event.target as HTMLSelectElement).value)">
-          <option value="">population</option>
-          <option v-for="c in colourCols" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <SearchSelect class="cc-fs-2xs" :model-value="colourBy" :groups="colourGroups" aria-label="Colour by"
+                      v-tooltip.bottom="'Column that colours tracks and labels'" @update:model-value="setColourBy" />
       </div>
       <div v-if="viewerStore.trackHighlight || viewerStore.pickHighlight" class="vw-onimg-group vw-onimg-clear">
         <button v-if="viewerStore.pickHighlight" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs"

@@ -7,6 +7,7 @@ import { safeNamePart } from './batchMovie'
 import { downloadBlob } from '../plots/export'
 import { useToast } from '../composables/useToast'
 import type { Ref } from 'vue'
+import { apiFetch } from './api'
 
 /** What to write the Methods for: one chain run, one set, or a list of images (a board's — the server
  *  reads it as their set when it is one). A Methods section is per dataset, not per figure: a board's
@@ -51,11 +52,7 @@ export function roCrateFileName(runId: string): string {
 export async function downloadRoCrate(projectUid: string, runId: string, busy: Ref<boolean>): Promise<void> {
   busy.value = true
   try {
-    const res = await fetch(roCrateUrl(projectUid, runId))
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({})) as { error?: string }
-      throw new Error(d.error ?? res.statusText)
-    }
+    const res = await apiFetch(roCrateUrl(projectUid, runId))
     downloadBlob(roCrateFileName(runId), await res.blob())
   } catch (e) {
     useToast().add({ severity: 'error', life: 5000, summary: 'Couldn’t export the RO-Crate', detail: (e as Error).message })

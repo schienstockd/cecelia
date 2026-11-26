@@ -44,6 +44,7 @@ import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 import VaultModelSelect from '../components/VaultModelSelect.vue'
 import { vaultKindForSource } from '../utils/modelVaultKinds'
+import { getJson } from '../utils/api'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -313,12 +314,10 @@ function flattenPopTree(nodes: PopNode[] | undefined, parent: string, out: strin
 
 async function fetchPopPaths(img: CciaImage, projectUid: string, vn: string, popType: string): Promise<string[]> {
   try {
-    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(vn)}&popType=${popType}`
-    const res = await fetch(`/api/gating/pop-tree?${q}`)
-    if (!res.ok) return []
-    const d = await res.json() as { tree?: { populations?: PopNode[] } }
+    const d = await getJson<{ tree?: { populations?: PopNode[] } }>('/api/gating/pop-tree',
+      { query: { projectUid, imageUid: img.uid, valueName: vn, popType } })
     const paths: string[] = []
-    flattenPopTree(d.tree?.populations, '', paths)
+    flattenPopTree(d?.tree?.populations, '', paths)
     return paths
   } catch { return [] }
 }
@@ -341,19 +340,17 @@ async function loadPops() {
     popMultiGroups.value = []
     if (!img || !projectUid) return
     try {
-      let q = `projectUid=${projectUid}&imageUid=${img.uid}`
+      const query: Record<string, string> = { projectUid, imageUid: img.uid }
       let structured = true
       if (accepts && accepts.length) {
-        q += `&accepts=${encodeURIComponent(accepts.join(','))}`
+        query.accepts = accepts.join(',')
       } else if (popScope) {
-        q += `&popScope=${popScope}`
-        if (props.param.includeClusters === false) q += `&includeClusters=false`
+        query.popScope = popScope
+        if (props.param.includeClusters === false) query.includeClusters = 'false'
       } else {
-        q += `&popType=${popType}`; structured = false
+        query.popType = popType; structured = false
       }
-      const res = await fetch(`/api/plots/populations?${q}`)
-      if (!res.ok) return
-      const groups = await res.json() as PopGroup[]
+      const groups = await getJson<PopGroup[]>('/api/plots/populations', { query }) ?? []
       if (structured) {
         // accepts / popScope: backend tags each pop (granularity/category) AND returns existence-checked
         // roots (all-cells "/" for cells, the guarded "/_tracked" for tracks) — group them under headers.
@@ -446,13 +443,11 @@ async function loadCols() {
   colsScope = scope
   if (!img || !projectUid) { colGroups.value = []; return }
   try {
-    const vnsParam = scopedVns.length >= 2 ? `&valueNames=${scopedVns.map(encodeURIComponent).join(',')}` : ''
-    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}${vnsParam}&popType=${popType}`
-    const res = await fetch(`/api/gating/channels?${q}`)
-    if (!res.ok) return
-    const d = await res.json() as { columns?: string[]; obsColumns?: string[]; channelNames?: string[]
+    const d = await getJson<{ columns?: string[]; obsColumns?: string[]; channelNames?: string[]
       channels?: string[]; cellMeasures?: string[]; cellObsMeasures?: string[]; trackAggregates?: string[]
-      popFractions?: string[] }
+      popFractions?: string[] }>(
+      '/api/gating/channels', { query: { projectUid, imageUid: img.uid, valueName, popType,
+                                        valueNames: scopedVns.length >= 2 ? scopedVns.join(',') : undefined } }) ?? {}
     const vars = (d.columns ?? []).filter(c => !COL_DENYLIST.has(c))
     const obs = (d.obsColumns ?? []).filter(c => !COL_DENYLIST.has(c))
     const chans = d.channelNames ?? []

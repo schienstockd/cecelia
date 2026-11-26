@@ -104,6 +104,10 @@ export function classifyAdapter(
   return classifyAdapterBy(name, maxTextureDimension3D, subgroupMinSize).looksDiscrete
 }
 
+/** `maxTextureDimension3D` every WebGPU adapter guarantees (the spec default) — the answer before an
+ *  adapter is known, and the line integrated GPUs sit on. */
+export const WEBGPU_DEFAULT_DIM3D = 2048
+
 /** `classifyAdapter` plus which signal decided it — for the viewer Debug panel. */
 export function classifyAdapterBy(
   name: GpuAdapterName, maxTextureDimension3D: number, subgroupMinSize?: number,
@@ -113,7 +117,7 @@ export function classifyAdapterBy(
   if (/\bapple\b/.test(text)) return { looksDiscrete: true, by: 'name' }
   if (/\bintel\b|iris|llvmpipe|swiftshader|microsoft basic|software rasterizer/.test(text)) return { looksDiscrete: false, by: 'name' }
   if (subgroupMinSize !== undefined && subgroupMinSize > 0) return { looksDiscrete: subgroupMinSize === 32, by: 'subgroup' }
-  return { looksDiscrete: maxTextureDimension3D > 2048, by: 'limit' }
+  return { looksDiscrete: maxTextureDimension3D > WEBGPU_DEFAULT_DIM3D, by: 'limit' }
 }
 
 /** Short label for which signal classified the adapter — Settings "GPU type" and the viewer Debug panel. */

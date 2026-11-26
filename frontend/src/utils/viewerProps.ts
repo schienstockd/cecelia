@@ -15,9 +15,10 @@
 // block is absent — no error, just less to restore. Missing `webgpu` means the file predates the
 // browser viewer; the applier falls back to the shape block.
 //
-// Pure logic — no fetch, no Vue. Testable in Vitest.
+// Pure logic plus two HTTP wrappers (through utils/api.ts), no Vue. Testable in Vitest.
 
 import { toHex } from './colour'
+import { getJson, postJson } from './api'
 import type { ViewerChannel, ViewerMeta, OrbitCamera } from './volumeViewer'
 
 /** Palette hex of a channel (single-hue), from the last LUT stop. Empty string if unavailable.
@@ -207,11 +208,9 @@ export function propsUrl(q: { projectUid: string; imageUid: string; valueName?: 
 
 export async function loadViewerProps(q: { projectUid: string; imageUid: string; valueName?: string })
   : Promise<ViewerViewState | null> {
+  // 404 = nothing saved for this image yet: the normal case, not a failure worth logging.
   try {
-    const r = await fetch(propsUrl(q))
-    if (r.status === 404) return null
-    if (!r.ok) return null
-    return await r.json() as ViewerViewState
+    return await getJson<ViewerViewState>(propsUrl(q), { quiet: [404] })
   } catch { return null }
 }
 
@@ -220,10 +219,6 @@ export async function saveViewerProps(
   viewState: ViewerViewState,
 ): Promise<void> {
   try {
-    await fetch('/api/viewer/props', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...q, viewState }),
-    })
+    await postJson('/api/viewer/props', { ...q, viewState }, { quiet: true })
   } catch { /* autosave is best-effort by definition */ }
 }

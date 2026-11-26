@@ -42,6 +42,7 @@ import { axisLabelWithUnit, isImageYAxis } from '../../utils/gatingAxes'
 import { measureGroups, groupedCols, isTrackPopType, STRUCTURAL_COL } from '../../utils/measureGroups'
 import { splitTrackAxis, trackAxisColumn, TRACK_AGG_LABEL } from '../../utils/trackAxis'
 import { coalesceByKey } from '../../utils/coalesce'
+import { getBuffer, getJson } from '../../utils/api'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { splitXYL, splitXYZL } from '../../plots/valueColour'
@@ -230,8 +231,7 @@ const cellViewExtents = computed(() => histView.value ? { ...viewExtents.value, 
 const cellYTicks = computed(() => histView.value?.yTicks ?? yTicks.value)
 
 async function fetchBuf(q: string): Promise<Float32Array> {
-  const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
-  return new Float32Array(buf)
+  return new Float32Array(await getBuffer(`/api/gating/plotdata?${q}`))
 }
 // BIDIR PR #4b Slice B — same fetch but with `withLabels=1`; response records carry the point's
 // label at the end (pair→triple or triple→quad). Only used for the BASE cloud fetch — pop-overlay
@@ -245,13 +245,13 @@ async function fetchBufWithLabels(q: string): Promise<Float32Array> {
 // change (NOT on membership change). Sends the PREFERRED transform; adopts what the server used.
 async function fetchMeta() {
   const key = metaQ.value                    // snapshot: drop the response if the view moved on
-  const meta = await (await fetch(`/api/gating/plotmeta?${key}`)).json() as {
+  const meta = await getJson<{
     xExtent: [number, number]; yExtent: [number, number]
     xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
     usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean
     xSpec?: TransformSpec; ySpec?: TransformSpec; zSpec?: TransformSpec
     xUnit?: string; yUnit?: string; zUnit?: string
-    zExtent?: [number, number] | null; zTicks?: { pos: number; label: string }[]; usedZ?: Kind }
+    zExtent?: [number, number] | null; zTicks?: { pos: number; label: string }[]; usedZ?: Kind }>(`/api/gating/plotmeta?${key}`)
   // A newer fetch (image/segmentation/axis/parent switch) is already in flight — a late stale meta
   // would otherwise overwrite the fresh extents/ticks/gates (last-writer race), leaving the plot on
   // the wrong axes or blank until the user nudged a control. (Mirrors fetchGatesFor's key guard.)
@@ -286,7 +286,7 @@ async function fetchMeta() {
 // request — one plotmeta call, not two. Keyed on metaQ so an axis change (different key) never reuses
 // a stale in-flight promise.
 const fetchGatesFor = coalesceByKey(async (key: string) => {
-  const meta = await (await fetch(`/api/gating/plotmeta?${key}`)).json() as { gates?: SrvGate[] }
+  const meta = await getJson<{ gates?: SrvGate[] }>(`/api/gating/plotmeta?${key}`)
   // drop a late response whose axes/parent (its metaQ key) no longer match the current view — else a
   // fetchGates in flight for the old axes could overwrite a fresh fetchMeta's outlines (last-writer race).
   if (key === metaQ.value) serverGates.value = meta.gates ?? []

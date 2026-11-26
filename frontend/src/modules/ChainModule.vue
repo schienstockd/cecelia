@@ -69,6 +69,7 @@ import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
 import { NEUTRAL } from '../plots/fixedColours'
+import { getJson, postJson, tryApi } from '../utils/api'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -154,8 +155,8 @@ async function loadRunList() {
   const uid = projectMeta.current?.uid
   if (!uid) { persistedRuns.value = []; return }
   try {
-    const res = await fetch(`/api/chains/runs?projectUid=${uid}`)
-    if (res.ok) persistedRuns.value = ((await res.json()).runs ?? []) as RunMeta[]
+    const res = await tryApi(getJson<{ runs?: RunMeta[] } | null>('/api/chains/runs', { query: { projectUid: uid } }))
+    if (res.ok) persistedRuns.value = res.data?.runs ?? []
   } catch { /* non-critical */ }
 }
 
@@ -165,12 +166,12 @@ async function loadRun(runId: string) {
   const uid = projectMeta.current?.uid
   if (!uid) return
   try {
-    const res = await fetch(`/api/chains/run?projectUid=${uid}&runId=${encodeURIComponent(runId)}`)
-    if (!res.ok) return
-    const r = await res.json() as { chainName: string; createdAt: number
+    const res = await tryApi(getJson<{ chainName: string; createdAt: number
       nodes: LiveTemplateNode[]; edges: { from: string; to: string }[]
       imageStates: Record<string, Record<string, string>>
-      reused?: Record<string, Record<string, string>> }
+      reused?: Record<string, Record<string, string>> }>('/api/chains/run', { query: { projectUid: uid, runId } }))
+    if (!res.ok) return
+    const r = res.data
     const nodeFn = new Map(r.nodes.map(n => [n.id, n.fn]))
     const labelOf = (fn: string) => allTaskDefs.value.find(d => d.fun_name === fn)?.label ?? fn.split('.').pop() ?? fn
     const tasks: LiveTaskLike[] = []
@@ -278,9 +279,10 @@ watch(selectedRunId, async (runId) => {
   const chain = chainTasks.value.find(t => t.chainRunId === runId)?.chainName
   if (!chain) return
   try {
-    const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(chain)}`)
+    // quiet 404: a past run keeps its chain's old name after a rename or delete
+    const res = await tryApi(getJson<LiveTemplate>('/api/chains/get', { query: { projectUid: uid, name: chain }, quiet: [404] }))
     if (!res.ok) return
-    const t = await res.json() as LiveTemplate
+    const t = res.data
     liveTemplate.value = { nodes: t.nodes ?? [], edges: t.edges ?? [] }
   } catch { /* fall back to task-derived layout (no edges) */ }
 }, { immediate: true })
@@ -438,9 +440,9 @@ async function loadQcValueNames() {
   const first = liveLayout.value.imageIds[0]
   if (!uid || !first) { qcValueNames.value = []; return }
   try {
-    const q = `projectUid=${uid}&imageUid=${first}&popType=labels`
-    const res = await fetch(`/api/plots/populations?${q}`)
-    const groups = res.ok ? (await res.json() as { valueName: string }[]) : []
+    const res = await tryApi(getJson<{ valueName: string }[]>('/api/plots/populations',
+      { query: { projectUid: uid, imageUid: first, popType: 'labels' } }))
+    const groups = res.ok ? res.data : []
     qcValueNames.value = groups.map(g => g.valueName)
   } catch { qcValueNames.value = [] }
 }
@@ -489,15 +491,13 @@ async function fetchQcData(isCurrent: () => boolean) {
       qcData.value = cur
       try {
         const counts = await Promise.all(imageIds.map(async imageUid => {
-          const res = await fetch('/api/plot_data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectUid: uid, imageUid, popType: 'labels', chartType: 'count',
-              series: [{ valueName: vn, pop: '/labels' }],
-            }),
-          })
+          // quiet: re-runs as tasks complete during a live run; an image without the output yet counts 0
+          const res = await tryApi(postJson<{ series?: { value?: number }[] } | null>('/api/plot_data', {
+            projectUid: uid, imageUid, popType: 'labels', chartType: 'count',
+            series: [{ valueName: vn, pop: '/labels' }],
+          }, { quiet: true }))
           if (!res.ok) return 0
-          const r = await res.json() as { series?: { value?: number }[] }
+          const r = res.data ?? {}
           return (r.series ?? []).reduce((a, s) => a + Number(s.value ?? 0), 0)
         }))
         const summary: QcSummary = {
@@ -652,9 +652,8 @@ async function loadChainList() {
   const uid = projectMeta.current?.uid
   if (!uid) { chainNames.value = []; return }
   try {
-    const res = await fetch(`/api/chains?projectUid=${uid}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json() as { chains: string[] }
+    // quiet: the catch below logs the failure itself
+    const data = await getJson<{ chains: string[] }>('/api/chains', { query: { projectUid: uid }, quiet: true })
     chainNames.value = data.chains ?? []
     if (chainNames.value.length && !chainNames.value.includes(activeChain.value)) {
       await switchChain(chainNames.value[0])
@@ -676,9 +675,10 @@ async function refreshChainAuthor(name: string) {
   const uid = projectMeta.current?.uid
   if (!uid || !name) return
   try {
-    const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(name)}`)
+    const res = await tryApi(getJson<{ createdBy?: unknown; updatedBy?: unknown }>('/api/chains/get',
+      { query: { projectUid: uid, name } }))
     if (!res.ok) return
-    const raw = await res.json() as { createdBy?: unknown; updatedBy?: unknown }
+    const raw = res.data
     if (activeChain.value === name)
       chainAuthor.value = authorSummary(parseAuthorStamp(raw.createdBy), parseAuthorStamp(raw.updatedBy))
   } catch { /* non-critical */ }
@@ -689,10 +689,10 @@ async function loadChain(name: string) {
   const uid = projectMeta.current?.uid
   if (!uid) return
   try {
-    const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(name)}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const tmpl = await res.json() as ChainTemplate & { positions?: Record<string, {x:number; y:number}>
-                                                       createdBy?: unknown; updatedBy?: unknown }
+    // quiet: the catch below logs the failure itself
+    const tmpl = await getJson<ChainTemplate & { positions?: Record<string, {x:number; y:number}>
+                                                 createdBy?: unknown; updatedBy?: unknown }>('/api/chains/get',
+      { query: { projectUid: uid, name }, quiet: true })
     await applyTemplate(tmpl, tmpl.positions ?? {})
     chainAuthor.value = authorSummary(parseAuthorStamp(tmpl.createdBy), parseAuthorStamp(tmpl.updatedBy))
   } catch (e) {
@@ -891,12 +891,8 @@ async function saveChain() {
   saving.value = true
   try {
     const tmpl = currentTemplate()
-    const res = await fetch('/api/chains/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, template: tmpl }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    await postJson('/api/chains/save', { projectUid: uid, template: tmpl }, { quiet: true })
     log.info(`Chain "${activeChain.value}" saved.`, { source: 'chains' })
     void refreshChainAuthor(activeChain.value)
   } catch (e) {
@@ -911,12 +907,8 @@ async function removeChain() {
   const uid  = projectMeta.current?.uid
   if (!name || !uid) return
   try {
-    const res = await fetch('/api/chains/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, name }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    await postJson('/api/chains/delete', { projectUid: uid, name }, { quiet: true })
     chainNames.value = chainNames.value.filter(n => n !== name)
     selectedNodeId.value = null
     await clearWhiteboard()
@@ -941,13 +933,9 @@ async function renameChain() {
   if (!uid || !from || !to) return
   if (to === from) { closeNameInput(); return }
   try {
-    const res = await fetch('/api/chains/rename', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, name: from, newName: to }),
-    })
-    const detail = await res.json().catch(() => ({})) as { error?: string; name?: string }
-    if (!res.ok) throw new Error(detail.error ?? `HTTP ${res.status}`)
+    // quiet: the catch below logs the failure itself
+    const detail = (await postJson<{ name?: string } | null>('/api/chains/rename',
+      { projectUid: uid, name: from, newName: to }, { quiet: true })) ?? {}
     // The server REPAIRS a name its filename guard refuses ("a + b" → "a b") and returns the stored one.
     const stored = detail.name ?? to
     chainNames.value = chainNames.value.filter(n => n !== from).concat(stored).sort()
@@ -965,13 +953,10 @@ async function renameChain() {
 // Save an empty template under `name` so it appears in the list, and make it the active chain. Returns
 // the STORED name — the server repairs one its filename guard refuses ("a + b" → "a b").
 async function saveEmptyChain(uid: string, name: string): Promise<string> {
-  const res = await fetch('/api/chains/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid: uid, template: { name, nodes: [], edges: [] } }),
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const stored = ((await res.json().catch(() => ({}))) as { name?: string }).name ?? name
+  // quiet: both callers log the failure themselves
+  const saved = await postJson<{ name?: string } | null>('/api/chains/save',
+    { projectUid: uid, template: { name, nodes: [], edges: [] } }, { quiet: true })
+  const stored = saved?.name ?? name
   if (!chainNames.value.includes(stored)) chainNames.value.push(stored)
   chainNames.value.sort()
   activeChain.value = stored
@@ -1029,9 +1014,8 @@ const pools = ref<PoolInfo[]>([])
 // and let onActivated retry, the same way task defs already do.
 async function loadPools() {
   try {
-    const res = await fetch('/api/pools')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    pools.value = await res.json() as PoolInfo[]
+    // quiet: the catch below logs the failure itself
+    pools.value = await getJson<PoolInfo[]>('/api/pools', { quiet: true })
   } catch (e) {
     log.warn(`Could not load resource pools: ${e}`, { source: 'chains' })
   }
@@ -1043,9 +1027,8 @@ const allTaskDefs = ref<TaskDef[]>([])
 
 async function loadAllTaskDefs() {
   try {
-    const res = await fetch('/api/tasks/definitions')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json() as Record<string, TaskDef[]>
+    // quiet: the catch below logs the failure itself
+    const data = await getJson<Record<string, TaskDef[]>>('/api/tasks/definitions', { quiet: true })
     const flat: TaskDef[] = []
     for (const cat of Object.keys(data).sort()) {
       for (const def of data[cat]) flat.push({ ...def, category: cat })
@@ -1414,11 +1397,9 @@ async function runChain() {
   // Save current params (defaults merged by applyTemplate) before backend loads the file.
   await saveChain()
   try {
-    const res = await fetch('/api/chains/preflight', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, chain: activeChain.value, imageUids: runSelectedUids.value }),
-    })
-    const problems = res.ok ? ((await res.json()).problems ?? []) as PreflightProblem[] : []
+    const res = await tryApi(postJson<{ problems?: PreflightProblem[] } | null>('/api/chains/preflight',
+      { projectUid: uid, chain: activeChain.value, imageUids: runSelectedUids.value }))
+    const problems = res.ok ? (res.data?.problems ?? []) : []
     if (problems.length) { preflight.value = problems; chainRunning.value = false; return }
   } catch { /* pre-flight is advice — never a reason not to run */ }
   startRun(uid)

@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useLogStore } from '../../stores/log'
+import { postJson, tryApi } from '../../utils/api'
 import { metadataWarning } from '../../lib/imageMetadataWarnings'
 import { extractWith, regexSampleFor, type BuilderSpec, type RegexSource } from '../../utils/regexBuilder'
 import ExtractRuleEditor from '../../components/ExtractRuleEditor.vue'
@@ -275,13 +276,10 @@ async function assignChannelNames() {
     log.warn(skippedChannelCountMsg(skipped, names.length), { source: 'metadata' }); return
   }
 
-  const res = await fetch('/api/images/channelnames', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUids: uids, channelNames: names }),
-  })
-  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
-  if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
+  // quiet: the failure is logged here, as before
+  const res = await tryApi(postJson('/api/images/channelnames',
+    { projectUid, imageUids: uids, channelNames: names }, { quiet: true }))
+  if (!res.ok) { log.error(res.error, { source: 'metadata' }); return }
 
   for (const uid of uids)
     project.updateImageMeta(uid, { channelNames: names })

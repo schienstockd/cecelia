@@ -243,5 +243,5 @@ Files per language that name each kind of project file (a reference, not necessa
 | ccid.json (image / set record) | 42 | 16 | 17 |
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |
-| gating JSON | 28 |  | 7 |
-| run log | 39 | 5 | 23 |
+| gating JSON | 28 |  | 5 |
+| run log | 40 | 5 | 23 |

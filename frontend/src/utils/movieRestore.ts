@@ -22,6 +22,7 @@ import { roiPadFrames } from './roiMovie'
 import { TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from './batchMovie'
 import { COMPARE_LAYOUTS, type CompareLayout } from './movieCompare'
 import { SKELETON_BY_TYPE } from './viewerOverlays'
+import { getJson } from './api'
 
 /** A registry entry as `GET /api/movies/meta` returns it (api/src/movies_api.jl). */
 export interface MovieRegistryEntry {
@@ -35,9 +36,8 @@ export interface MovieRegistryEntry {
 /** One registry entry, `GET /api/movies/meta` — the ONE fetch of it (restore, open at source, the figure
  *  editor). Throws the server's error; an unknown name reads as `{}`. */
 export async function fetchMovieEntry(projectUid: string, name: string): Promise<MovieRegistryEntry & Record<string, unknown>> {
-  const res = await fetch(`/api/movies/meta?projectUid=${encodeURIComponent(projectUid)}&name=${encodeURIComponent(name)}`)
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
-  return ((await res.json()) as { entry?: MovieRegistryEntry & Record<string, unknown> }).entry ?? {}
+  const d = await getJson<{ entry?: MovieRegistryEntry & Record<string, unknown> } | null>('/api/movies/meta', { query: { projectUid, name } })
+  return d?.entry ?? {}
 }
 
 /** An ROI movie's config kind (`ROI_CONFIG_KIND`, api/src/movie_rois.jl). It has no editing page —

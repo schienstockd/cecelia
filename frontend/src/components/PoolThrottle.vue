@@ -17,6 +17,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { threadReadout, threadTip, clampWorkers, widenApplies, widenTip,
   type ThreadBudget } from '../utils/threadBudget'
 import CcToggle from './CcToggle.vue'
+import { getJson, postJson } from '../utils/api'
 
 // `compact` is for a host that is NOT watching a run: Settings. It drops the live occupancy readouts
 // and the hint lines, which are what you want beside a running task and noise in a settings pane, and
@@ -47,8 +48,8 @@ function fillPct(name: string): string {
 
 async function fetchPools(): Promise<PoolInfo[] | null> {
   try {
-    const res = await fetch('/api/pools')
-    if (res.ok) return await res.json() as PoolInfo[]
+    // quiet: polled every 1.5 s, and the backend may not be ready
+    return await getJson<PoolInfo[]>('/api/pools', { quiet: true })
   } catch { /* backend may not be ready */ }
   return null
 }
@@ -70,12 +71,9 @@ async function refreshOccupancy() {
 async function setPool(name: string, limit: number) {
   poolBusy.value = name
   try {
-    const res = await fetch('/api/pools/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, limit }),
-    })
-    if (res.ok) { const d = await res.json() as PoolInfo; pools.value[d.name] = d.limit }
-  } catch { /* ignore */ }
+    const d = await postJson<PoolInfo>('/api/pools/set', { name, limit })
+    pools.value[d.name] = d.limit
+  } catch { /* logged by the client */ }
   finally { poolBusy.value = null }
 }
 
@@ -88,8 +86,7 @@ const widenHint   = computed(() => widenTip(threads.value))
 
 async function loadThreads() {
   try {
-    const res = await fetch('/api/tasks/threads')
-    if (res.ok) threads.value = await res.json() as ThreadBudget
+    threads.value = await getJson<ThreadBudget>('/api/tasks/threads', { quiet: true })
   } catch { /* backend may not be ready */ }
 }
 
@@ -100,15 +97,9 @@ async function setThreads(workers: number) {
   if (!b) return
   threadsBusy.value = true
   try {
-    const res = await fetch('/api/tasks/threads/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workers }),
-    })
-    if (res.ok) {
-      const d = await res.json() as { workers: number; derived: boolean; widen: boolean }
-      threads.value = { ...b, workers: d.workers, derived: d.derived, widen: d.widen }
-    }
-  } catch { /* ignore */ }
+    const d = await postJson<{ workers: number; derived: boolean; widen: boolean }>('/api/tasks/threads/set', { workers })
+    threads.value = { ...b, workers: d.workers, derived: d.derived, widen: d.widen }
+  } catch { /* logged by the client */ }
   finally { threadsBusy.value = false }
 }
 
@@ -119,15 +110,9 @@ async function setWiden(on: boolean) {
   if (!b) return
   threadsBusy.value = true
   try {
-    const res = await fetch('/api/tasks/threads/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ widen: on }),
-    })
-    if (res.ok) {
-      const d = await res.json() as { workers: number; derived: boolean; widen: boolean }
-      threads.value = { ...b, workers: d.workers, derived: d.derived, widen: d.widen }
-    }
-  } catch { /* ignore */ }
+    const d = await postJson<{ workers: number; derived: boolean; widen: boolean }>('/api/tasks/threads/set', { widen: on })
+    threads.value = { ...b, workers: d.workers, derived: d.derived, widen: d.widen }
+  } catch { /* logged by the client */ }
   finally { threadsBusy.value = false }
 }
 

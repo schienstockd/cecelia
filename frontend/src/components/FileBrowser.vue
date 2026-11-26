@@ -9,6 +9,7 @@ import BaseModal from './BaseModal.vue'
 import { useLogStore } from '../stores/log'
 import { fsBreadcrumbs, isPickable } from '../utils/fsPath'
 import { profileStorage } from '../utils/profileStorage'
+import { getJson } from '../utils/api'
 
 const emit = defineEmits<{
   (e: 'select', paths: string[]): void
@@ -89,12 +90,8 @@ async function navigate(path: string, quiet = false) {
   error.value   = null
   selected.value = new Set()
   try {
-    const res = await fetch(`/api/fs/list?path=${encodeURIComponent(path)}`)
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.error ?? `HTTP ${res.status}`)
-    }
-    listing.value = await res.json() as FsListing
+    // quiet: the catch below logs it (or not, for the quiet start-folder fallback)
+    listing.value = await getJson<FsListing>('/api/fs/list', { query: { path }, quiet: true })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     error.value = msg

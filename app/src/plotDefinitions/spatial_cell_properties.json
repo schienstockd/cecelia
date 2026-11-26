@@ -27,6 +27,8 @@
       { "match": ".cell.is.isolated",   "label": "isolated" },
       { "match": ".cell.aggregate.frames#",   "label": "event frames" },
       { "match": ".cell.aggregate.preceded#", "label": "preceded" },
+      { "match": "spatial.comp.effective_types.", "label": "effective types" },
+      { "match": "spatial.comp.cells_per_window.", "label": "cells per window" },
       { "match": "spatial.comp.",       "label": "composition" }
     ]
   },

@@ -23,6 +23,7 @@ import { boardProvenanceUrl, buildProvenanceRecord, recordForBoard, resolveParam
 import { waitForPlotsIdle } from '../../utils/plotReady'
 import { walkAssetRefs, collectAssetIds } from '../../utils/boardAssets'
 import { useLogStore } from '../../stores/log'
+import { getJson, postJson } from '../../utils/api'
 import { useSettingsStore } from '../../stores/settings'
 import LayoutCanvas from './LayoutCanvas.vue'
 import BoardRecordModal from './BoardRecordModal.vue'
@@ -80,11 +81,8 @@ async function remapAssets(state: unknown): Promise<void> {
   walkAssetRefs(state, (rec, key, id) => {
     jobs.push((async () => {
       try {
-        const res = await fetch('/api/board-assets/copy', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: projectUid.value, assetId: id }),
-        })
-        if (res.ok) { const d = await res.json() as { assetId?: string }; if (d.assetId) rec[key] = d.assetId }
+        const d = await postJson<{ assetId?: string }>('/api/board-assets/copy', { projectUid: projectUid.value, assetId: id })
+        if (d?.assetId) rec[key] = d.assetId
       } catch { /* keep the shared id on failure — the frame still renders */ }
     })())
   })
@@ -99,10 +97,8 @@ async function closeTab(id: number) {
   const e = layoutStore.entries[canvasKey(id)]
   if (e && projectUid.value) {
     const ids = e.contents.flatMap(c => c ? collectAssetIds(c.state) : [])
-    await Promise.all(ids.map(aid => fetch('/api/board-assets/delete', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, assetId: aid }),
-    }).catch(() => {})))
+    await Promise.all(ids.map(aid =>
+      postJson('/api/board-assets/delete', { projectUid: projectUid.value, assetId: aid }).catch(() => {})))
   }
   layoutStore.drop(canvasKey(id))
   tabsStore.removeTab(groupKey, id)
@@ -197,9 +193,8 @@ async function boardProvenance(title: string): Promise<ProvenanceBoardIn | null>
   const scope = layoutRef.value?.paramsScope()
   if (!scope || !props.imageUids.length) return null
   try {
-    const res = await fetch(boardProvenanceUrl(projectUid.value, props.imageUids, scope))
-    if (!res.ok) return null
-    return { title, server: await res.json() as BoardProvenanceResponse, snapshot: layoutRef.value?.paramsSnapshot() ?? null,
+    const server = await getJson<BoardProvenanceResponse>(boardProvenanceUrl(projectUid.value, props.imageUids, scope))
+    return { title, server, snapshot: layoutRef.value?.paramsSnapshot() ?? null,
              scope: snapshotScope(props.imageUids, scope) }
   } catch { return null }
 }
@@ -247,9 +242,10 @@ async function exportParams() {
   if (exporting.value || !scope || !props.imageUids.length) return
   exporting.value = true
   try {
-    const res = await fetch(historyParamsUrl(projectUid.value, props.imageUids, scope))
-    const d = await res.json() as { rows?: HistoryParamsRow[]; error?: string }
-    if (!res.ok || !d.rows) throw new Error(d.error ?? res.statusText)
+    // quiet: the catch below logs the failure to the rail itself
+    const d = await getJson<{ rows?: HistoryParamsRow[]; error?: string }>(
+      historyParamsUrl(projectUid.value, props.imageUids, scope), { quiet: true })
+    if (!d?.rows) throw new Error(d?.error ?? 'no parameter rows in the reply')
     const out = resolveParamsExport(layoutRef.value?.paramsSnapshot(), d.rows, snapshotScope(props.imageUids, scope))
     if (!out.rows.length) { log.info('No recorded steps behind this board.', { source: 'analysis' }); return }
     const name = tabs.value.find(t => t.id === activeId.value)?.name ?? 'board'

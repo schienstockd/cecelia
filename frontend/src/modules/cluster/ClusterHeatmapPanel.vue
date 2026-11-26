@@ -33,6 +33,7 @@ import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { NEUTRAL } from '../../plots/fixedColours'
 import { popRowLabels } from '../../utils/popName'
+import { postJson, tryApi } from '../../utils/api'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -121,10 +122,11 @@ async function fetchHeatmap(isCurrent: () => boolean) {
     popPaths: pops.map(p => p.path), setUid: props.setUid, imageUids: props.imageUids,
   })
   const popMode = pops.length > 0
-  const res = await fetch('/api/plot_data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await tryApi(postJson<PlotDataResponse & { yLabels?: string[]; xLabels?: string[]; cells?: { x: string; y: string }[] }>(
+    '/api/plot_data', body))
   if (!isCurrent()) return                                  // superseded — a newer request applies
-  if (!res.ok) { heatmap.value = null; err.value = (await res.json()).error ?? res.statusText; return }
-  const r = await res.json() as PlotDataResponse & { yLabels?: string[]; xLabels?: string[]; cells?: { x: string; y: string }[] }
+  if (!res.ok) { heatmap.value = null; err.value = res.error; return }
+  const r = res.data
   // resolve channel row names to display names (matrix aggregates by raw name; we relabel for show)
   if (r.yLabels) r.yLabels = r.yLabels.map(label)
   if (r.cells) for (const c of r.cells) c.y = label(c.y)

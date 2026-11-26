@@ -10,6 +10,7 @@ import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { parseAuthorStamp, authorSummary } from '../utils/authorStamp'
 import { notebookOpenUrl } from '../utils/notebookOpen'
+import { getJson, postJson } from '../utils/api'
 
 const props = defineProps<{
   projectUid: string
@@ -48,22 +49,16 @@ const loading = ref(false)
 const newName = ref('')
 const busy = ref(false)
 
-async function post(path: string, body: Record<string, unknown>) {
-  const res = await fetch(path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  })
-  const d = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
-  return d
-}
+// quiet: every caller logs its own failure (with the action in the message)
+const post = <T = Record<string, unknown>>(path: string, body: Record<string, unknown>) =>
+  postJson<T>(path, body, { quiet: true })
 
 async function refresh() {
   if (!props.projectUid) return
   loading.value = true
   try {
-    const res = await fetch(`/api/notebooks?projectUid=${encodeURIComponent(props.projectUid)}`)
-    const d = await res.json()
-    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+    const d = await getJson<{ notebooks?: Omit<Notebook, 'authorText'>[] }>('/api/notebooks',
+      { query: { projectUid: props.projectUid }, quiet: true })
     notebooks.value = ((d.notebooks ?? []) as Omit<Notebook, 'authorText'>[]).map(n => ({
       ...n, authorText: authorSummary(parseAuthorStamp(n.createdBy), parseAuthorStamp(n.updatedBy)),
     }))
@@ -129,9 +124,8 @@ async function loadSnapshots(file: string) {
   confirmingRestore.value = null
   confirmingPrune.value = null
   try {
-    const res = await fetch(`/api/notebooks/snapshots?projectUid=${encodeURIComponent(props.projectUid)}&file=${encodeURIComponent(file)}`)
-    const d = await res.json()
-    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+    const d = await getJson<{ snapshots?: Snapshot[] }>('/api/notebooks/snapshots',
+      { query: { projectUid: props.projectUid, file }, quiet: true })
     snapshots.value = d.snapshots ?? []
     restoreVersion.value = snapshots.value.length ? snapshots.value[0].version : null   // default: newest
   } catch (e) {
@@ -180,7 +174,7 @@ async function prune(nb: Notebook) {
   confirmingPrune.value = null
   busy.value = true
   try {
-    const d = await post('/api/notebooks/prune', { projectUid: props.projectUid, file: nb.file })
+    const d = await post<{ kept?: number; removed?: string[] }>('/api/notebooks/prune', { projectUid: props.projectUid, file: nb.file })
     await refresh()
     if (expandedFile.value === nb.file) await loadSnapshots(nb.file)
     const n = d.removed?.length ?? 0

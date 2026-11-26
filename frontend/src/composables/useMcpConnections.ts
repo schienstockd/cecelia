@@ -9,6 +9,7 @@ import { useKiwiStore } from '../stores/kiwi'
 import { useSettingsStore } from '../stores/settings'
 import { mcpRows, type McpConnection } from '../utils/mcpConnections'
 import { isAuthError } from '../utils/observerSetup'
+import { getJson, tryApi } from '../utils/api'
 
 export function useMcpConnections() {
   const observer = useObserverStore()
@@ -37,8 +38,8 @@ export function useMcpConnections() {
   })
 
   async function load() {
-    try { raw.value = (await (await fetch('/api/mcp/connections')).json())?.connections ?? [] }
-    catch { raw.value = [] }
+    const r = await tryApi(getJson<{ connections?: typeof raw.value }>('/api/mcp/connections'))
+    raw.value = r.ok ? (r.data?.connections ?? []) : []
   }
   onMounted(() => { void load(); void observer.refresh() })
   // re-read once a setup attempt settles, so the dot reflects the config rather than the click

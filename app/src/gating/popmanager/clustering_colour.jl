@@ -356,6 +356,45 @@ function stamp_cluster_run!(p::Population, img::CciaImage, value_name::AbstractS
 end
 
 """
+    cluster_pop_stale(p, img) -> String | nothing
+
+Why cluster population `p` on `img` no longer matches its run: its stamp (`runAt`) differs from the
+run's own `at`, so the cluster ids it holds may now be other groups. `nothing` when it matches, when `p`
+is not a cluster population, or when either stamp is missing (no evidence it moved). The manager's
+warning applies the same rule in the browser (`clusterPopStale`, frontend/src/utils/clusterMeasure.ts);
+this is the server's copy, for readers that never see the manager (the MCP's populations and stats).
+"""
+function cluster_pop_stale(p::Population, img::CciaImage)::Union{String,Nothing}
+    sfx = cluster_pop_suffix(p)
+    (sfx === nothing || p.run_at === nothing) && return nothing
+    at = cluster_run_at(cluster_props_path(img, p.value_name, p.pop_type), sfx;
+                        family = _cluster_measure_family(p.pop_type))
+    (at === nothing || at == p.run_at) && return nothing
+    "clustering run $sfx was re-run after this population picked its clusters; the ids may now be other groups"
+end
+
+"""
+    cluster_pop_stale_in(m, path, img) -> String | nothing
+
+`cluster_pop_stale` for the population at `path` or any population its cells are built from — its
+ancestors, and the pops a combination includes or excludes (and theirs): one built on a stale cluster
+population counts cells from the wrong clusters too. The reason names the stale one.
+"""
+function cluster_pop_stale_in(m::PopulationTree, path::AbstractString, img::CciaImage)::Union{String,Nothing}
+    seen = Set{String}(); todo = String[String(path)]
+    while !isempty(todo)
+        q = pop!(todo)
+        (q in seen || !has_pop(m, q)) && continue
+        push!(seen, q)
+        p = m.pops[q]
+        why = cluster_pop_stale(p, img)
+        why === nothing || return "$(p.path): $why"
+        append!(todo, _pop_deps(m, q))          # parent + what a combination includes / excludes
+    end
+    nothing
+end
+
+"""
     cluster_id_owners(m, suffix; except=nothing) -> Dict{Int,String}
 
 Which population of run `suffix` holds each cluster id on map `m`. A cluster id belongs to at most one

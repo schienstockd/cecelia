@@ -51,6 +51,7 @@ import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
          type CanvasTrackSelection } from '../../lib/trackSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { useViewerStore } from '../../stores/viewer'
+import { getJson } from '../../utils/api'
 import { distinctColors, fitCellTitles } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
@@ -165,10 +166,8 @@ async function loadColumns() {
   try {
     const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}&popType=track` +
               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
-    const r = await fetch(`/api/gating/channels?${q}`)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]
-                                  valueName?: string; columns?: string[] }
+    const d = await getJson<{ valueNames?: string[]; trackedValueNames?: string[]
+                              valueName?: string; columns?: string[] }>(`/api/gating/channels?${q}`)
     valueNames.value = d.valueNames ?? []
     trackedNames.value = d.trackedValueNames ?? []
     activeName.value = d.valueName ?? ''
@@ -207,11 +206,9 @@ const runLoad = debouncedLatest<void>(async (_arg, isCurrent) => {
     // a named selection ignores the cap; otherwise the top-N by length
     if (pinned.value.length) p.set('ids', pinned.value.join(','))
     else p.set('limit', String(limit.value))
-    const r = await fetch(`/api/tracking/paths?${p}`)
-    const d = await r.json()
+    const d = await getJson<PathsResponse>(`/api/tracking/paths?${p}`)
     if (!isCurrent()) return                       // a newer selection is already on its way
-    if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
-    data.value = d as PathsResponse
+    data.value = d
     // the server falls a column this cohort lacks back to uncoloured — follow it rather than keeping
     // a picker that claims a colour the plot is not using
     if (data.value.colorBy !== colorBy.value) colorBy.value = data.value.colorBy

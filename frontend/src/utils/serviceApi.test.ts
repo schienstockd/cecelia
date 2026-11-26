@@ -2,11 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { svcPost, notebooksApi, observerApi } from './serviceApi'
 
 function mockFetch(status: number, body: unknown) {
-  return vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(body),
-  })
+  return vi.fn().mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
 afterEach(() => { vi.restoreAllMocks() })

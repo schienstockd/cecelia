@@ -47,6 +47,10 @@ KINDS = {
     "viewer-store": ("Layers", "The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store",
                      "pass what it needs in as an input instead (`lib/webgpu` already holds this rule). "
                      "The viewer's own `viewer` store and `log` are allowed"),
+    "fetch-direct": ("Layers", "A frontend file calls the backend with a bare `fetch(`, not through `utils/api.ts`",
+                     "use `getJson` / `postJson` / `getBuffer` / `tryApi` from `utils/api.ts` — keep the call "
+                     "site's behaviour, pass `quiet` for statuses it handles. A non-backend URL (`blob:`, "
+                     "external) says so with `// ARCH-EXEMPT: <reason>` on its line"),
     "py-cycle": ("Tangles", "Python modules that import each other", "break the loop"),
     "store-cycle": ("Tangles", "Pinia stores that import each other", "break the loop"),
 }
