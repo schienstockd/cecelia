@@ -10,6 +10,7 @@
 // this context drives its store once, unambiguously.
 import type { BehaviourAxes } from '../utils/behaviourAxes'
 import type { ClusterRun } from '../utils/clusterRefine'
+import { ApiError, getJson } from '../utils/api'
 import { ref, computed, watch, type Ref } from 'vue'
 import type { GatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
@@ -70,12 +71,11 @@ export function useClusterContext(opts: {
     if (!enabled.value) return
     if (!projectUid.value || !imageUids.value[0]) { clusterFeatures.value = {}; featureFallback.value = []; return }
     const pt = popType.value
-    const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: imageUids.value[0], popType: pt })
+    const query = { projectUid: projectUid.value, imageUid: imageUids.value[0], popType: pt }
     try {
-      const r = await fetch(`/api/gating/channels?${q}`)
+      // no reply (status 0) is logged by the catch below, as before — so not twice
+      const d = await getJson<Record<string, any>>('/api/gating/channels', { query, quiet: [0] }) ?? {}   // eslint-disable-line @typescript-eslint/no-explicit-any
       if (pt !== popType.value) return              // superseded by a popType switch — that load applies
-      if (!r.ok) { clusterFeatures.value = {}; featureFallback.value = []; return }
-      const d = await r.json()
       loadedPopType.value = pt
       clusterFeatures.value = d.clusterFeatures ?? {}
       clusterIds.value = d.clusterIds ?? {}
@@ -100,6 +100,8 @@ export function useClusterContext(opts: {
       if (suffixes.value.length && !suffixes.value.includes(suffix.value)) suffix.value = suffixes.value[0]
     } catch (e) {
       if (pt !== popType.value) return
+      // an error reply was logged by the client; it just clears the features
+      if (e instanceof ApiError && e.status !== 0) { clusterFeatures.value = {}; featureFallback.value = []; return }
       log.error(`Cluster features: ${e instanceof Error ? e.message : String(e)}`, { source: 'cluster' })
       clusterFeatures.value = {}; featureFallback.value = []
     }

@@ -365,9 +365,8 @@ describe('spatialSigmaAdvisory', () => {
 describe('taskBackendAdvisor — a shared key or type, asked about the form\'s task', () => {
   const CTX = { projectUid: 'p', images: [{ uid: 'a', sizeT: 31 }], values: {},
                 funName: 'cleanupImages.denoise' } as Parameters<typeof taskBackendAdvisor.advise>[1]
-  const okReply = () => vi.fn(async (_url: string, init?: RequestInit) => ({
-    ok: true, json: async () => ({ severity: 'warn', message: 'SHG saturated: skipped at Run', tip: 't',
-                                   echo: JSON.parse(String(init?.body)) }) }) as unknown as Response)
+  const okReply = () => vi.fn(async (_url: string, init?: RequestInit) => (new Response(JSON.stringify({ severity: 'warn', message: 'SHG saturated: skipped at Run', tip: 't',
+                                   echo: JSON.parse(String(init?.body)) }))) as unknown as Response)
 
   it('POSTs ctx.funName + the param key', async () => {
     const f = okReply(); globalThis.fetch = f as unknown as typeof fetch
@@ -414,8 +413,8 @@ describe('backendAdvisor', () => {
     const seen: { url?: string; init?: RequestInit } = {}
     globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
       seen.url = url; seen.init = init
-      return { ok: true, json: async () => ({ severity: 'warn', message: '1 of 3 too short',
-                                              tip: 'Set the window to 31' }) } as unknown as Response
+      return new Response(JSON.stringify({ severity: 'warn', message: '1 of 3 too short',
+                                              tip: 'Set the window to 31' })) as unknown as Response
     }) as unknown as typeof fetch
 
     const advisor = backendAdvisor('opticalFlow.trainSupportDenoise', 'inputFrames')
@@ -435,13 +434,13 @@ describe('backendAdvisor', () => {
   })
 
   it('returns null when the endpoint returns null — the validator had nothing to say', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => null }) as Response) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => (new Response(JSON.stringify(null))) as Response) as unknown as typeof fetch
     const out = await backendAdvisor('t', 'k').advise(1, CTX)
     expect(out).toBeNull()
   })
 
   it('returns null on HTTP error — silence beats an error banner', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) }) as Response) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => (new Response(JSON.stringify({}), { status: 500 })) as Response) as unknown as typeof fetch
     expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()
   })
 
@@ -451,8 +450,7 @@ describe('backendAdvisor', () => {
   })
 
   it('returns null on a garbage response — sanity-check before rendering', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () =>
-      ({ severity: 'warn' }) }) as Response) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => (new Response(JSON.stringify({ severity: 'warn' }))) as Response) as unknown as typeof fetch
     expect(await backendAdvisor('t', 'k').advise(1, CTX)).toBeNull()   // missing message/tip
   })
 
@@ -487,7 +485,7 @@ describe('popsCompatAdvisor — cluster-tracks VN compatibility', () => {
 
   it('flags images that lack a VN a selected pop lives on', async () => {
     globalThis.fetch = vi.fn(async () =>
-      ({ ok: true, json: async () => ({ channelNamesPerVn: {} }) }) as Response) as unknown as typeof fetch
+      (new Response(JSON.stringify({ channelNamesPerVn: {} }))) as Response) as unknown as typeof fetch
     const ctx = CTX(
       [IMG('a', { flowTom: [], cpSAM: [] }), IMG('b', { flowTom: [] })],
       ['flowTom/qc/_tracked', 'cpSAM/A/_tracked'])
@@ -498,9 +496,9 @@ describe('popsCompatAdvisor — cluster-tracks VN compatibility', () => {
   })
 
   it('flags a channel-name mismatch across VNs on the reference image', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({
+    globalThis.fetch = vi.fn(async () => (new Response(JSON.stringify({
       channelNamesPerVn: { flowTom: ['nuc-GFP', 'mem-TOM', 'CD169-Kat'], cpSAM: ['dapi', 'gfp'] },
-    }) }) as Response) as unknown as typeof fetch
+    }))) as Response) as unknown as typeof fetch
     const ctx = CTX(
       [IMG('a', { flowTom: [], cpSAM: [] })],
       ['flowTom/qc/_tracked', 'cpSAM/A/_tracked'])
@@ -523,7 +521,7 @@ describe('popsCompatAdvisor — cluster-tracks VN compatibility', () => {
 
   it('does not fetch when only one VN is selected — nothing to compare across', async () => {
     let called = false
-    globalThis.fetch = vi.fn(async () => { called = true; return { ok: true, json: async () => ({}) } as Response }) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => { called = true; return new Response(JSON.stringify({})) }) as unknown as typeof fetch
     const ctx = CTX([IMG('a', { flowTom: [] })], ['flowTom/qc/_tracked', 'flowTom/other/_tracked'])
     await popsCompatAdvisor.advise(ctx.values!.popsToCluster, ctx)
     expect(called).toBe(false)

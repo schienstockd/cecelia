@@ -36,6 +36,7 @@ import type { PanelHit } from '../utils/panelSelectionHit'
 import { announceShareOutcome, shareFailMessage, type ShareOutcome } from '../utils/shareOutcome'
 import { useCaptureDestination } from './useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
+import { postJson } from '../utils/api'
 
 /** Per-panel input the host passes for the geom-lookup step. `id` is stable across the panels()
  *  array; the composable uses it to key the exporter registry (`${canvasKey}:${id}`) and to look
@@ -230,21 +231,15 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
     const sendToPaired = captureDest.sendToPaired.value
     const attachToKiwi = captureDest.attachToKiwi.value
     try {
-      const res = await fetch('/api/viewer/capture', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectUid: puid, surface: 'plot',
-          address, panels: pending.panels,
-          workspaceOrigin: pending.workspaceOrigin,
-          frames: [{ png }],
-          overlay: payload.overlay,
-          ...(payload.notes ? { notes: payload.notes } : {}),
-          ...(sendToPaired ? {} : { noPush: true }),
-        }),
+      const respJson = await postJson<Record<string, unknown> | null>('/api/viewer/capture', {
+        projectUid: puid, surface: 'plot',
+        address, panels: pending.panels,
+        workspaceOrigin: pending.workspaceOrigin,
+        frames: [{ png }],
+        overlay: payload.overlay,
+        ...(payload.notes ? { notes: payload.notes } : {}),
+        ...(sendToPaired ? {} : { noPush: true }),
       })
-      let respJson: Record<string, unknown> | null = null
-      try { respJson = await res.json() as Record<string, unknown> } catch { /* legacy */ }
-      if (!res.ok) throw new Error(respJson?.error ? String(respJson.error) : `HTTP ${res.status}`)
       const captureId = String(respJson?.captureId ?? '')
       if (!captureId) throw new Error('capture POST returned no captureId')
       const pushOutcome = String(respJson?.push ?? 'not_paired')

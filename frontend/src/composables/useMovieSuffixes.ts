@@ -10,15 +10,14 @@
 // on every popover open. `refresh()` is there for a caller that has just recorded.
 import { ref } from 'vue'
 import { movieSuffixesInUse, type MovieEntry } from '../utils/movies'
+import { getJson } from '../utils/api'
 
 const cache = new Map<string, string[]>()
 const inflight = new Map<string, Promise<string[]>>()
 
 async function load(projectUid: string): Promise<string[]> {
-  const res = await fetch(`/api/movies?projectUid=${encodeURIComponent(projectUid)}`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const body = await res.json() as { movies?: MovieEntry[] }
-  return movieSuffixesInUse(body.movies ?? [])
+  const body = await getJson<{ movies?: MovieEntry[] }>('/api/movies', { query: { projectUid } })
+  return movieSuffixesInUse(body?.movies ?? [])
 }
 
 export function useMovieSuffixes() {
