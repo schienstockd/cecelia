@@ -282,6 +282,8 @@ end
 
     # "No value": the JSON's `noValue` is the Julia constant, and its fallback literal agrees
     @test NO_VALUE_COLOUR == _parity_rgb(String(doc.noValue)) == _NO_VALUE_FALLBACK
+    # mixed / no sub-population in the "subpop" / "class" modes: the JSON's `trackMixed`
+    @test TRACK_MIXED_COLOUR == _parity_rgb(String(doc.trackMixed))
 
     # Track-mode acceptance: every mode name the browser knows is accepted by build_overlays3d_for
     # (no fall-through to the `"track"` default warning inside the function).
@@ -518,6 +520,60 @@ end
     # ... and z counts, in µm (`um` = µm per voxel, x y z)
     upz = (; hops = [(1, 3, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, c)], solid = nothing, pop = nothing)
     @test _colour_hops([slow, upz], "speed"; um = (1.0, 1.0, 3.0))[1].colour[2] == _heat_ramp(1.0)
+    # subpop / class: the source's `step(track id, frame)`; a source without one keeps its pop colour
+    red, green = RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 1, 0)
+    step(kid, t) = t == 1 ? red : green
+    for m in ("subpop", "class")
+        segs = _colour_hops([(; hops, solid = nothing, pop = s2, step)], m)
+        @test only(segs[1].colour) == red && only(segs[4].colour) == green
+        @test col(_colour_hops([(; hops, solid = nothing, pop = s2)], m)) == [s2]
+        @test col(_colour_hops([(; hops, solid = nothing, pop = s2, step = nothing)], m)) == [s2]
+    end
+end
+
+# The sub-population modes read `track_classes` / `track_step_children` per cell-track ribbon
+# (`_step_colours`), so a movie's ribbon is the viewer's: the track's class colour, or each step's.
+@testset "API: ribbon colours by sub-population — `_step_colours`" begin
+    fx = fixture_for(:cells, :movie, :tracked)
+    if fx === nothing
+        @test_skip "tracked movie fixture (missing)"
+    else
+        dir = mktempdir()
+        cp(fx.project, joinpath(dir, basename(fx.project)))
+        old = get(Cecelia.cecelia_conf()["dirs"], "projects", nothing)
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img = init_object(basename(fx.project), fx.uid); vn = fx.value_name
+            cells = Cecelia.as_df(Cecelia.select_cols(Cecelia.label_props(img; value_name = vn), ["area", "track_id", "centroid_t"]))
+            a = sort(cells.area); cut = a[length(a) ÷ 2]
+            m = Cecelia.load_pop_tree(img; value_name = vn, pop_type = "flow")
+            Cecelia.add_pop!(m, "all"; colour = "#ffffff", gate = Cecelia.RectangleGate("area", "area", -1e12, 1e12, -1e12, 1e12))
+            Cecelia.add_pop!(m, "small"; parent = "/all", colour = "#ff0000",
+                             gate = Cecelia.RectangleGate("area", "area", -1e12, cut - 1e-9, -1e12, 1e12))
+            Cecelia.add_pop!(m, "big"; parent = "/all", colour = "#00ff00",
+                             gate = Cecelia.RectangleGate("area", "area", cut, 1e12, -1e12, 1e12))
+            Cecelia.save_pop_tree!(m, img)
+            red, green = RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 1, 0)
+
+            @test _step_colours(img, vn, "flow", "/all", "track") === nothing        # another mode
+            @test _step_colours(img, vn, "clust", "/all", "class") === nothing      # not a flow layer
+            @test _step_colours(img, vn, "flow", "/all/big", "class") === nothing   # no sub-populations
+
+            # subpop: each tracked cell's own gate, by (track, frame), from the table itself
+            sub = _step_colours(img, vn, "flow", "/all", "subpop")
+            ok = [sub(Int(t), Int(round(f))) == (x < cut ? red : green)
+                  for (t, f, x) in zip(cells.track_id, cells.centroid_t, cells.area) if t isa Real && isfinite(t) && t > 0]
+            @test !isempty(ok) && all(ok)
+            # class: one colour per track — its majority gate, else the mixed grey
+            cls = _step_colours(img, vn, "flow", "/all", "class")
+            r = track_classes(img; value_name = vn, parent = "/all")
+            want(c) = c == "/all/small" ? red : c == "/all/big" ? green : TRACK_MIXED_COLOUR
+            @test all(cls(t, 0) == want(c) == cls(t, 99) for (t, c) in zip(r.table.track_id, r.table.class))
+        finally
+            old === nothing ? delete!(Cecelia.cecelia_conf()["dirs"], "projects") :
+                              (Cecelia.cecelia_conf()["dirs"]["projects"] = old)
+        end
+    end
 end
 
 @testset "API: colour-by — one scale over every segmentation (`_cb_scale_of` ≡ pooledColourScale)" begin

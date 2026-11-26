@@ -49,10 +49,11 @@ const PREVIEW_HEAT = BLUE_HEAT_ANCHORS
 /** A tail's colour under the track colour mode, as the overlay author picks it
  *  (`_build_overlay_state`): "track" cycles the palette by track, "speed" the heat ramp (the scene has
  *  no speeds, so by track), "solid" one colour for the source (`solid`), "pop" the cell's own (`own`
- *  — its pop, or its source in the whole-seg branch). */
+ *  — its pop, or its source in the whole-seg branch). "subpop" / "class" have no sub-populations in
+ *  the scene, so they show the cell's own colour, as a pop without sub-populations draws. */
 function tailColour(mode: string | undefined, trackId: number, solid: string, own: string): string {
   if (mode === 'solid') return solid
-  if (mode === 'pop' || mode === 'cell') return own
+  if (mode === 'pop' || mode === 'cell' || mode === 'subpop' || mode === 'class') return own
   if (mode === 'speed') return PREVIEW_HEAT[trackId % PREVIEW_HEAT.length]!
   return PREVIEW_TRACK_PALETTE[trackId % PREVIEW_TRACK_PALETTE.length]!
 }

@@ -155,10 +155,11 @@ function _load_palettes()
         @warn "palettes.json missing — falling back to frozen literals. Restore \
                frontend/src/plots/palettes.json to keep browser + Julia in sync." path = _PALETTES_JSON_PATH
         return (palette = collect(_CECELIA_TRACK_PALETTE_FALLBACK),
-                modes    = ["track", "speed", "solid", "pop", "cell"],
+                modes    = ["track", "speed", "solid", "pop", "cell", "subpop", "class"],
                 heat     = collect(_HEAT_STOPS_FALLBACK),
                 branch   = RGB{N0f8}[],
-                no_value = _NO_VALUE_FALLBACK)
+                no_value = _NO_VALUE_FALLBACK,
+                mixed    = _hex_to_rgb_strict(OVERLAY_GREY))
     end
     doc = JSON3.read(read(_PALETTES_JSON_PATH, String))
     pal = [_hex_to_rgb_strict(String(h)) for h in doc.palettes.cecelia]
@@ -166,7 +167,8 @@ function _load_palettes()
     heat  = [_hex_to_rgb_strict(String(h)) for h in doc.heatRamp]
     branch = [_hex_to_rgb_strict(String(h)) for h in get(doc, :branchTypeColours, String[])]
     no_value = _hex_to_rgb_strict(String(get(doc, :noValue, "#1A1A1A")))
-    (palette = pal, modes = modes, heat = heat, branch = branch, no_value = no_value)
+    mixed = _hex_to_rgb_strict(String(get(doc, :trackMixed, "#9ca3af")))
+    (palette = pal, modes = modes, heat = heat, branch = branch, no_value = no_value, mixed = mixed)
 end
 
 const _PALETTES_DATA = _load_palettes()
@@ -183,6 +185,13 @@ const OVERLAY_GREY = "#9ca3af"
 # `mask_id_colours`). A dark grey no lighter than the ramp's floor, so "no data" never outshines a low
 # value — the browser's `NO_VALUE_RGB` (`palettes.json` → `noValue`).
 const NO_VALUE_COLOUR = _PALETTES_DATA.no_value
+
+# A ribbon step in the "subpop" / "class" modes whose cell is in no sub-population, or whose track is
+# mixed (`track_classes`) — the browser's `TRACK_MIXED_HEX` (`palettes.json` → `trackMixed`).
+const TRACK_MIXED_COLOUR = _PALETTES_DATA.mixed
+
+# The modes that colour a ribbon by its population's sub-populations (`_step_colours`).
+const TRACK_STEP_MODES = ("subpop", "class")
 
 # The track-colour-mode names accepted by `build_overlays3d_for(track_color_mode = ...)`. Read
 # from the JSON so a mode the browser knows is a mode this author accepts — no silent fallback to
@@ -761,7 +770,9 @@ order; source `i`'s fallback colour is the palette's `i`-th, as there.
   * "pop"   — the source's population colour (`pop`), else the palette's `i`-th;
   * "cell"  — each hop's arriving-cell colour (a colour-by column: HMM states along a track); a
     source read without a colour-by (`cb = false`: per-segmentation tracks; track clusters with no
-    column) takes its "pop" colour, as the viewer's source without values does.
+    column) takes its "pop" colour, as the viewer's source without values does;
+  * "subpop" / "class" — the source's `step(track id, frame)` (`_step_colours`: the arriving cell's
+    sub-population, or the track's class); a source without one takes its "pop" colour.
 """
 function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
     pal = CECELIA_TRACK_PALETTE; n = length(pal)
@@ -783,6 +794,7 @@ function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
                      mode == "solid" ? solid :
                      mode == "pop"   ? popc :
                      mode == "cell"  ? (get(s, :cb, true) ? h[9] : popc) :
+                     mode in TRACK_STEP_MODES ? (st = get(s, :step, nothing); st === nothing ? popc : st(h[2], h[1])) :
                      pal[mod(abs(h[2]), n) + 1]
             bag = get!(segs, h[1]) do
                 (; x0 = Float64[], y0 = Float64[], z0 = Float64[],
@@ -794,6 +806,32 @@ function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
         end
     end
     segs
+end
+
+"""
+    _step_colours(img, value_name, pop_type, path, mode) -> Union{Nothing, Function}
+
+A cell-track ribbon's colour per step in the sub-population modes — the viewer's `stepRgbFor`
+(`utils/viewer/trackClass.ts`): `(track id, frame) -> RGB`. "subpop" → the arriving cell's first
+sub-population (`track_step_children`); "class" → the track's class (`track_classes`). Either is
+`TRACK_MIXED_COLOUR` where no sub-population holds the step / the track is mixed. `nothing` for any
+other mode, a non-flow layer, or a population with no sub-populations (the ribbon keeps its colour).
+"""
+function _step_colours(img, value_name::AbstractString, pop_type, path::AbstractString, mode::AbstractString)
+    (mode in TRACK_STEP_MODES && string(pop_type) == "flow") || return nothing
+    m = load_pop_tree(img; value_name = value_name, pop_type = "flow")
+    has_pop(m, path) || return nothing
+    colour(c) = hex_to_rgb(m.pops[c].colour)
+    if mode == "class"
+        r = track_classes(img; value_name, parent = path)
+        isempty(r.children) && return nothing
+        by = Dict(t => (c == Cecelia.TRACK_CLASS_MIXED ? TRACK_MIXED_COLOUR : colour(c)) for (t, c) in zip(r.table.track_id, r.table.class))
+        return (kid, _t) -> get(by, kid, TRACK_MIXED_COLOUR)
+    end
+    s = track_step_children(img; value_name, parent = path)
+    isempty(s.children) && return nothing
+    cols = [colour(c) for c in s.children]
+    (kid, t) -> (j = get(s.step, (kid, t), 0); j == 0 ? TRACK_MIXED_COLOUR : cols[j])
 end
 
 # µm per native voxel, (x, y, z) — the speed colouring's metric (the viewer's payload is in µm).
@@ -1046,7 +1084,8 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
             isempty(hops) && continue
             key = _track_pop_key(lvn, lpt, L.path)
             push!(gated_srcs, (; hops, solid = rgb(get(plan.track_colours, key, String(L.colour))),
-                                 pop = rgb(String(L.colour)), cb = cb_scale !== nothing))
+                                 pop = rgb(String(L.colour)), cb = cb_scale !== nothing,
+                                 step = _step_colours(img, lvn, lpt, String(L.path), _track_mode(track_color_mode))))
         end
     end
 

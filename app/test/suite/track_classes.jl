@@ -87,6 +87,21 @@ end
             save_pop_tree!(m, img)
             r9 = track_classes(img; value_name = vn, parent = "/all")
             @test r9.threshold == 0.9 && Cecelia.track_class_summary(r9).mixed >= s.mixed
+
+            # per step: each tracked cell's (track, frame) → its sub-population, from the table itself.
+            # `small` and `big` share the cells at exactly `cut`; there the first (`small`) wins.
+            st = track_step_children(img; value_name = vn, parent = "/all")
+            @test st.children == ["/all/small", "/all/big"]
+            frames = Cecelia.as_df(Cecelia.select_cols(Cecelia.label_props(img; value_name = vn), ["area", "track_id", "centroid_t"]))
+            want = Dict{Tuple{Int,Int},Int}()
+            for (t, f, x) in zip(frames.track_id, frames.centroid_t, frames.area)
+                (t isa Real && isfinite(t) && t > 0) || continue
+                k = (Int(t), Int(round(f))); j = x <= cut ? 1 : 2
+                want[k] = min(get(want, k, j), j)
+            end
+            @test !isempty(want) && st.step == want
+            @test isempty(track_step_children(img; value_name = vn, parent = "/all/big").step)   # no sub-populations
+            @test_throws ErrorException track_step_children(img; value_name = vn, parent = "/nope")
         finally
             old === nothing ? delete!(Cecelia.cecelia_conf()["dirs"], "projects") :
                               (Cecelia.cecelia_conf()["dirs"]["projects"] = old)

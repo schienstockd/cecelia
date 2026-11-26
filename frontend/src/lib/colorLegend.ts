@@ -274,6 +274,10 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: noSwatch },
       { token: 'track-mode:cell', means: "Each step in its cell's Colour by colour — HMM states along a track",
         swatch: noSwatch },
+      { token: 'track-mode:subpop', means: "Each step in its cell's sub-population colour — grey in none",
+        swatch: noSwatch },
+      { token: 'track-mode:class', means: 'Each track in the sub-population most of its cells are in — grey when mixed',
+        swatch: noSwatch },
     ],
   },
 ]

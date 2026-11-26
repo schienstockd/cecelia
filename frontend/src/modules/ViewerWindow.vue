@@ -35,6 +35,7 @@ import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
 import { useLivePreview } from '../composables/useLivePreview'
+import { isStepMode, stepRgbFor, trackClassesUrl, type TrackClassInfo } from '../utils/viewer/trackClass'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
@@ -1359,6 +1360,43 @@ const trackclustRows = computed(() =>
   spec.popVisible.trackclust ? trackclustRibbonRows(trackclustPayloads.value, ribbonEyes.value) : [])
 /** Every row of the Tracks section: the gated pops, then the track-cluster pops. */
 const trackRibbonRows = computed(() => [...trackDrawablePops.value, ...trackclustRows.value])
+/** Ribbons by sub-population ("sub-population" / "dominant sub-population" colour modes): each drawn
+ *  flow ribbon's track classes (`GET /api/gating/track-classes`), by row key. Fetched while such a mode
+ *  is on — again after a payload refetch (a gate edit) or a stored threshold change — and read by
+ *  `rebuildOverlays` through `stepRgbFor` (docs/todo/TRACK_SUBPOP_GATING_PLAN.md P6). */
+const trackClassInfo = shallowRef(new Map<string, TrackClassInfo>())
+let trackClassSeq = 0
+async function loadTrackClasses() {
+  const seq = ++trackClassSeq
+  const want = isStepMode(trackColorMode.value) && projectUid && imageUid
+    ? trackDrawablePops.value.filter(r => r.popType === 'flow' && r.drawn) : []
+  const next = new Map<string, TrackClassInfo>()
+  await Promise.all(want.map(async r => {
+    try {
+      const res = await fetch(trackClassesUrl({ projectUid, imageUid, valueName: r.vn, pop: r.path }), { cache: 'no-store' })
+      if (res.ok) next.set(r.key, await res.json() as TrackClassInfo)
+    } catch { /* that ribbon keeps its population colour */ }
+  }))
+  if (seq !== trackClassSeq || (!next.size && !trackClassInfo.value.size)) return
+  trackClassInfo.value = next
+  rebuildOverlays()
+}
+watch(() => [trackColorMode.value, popLayers.value,
+             trackDrawablePops.value.filter(r => r.drawn).map(r => r.key).join()], () => loadTrackClasses())
+/** Store a ribbon population's class setting (`trackClass` on the pop, so the plots and a recording
+ *  read the same), then re-read its classes. */
+async function setTrackClass(key: string, patch: { threshold?: number; level?: number }) {
+  const row = trackDrawablePops.value.find(r => r.key === key)
+  const cur = trackClassInfo.value.get(key)
+  if (!row || !cur) return
+  const res = await fetch('/api/gating/pop/update', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectUid, imageUid, valueName: row.vn, popType: 'flow', path: row.path,
+                           trackClass: { threshold: patch.threshold ?? cur.threshold, level: patch.level ?? cur.level } }),
+  }).catch(() => null)
+  if (!res?.ok) { logStore.error(`Could not save the track class for ${row.name}`, { source: 'viewer' }); return }
+  loadTrackClasses()
+}
 /** The population layers with something to list, for the Populations section — a segmentation
  *  header above each group when more than one segmentation draws. */
 const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0))
@@ -2014,7 +2052,7 @@ function rebuildOverlays() {
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
   const trackclustOn = !!spec.popVisible.trackclust
   const overrides = spec.trackSourceColours
-  const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
+  const sources: Parameters<typeof buildMultiTrackBuffer>[0][number][] = []
   // If a track highlight is set for THIS image + this vn, narrow the per-vn source to just those
   // ids. Restores the pre-napari-retire behaviour (`showTracksInNapari` went out with napari
   // without a browser-viewer equivalent). CRUCIAL fallback: when the filter matches zero cells (stale
@@ -2088,8 +2126,11 @@ function rebuildOverlays() {
       const p = narrowByHighlight(lvn, filtered, { allowFallback: false })
       if (!p) continue
       const key = trackPopSourceKey(lvn, layer.popType, pop.path)
+      const stepRgb = isStepMode(trackColorMode.value)
+        ? stepRgbFor(trackColorMode.value, trackClassInfo.value.get(popKey(lvn, layer.popType, pop.path)), p, layer.payload.pops)
+        : null
       sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
-                     popColour: pop.colour })
+                     popColour: pop.colour, stepRgb })
     }
   }
   if (trackclustOn) {
@@ -7040,7 +7081,7 @@ onUnmounted(() => {
         <!-- a still image has no tracks -->
         <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" v-model:color-mode="trackColorMode"
                          v-model:dim-untracked="dimUntracked"
-                         :colour-by="colourBy"
+                         :colour-by="colourBy" :classes="trackClassInfo" @track-class="setTrackClass"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"
                          @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />

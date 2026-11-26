@@ -1,7 +1,8 @@
 <!--
   The viewer window's Tracks section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): one ribbon
   row per gated population with tracks and per track-cluster pop, colour mode (track / speed / source / population /
-  colour-by — each hop in its cell's Colour by colour, e.g. HMM states) with its
+  colour-by — each hop in its cell's Colour by colour, e.g. HMM states / sub-population — each hop in its
+  cell's sub-population / dominant sub-population — each track in its class, `utils/viewer/trackClass.ts`) with its
   legend, z reach and tail. Which segmentations draw is ticked under "On the image" (`VwOnImageOverlay`); the
   window owns the ribbon state, this renders it and reports the user's changes.
 -->
@@ -15,6 +16,7 @@ import type { TrackColorMode } from '../../utils/viewerOverlays'
 import type { TrackPopRow } from '../../utils/viewer/popEyes'
 import { computed } from 'vue'
 import { popRowLabels } from '../../utils/popName'
+import { isStepMode, TRACK_CLASS_THRESHOLDS, TRACK_MIXED_HEX, type TrackClassInfo } from '../../utils/viewer/trackClass'
 
 const props = defineProps<{
   /** ribbon segments drawn */
@@ -33,17 +35,29 @@ const props = defineProps<{
   colourBy?: string | null
   /** "Tracked only": dim the dots of cells with no track while tracks are drawn */
   dimUntracked: boolean
+  /** the sub-population modes: each drawn ribbon pop's track classes, by row key */
+  classes?: ReadonlyMap<string, TrackClassInfo>
 }>()
 const emit = defineEmits<{
   togglePop: [pop: TrackPopRow]
   'update:colorMode': [mode: TrackColorMode]
   'update:dimUntracked': [on: boolean]
+  trackClass: [key: string, patch: { threshold?: number; level?: number }]
   sourceColour: [vn: string, hex: string]
   redraw: []
 }>()
 const settings = useSettingsStore()
 // every tracked pop is `_tracked`: name each row by as much of its path as tells it apart
 const rowLabels = computed(() => popRowLabels(props.pops))
+// the class settings line under a row, in the sub-population modes, when the pop has sub-populations
+const classOf = (key: string) => {
+  const c = isStepMode(props.colorMode) ? props.classes?.get(key) : undefined
+  return c && c.children.length ? c : null
+}
+// the offered thresholds, plus a stored one that is not among them
+const thresholds = (c: TrackClassInfo) =>
+  TRACK_CLASS_THRESHOLDS.includes(c.threshold) ? TRACK_CLASS_THRESHOLDS : [...TRACK_CLASS_THRESHOLDS, c.threshold].sort()
+const pct = (t: number) => `> ${Math.round(t * 100)} %`
 </script>
 
 <template>
@@ -71,6 +85,26 @@ const rowLabels = computed(() => popRowLabels(props.pops))
           :aria-label="'Show tracks for ' + pop.name" @update:modelValue="emit('togglePop', pop)"
         />
       </div>
+      <template v-for="pop in pops" :key="'cls-' + pop.key">
+        <div v-if="classOf(pop.key)" class="cc-row cc-row-tight cc-fs-3xs">
+          <span class="cc-muted cc-fs-2xs vw-pop-name">{{ pop.name }}</span>
+          <select v-if="classOf(pop.key)!.maxLevel > 1" class="cc-fs-2xs" :value="classOf(pop.key)!.level"
+                  v-tooltip.bottom="'Which level of sub-populations'"
+                  @change="emit('trackClass', pop.key, { level: Number(($event.target as HTMLSelectElement).value) })">
+            <option v-for="l in classOf(pop.key)!.maxLevel" :key="l" :value="l">level {{ l }}</option>
+          </select>
+          <template v-if="colorMode === 'class'">
+            <select class="cc-fs-2xs" :value="classOf(pop.key)!.threshold"
+                    v-tooltip.bottom="'Share of a track its sub-population needs'"
+                    @change="emit('trackClass', pop.key, { threshold: Number(($event.target as HTMLSelectElement).value) })">
+              <option v-for="t in thresholds(classOf(pop.key)!)" :key="t" :value="t">{{ pct(t) }}</option>
+            </select>
+            <span class="vw-swatch" :style="{ background: TRACK_MIXED_HEX }" />
+            <span class="cc-readout" v-tooltip.bottom="'Tracks with no majority'">{{
+              classOf(pop.key)!.mixedPct === null ? '–' : Math.round(classOf(pop.key)!.mixedPct!) + ' % mixed' }}</span>
+          </template>
+        </div>
+      </template>
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Tracked only</span>
         <CcToggle :model-value="dimUntracked" aria-label="Tracked only"
@@ -86,6 +120,8 @@ const rowLabels = computed(() => popRowLabels(props.pops))
           <option value="solid">source</option>
           <option value="pop">population</option>
           <option value="cell">colour by</option>
+          <option value="subpop">sub-population</option>
+          <option value="class">dominant sub-population</option>
         </select>
       </div>
       <!-- Colour-by mode: hops take the points' Colour by colours (legend under Populations). -->
