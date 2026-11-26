@@ -51,6 +51,7 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { useViewerStore } from '../../stores/viewer'
+import { getJson } from '../../utils/api'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
 import { fitCellTitles } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
@@ -121,10 +122,8 @@ async function loadValueNames() {
   try {
     const q = `projectUid=${props.projectUid}&imageUid=${imageUid.value}&popType=track` +
               (valueName.value ? `&valueName=${encodeURIComponent(valueName.value)}` : '')
-    const r = await fetch(`/api/gating/channels?${q}`)
-    if (!r.ok) return
-    const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]
-                                  valueName?: string }
+    const d = await getJson<{ valueNames?: string[]; trackedValueNames?: string[]
+                              valueName?: string }>(`/api/gating/channels?${q}`)
     valueNames.value = d.valueNames ?? []
     trackedNames.value = d.trackedValueNames ?? []
     activeName.value = d.valueName ?? ''
@@ -144,10 +143,7 @@ async function load() {
     const p = cohortParams(cohort.value)
     p.set('projectUid', props.projectUid)
     if (valueName.value) p.set('valueName', valueName.value)
-    const r = await fetch(`/api/tracking/diagnostics?${p}`)
-    const d = await r.json()
-    if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`)
-    data.value = d as DiagnosticsResponse
+    data.value = await getJson<DiagnosticsResponse>(`/api/tracking/diagnostics?${p}`)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     data.value = null

@@ -18,6 +18,7 @@
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import { getJson } from '../../utils/api'
 import type { Frame } from '../../plots/frame'
 import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gating'
 import { useDataRefresh } from '../../composables/useDataRefresh'
@@ -117,7 +118,10 @@ async function loadTree() { return counted(loadTreeInner()) }
 async function loadChannelsInner() {
   if (!props.projectUid || !imageUid.value) { valueNames.value = []; return }
   try {
-    const d = await (await fetch(`/api/gating/channels?projectUid=${props.projectUid}&imageUid=${imageUid.value}&popType=${popType.value}`)).json()
+    type Ls = string[] | undefined
+    const d = await getJson<{ valueNames: Ls; channels: Ls; channelNames: Ls; columns: Ls; obsColumns: Ls; cellMeasures: Ls
+                              trackAggregates: Ls; spatialColumns: Ls; temporalColumns: Ls }>(
+      `/api/gating/channels?projectUid=${props.projectUid}&imageUid=${imageUid.value}&popType=${popType.value}`)
     valueNames.value = d.valueNames ?? []
     channels.value = d.channels ?? []
     channelNames.value = d.channelNames ?? []
@@ -136,7 +140,7 @@ async function loadChannelsInner() {
 async function loadTreeInner() {
   if (!props.projectUid || !imageUid.value) { tree.value = null; return }
   try {
-    const d = await (await fetch(`/api/gating/pop-tree?${idQ()}`)).json() as { tree: PopTree }
+    const d = await getJson<{ tree: PopTree }>(`/api/gating/pop-tree?${idQ()}`)
     tree.value = d.tree ?? null
   } catch { tree.value = null }
 }
