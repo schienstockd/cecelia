@@ -23,7 +23,9 @@
 # session or the usage limit leaves the rest for next week. `JUDGE_AUTO_FIX=0` in the unit skips it.
 # Before it, `judge-deps` works the dependency-bot PRs whose CI is red (one session and PR each, the
 # same fence and deadline, `deps-*.log`): they block every update behind them, and are usually 0-2.
-# `JUDGE_DEPS_FIX=0` skips that.
+# `JUDGE_DEPS_FIX=0` skips that. After it, `judge-gaps` closes the easiest few coherence gaps from
+# docs/architecture/gaps.md (one session and PR each, the same fence and deadline, `gaps-*.log`): last,
+# because a gap is never urgent. `JUDGE_GAPS_FIX=0` skips that.
 #
 # Called by systemd/weekly-judge.service — see that dir's README. Fails loudly (exit non-zero) so
 # `systemctl --user status weekly-judge.service` shows red. Design: docs/ai-assist/WEEKLY_JUDGE.md.
@@ -53,6 +55,7 @@ TS="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/$([ "$MODE" = chart ] && echo chart || echo judge)-$TS.log"
 AUTO_LOG_FILE="$LOG_DIR/auto-$TS.log"
 DEPS_LOG_FILE="$LOG_DIR/deps-$TS.log"
+GAPS_LOG_FILE="$LOG_DIR/gaps-$TS.log"
 STARTED_S=$(date +%s)
 # The unit's TimeoutStartSec is 12h: 4h left for the last session (the longest seen so far took ~2.5h,
 # most of it waiting on its PR's CI).
@@ -131,6 +134,7 @@ main() {
                 run_unattended JUDGE_DEPS_FIX "$DEPS_LOG_FILE" judge-deps
                 # the log the consoles' judge --auto line points at (`effectiveness/auto_run.py`)
                 CECELIA_JUDGE_AUTO_LOG="$AUTO_LOG_FILE" run_unattended JUDGE_AUTO_FIX "$AUTO_LOG_FILE" judge-review --auto
+                run_unattended JUDGE_GAPS_FIX "$GAPS_LOG_FILE" judge-gaps
             fi
             return "$rc"
         fi

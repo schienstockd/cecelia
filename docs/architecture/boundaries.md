@@ -35,11 +35,11 @@ Solid: a call or a message. Dotted: a data file both sides read (a schema, a sha
 | Boundary | Julia end | Other end | Contract kept by | Size | Gaps |
 |---|---|---|---|---|---|
 | Julia → Python | `app/src/py_runner.jl` `run_py` | `script_params()` in `python/cecelia/utils/script_utils.py` | params JSON keys; `[PROGRESS] n/total`; exit code | 57 scripts (51 task runners) | none |
-| Vue → Julia, HTTP | route table in `api/src/server.jl`, handlers across `api/src` | 126 files — no single API client | `docs/API.md` → *Route index* | 336 routes in 57 areas | [6 uncalled routes](gaps.md#route-uncalled) |
+| Vue → Julia, HTTP | route table in `api/src/server.jl`, handlers across `api/src` | 126 files — no single API client | `docs/API.md` → *Route index* | 334 routes in 57 areas | none |
 | MCP → Julia, HTTP | same routes | `mcp/cecelia_mcp/autonomous.py`, `mcp/cecelia_mcp/client.py` +2 | `mcp/cecelia_mcp` tool specs | 4 files | — |
 | Python → Julia, HTTP | same routes | `python/cecelia/cecelia_client.py` | — | 1 file | — |
-| Vue ↔ Julia, WebSocket | `api/src/sockets.jl` `handle_message` (in), `api/src/server.jl` `broadcast_ws` (out) | `frontend/src/stores/ws.ts` | `WsMsgType` table (in); type strings (out) | 14 in, 42 out | [5 unhandled](gaps.md#ws-unhandled), none, none |
-| Shared data files | — | — | a test that names the file | 18 files + 72 task specs | [1 with no test](gaps.md#shared-file-unguarded) |
+| Vue ↔ Julia, WebSocket | `api/src/sockets.jl` `handle_message` (in), `api/src/server.jl` `broadcast_ws` (out) | `frontend/src/stores/ws.ts` | `WsMsgType` table (in); type strings (out) | 14 in, 42 out | none, none, none |
+| Shared data files | — | — | a test that names the file | 18 files + 72 task specs | none |
 
 ## Shared data files
 
@@ -48,7 +48,7 @@ Data files named from two or more languages. The 72 task specs (`app/src/tasks/<
 | File | Read by | Test |
 |---|---|---|
 | `constants.json` | Julia, Python, TS/Vue | `api/test/suite/movie_rail_translators.jl` +1 |
-| `figureStyle.json` | Julia, Python, TS/Vue | **none** |
+| `figureStyle.json` | Julia, Python, TS/Vue | `python/cecelia/tests/test_render_figure.py` |
 | `golden.json` | Python, TS/Vue | `api/test/suite/overlay_3d_and_rail_3d.jl` +2 |
 | `guides.json` | Python, TS/Vue | `app/test/suite/guides_and_flow.jl` +3 |
 | `kiwiRef.schema.json` | Julia, TS/Vue | `frontend/src/utils/kiwiRef.test.ts` |

@@ -72,7 +72,7 @@ Subtypes by where they are defined:
 
 ## `Gate`
 
-Defined in `app/src/gating/gates.jl:8` · 6 subtypes · 4 required, 6 with a default, 11 subtype-specific
+Defined in `app/src/gating/gates.jl:8` · 6 subtypes · 4 required, 5 with a default, 11 subtype-specific
 
 **To add a subtype** — implement the required and expected functions; override an optional one only to change its default.
 
@@ -85,8 +85,7 @@ Defined in `app/src/gating/gates.jl:8` · 6 subtypes · 4 required, 6 with a def
 | `gate_group` | optional | BisectorGate |
 | `needs_parent_data` | optional | BisectorGate, RangeGate |
 | `resolve_cut` | optional | BisectorGate |
-| `resolve_gate` | optional | BisectorGate, RangeGate |
-| `rule_flags` | optional | BisectorGate, RangeGate |
+| `resolve_rules` | optional | BisectorGate, RangeGate |
 | `with_divider` | optional | BisectorGate, QuadrantGate, SliceGate |
 
 Subtype-specific (no default; only these subtypes have one, so not part of the contract): `_divider_points` (QuadrantGate, SliceGate); `_end_cut` (RangeGate); `_resolved_ends` (RangeGate); `_with_rule` (PolygonGate, RectangleGate); `divider_segments` (QuadrantGate, SliceGate); `end_window` (RangeGate); `mirror_region` (QuadrantGate, SliceGate); `quadrant_of` (QuadrantGate); `template_centre` (PolygonGate, RectangleGate); `template_size` (PolygonGate, RectangleGate); `translated` (PolygonGate, RectangleGate)
@@ -110,8 +109,7 @@ classDiagram
     +needs_parent_data()
     +quadrant_of()
     +resolve_cut()
-    +resolve_gate()
-    +rule_flags()
+    +resolve_rules()
     +template_centre()
     +template_size()
     +translated()
@@ -125,8 +123,7 @@ classDiagram
     +inside_t()
     +needs_parent_data()
     +resolve_cut()
-    +resolve_gate()
-    +rule_flags()
+    +resolve_rules()
     +with_divider()
   }
   Gate <|-- BisectorGate
@@ -162,8 +159,7 @@ classDiagram
     +gate_spec()
     +inside_t()
     +needs_parent_data()
-    +resolve_gate()
-    +rule_flags()
+    +resolve_rules()
   }
   Gate <|-- RangeGate
   class RectangleGate {
@@ -190,9 +186,9 @@ classDiagram
   Gate <|-- SliceGate
 ```
 
-<details><summary>8 shared operations — take any `Gate`, no subtype overrides them</summary>
+<details><summary>11 shared operations — take any `Gate`, no subtype overrides them</summary>
 
-`_gate_mask`, `anchor_rule`, `gate_channels`, `gate_shape_spec`, `inside`, `needs_anchor`, `project_gate`, `set_gate!`
+`_gate_mask`, `_rule_values`, `anchor_rule`, `gate_channels`, `gate_shape_spec`, `inside`, `needs_anchor`, `project_gate`, `resolve_gate`, `rule_flags`, `set_gate!`
 
 </details>
 

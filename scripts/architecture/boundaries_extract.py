@@ -32,8 +32,6 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / "docs" / "architecture" / "boundaries.md"
-REF = REPO / "docs" / "architecture" / "boundaries_reference.md"
 GENERATED = ("> **Generated** by `scripts/architecture/boundaries_extract.py` — do not edit; "
              "run `pixi run arch-diagrams`.\n")
 
@@ -42,6 +40,9 @@ coherence = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(coherence)
 sys.path.insert(0, str(Path(__file__).parent))
 import gaps  # noqa: E402
+
+OUT = gaps.ARCH / "boundaries.md"
+REF = gaps.ARCH / "boundaries_reference.md"
 
 source_files = lambda dirs, suffixes: coherence._source_files(REPO, dirs, suffixes)  # noqa: E731
 
@@ -114,12 +115,15 @@ def routes_section():
         for m in re.finditer(r"^function\s+(api_[A-Za-z0-9_!]+)\(|^(api_[A-Za-z0-9_!]+)\(.*\)\s*=", t, flags=re.M):
             defined_in.setdefault(m.group(1) or m.group(2), f)
     routes = collections.defaultdict(set)   # route -> julia files (handler definitions)
+    exempt = {}                             # route -> why it has no caller, on purpose
     for f, t in jl_srcs.items():
         for line in t.splitlines():
             for m in coherence._JL_ROUTE.finditer(line):
                 r = m.group(1).rstrip("/")
                 if r.count("/") <= 1:
                     continue
+                if coherence.ROUTE_EXEMPT in line:
+                    exempt[r] = line.split(coherence.ROUTE_EXEMPT, 1)[1].strip()
                 h = HANDLER.search(line)
                 routes[r].add(defined_in.get(h.group(2), f) if h else f)
     callers = coherence.route_callers(REPO)
@@ -134,15 +138,16 @@ def routes_section():
         fs = called_by(r)
         for f in fs:
             a["callers"][caller_side(f)].add(f)
-        if not fs:
+        if not fs and r not in exempt:
             a["uncalled"].append(r)
-    return routes, by_area
+    return routes, by_area, exempt
 
 
 # ── 3. WebSocket ──────────────────────────────────────────────────────────────
 
 # The `type` field set on a line — `type = "a"`, `"type" => "a"`, `f["type"] = "a"`, also `ok ? "a" : "b"`.
 JL_TYPE_LINE = re.compile(r'''(?:\btype\s*=|"type"\s*=>|\["type"\]\s*=)(?!=)(.*)$''', re.M)
+JL_CONSUME = re.compile(r'''\b(?:t|type|typ)\s*==\s*"([a-z][a-z0-9_]*:[a-z0-9_:-]+)"''')
 JL_TYPE_LIT = re.compile(r'"([a-z][a-z0-9_]*(?::[a-z0-9_:-]+)?)"')
 TS_CONSUME = re.compile(r"""(?:\.on\(\s*|type\s*===\s*|case\s+)['"]([a-z][a-z0-9_:-]*)['"]""")
 TS_SEND = re.compile(r"""\.send\(\s*\{\s*type:\s*['"]([a-z][a-z0-9_:-]*)['"]""")
@@ -162,8 +167,13 @@ def ws_section():
         for t in TS_CONSUME.findall(src):
             consumed[t].add(rel(p))
     emitted = collections.defaultdict(set)
+    jl_consumed = collections.defaultdict(set)   # kept apart: a reader is not an emitter (below)
     for p in source_files(["api/src", "app/src"], {".jl"}):
         code = strip_comments(read(p), ".jl")
+        # A frame Julia itself reads back (`t == "runner:log"`: the runner's events, relayed by the API
+        # server) has a handler — on the Julia side.
+        for t in JL_CONSUME.findall(code):
+            jl_consumed[t].add(rel(p))
         for line in JL_TYPE_LINE.findall(code):
             for t in JL_TYPE_LIT.findall(line):
                 emitted[t].add(rel(p))
@@ -179,7 +189,10 @@ def ws_section():
     ws_handled = lambda t: "frontend/src/stores/ws.ts" in consumed.get(t, ())  # noqa: E731
     outbound = sorted(t for t in emitted if msgish(t) or ws_handled(t))
     outbound = [t for t in outbound if t not in inbound or t in consumed]
-    orphans_out = [t for t in outbound if t not in consumed]
+    orphans_out = [t for t in outbound if t not in consumed and t not in jl_consumed]
+    for t, fs in jl_consumed.items():   # shown as handled in the reference table, Julia side
+        if t in emitted and t not in consumed:
+            consumed[t] = set(fs)
     orphans_in = sorted(t for t in consumed if msgish(t) and t not in emitted and t not in inbound
                         and t not in sent)
     return inbound, sent, outbound, emitted, consumed, orphans_out, orphans_in
@@ -208,7 +221,7 @@ def shared_files_section():
     for name in by_name:
         pat = re.compile(r"(?<![\w.-])" + re.escape(name) + r"(?![\w])")
         for s, t in texts.items():
-            if pat.search(t):
+            if name in t and pat.search(t):   # substring first: the regex alone over every file is ~40 s
                 refs[name][LANG[s.suffix]].add(rel(s))
     # A generic name needs its directory named too, or a different file of the same name counts.
     for name in GENERIC & set(refs):
@@ -269,7 +282,7 @@ def fmt_files(fs, n=3):
 
 def main() -> int:
     rp_rows, rp_dynamic, rp_unlaunched = runpy_section()
-    routes, by_area = routes_section()
+    routes, by_area, exempt = routes_section()
     inbound, sent, outbound, emitted, consumed, orphans_out, orphans_in = ws_section()
     specs, by_name, shared = shared_files_section()
     disk = disk_section()
@@ -378,6 +391,9 @@ crossings are in [`flows/`](flows/). Every row of every touchpoint:
         R.append(f"| `{a}` | {d['routes']} | {fmt_files(d['jl'], 2)} | {len(c.get('Vue', ())) or ''} | "
                  f"{len(c.get('MCP', ())) or ''} | {len(c.get('Python', ())) or ''} | {len(c.get('preview', ())) or ''} | "
                  f"{len(d['uncalled']) or ''} |")
+    if exempt:
+        R += ["", "Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):\n"]
+        R += [f"- `{r}` — {why}" for r, why in sorted(exempt.items())]
     R += ["", "## 3. WebSocket `/ws`\n", "### Browser → Julia\n", "| Type | Sent from | Handled in |", "|---|---|---|"]
     for t in sorted(inbound | set(sent)):
         R.append(f"| `{t}` | {fmt_files(sent.get(t, ()), 3) or '—'} | "
@@ -397,7 +413,7 @@ crossings are in [`flows/`](flows/). Every row of every touchpoint:
         R.append(f"| {label} | {by.get('Julia', '')} | {by.get('Python', '')} | {by.get('TS/Vue', '')} |")
     R.append("")
     REF.write_text("\n".join(R), encoding="utf-8")
-    print(f"wrote {OUT.relative_to(REPO)}, {REF.relative_to(REPO)}")
+    print(f"wrote {OUT}, {REF}")
     return 0
 
 

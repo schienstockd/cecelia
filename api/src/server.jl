@@ -273,7 +273,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/version" => (req, body_bytes) -> (api_version(req)),
     "/api/update/check" => (req, body_bytes) -> (api_update_check(req)),
     "/api/system/envs" => (req, body_bytes) -> (api_system_envs(req)),
-    "/api/system/weights" => (req, body_bytes) -> (api_system_weights(req)),
+    "/api/system/weights" => (req, body_bytes) -> (api_system_weights(req)),   # ARCH-EXEMPT: manual status of the model-weights job (curl / script); installer, boot and preview start it
     "/api/setup/defaults" => (req, body_bytes) -> (api_setup_defaults(req)),
     "/api/setup/validate" => (req, body_bytes) -> (api_setup_validate(req)),
     "/api/projects" => (req, body_bytes) -> (api_projects_list(req)),
@@ -360,7 +360,6 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/membership" => (req, body_bytes) -> (api_gating_membership(req)),
     "/api/gating/plotmeta" => (req, body_bytes) -> (api_gating_plotmeta(req)),
     "/api/gating/plotdata" => (req, body_bytes) -> (api_gating_plotdata(req)),
-    "/api/gating/density" => (req, body_bytes) -> (api_gating_density(req)),
     "/api/gating/summary" => (req, body_bytes) -> (api_gating_summary(req)),
     "/api/gating/plot-image" => (req, body_bytes) -> (api_gating_plot_image(req)),
     "/api/gating/cells-image" => (req, body_bytes) -> (api_gating_cells_image(req)),
@@ -413,7 +412,6 @@ const _GET_ROUTES = Dict{String, Function}(
 
 # ── POST ─────────────────────────────────────────────────────────────────────
 const _POST_ROUTES = Dict{String, Function}(
-    "/api/projects/list" => (req, body_bytes) -> (api_projects_list(req)),
     "/api/pools/set" => (req, body_bytes) -> (api_pool_set(body_bytes)),
     "/api/tasks/threads/set" => (req, body_bytes) -> (api_task_threads_set(body_bytes)),
     "/api/runner/restart" => (req, body_bytes) -> (api_runner_restart(body_bytes)),
@@ -537,7 +535,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
     # bidir Blackboard writes — create + revise are MCP-facing; restore / prune / delete are user-only.
     "/api/kiwi/refs/resolve" => (req, body_bytes) -> (api_kiwi_refs_resolve(body_bytes)),   # read-only POST (a list body)
-    "/api/kiwi/refs/cells" => (req, body_bytes) -> (api_kiwi_refs_cells(body_bytes)),       # read-only POST: a population's label ids
+    "/api/kiwi/refs/cells" => (req, body_bytes) -> (api_kiwi_refs_cells(body_bytes)),       # read-only POST: a population's label ids. ARCH-EXEMPT: kept for MCP / overlay consumers (docs/API.md)
     "/api/kiwi/plot/open" => (req, body_bytes) -> (api_kiwi_plot_open(body_bytes)),         # a click on a proposed plot: open or add ONE board
     "/api/kiwi/turn" => (req, body_bytes) -> (api_kiwi_turn(body_bytes)),
     "/api/kiwi/turn/cancel" => (req, body_bytes) -> (api_kiwi_turn_cancel(body_bytes)),
@@ -607,7 +605,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),
     "/api/viewer/pick-set" => (req, body_bytes) -> (api_viewer_pick_set(body_bytes)),
     "/api/viewer/overlay-legend" => (req, body_bytes) -> (api_viewer_overlay_legend(body_bytes)),
-    "/api/viewer/record-test" => (req, body_bytes) -> (api_viewer_record_test(body_bytes)),
+    "/api/viewer/record-test" => (req, body_bytes) -> (api_viewer_record_test(body_bytes)),   # ARCH-EXEMPT: smoke test of the offline renderer, called from api/test
     "/api/viewer/thumbnail" => (req, body_bytes) -> (api_viewer_thumbnail(body_bytes)),
     "/api/preview/start" => (req, body_bytes) -> (api_preview_start(body_bytes)),
     "/api/preview/stop" => (req, body_bytes) -> (api_preview_stop(body_bytes)),
@@ -637,7 +635,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),
     "/api/update/revert" => (req, body_bytes) -> (api_update_revert(body_bytes)),
     "/api/system/envs/install" => (req, body_bytes) -> (api_system_envs_install(body_bytes)),
-    "/api/system/weights/fetch" => (req, body_bytes) -> (api_system_weights_fetch(body_bytes)),
+    "/api/system/weights/fetch" => (req, body_bytes) -> (api_system_weights_fetch(body_bytes)),   # ARCH-EXEMPT: manual re-fetch of missing weights, e.g. after an offline first start
     "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
     "/api/versions/prune" => (req, body_bytes) -> (api_versions_prune(body_bytes)),
 )
@@ -1019,7 +1017,7 @@ function handle_stream(stream::HTTP.Stream)
     # The response WRITE runs in that same pool task, for the reason `try_serve_slab` writes from its
     # own (docs/todo/SLAB_READ_PERF_PLAN.md, Phase 5): this connection's task is on HTTP.jl's single
     # `:interactive` thread, so writing here makes every concurrent response — multi-MB gating
-    # plotdata/density/membership bodies included — copy onto the socket one after another. Only one
+    # plotdata/membership bodies included — copy onto the socket one after another. Only one
     # task touches the stream at a time: the pool task, while this one waits in `fetch`.
     _fetch_unwrapped(Threads.@spawn begin
         status, body = try

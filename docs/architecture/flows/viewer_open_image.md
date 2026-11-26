@@ -12,32 +12,58 @@ colours are a separate JSON fetch turned into a label-colour texture. It ends at
 zoom, plane and time changes re-enter at step 6.
 
 ```mermaid
+%%{init: {"sequence": {"mirrorActors": false, "actorMargin": 40, "messageMargin": 28}}}%%
 sequenceDiagram
   autonumber
-  participant Main as Vue ImageTable.vue (main window)
-  participant VW as Vue ViewerWindow.vue (pop-out)
-  participant API as Julia api/src/viewer_api.jl
-  participant CC as Julia chunk_cache.jl
-  participant Disk as Disk OME-ZARR + h5ad
-  participant GPU as WebGPU lib/webgpu renderers
+  box Vue
+    participant Main as ImageTable.vue
+    participant VW as ViewerWindow.vue
+    participant GPU as WebGPU renderers
+  end
+  box Julia
+    participant API as viewer_api.jl
+    participant CC as chunk_cache.jl
+  end
+  participant Disk as Disk zarr + h5ad
 
-  Main->>VW: window.open /viewer-window ?project ?image ?valueName (named window)
-  VW->>API: GET /api/viewer/meta projectUid imageUid valueName
-  API->>Disk: open_level0 + init_object + props file (dims, levels, channel names, contrast, set)
-  API-->>VW: JSON ViewerMeta (nX nY nZ nC nT, bytesPerVoxel, levels, channels)
-  VW->>GPU: pick tile 2D, flat volume or bricks (shouldUseBricks) and a level, create renderer, setChannels
-  VW->>API: GET /api/viewer/slab t c(cTo) z(zTo) x xTo y yTo level enc (per tile, timepoint channel, or brick)
-  API->>CC: read_slab then read_native then cached_read (decoded chunks, single-flight)
-  CC->>Disk: zarr chunk decode on miss (blosc, pool thread)
-  API-->>VW: raw little-endian voxels, X-Slab-Shape Bpv Level headers, optional zstd Content-Encoding
-  VW->>GPU: shape guard, then uploadTile, uploadFrame or brick payload writeTexture
-  VW->>API: GET /api/viewer/slab labels=segmentation (same box, mask ids)
-  API-->>VW: label ids (u16 or u32), widened to u32 client side, then uploadLabel
-  VW->>API: GET /api/viewer/pop-types then /api/viewer/overlays popType valueName
-  API-->>VW: JSON cells (t x y z track) from label_props h5ad + pops (labels, colour, show) from resolve_pops
-  VW->>GPU: maskPopTable into setLabelTable, points and tracks via setOverlayWindow
-  Main->>VW: localStorage storage event - overlays tick, cache-clear rev or image-meta rev (gate edit, task done, rename)
+  Main->>VW: window.open /viewer-window
+  VW->>API: GET /api/viewer/meta
+  API->>Disk: open level 0, read props
+  API-->>VW: ViewerMeta JSON
+  VW->>GPU: pick tiling, create renderer
+  VW->>API: GET /api/viewer/slab
+  API->>CC: read_slab, cached_read
+  CC->>Disk: decode chunk on miss
+  API-->>VW: raw voxels + shape headers
+  VW->>GPU: upload texture
+  VW->>API: GET slab, labels
+  API-->>VW: label ids, uploadLabel
+  VW->>API: GET pop-types, overlays
+  API-->>VW: cells + pops JSON
+  VW->>GPU: label table, overlays
+  Main->>VW: storage event, refresh
 ```
+
+## Steps
+
+| # | What happens |
+|---|---|
+| 1 | window.open /viewer-window ?project ?image ?valueName (named window) |
+| 2 | GET /api/viewer/meta projectUid imageUid valueName |
+| 3 | open_level0 + init_object + props file (dims, levels, channel names, contrast, set) |
+| 4 | JSON ViewerMeta (nX nY nZ nC nT, bytesPerVoxel, levels, channels) |
+| 5 | pick tile 2D, flat volume or bricks (shouldUseBricks) and a level, create renderer, setChannels |
+| 6 | GET /api/viewer/slab t c(cTo) z(zTo) x xTo y yTo level enc (per tile, timepoint channel, or brick) |
+| 7 | read_slab then read_native then cached_read (decoded chunks, single-flight) |
+| 8 | zarr chunk decode on miss (blosc, pool thread) |
+| 9 | raw little-endian voxels, X-Slab-Shape Bpv Level headers, optional zstd Content-Encoding |
+| 10 | shape guard, then uploadTile, uploadFrame or brick payload writeTexture |
+| 11 | GET /api/viewer/slab labels=segmentation (same box, mask ids) |
+| 12 | label ids (u16 or u32), widened to u32 client side, then uploadLabel |
+| 13 | GET /api/viewer/pop-types then /api/viewer/overlays popType valueName |
+| 14 | JSON cells (t x y z track) from label_props h5ad + pops (labels, colour, show) from resolve_pops |
+| 15 | maskPopTable into setLabelTable, points and tracks via setOverlayWindow |
+| 16 | localStorage storage event - overlays tick, cache-clear rev or image-meta rev (gate edit, task done, rename) |
 
 ## What crosses each boundary
 
