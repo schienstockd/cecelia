@@ -47,6 +47,8 @@ export interface ApiOptions {
   /** Don't log the failure: `true` for any status, or the statuses this caller handles itself. */
   quiet?: boolean | number[]
   keepalive?: boolean
+  /** The browser HTTP cache mode — `'no-store'` for a poll or a read that must never be served stale. */
+  cache?: RequestCache
 }
 
 export class ApiError extends Error {
@@ -141,7 +143,7 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
   }
   let res: Response
   try {
-    res = await fetch(url, { method, headers, body, signal: signalFor(opts), keepalive: opts.keepalive })
+    res = await fetch(url, { method, headers, body, signal: signalFor(opts), keepalive: opts.keepalive, cache: opts.cache })
   } catch (e) {
     if (isAbort(e)) throw e
     const timedOut = !!opts.timeoutMs && e instanceof DOMException && e.name === 'TimeoutError'
