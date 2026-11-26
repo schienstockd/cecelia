@@ -272,7 +272,8 @@ maps the processes, the cross-language boundaries and the key flows, mostly gene
 Three declared rules — both ends of every boundary match, Julia areas call down a declared layer
 order, the viewer engine takes inputs instead of reaching into app stores — turn what the maps show
 into a list of gaps. A test holds each gap count as a ceiling: a change that adds a gap fails CI and
-is told how to close it, and a closed gap stays closed.
+is told how to close it, and a closed gap stays closed. Each weekly judge pass then closes the easiest
+few, one reviewed PR each, and hands back the ones that need a decision.
 
 <p align="center"><img src="frontend/public/readme-findings.svg" alt="Where a reviewer finding goes. Fan-out plausible notes go to the weekly bug check unless tagged fixed in the commit (the tag is optional). Fan-out confirmed and convention should-reuse findings go to both the bug check and the rule count, and convention wrong-home findings to the rule count only, unless they were fixed in the commit: then they are caught and end there. Result-review reproduced findings go to the bug check unless fixed in the commit, and result-review inferred notes unless tagged fixed (the tag is optional). Convention potential duplicates, result-review display notes and the mechanical checks are only listed at commit and end there. A bug still on main becomes a GitHub issue after a verify agent has looked at it; the maintainer or the auto-fix agent opens a fix PR, and the issue is closed once the judge sees the bug gone. A rule broken in 3+ sessions becomes a proposal in a rules PR; the maintainer edits the rule or rejects it in judge-review." width="100%"></p>
 

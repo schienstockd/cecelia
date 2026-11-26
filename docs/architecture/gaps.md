@@ -6,9 +6,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Broken ends | [Julia broadcasts a WebSocket type nothing in the browser handles](#ws-unhandled) | 5 |
-| Broken ends | [An `/api` route no Vue, MCP or Python code calls](#route-uncalled) | 6 |
-| Loose contracts | [A data file two languages read, named by no test](#shared-file-unguarded) | 1 |
+| Broken ends | [An `/api` route no Vue, MCP or Python code calls](#route-uncalled) | 4 |
 | Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 76 |
 | Layers | [The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store](#viewer-store) | 4 |
 | Tangles | [Python modules that import each other](#py-cycle) | 1 |
@@ -16,37 +14,15 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 ## Broken ends
 
-<a id="ws-unhandled"></a>
-### Julia broadcasts a WebSocket type nothing in the browser handles
-
-`ws-unhandled` · to close: handle it in the frontend, or stop sending it.
-
-- **`chain:run:done`** · `api/src/sockets.jl`, `app/src/runner/server.jl`
-- **`chain:run:started`** · `api/src/sockets.jl`
-- **`runner:log`** · `app/src/runner/server.jl`
-- **`update:revert-staged`** · `api/src/update_api.jl`
-- **`update:staged`** · `api/src/update_api.jl`
-
 <a id="route-uncalled"></a>
 ### An `/api` route no Vue, MCP or Python code calls
 
-`route-uncalled` · to close: delete the route, or name the caller (a route built from pieces is invisible here).
+`route-uncalled` · to close: delete the route, or name the caller (a route built from pieces is invisible here); a route kept without a caller on purpose says so with `# ARCH-EXEMPT: <reason>` on its line.
 
 - **`/api/gating/density`** · `api/src/gating_api.jl`
-- **`/api/kiwi/refs/cells`** · `api/src/kiwi_refs.jl`
 - **`/api/projects/list`** · `api/src/routes/project.jl`
 - **`/api/system/weights/fetch`** · `api/src/system_api.jl`
 - **`/api/system/weights`** · `api/src/system_api.jl`
-- **`/api/viewer/record-test`** · `api/src/viewer_api.jl`
-
-## Loose contracts
-
-<a id="shared-file-unguarded"></a>
-### A data file two languages read, named by no test
-
-`shared-file-unguarded` · to close: add a parity or schema test that names the file.
-
-- **`figureStyle.json`** — read by Julia, Python, TS/Vue · `frontend/src/lib/figureStyle.json`
 
 ## Layers
 

@@ -444,6 +444,10 @@ export const useWsStore = defineStore('ws', () => {
       if (step) useAppControlStore().updateMsg = `Updating — ${step}…`
     }
 
+    // Another window staged an update or a revert: this one shows "Restart to finish" too.
+    if (type === 'update:staged' || type === 'update:revert-staged')
+      useAppControlStore().markStaged(type === 'update:staged' ? 'update' : 'revert')
+
     if (type === 'task:progress') {
       const taskId   = String(data.taskId ?? '')
       const progress = Number(data.progress ?? 0)
@@ -556,6 +560,13 @@ export const useWsStore = defineStore('ws', () => {
         if (entry) taskStore.appendLog(entry.id, rest)
       }
     }
+
+    // A chain run's start (to the window that sent `chain:run`) and its end; a failure is the error below.
+    if (type === 'chain:run:started')
+      useLogStore().info(`Chain ${String(data.chain ?? '')} started on ${Number(data.imageCount ?? 0)} image(s)`,
+                         { source: 'chain' })
+    if (type === 'chain:run:done')
+      useLogStore().info(`Chain ${String(data.chain ?? '')} finished`, { source: 'chain' })
 
     if (type === 'chain:run:failed') {
       useLogStore().error(

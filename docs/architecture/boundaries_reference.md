@@ -77,10 +77,10 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 
 | Area | Routes | Julia side | Vue | MCP | Python | preview | No caller |
 |---|---|---|---|---|---|---|---|
-| `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  | 1 |
+| `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  |  |
 | `/api/gating` | 28 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 16 | 2 | 1 |  | 1 |
 | `/api/images` | 24 | `api/src/image_geometry.jl`, `api/src/routes/image.jl` +4 | 18 | 2 |  |  |  |
-| `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  | 1 |
+| `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  |  |
 | `/api/notebooks` | 17 | `api/src/notebooks_api.jl` | 4 | 1 |  |  |  |
 | `/api/projects` | 14 | `api/src/routes/project.jl`, `api/src/server.jl` | 5 | 2 |  |  | 1 |
 | `/api/blackboard` | 12 | `api/src/blackboard_api.jl`, `api/src/blackboard_run_review.jl` | 1 | 1 |  |  |  |
@@ -135,6 +135,11 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | `/api/plot_data` | 1 | `api/src/plotting_api.jl` | 5 |  |  |  |  |
 | `/api/version` | 1 | `api/src/update_api.jl` |  | 1 |  |  |  |
 
+Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
+
+- `/api/kiwi/refs/cells` — kept for MCP / overlay consumers (docs/API.md)
+- `/api/viewer/record-test` — smoke test of the offline renderer, called from api/test
+
 ## 3. WebSocket `/ws`
 
 ### Browser → Julia
@@ -170,9 +175,9 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | `chain:node:queued` | `app/src/runner/chain_frames.jl` | `frontend/src/stores/ws.ts` |
 | `chain:node:running` | `app/src/runner/chain_frames.jl` | `frontend/src/stores/ws.ts` |
 | `chain:node:waiting` | `api/src/runner_api.jl`, `app/src/runner/chain_frames.jl` | `frontend/src/stores/ws.ts` |
-| `chain:run:done` | `api/src/sockets.jl`, `app/src/runner/server.jl` | **nothing handles it** |
+| `chain:run:done` | `api/src/sockets.jl`, `app/src/runner/server.jl` | `frontend/src/stores/ws.ts` |
 | `chain:run:failed` | `api/src/sockets.jl`, `app/src/runner/server.jl` | `frontend/src/stores/ws.ts` |
-| `chain:run:started` | `api/src/sockets.jl` | **nothing handles it** |
+| `chain:run:started` | `api/src/sockets.jl` | `frontend/src/stores/ws.ts` |
 | `chains_updated` | `api/src/routes.jl` | `frontend/src/modules/ChainModule.vue` |
 | `error` | `api/src/acq_review.jl`, `api/src/claim_review.jl` +19 | `frontend/src/lib/webgpu/compileShader.ts`, `frontend/src/stores/ws.ts`, `frontend/src/utils/webgpuProbe.ts` |
 | `gating:pop-tree` | `api/src/gating_api.jl` | `frontend/src/composables/useSummaryData.ts`, `frontend/src/stores/gating.ts` |
@@ -186,7 +191,7 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | `push:sent` | `api/src/push_writer.jl` | `frontend/src/stores/ws.ts` |
 | `push_target:changed` | `api/src/push_api.jl`, `api/src/push_writer.jl` | `frontend/src/stores/ws.ts` |
 | `rois:changed` | `api/src/rois_api.jl` | `frontend/src/components/QuickMovie.vue`, `frontend/src/components/RoiSection.vue` |
-| `runner:log` | `app/src/runner/server.jl` | **nothing handles it** |
+| `runner:log` | `app/src/runner/server.jl` | `api/src/runner_api.jl` |
 | `server:log` | `api/src/server.jl` | `frontend/src/stores/ws.ts` |
 | `task:cancel:ack` | `api/src/sockets.jl` | `frontend/src/stores/ws.ts` |
 | `task:hpc` | `api/src/runner_api.jl`, `api/src/sockets.jl` +1 | `frontend/src/stores/ws.ts` |
@@ -195,8 +200,8 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | `task:result` | `api/src/runner_api.jl`, `api/src/sockets.jl` +1 | `frontend/src/composables/useViewerAutoUpdate.ts`, `frontend/src/stores/ws.ts` |
 | `task:status` | `api/src/runner_api.jl`, `api/src/sockets.jl` +1 | `frontend/src/composables/useTaskDefs.ts`, `frontend/src/composables/useViewerAutoUpdate.ts`, `frontend/src/composables/useVwLensQuery.ts` +2 |
 | `update:progress` | `api/src/update_api.jl` | `frontend/src/stores/ws.ts` |
-| `update:revert-staged` | `api/src/update_api.jl` | **nothing handles it** |
-| `update:staged` | `api/src/update_api.jl` | **nothing handles it** |
+| `update:revert-staged` | `api/src/update_api.jl` | `frontend/src/stores/ws.ts` |
+| `update:staged` | `api/src/update_api.jl` | `frontend/src/stores/ws.ts` |
 | `viewer:landscape-request` | `api/src/landscape_api.jl` | `frontend/src/modules/ViewerWindow.vue` |
 | `viewer:mark` | `api/src/marks_api.jl` | `frontend/src/stores/ws.ts` |
 | `viewer:navigate` | `api/src/viewer_nav_api.jl` | `frontend/src/stores/ws.ts` |

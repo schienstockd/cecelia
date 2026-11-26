@@ -27,14 +27,15 @@ BASELINE = Path(__file__).with_name("gaps_baseline.json")
 
 # kind -> (section, one-line meaning, what closing it means). Order = order in gaps.md.
 KINDS = {
-    "ws-unhandled": ("Broken ends", "Julia broadcasts a WebSocket type nothing in the browser handles",
-                     "handle it in the frontend, or stop sending it"),
-    "ws-no-emitter": ("Broken ends", "The browser handles a WebSocket type no Julia literal emits",
+    "ws-unhandled": ("Broken ends", "Julia sends a WebSocket type nothing handles (browser or Julia)",
+                     "handle it where it is meant to land, or stop sending it"),
+    "ws-no-emitter": ("Broken ends", "Something handles a WebSocket type no Julia literal emits",
                       "delete the handler, or make the emitter's type a literal"),
     "ws-no-handler": ("Broken ends", "The browser sends a WebSocket type `sockets.jl` does not handle",
                       "add it to the `WsMsgType` table, or stop sending it"),
     "route-uncalled": ("Broken ends", "An `/api` route no Vue, MCP or Python code calls",
-                       "delete the route, or name the caller (a route built from pieces is invisible here)"),
+                       "delete the route, or name the caller (a route built from pieces is invisible here); a route kept "
+                       "without a caller on purpose says so with `# ARCH-EXEMPT: <reason>` on its line"),
     "runner-unlaunched": ("Broken ends", "A `*_run.py` runner no literal `run_py` launches",
                           "delete it, or launch it by a literal name"),
     "shared-file-unguarded": ("Loose contracts", "A data file two languages read, named by no test",

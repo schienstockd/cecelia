@@ -537,7 +537,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
     # bidir Blackboard writes — create + revise are MCP-facing; restore / prune / delete are user-only.
     "/api/kiwi/refs/resolve" => (req, body_bytes) -> (api_kiwi_refs_resolve(body_bytes)),   # read-only POST (a list body)
-    "/api/kiwi/refs/cells" => (req, body_bytes) -> (api_kiwi_refs_cells(body_bytes)),       # read-only POST: a population's label ids
+    "/api/kiwi/refs/cells" => (req, body_bytes) -> (api_kiwi_refs_cells(body_bytes)),       # read-only POST: a population's label ids. ARCH-EXEMPT: kept for MCP / overlay consumers (docs/API.md)
     "/api/kiwi/plot/open" => (req, body_bytes) -> (api_kiwi_plot_open(body_bytes)),         # a click on a proposed plot: open or add ONE board
     "/api/kiwi/turn" => (req, body_bytes) -> (api_kiwi_turn(body_bytes)),
     "/api/kiwi/turn/cancel" => (req, body_bytes) -> (api_kiwi_turn_cancel(body_bytes)),
@@ -607,7 +607,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),
     "/api/viewer/pick-set" => (req, body_bytes) -> (api_viewer_pick_set(body_bytes)),
     "/api/viewer/overlay-legend" => (req, body_bytes) -> (api_viewer_overlay_legend(body_bytes)),
-    "/api/viewer/record-test" => (req, body_bytes) -> (api_viewer_record_test(body_bytes)),
+    "/api/viewer/record-test" => (req, body_bytes) -> (api_viewer_record_test(body_bytes)),   # ARCH-EXEMPT: smoke test of the offline renderer, called from api/test
     "/api/viewer/thumbnail" => (req, body_bytes) -> (api_viewer_thumbnail(body_bytes)),
     "/api/preview/start" => (req, body_bytes) -> (api_preview_start(body_bytes)),
     "/api/preview/stop" => (req, body_bytes) -> (api_preview_stop(body_bytes)),

@@ -49,6 +49,16 @@ that adds one, naming it, and fails again once gaps are closed until the ceiling
 The Julia kinds need the package loaded, so the test reads them from the committed
 `gaps/julia.json` rather than regenerating them; `pixi run arch-diagrams` refreshes it.
 
+**On purpose, not a gap.** A route kept without a caller on purpose (a smoke test, a consumer to
+come) carries `# ARCH-EXEMPT: <reason>` on its line in `api/src/server.jl`; it is listed with its
+reason in `boundaries_reference.md` and counted by neither this test nor the weekly judge. Nothing
+else can be exempted: any other false alarm is fixed by making the name visible to the extractor.
+
+**Closing them is scheduled, not hoped for.** Each weekly judge pass ends with `judge-gaps`: the
+easiest few gaps, one unattended session and PR each, never merged by itself. Gaps that need a
+decision (deleting a route nobody calls, a design choice) come back to the maintainer instead.
+[`docs/ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) → *Coherence gaps*.
+
 ## For agents
 
 - **Before changing a boundary** (a route, a WebSocket type, a `run_py` runner's params, a shared data

@@ -443,6 +443,9 @@ judge-review = "python scripts/judge/review.py"
 # broke CI and opens a PR with the bump plus the fix; never a merge. `-- --dry-run` prints the briefs.
 # The weekly pass runs it before `judge-review --auto` (scripts/judge/deps_fix.py).
 judge-deps = "python scripts/judge/deps_fix.py"
+# Close the easiest few coherence gaps (docs/architecture/gaps.md), unattended, one PR each, never merged.
+# The weekly pass runs it last (scripts/judge/gaps_fix.py).
+judge-gaps = "python scripts/judge/gaps_fix.py"
 # The GitHub issue mirror for the newest run record (docs/todo/JUDGE_WORKFLOW_PLAN.md D7): what it
 # would file, close and reopen, printed with every body; reads only the judge issues' numbers and
 # states. `-- --apply` does it and records the issue numbers. The weekly pass runs it unless `--no-issues`.

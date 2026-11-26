@@ -211,3 +211,32 @@ class TestLookWidths(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestFigureStyleFile(unittest.TestCase):
+    """`frontend/src/lib/figureStyle.json` is read by three languages: the renderer here, the per-project
+    override (`app/src/figures.jl` `clean_figure_style`, which validates by `limits` / `choices`) and the
+    style editor (`frontend/src/utils/figureStyle.ts`). A key one side reads that the file lacks, or a
+    default with nothing to validate it, is the drift this catches."""
+
+    def setUp(self):
+        import json
+        import pathlib
+        import re
+        self.file = pathlib.Path(rf.STYLE_FILE)
+        with open(self.file, encoding='utf-8') as f:
+            self.schema = json.load(f)
+        with open(rf.__file__, encoding='utf-8') as f:
+            src = f.read()
+        self.read_here = set(re.findall(r"""(?:style|STYLE)(?:\[|\.get\()\s*['"](\w+)['"]""", src))
+
+    def test_the_renderer_reads_the_shared_file(self):
+        self.assertEqual(self.file.as_posix().split('/')[-4:], ['frontend', 'src', 'lib', 'figureStyle.json'])
+
+    def test_every_key_the_renderer_reads_has_a_default(self):
+        self.assertTrue(self.read_here)
+        self.assertEqual(sorted(self.read_here - set(self.schema['defaults'])), [])
+
+    def test_every_default_can_be_validated_by_the_override(self):
+        bounded = set(self.schema.get('limits', {})) | set(self.schema.get('choices', {}))
+        self.assertEqual(sorted(set(self.schema['defaults']) - bounded), [])
