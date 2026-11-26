@@ -8,6 +8,8 @@
 // a boot fetch. The settings store falls back to localStorage defaults on failure and re-tries
 // later; that's what the empty-bag return conveys.
 
+import { getJson, postJson, tryApi } from './api'
+
 export type ProfileSettingsValue = string | number | boolean | null
 
 export interface ProfileSettingsResult {
@@ -18,29 +20,19 @@ export interface ProfileSettingsResult {
   ok?: boolean
 }
 
-async function _json(res: Response): Promise<unknown> {
-  try { return await res.json() } catch { return null }
-}
-
 /**
  * Fetch the active profile's settings. Empty bag on failure OR timeout — the caller uses its
  * own defaults. A 5s timeout is critical: if the backend hasn't been restarted to pick up the
  * new /api/profile/settings routes (api/src/ isn't Revise-tracked), the proxy may hang the
  * request forever, and any UI keyed off the store's `profileHydrated` flag would spin
- * indefinitely. AbortSignal.timeout is standard on every browser that supports WebGPU (Chrome
- * 103+, Firefox 100+).
+ * indefinitely.
  */
 export async function fetchProfileSettings(apiBase = ''): Promise<ProfileSettingsResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/profile/settings`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) return { profile: 'default', settings: {}, ok: false }
-    const body = await _json(res) as Partial<ProfileSettingsResult> | null
-    if (!body?.profile) return { profile: 'default', settings: {}, ok: false }
-    return { profile: body.profile, settings: body.settings ?? {}, ok: true }
-  } catch { return { profile: 'default', settings: {}, ok: false } }
+  const r = await tryApi(getJson<Partial<ProfileSettingsResult> | null>(
+    `${apiBase}/api/profile/settings`, { timeoutMs: 5000, cache: 'no-store' }))
+  const body = r.ok ? r.data : null
+  if (!body?.profile) return { profile: 'default', settings: {}, ok: false }
+  return { profile: body.profile, settings: body.settings ?? {}, ok: true }
 }
 
 /**
@@ -51,21 +43,14 @@ export async function fetchProfileSettings(apiBase = ''): Promise<ProfileSetting
  */
 export async function patchProfileSettings(patch: Record<string, ProfileSettingsValue>,
                                            apiBase = ''): Promise<ProfileSettingsResult> {
-  try {
-    const res = await fetch(`${apiBase}/api/profile/settings/patch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-      // `keepalive` lets the flush from a `beforeunload` handler actually land on the server;
-      // a normal fetch is cancelled when the page unloads. Cheap for the small payloads this
-      // endpoint gets (browsers cap at ~64 KiB per keepalive request).
-      keepalive: true,
-    })
-    if (!res.ok) return { profile: '', settings: patch }
-    const body = await _json(res) as { profile?: string; settings?: Record<string, ProfileSettingsValue> } | null
-    return {
-      profile: body?.profile ?? '',
-      settings: body?.settings ?? patch,
-    }
-  } catch { return { profile: '', settings: patch } }
+  // `keepalive` lets the flush from a `beforeunload` handler actually land on the server;
+  // a normal fetch is cancelled when the page unloads. Cheap for the small payloads this
+  // endpoint gets (browsers cap at ~64 KiB per keepalive request).
+  const r = await tryApi(postJson<{ profile?: string; settings?: Record<string, ProfileSettingsValue> } | null>(
+    `${apiBase}/api/profile/settings/patch`, patch, { keepalive: true }))
+  if (!r.ok) return { profile: '', settings: patch }
+  return {
+    profile: r.data?.profile ?? '',
+    settings: r.data?.settings ?? patch,
+  }
 }

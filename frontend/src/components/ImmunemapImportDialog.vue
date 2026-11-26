@@ -13,6 +13,7 @@ import {
   mixedPixelSizes, removeAttrColumn, renameAttrColumn, selectionSummary, shapeText,
   suggestGroupAttrs, videoKey, videosToRegister, type GroupAttrs, type ImmunemapManifest,
 } from '../utils/immunemapImport'
+import { postJson } from '../utils/api'
 
 const props = defineProps<{ projectUid: string; setUid: string }>()
 const emit = defineEmits<{ (e: 'imported', images: unknown[]): void; (e: 'close'): void }>()
@@ -62,12 +63,8 @@ async function scan() {
   if (!ref_) { error.value = 'Paste an Immunemap experiment link or id.'; return }
   scanning.value = true
   try {
-    const res = await fetch('/api/import/scan-immunemap', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ experiment: ref_ }),
-    })
-    const body = await res.json().catch(() => ({})) as ImmunemapManifest
-    if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
+    const body = await postJson<ImmunemapManifest>('/api/import/scan-immunemap', { experiment: ref_ })
+    if (body.error) throw new Error(body.error)
     manifest.value = body
     selected.value = defaultSelection(body.videos)
     attrs.value = suggestGroupAttrs(body.groups)
@@ -84,20 +81,16 @@ async function confirmImport() {
   importing.value = true
   error.value = ''
   try {
-    const res = await fetch('/api/import/register-immunemap', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: props.projectUid, setUid: props.setUid,
-        experiment: m.experiment, videos: videosToRegister(m.videos, selected.value),
-        groupAttrs: groupAttrsToRegister(attrs.value),
-      }),
-    })
     type Registered = { uid?: string; name: string; status: string }
-    const body = await res.json().catch(() => ({})) as { images?: Registered[]; error?: string }
-    if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
-    const added = (body.images ?? []).filter(i => i.status === 'pending' && i.uid)
+    const body = await postJson<{ images?: Registered[]; error?: string }>('/api/import/register-immunemap', {
+      projectUid: props.projectUid, setUid: props.setUid,
+      experiment: m.experiment, videos: videosToRegister(m.videos, selected.value),
+      groupAttrs: groupAttrsToRegister(attrs.value),
+    })
+    if (body?.error) throw new Error(body.error)
+    const added = (body?.images ?? []).filter(i => i.status === 'pending' && i.uid)
     done.value = added.length
-    existed.value = (body.images ?? []).filter(i => i.status === 'exists').length
+    existed.value = (body?.images ?? []).filter(i => i.status === 'exists').length
     emit('imported', added)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)

@@ -24,6 +24,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
+import { getJson } from '../../utils/api'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
@@ -70,12 +71,10 @@ const { kind: modelKind } = useVaultModel(() => props.model ?? '')
 const trainedOn = ref<Record<string, string>>({})
 async function loadTrainedOn() {
   try {
-    const r = await fetch('/api/optical-flow/models')
-    if (!r.ok) return
-    const models = (await r.json()).models ?? []
+    type Model = { name: string; manifest?: { sourceValueName?: string } }
+    const models = (await getJson<{ models?: Model[] }>('/api/optical-flow/models'))?.models ?? []
     trainedOn.value = Object.fromEntries(
-      models.map((m: { name: string; manifest?: { sourceValueName?: string } }) =>
-        [m.name, m.manifest?.sourceValueName ?? '']).filter(([, v]: [string, string]) => v))
+      models.map(m => [m.name, m.manifest?.sourceValueName ?? ''] as [string, string]).filter(([, v]) => v))
   } catch { /* fall back to the image's active version */ }
 }
 onMounted(loadTrainedOn)

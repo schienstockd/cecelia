@@ -22,6 +22,7 @@ import { framesFor, layersOf, channelRows, popRows, cellState, cellToggle, camer
 import { useColumnResize } from '../../composables/useColumnResize'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import { NEUTRAL } from '../../plots/fixedColours'
+import { postJson } from '../../utils/api'
 
 const props = defineProps<{ imageUid: string }>()
 
@@ -100,10 +101,8 @@ function resetKeyframe(s: AnimSnapshot) {
 async function deleteKeyframe(s: AnimSnapshot) {
   // only drop the sidecar PNG if no OTHER keyframe still references it (add-keyframe shares the asset)
   if (s.assetId && !anim.snapshots.some(o => o.id !== s.id && o.assetId === s.assetId)) {
-    fetch('/api/board-assets/delete', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, assetId: s.assetId }),
-    }).catch(() => {})
+    // best-effort cleanup: quiet, as before
+    postJson('/api/board-assets/delete', { projectUid: projectUid.value, assetId: s.assetId }, { quiet: true }).catch(() => {})
   }
   if (anim.selectedId === s.id) anim.selectedId = null
   anim.remove(s.id)

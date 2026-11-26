@@ -620,5 +620,23 @@ class TestWindowGraphIsMicrons(unittest.TestCase):
             idx = [min(int(um[lab][ax] // 10.0), n - 1) for ax, n in zip(grid["gridAxes"], shape)]
             self.assertEqual(int(tile), int(np.ravel_multi_index(tuple(idx), tuple(shape))))
 
+
+class TestEffectiveTypes(unittest.TestCase):
+    """Hill number of order 1 = exp(Shannon entropy) (Hill 1973, DOI 10.2307/1934352)."""
+
+    def test_equal_shares_give_the_number_of_types(self):
+        from cecelia.utils.spatial_utils import effective_types
+        np.testing.assert_allclose(effective_types(np.array([[1, 1, 1, 1], [2, 2, 0, 0]])), [4.0, 2.0], rtol=1e-6)
+
+    def test_uneven_shares_follow_the_definition(self):
+        from cecelia.utils.spatial_utils import effective_types
+        # shares 1/2, 1/4, 1/4 → H = 1.5 ln 2 → exp(H) = 2 ** 1.5
+        np.testing.assert_allclose(effective_types(np.array([[2, 1, 1]])), [2 ** 1.5], rtol=1e-6)
+
+    def test_one_type_is_one_and_no_neighbours_is_zero(self):
+        from cecelia.utils.spatial_utils import effective_types
+        np.testing.assert_allclose(effective_types(np.array([[0, 5, 0], [0, 0, 0]])), [1.0, 0.0])
+
+
 if __name__ == "__main__":
     unittest.main()

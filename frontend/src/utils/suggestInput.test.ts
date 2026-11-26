@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken, withoutChosen,
+  filterSuggestions, moveHighlight, isExistingOption, activeToken, replaceActiveToken, withoutChosen, filterSuggestionGroups,
 } from './suggestInput'
 
 const NAMES = ['Neutrophil', 'Tcell', 'cellA', 'Bcell']
@@ -164,5 +164,19 @@ describe('multi-value fields (tags)', () => {
     it('leaves a trailing separator so the next tag can be typed straight away', () => {
       expect(replaceActiveToken('li', 'live', ',').endsWith(', ')).toBe(true)
     })
+  })
+})
+
+describe('filterSuggestionGroups', () => {
+  const groups = [{ title: 'Names', options: ['LN_a', 'spleen'] }, { title: 'IDs', options: ['ln11', 'Zz22'] }]
+  it('filters each group and keeps the group order', () => {
+    expect(filterSuggestionGroups(groups, 'ln')).toEqual([
+      { title: 'Names', options: ['LN_a'] }, { title: 'IDs', options: ['ln11'] }])
+  })
+  it('drops a group left empty — no heading over nothing', () => {
+    expect(filterSuggestionGroups(groups, 'zz')).toEqual([{ title: 'IDs', options: ['Zz22'] }])
+  })
+  it('showAll offers every option of every group', () => {
+    expect(filterSuggestionGroups(groups, 'zz', true)).toEqual(groups)
   })
 })

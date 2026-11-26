@@ -11,7 +11,7 @@ function stubServer() {
     const reply = path.endsWith('/attr/set')
       ? { ok: true, attrName: body.attrName, values: Object.fromEntries(Object.entries(body.values as Record<string, string>).map(([k, v]) => [k, v.trim()])) }
       : { ok: true }
-    return { ok: true, json: async () => reply }
+    return new Response(JSON.stringify(reply), { status: 200 })
   }))
   return calls
 }

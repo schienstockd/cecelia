@@ -26,6 +26,7 @@ import CanvasZoomControl from './CanvasZoomControl.vue'
 import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
 import { plotHostToImageURL } from '../../plots/export'
 import { useProjectStore } from '../../stores/project'
+import { ApiError, getJson } from '../../utils/api'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisLayout'
 import { useSummaryData } from '../../composables/useSummaryData'
@@ -634,9 +635,11 @@ const snapshotter = debouncedLatest<void>(async (_arg, isCurrent) => {
   const { sc, key } = snapKeyNow()
   if (!projectUid.value || !sc.imageUids.length || !isCurrent() ||
       !snapshotDue(entry.value.paramsSnapshot, key, plotSig.value, baselinePlots)) return
-  const res = await fetch(historyParamsUrl(projectUid.value, sc.imageUids, { pops: sc.pops, clusterRuns: sc.clusterRuns }))
-  const d = await res.json().catch(() => null) as { rows?: HistoryParamsRow[] } | null
-  if (!res.ok || !d?.rows || !isCurrent() || snapKeyNow().key !== key) return
+  // background snapshot: quiet, and a reply the server refused is simply not snapshotted (no reply → onError)
+  const d = await getJson<{ rows?: HistoryParamsRow[] } | null>(
+    historyParamsUrl(projectUid.value, sc.imageUids, { pops: sc.pops, clusterRuns: sc.clusterRuns }), { quiet: true })
+    .catch(e => { if (e instanceof ApiError && e.status > 0) return null; throw e })
+  if (!d?.rows || !isCurrent() || snapKeyNow().key !== key) return
   entry.value.paramsSnapshot = { takenAt: new Date().toISOString(), key, scope: sc, rows: d.rows }
 }, { wait: 1500, onError: e => console.warn('[board] parameters snapshot failed', e) })
 watch(() => snapKeyNow().key, () => snapshotter.schedule(), { immediate: true })

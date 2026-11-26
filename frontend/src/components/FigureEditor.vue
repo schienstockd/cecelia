@@ -15,6 +15,7 @@ import { applyFigureEdits, figureFrames, framesAsRange, isSplit, type FigureSpec
 import { resolveFrameRange, storeFrameEnd } from '../utils/batchMovie'
 import { useToast } from '../composables/useToast'
 import { fetchMovieEntry } from '../utils/movieRestore'
+import { postJson, tryApi } from '../utils/api'
 
 const props = defineProps<{ projectUid: string; name: string; staleReason?: string
                              /** the image's frame count — the range slider's length */
@@ -92,16 +93,13 @@ async function rerender() {
   })
   busy.value = true
   try {
-    const res = await fetch('/api/figures/render', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, imageUid: imageUid.value, spec: next,
-                             name: props.name.replace(/\.png$/i, ''), replace: true }),
-    })
-    const body = await res.json().catch(() => ({}))
-    if (!res.ok) { error.value = body.error ?? `HTTP ${res.status}`; return }
+    const r = await tryApi(postJson<{ name: string }>('/api/figures/render',
+      { projectUid: props.projectUid, imageUid: imageUid.value, spec: next,
+        name: props.name.replace(/\.png$/i, ''), replace: true }))
+    if (!r.ok) { error.value = r.error; return }
     spec.value = next
     toast.add({ severity: 'success', summary: 'Figure re-made', life: 2500 })
-    emit('rendered', body.name)
+    emit('rendered', r.data.name)
   } finally {
     busy.value = false
   }

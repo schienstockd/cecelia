@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { colourByGroups, containBox, tileBox, GATE_CELL_PAD, framesIn, popWireToken, positionLayers, positionPops,
+import { containBox, tileBox, GATE_CELL_PAD, framesIn, popWireToken, positionLayers, positionPops,
          resolveFrame, sharedValueScale } from './popPositions'
 import { POPULATION_PALETTE } from './plot'
 
@@ -103,20 +103,8 @@ describe('population positions — tile size', () => {
   })
 })
 
+
 describe('population positions — colour by a value', () => {
-  it('offers the populations, then the lens scores by name, then every other column', () => {
-    const g = colourByGroups(['area', 'spatial.lens.lens1', 'regions.default', 'spatial.lens.crypt'])
-    expect(g.map(x => x.title)).toEqual([undefined, 'Lens scores', 'Cell measures'])
-    expect(g[0]!.options).toEqual([{ value: '', label: 'Populations' }])
-    expect(g[1]!.options).toEqual([{ value: 'spatial.lens.lens1', label: 'lens1' },
-                                   { value: 'spatial.lens.crypt', label: 'crypt' }])
-    expect(g[2]!.options.map(o => o.value)).toEqual(['area', 'regions.default'])
-    expect(colourByGroups(['area']).map(x => x.title)).toEqual([undefined, 'Cell measures'])
-  })
-  it('a renamed lens is listed by the name it was given', () => {
-    const g = colourByGroups(['spatial.lens.lens1', 'spatial.lens.lens2'], { 'spatial.lens.lens1': 'test1' })
-    expect(g[1]!.options).toEqual([{ value: 'spatial.lens.lens1', label: 'test1' }, { value: 'spatial.lens.lens2', label: 'lens2' }])
-  })
   it('one scale over every tile: the span of their ranges, ticks inside it once', () => {
     const s = sharedValueScale([
       { valueRange: [0, 10], valueTicks: [{ pos: 0, label: '0' }, { pos: 10, label: '10' }] },

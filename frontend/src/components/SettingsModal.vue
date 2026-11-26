@@ -14,6 +14,7 @@ import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import { notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { notebooksApi, previewApi } from '../utils/serviceApi'
+import { getJson, postJson, tryApi } from '../utils/api'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore, type PluginEntry } from '../stores/customModules'
 import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
@@ -304,17 +305,16 @@ const pluginRestart = ref(false)
 // ONE install path, used by both the URL field and a row in the curated list. The list used to just
 // FILL the field above — invisible indirection: the button was two sections away from its own effect,
 // so it read as doing nothing. A row installs itself now, behind the same confirm.
+// what the plugin routes answer: the custom-modules payload, plus whether a restart is needed
+type PluginReply = Parameters<typeof customModules.apply>[0] & { restartRequired?: boolean }
 async function installPlugin(url: string, ref = '') {
   const u = url.trim()
   if (!u) return
   pluginBusy.value = true; pluginMsg.value = ''; pluginRestart.value = false
   try {
-    const res = await fetch('/api/plugins/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: u, ref: ref.trim() }),
-    })
-    const data = await res.json()
-    if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
+    const r = await tryApi(postJson<PluginReply>('/api/plugins/install', { url: u, ref: ref.trim() }))
+    if (!r.ok) { pluginMsg.value = r.error; return }
+    const data = r.data
     customModules.apply(data)
     pluginRestart.value = !!data.restartRequired
     // Only clear the URL field when it is what was submitted — clearing it after installing a listed
@@ -333,12 +333,9 @@ async function installPlugin(url: string, ref = '') {
 async function installLocalPlugin(name: string) {
   pluginBusy.value = true; pluginMsg.value = ''; pluginRestart.value = false
   try {
-    const res = await fetch('/api/plugins/install-local', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-    const data = await res.json()
-    if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
+    const r = await tryApi(postJson<PluginReply>('/api/plugins/install-local', { name }))
+    if (!r.ok) { pluginMsg.value = r.error; return }
+    const data = r.data
     customModules.apply(data)
     pluginRestart.value = !!data.restartRequired
   } catch (e) {
@@ -352,15 +349,11 @@ const bundledNames = computed(() => new Set(customModules.bundled.map(b => b.nam
 async function removePlugin(name: string) {
   pluginBusy.value = true; pluginMsg.value = ''
   try {
-    const res = await fetch('/api/plugins/remove', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-    const data = await res.json()
     // 409 = one of its tasks is still running. That is a state, not a mistake, so it reads as a
-    // message rather than an error the user has to interpret.
-    if (!res.ok) { pluginMsg.value = data.error ?? `HTTP ${res.status}`; return }
-    customModules.apply(data)
+    // message rather than an error the user has to interpret (and is not logged as a failure).
+    const r = await tryApi(postJson<PluginReply>('/api/plugins/remove', { name }, { quiet: [409] }))
+    if (!r.ok) { pluginMsg.value = r.error; return }
+    customModules.apply(r.data)
   } catch (e) {
     pluginMsg.value = String(e)
   } finally { pluginBusy.value = false }
@@ -412,7 +405,7 @@ const replToggle = ref(false)   // mirrors the server's runtime enable flag (dia
 async function loadDiag() {
   diagBusy.value = true
   try {
-    diag.value = await (await fetch('/api/diagnostics')).json() as Diag
+    diag.value = await getJson<Diag>('/api/diagnostics')
     replToggle.value = !!diag.value?.replEnabled
   } catch { diag.value = null }
   finally { diagBusy.value = false }
@@ -421,10 +414,8 @@ async function loadDiag() {
 async function toggleRepl() {
   const enabled = replToggle.value
   try {
-    await fetch('/api/repl/config', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
-    })
-  } catch { /* ignore — loadDiag re-syncs the true state */ }
+    await postJson('/api/repl/config', { enabled })
+  } catch { /* logged by the client — loadDiag re-syncs the true state */ }
   await loadDiag()
 }
 
@@ -438,14 +429,15 @@ async function runRepl() {
   if (!code || replBusy.value) return
   replBusy.value = true
   try {
-    const res = await fetch('/api/repl', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
-    })
-    const d = await res.json() as { ok?: boolean; value?: string; output?: string; error?: string }
-    replLog.value.push({ code, ok: res.ok && !!d.ok, value: d.value, output: d.output, error: d.error })
-    if (res.ok) replCode.value = ''
-  } catch (e) {
-    replLog.value.push({ code, ok: false, error: String(e) })
+    // an eval error is a 200 with `ok: false`; a non-2xx is the console refusing (off, not loopback)
+    const r = await tryApi(postJson<{ ok?: boolean; value?: string; output?: string; error?: string }>('/api/repl', { code }))
+    if (r.ok) {
+      const d = r.data
+      replLog.value.push({ code, ok: !!d?.ok, value: d?.value, output: d?.output, error: d?.error })
+      replCode.value = ''
+    } else {
+      replLog.value.push({ code, ok: false, error: r.error })
+    }
   } finally { replBusy.value = false }
 }
 // ⌘/Ctrl+Enter runs (plain Enter stays a newline — it's a multi-line editor)
@@ -488,22 +480,16 @@ const tls = ref<TlsCfg | null>(null)
 const tlsBusy = ref(false)
 const tlsRestart = ref(false)
 async function loadTls() {
-  try { tls.value = await (await fetch('/api/config/tls')).json() as TlsCfg }
+  try { tls.value = await getJson<TlsCfg>('/api/config/tls') }
   catch { tls.value = null }
 }
 async function tlsToggle(on: boolean) {
   tlsBusy.value = true
   try {
-    const res = await fetch('/api/config/tls/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ on }),
-    })
-    const d = await res.json() as TlsCfg & { restartRequired: boolean }
-    if (res.ok) {
-      tls.value = { desired: d.desired, protocol: d.protocol, envOverride: d.envOverride }
-      tlsRestart.value = !!d.restartRequired
-    }
-  } catch { /* keep previous state; loadTls on next open re-syncs */ }
+    const d = await postJson<TlsCfg & { restartRequired: boolean }>('/api/config/tls/set', { on })
+    tls.value = { desired: d.desired, protocol: d.protocol, envOverride: d.envOverride }
+    tlsRestart.value = !!d.restartRequired
+  } catch { /* logged by the client; keep previous state — loadTls on next open re-syncs */ }
   finally { tlsBusy.value = false }
 }
 
@@ -521,18 +507,14 @@ interface ThreadsCfg {
 const thr = ref<ThreadsCfg | null>(null)
 const thrBusy = ref(false)
 async function loadThreads() {
-  try { thr.value = await (await fetch('/api/config/threads')).json() as ThreadsCfg }
+  try { thr.value = await getJson<ThreadsCfg>('/api/config/threads') }
   catch { thr.value = null }
 }
 async function threadsToggle(on: boolean) {
   thrBusy.value = true
   try {
-    const res = await fetch('/api/config/threads/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ on }),
-    })
-    if (res.ok) thr.value = await res.json() as ThreadsCfg
-  } catch { /* keep previous state; loadThreads on next open re-syncs */ }
+    thr.value = await postJson<ThreadsCfg>('/api/config/threads/set', { on })
+  } catch { /* logged by the client; keep previous state — loadThreads on next open re-syncs */ }
   finally { thrBusy.value = false }
 }
 // "Auto (16 threads)" when the launcher picked the count, else the plain number.
@@ -593,8 +575,7 @@ const patchRunId = ref<Record<string, string>>({})   // patch id → active run'
 
 onMounted(async () => {
   try {
-    const res = await fetch('/api/maintenance/patches')
-    if (res.ok) patches.value = ((await res.json()).patches ?? []) as PatchDef[]
+    patches.value = (await getJson<{ patches?: PatchDef[] }>('/api/maintenance/patches'))?.patches ?? []
   } catch { /* no patches surfaced */ }
 })
 
@@ -630,9 +611,10 @@ const svcBusy = ref('')     // which row's action is in flight ('notebooks' | 'a
 const svcMsg = ref('')
 
 async function pollServices() {
-  try { notebooksRaw.value = await (await fetch('/api/notebooks/status')).json() } catch { notebooksRaw.value = null }
+  // quiet: polled every 4 s — a restarting backend would flood the rail
+  try { notebooksRaw.value = await getJson('/api/notebooks/status', { quiet: true }) } catch { notebooksRaw.value = null }
   try { previewRaw.value = await previewApi.status() } catch { previewRaw.value = null }
-  try { runnerRaw.value = await (await fetch('/api/runner/status')).json() } catch { runnerRaw.value = null }
+  try { runnerRaw.value = await getJson<RunnerStatus>('/api/runner/status', { quiet: true }) } catch { runnerRaw.value = null }
 }
 let svcTimer: number | undefined
 onMounted(() => { pollServices(); svcTimer = window.setInterval(pollServices, 4000) })
@@ -668,25 +650,21 @@ async function previewStop(foreign = false) {
 async function runnerToggle(on: boolean) {
   svcBusy.value = 'runner'; svcMsg.value = ''
   try {
-    const res = await fetch('/api/runner/enabled', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: on }),
-    })
-    const d = await res.json()
-    svcMsg.value = res.ok ? d.message : (d.error ?? 'Could not change the task runner setting.')
+    // quiet 409: CECELIA_RUNNER overrides the setting — a state, shown as the message
+    const r = await tryApi(postJson<{ message?: string }>('/api/runner/enabled', { enabled: on }, { quiet: [409] }))
+    svcMsg.value = r.ok ? (r.data?.message ?? '')
+      : (r.status ? r.error : 'Could not change the task runner setting.')
   } catch { svcMsg.value = 'Could not change the task runner setting.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
 }
 async function runnerRestart(force = false) {
   svcBusy.value = 'runner'; svcMsg.value = ''
   try {
-    const res = await fetch('/api/runner/restart', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force }),
-    })
-    const d = await res.json()
-    svcMsg.value = res.ok ? 'Task runner restarting…'
-      : `${d.error ?? 'Could not restart the task runner.'} Press Restart again to stop them anyway.`
+    // quiet 409: the runner is busy (or off) — the refusal is the feature, shown as the message
+    const r = await tryApi(postJson('/api/runner/restart', { force }, { quiet: [409] }))
+    svcMsg.value = r.ok ? 'Task runner restarting…'
+      : !r.status ? 'Could not restart the task runner.'
+      : `${r.error} Press Restart again to stop them anyway.`
   } catch { svcMsg.value = 'Could not restart the task runner.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
 }

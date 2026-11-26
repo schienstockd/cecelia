@@ -21,16 +21,14 @@ function stubFetch(map: FetchStubMap) {
     const key = String(url) as keyof FetchStubMap
     const entry = map[key]
     if (!entry) throw new Error(`unexpected fetch: ${url}`)
-    return { ok: entry.ok, json: async () => entry.body } as Response
+    return new Response(JSON.stringify(entry.body), { status: entry.ok ? 200 : 500 })
   })
 }
 
 async function flush() {
-  // Two microtask ticks: one for `watchEffect` to fire the fetch promise, one for `finally` to
-  // update the refs. Small and deterministic.
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
+  // One macrotask: the fetch promise, the real `Response` body read and the `finally` that updates the
+  // refs all settle as microtasks before it runs. Small and deterministic.
+  await new Promise(r => setTimeout(r, 0))
 }
 
 describe('useVaultModel', () => {
@@ -114,10 +112,10 @@ describe('useVaultModel', () => {
     vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
       const key = String(url)
       if (key === '/api/optical-flow/models') { flowCalls++
-        return { ok: true, json: async () => ({ models: ['a', 'b', 'c'].map(n =>
-          ({ name: n, stem: n, hasManifest: true, manifest: {} })) }) } as Response }
+        return new Response(JSON.stringify({ models: ['a', 'b', 'c'].map(n =>
+          ({ name: n, stem: n, hasManifest: true, manifest: {} })) })) }
       if (key === '/api/denoise/models') { denoiseCalls++
-        return { ok: true, json: async () => ({ models: [] }) } as Response }
+        return new Response(JSON.stringify({ models: [] })) }
       throw new Error(`unexpected fetch: ${url}`)
     })
     // Two composable instances mounted concurrently should each end up with the cached listings
@@ -142,7 +140,7 @@ describe('useVaultModel', () => {
       const models = key.includes('optical-flow')
         ? [{ name: `flow${calls}.pt`, stem: `flow${calls}`, hasManifest: true, manifest: {} }]
         : []
-      return { ok: true, json: async () => ({ models }) } as Response
+      return new Response(JSON.stringify({ models }))
     })
     const scope = effectScope()
     let out!: ReturnType<typeof useVaultModel>
@@ -164,7 +162,7 @@ describe('useVaultModel', () => {
       const models = key.includes('denoise') && trained
         ? [{ name: 'supp.full.pt', stem: 'supp.full', hasManifest: true, manifest: { kind: 'denoise-support' } }]
         : []
-      return { ok: true, json: async () => ({ models }) } as Response
+      return new Response(JSON.stringify({ models }))
     })
     const scope = effectScope()
     const name = ref('older')
@@ -243,7 +241,7 @@ describe('useVaultRows', () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
       calls.push(String(url))
-      return { ok: true, json: async () => ({ models: [] }) } as Response
+      return new Response(JSON.stringify({ models: [] }))
     })
     const scope = effectScope()
     let out!: ReturnType<typeof useVaultRows>

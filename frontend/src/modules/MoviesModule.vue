@@ -46,6 +46,7 @@ import BaseModal from '../components/BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import AttrFilterPanel from '../components/AttrFilterPanel.vue'
 import { isTypingTarget } from '../utils/typingTarget'
+import { getJson, postJson } from '../utils/api'
 
 const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
@@ -208,9 +209,10 @@ async function refresh() {
   if (!projectUid.value) { movies.value = []; return }
   loading.value = true
   try {
-    const res = await fetch(`/api/movies?projectUid=${encodeURIComponent(projectUid.value)}`)
-    const body = await res.json().catch(() => ({}))
-    movies.value = sortMovies((body.movies ?? []) as MovieEntry[])
+    // quiet: the catch below logs the failure itself
+    const body = await getJson<{ movies?: MovieEntry[] } | null>('/api/movies',
+      { query: { projectUid: projectUid.value }, quiet: true })
+    movies.value = sortMovies(body?.movies ?? [])
     // keep the selection if it still exists, else pick the newest
     if (!movies.value.some(m => m.name === selected.value)) {
       selected.value = movies.value[0]?.name ?? ''
@@ -430,11 +432,8 @@ const END_MODES: ChipOption[] = [
 async function patchMeta(names: string[], patch: Record<string, unknown>) {
   if (!projectUid.value || !names.length) return
   try {
-    const res = await fetch('/api/movies/meta', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, names, ...patch }),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
+    // quiet: the catch below logs the failure itself
+    await postJson('/api/movies/meta', { projectUid: projectUid.value, names, ...patch }, { quiet: true })
     await refresh()
   } catch (e) {
     log.error(`Could not update ${names.length} movie(s): ${e instanceof Error ? e.message : String(e)}`,
@@ -578,12 +577,9 @@ async function deleteChecked() {
   if (!projectUid.value || !checked.value.length) return
   const n = checked.value.length
   try {
-    const res = await fetch('/api/movies/delete', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, names: checked.value }),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
-    const body = await res.json().catch(() => ({})) as { deleted?: string[]; rejected?: string[] }
+    // quiet: the catch below logs the failure itself
+    const body = (await postJson<{ deleted?: string[]; rejected?: string[] } | null>('/api/movies/delete',
+      { projectUid: projectUid.value, names: checked.value }, { quiet: true })) ?? {}
     log.info(`Deleted ${body.deleted?.length ?? n} ${nouns.value.many}`, { source: 'movies' })
     if (body.rejected?.length) log.warn(`Could not delete: ${body.rejected.join(', ')}`, { source: 'movies' })
     checked.value = []

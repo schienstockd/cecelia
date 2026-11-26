@@ -30,7 +30,7 @@ export viewer_chunk_cache_setting, viewer_chunk_cache_bytes, viewer_chunk_cache_
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic, append_jsonl!, read_jsonl
-export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources
+export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources, orphan_track_sources
 export write_http_body!
 export safe_name_part, name_suffix, NAME_SUFFIX_MAX, numbered_name, derived_image_name
 
@@ -152,7 +152,7 @@ export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_tree!, load_pop_tree, gating_dir, gating_path, stored_pop_tree, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
 export copy_gating!, has_gating, with_pop_tree_lock
-export co_clustered_value_names, cluster_run_at, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
+export co_clustered_value_names, cluster_run_at, cluster_pop_stale, cluster_pop_stale_in, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
        cluster_id_owners, as_cluster_id
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export category_colours, category_sort_key, pop_label_overrides, POPULATION_PALETTE

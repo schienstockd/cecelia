@@ -12,7 +12,7 @@ import CcToggle from '../CcToggle.vue'
 import ColourPicker from '../ColourPicker.vue'
 import { PALETTES } from '../../plots/plot'
 import { useSettingsStore } from '../../stores/settings'
-import type { TrackColorMode } from '../../utils/viewerOverlays'
+import { orphanTracksLine, orphanTracksTip, type OrphanTracks, type TrackColorMode } from '../../utils/viewerOverlays'
 import type { TrackPopRow } from '../../utils/viewer/popEyes'
 import { computed } from 'vue'
 import { popRowLabels } from '../../utils/popName'
@@ -37,6 +37,8 @@ const props = defineProps<{
   dimUntracked: boolean
   /** the sub-population modes: each drawn ribbon pop's track classes, by row key */
   classes?: ReadonlyMap<string, TrackClassInfo>
+  /** tracks whose population was deleted — nothing can draw them, so they are named instead */
+  orphans?: OrphanTracks[]
 }>()
 const emit = defineEmits<{
   togglePop: [pop: TrackPopRow]
@@ -58,6 +60,7 @@ const classOf = (key: string) => {
 const thresholds = (c: TrackClassInfo) =>
   TRACK_CLASS_THRESHOLDS.includes(c.threshold) ? TRACK_CLASS_THRESHOLDS : [...TRACK_CLASS_THRESHOLDS, c.threshold].sort()
 const pct = (t: number) => `> ${Math.round(t * 100)} %`
+const orphanLines = computed(() => (props.orphans ?? []).map(o => ({ text: orphanTracksLine(o), tip: orphanTracksTip(o) })))
 </script>
 
 <template>
@@ -181,10 +184,21 @@ const pct = (t: number) => `> ${Math.round(t * 100)} %`
       <div class="cc-muted cc-fs-3xs">
         {{ segCount }} segments · {{ sources.length }} source{{ sources.length === 1 ? '' : 's' }}
       </div>
+      <div v-for="o in orphanLines" :key="o.text" class="cc-muted cc-fs-3xs" v-tooltip.bottom="o.tip">
+        {{ o.text }}
+      </div>
     </template>
-    <div v-else class="cc-empty-inline cc-fs-2xs">
-      No tracks shown — turn tracks on under On the image
-    </div>
+    <!-- Nothing drawn. Tracks whose population was deleted draw under no population's ribbon, only
+         under their segmentation's own tracks button — name them, so "turn tracks on" doesn't read as
+         wrong to a user whose Cell-track ribbons switch is already on (`orphan_track_sources`). -->
+    <template v-else>
+      <div v-for="o in orphanLines" :key="o.text" class="cc-empty-inline cc-fs-2xs" v-tooltip.bottom="o.tip">
+        {{ o.text }}
+      </div>
+      <div class="cc-empty-inline cc-fs-2xs">
+        No tracks shown — turn tracks on under On the image
+      </div>
+    </template>
 
   </CollapsibleSection>
 </template>

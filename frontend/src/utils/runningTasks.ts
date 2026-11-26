@@ -26,6 +26,7 @@
 // list's copy of the same work.
 
 import { moduleKeyFromFun } from './taskModule'
+import { getJson, tryApi } from './api'
 
 /** One row of `GET /api/tasks` (snake_case, like `/api/tasks/recent`). Shaped by `list_tasks()`. */
 export interface InFlightTaskRow {
@@ -39,6 +40,8 @@ export interface InFlightTaskRow {
   /** every image the run covers — a set run's members (`image_uid` is its representative); absent from
    *  an older backend */
   image_uids?: string[]
+  /** which project `image_uid` belongs to — one server runs every project's tasks */
+  project_uid?: string
   chain_run_id?: string
   /** which node of that run — needed to rebuild the store's `runId::nodeId::imageUid` key */
   chain_node_id?: string
@@ -263,14 +266,9 @@ export function expiredCancels(
  * backstop, so a transient error must mean "learned nothing", never an exception in the connect path.
  */
 export async function fetchInFlightTasks(): Promise<InFlightTaskRow[]> {
-  try {
-    const r = await fetch('/api/tasks')
-    if (!r.ok) return []
-    const rows = await r.json()
-    return Array.isArray(rows) ? rows as InFlightTaskRow[] : []
-  } catch {
-    return []
-  }
+  // quiet: a background backstop (every ws connect), so a restarting backend doesn't flood the rail
+  const r = await tryApi(getJson<unknown>('/api/tasks', { quiet: true }))
+  return r.ok && Array.isArray(r.data) ? r.data as InFlightTaskRow[] : []
 }
 
 /**
@@ -295,10 +293,8 @@ export async function runningTaskCount(): Promise<number> {
  * runner probe counts as "no runner": the cautious answer, unlike the count's own fail-open.
  */
 export async function tasksLostOnRestart(): Promise<number> {
-  try {
-    const r = await fetch('/api/runner/status')
-    const d = r.ok ? await r.json() : null
-    if (d?.enabled === true && d?.running === true) return 0
-  } catch { /* can't ask → assume in-process */ }
+  // can't ask → assume in-process
+  const r = await tryApi(getJson<{ enabled?: boolean; running?: boolean } | null>('/api/runner/status', { quiet: true }))
+  if (r.ok && r.data?.enabled === true && r.data?.running === true) return 0
   return runningTaskCount()
 }

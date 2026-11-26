@@ -15,6 +15,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import { flowRegionLabel, type FlowRegion } from '../utils/flowRegion'
 import { PREVIEW_DEBOUNCE_MS } from '../utils/taskPreview'
+import { getJson, postJson, tryApi } from '../utils/api'
 import { useDelayedLoading } from './useDelayedLoading'
 
 export interface Plane { name: string; png: string }
@@ -80,15 +81,15 @@ export function useFlowPlanes(
   const scheduler = debouncedLatest<FlowRequest>(async (req, isCurrent) => {
     error.value = ''
     for (let waited = 0; ; waited += RETRY_MS) {
-      const r = await fetch('/api/optical-flow/inspect', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req),
-      })
-      const d = await r.json()
-      // superseded while the worker computed — neither the planes NOR an error belong to the current
-      // settings any more, so nothing here is applied
+      let d: { starting?: boolean; planes?: Plane[]; region?: FlowRegion }
+      try {
+        d = await postJson<typeof d>('/api/optical-flow/inspect', req) ?? {}
+      } catch (e) {
+        if (!isCurrent()) return   // superseded: the error belongs to settings no longer shown
+        throw e
+      }
+      // superseded while the worker computed — the planes no longer belong to the current settings
       if (!isCurrent()) return
-      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
       if (!d.starting) {
         starting.value = false
         planes.value = d.planes ?? []
@@ -123,14 +124,13 @@ export function useFlowPlanes(
   async function loadExtent() {
     if (!state.value.imageUid) return
     try {
-      const q = new URLSearchParams({
+      const r = await tryApi(getJson<{ sizeT?: number; sizeZ?: number }>('/api/images/geometry', { query: {
         projectUid: request.value?.projectUid ?? '',
         imageUid: state.value.imageUid,
         valueName: state.value.valueName ?? 'default',
-      })
-      const r = await fetch(`/api/images/geometry?${q}`)
+      } }))
       if (!r.ok) return
-      const g = await r.json()
+      const g = r.data ?? {}
       extent.value = { t: Math.max(1, g.sizeT ?? 1), z: Math.max(1, g.sizeZ ?? 1) }
     } catch { /* the sliders just keep their previous bounds */ }
   }

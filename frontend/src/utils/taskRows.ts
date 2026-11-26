@@ -22,6 +22,7 @@ import { taskProjectLabel } from './taskScope'
 import { hpcStageLabel, hpcShownStatus } from './hpcRun'
 import { matchesQuery } from './textQuery'
 import { isLiveStatus } from '../lib/taskStatus'
+import type { QueueReason } from './queueReason'
 
 /** One task, flattened for a table. `entry` rides along so a row action doesn't re-look-up by id. */
 export interface TaskRow {
@@ -38,6 +39,9 @@ export interface TaskRow {
   /** a live cluster run's stage (`queued`, …) and its tooltip; `''` otherwise */
   hpc: string
   hpcTip: string
+  /** a queued row's reason (`gpu busy: Segment (alice)`) and its detail; `''` when there is none */
+  queuedReason: string
+  queuedTip: string
   /** the image NAME — what the Image column sorts by (the uid is chrome, not an ordering) */
   image: string
   imageUid: string
@@ -85,6 +89,8 @@ export interface TaskRowContext {
   nameOfProject: (uid: string) => string | undefined
   /** shared 1s clock, so a running task's elapsed advances without a frame arriving */
   now: number
+  /** why a queued task is waiting — `composables/useQueueReasons`; omitted = no reasons shown */
+  queueReason?: (t: TaskEntry) => QueueReason | null
 }
 
 // Only while the run is live: a finished row says where it ran (the pool), not where it last was.
@@ -95,6 +101,7 @@ function hpcCells(t: TaskEntry): { hpc: string; hpcTip: string } {
 
 export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
   const elapsed = taskElapsed(t.startedAt, t.finishedAt, ctx.now)
+  const q = ctx.queueReason?.(t) ?? null
   return {
     id:      t.id,
     seq:     t.seq,
@@ -104,6 +111,8 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     task:    t.label,
     pool:    t.pool ?? '',
     ...hpcCells(t),
+    queuedReason: q?.short ?? '',
+    queuedTip:    q?.tip ?? '',
     image:   t.imageName,
     imageUid: t.imageUid,
     projectLabel: taskProjectLabel(t, ctx.currentProjectUid, ctx.thisProjectOnly, ctx.nameOfProject),

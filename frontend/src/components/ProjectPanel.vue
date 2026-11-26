@@ -21,6 +21,7 @@ import { runningTaskCount } from '../utils/runningTasks'
 import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
 import { matchesQuery } from '../utils/textQuery'
 import { visibleToProfile } from '../utils/projectOwnership'
+import { getJson } from '../utils/api'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -205,12 +206,10 @@ const bundles = ref<BundleInfo[]>([])
 const exportDir = ref('')   // destination for exports; default filled from /api/projects/bundles
 async function fetchBundles() {
   try {
-    const res = await fetch('/api/projects/bundles')
-    if (res.ok) {
-      const body = await res.json() as { bundles?: BundleInfo[]; exportDir?: string }
-      bundles.value = body.bundles ?? []
-      if (!exportDir.value && body.exportDir) exportDir.value = body.exportDir   // default, user can change
-    }
+    // quiet: best-effort listing for the picker
+    const body = await getJson<{ bundles?: BundleInfo[]; exportDir?: string }>('/api/projects/bundles', { quiet: true })
+    bundles.value = body?.bundles ?? []
+    if (!exportDir.value && body?.exportDir) exportDir.value = body.exportDir   // default, user can change
   } catch { /* export dir may not exist yet */ }
 }
 function pickBundle(path: string) { if (path) importPath.value = path }
@@ -254,11 +253,10 @@ async function importBundle() {
   const bundle = importPath.value.trim()
   if (!bundle || ioBusy.value) return
   try {
-    const res = await fetch(`/api/projects/bundle-info?path=${encodeURIComponent(bundle)}`)
-    if (res.ok) {
-      const info = await res.json() as { uid: string; name: string; exists: boolean }
-      if (info.exists) { conflict.value = { path: bundle, uid: info.uid, name: info.name }; return }
-    }
+    // quiet: a probe — on any failure the import itself runs and reports
+    const info = await getJson<{ uid: string; name: string; exists: boolean }>('/api/projects/bundle-info',
+      { query: { path: bundle }, quiet: true })
+    if (info.exists) { conflict.value = { path: bundle, uid: info.uid, name: info.name }; return }
   } catch { /* fall through — backend still refuses on a real collision */ }
   doImport(bundle)
 }

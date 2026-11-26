@@ -19,6 +19,7 @@ import TeleportPopover from '../TeleportPopover.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useProjectStore } from '../../stores/project'
 import { useViewerStore } from '../../stores/viewer'
+import { getBuffer, postJson, tryApi } from '../../utils/api'
 import type { ViewerViewState } from '../../utils/viewer/viewState'
 import { openViewerWindow } from '../../utils/viewerWindow'
 import { channelLegend, type LegendSection } from '../../utils/viewLegend'
@@ -167,16 +168,13 @@ async function capture(i: number) {
       : snapshot as unknown as Record<string, unknown>
     // Persist the PNG as a board-assets sidecar (same storage path used by the movie recorder and by
     // the legacy migration below).
-    const saveRes = await fetch('/api/board-assets/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, png: shot.png }),
-    })
+    const saveRes = await tryApi(postJson<{ assetId?: string }>('/api/board-assets/save', { projectUid, png: shot.png }))
     if (!saveRes.ok) {
-      err.value = ((await saveRes.json().catch(() => ({}))) as { error?: string }).error ?? 'Failed to save capture'
+      err.value = (saveRes.body as { error?: string } | null)?.error ?? 'Failed to save capture'
       return
     }
-    const saved = (await saveRes.json()) as { assetId?: string }
-    if (!saved.assetId) { err.value = 'Save returned no assetId'; return }
+    const saved = saveRes.data
+    if (!saved?.assetId) { err.value = 'Save returned no assetId'; return }
     const capturedColourBy = props.setUid ? settings.getColourBy(props.setUid) : ''
     const colourOverridesForLegend = (props.setUid && capturedColourBy)
       ? settings.getColourOverrides(props.setUid, capturedColourBy) : {}
@@ -253,12 +251,9 @@ async function migrateLegacyAssets() {
   for (const c of cells.value) {
     if (c.assetId || !c.src) continue
     try {
-      const res = await fetch('/api/board-assets/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: props.projectUid, png: c.src }),
-      })
+      const res = await tryApi(postJson<{ assetId?: string }>('/api/board-assets/save', { projectUid: props.projectUid, png: c.src }))
       if (!res.ok) continue
-      const { assetId } = (await res.json()) as { assetId?: string }
+      const assetId = res.data?.assetId
       if (assetId) { c.assetId = assetId; c.src = undefined }
     } catch { /* keep the inline src */ }
   }
@@ -321,10 +316,7 @@ function removeCell(i: number) {
   if (cells.value.length <= 1) return
   const c = cells.value[i]
   if (c.assetId) {   // best-effort delete of the sidecar PNG so it doesn't orphan
-    fetch('/api/board-assets/delete', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, assetId: c.assetId }),
-    }).catch(() => {})
+    postJson('/api/board-assets/delete', { projectUid: props.projectUid, assetId: c.assetId }).catch(() => {})
   }
   cells.value.splice(i, 1)
 }
@@ -352,9 +344,7 @@ const capturingStrip = ref(false)
 // fetch a sidecar asset and return it as a data URL (html2canvas-safe for the PDF export)
 async function assetToDataUrl(assetId: string): Promise<string | null> {
   try {
-    const res = await fetch(`/api/board-assets?projectUid=${encodeURIComponent(props.projectUid)}&assetId=${encodeURIComponent(assetId)}`)
-    if (!res.ok) return null
-    const bytes = new Uint8Array(await res.arrayBuffer())
+    const bytes = new Uint8Array(await getBuffer('/api/board-assets', { query: { projectUid: props.projectUid, assetId } }))
     let bin = ''
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
     return 'data:image/png;base64,' + btoa(bin)

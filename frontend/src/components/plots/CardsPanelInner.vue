@@ -26,6 +26,7 @@ import { useRoute } from 'vue-router'
 import { PAPER } from '../../plots/fixedColours'
 import { fitGridCols, type GridFit } from '../../plots/montage'
 import { useBoxSize } from '../../composables/usePlotResize'
+import { ApiError, getBuffer, postJson } from '../../utils/api'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]
@@ -155,17 +156,24 @@ async function fetchCards() {
       hmmCol:    props.hmmCol,
       seeds:     props.family.reshuffle ? seeds.value : undefined,
     })
-    const res = await fetch(props.family.endpoint, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    const data = await postJson<CardsResponse>(props.family.endpoint, body, { quiet: [404] })
     if (seq !== fetchSeq) return
-    if (!res.ok) {
-      clear()
+    pool.value  = data.pool ?? []
+    cards.value = data.cards ?? []
+    statScales.value = data.statScales ?? {}
+    if (data.availableValueNames || data.valueName || data.availableHmmCols || data.hmmCol)
+      emit('meta', {
+        availableValueNames: data.availableValueNames, valueName: data.valueName,
+        availableHmmCols:    data.availableHmmCols,    hmmCol:    data.hmmCol,
+      })
+  } catch (e) {
+    if (seq !== fetchSeq) return
+    clear()
+    if (e instanceof ApiError && e.status > 0) {
       // 404 with an `availableValueNames` / `availableHmmCols` payload is how the server tells
       // the picker "the vn/col you asked for is stale, here are the eligible ones" — surface both
       // to the wrapper (whichever it owns).
-      const errData = (await res.json().catch(() => ({}))) as {
+      const errData = (e.body && typeof e.body === 'object' ? e.body : {}) as {
         error?: string
         availableValueNames?: string[]; valueName?: string
         availableHmmCols?: string[];    hmmCol?: string
@@ -178,19 +186,7 @@ async function fetchCards() {
         })
       return
     }
-    const data = (await res.json()) as CardsResponse
-    if (seq !== fetchSeq) return
-    pool.value  = data.pool ?? []
-    cards.value = data.cards ?? []
-    statScales.value = data.statScales ?? {}
-    if (data.availableValueNames || data.valueName || data.availableHmmCols || data.hmmCol)
-      emit('meta', {
-        availableValueNames: data.availableValueNames, valueName: data.valueName,
-        availableHmmCols:    data.availableHmmCols,    hmmCol:    data.hmmCol,
-      })
-  } catch (e) {
-    if (seq !== fetchSeq) return
-    clear(); err.value = e instanceof Error ? e.message : String(e)
+    err.value = e instanceof Error ? e.message : String(e)
   } finally { if (seq === fetchSeq) loading.value = false }
 }
 
@@ -250,9 +246,7 @@ const capturing = ref(false)
 
 async function assetToDataUrl(assetId: string): Promise<string | null> {
   try {
-    const r = await fetch(`/api/board-assets?projectUid=${encodeURIComponent(props.projectUid)}&assetId=${encodeURIComponent(assetId)}`)
-    if (!r.ok) return null
-    const bytes = new Uint8Array(await r.arrayBuffer())
+    const bytes = new Uint8Array(await getBuffer('/api/board-assets', { query: { projectUid: props.projectUid, assetId } }))
     let bin = ''
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
     return 'data:image/png;base64,' + btoa(bin)

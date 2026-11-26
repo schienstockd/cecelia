@@ -763,6 +763,12 @@ function api_gating_channels(req::HTTP.Request)
         channelNamesPerVn = chansPerVnF,  # multi-VN advisor input (empty in single-VN mode)
         obsColumns = cobs,              # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
+        # the markers by NAME (`CD4`, `nuc_CD4`, `af_CD4`) — what a colour-by stores and reads back. Named
+        # with the channel names the readers resolve against (the table view's, not the display version),
+        # and raw where a name is on two channels or IS a real column (`area`): the read would take that
+        # column, not the channel — as `pooled_channel_columns` shadows
+        markerColumns = Cecelia.canonical_channel_columns(chans, something(lp.channel_names, String[]);
+                                                          shadow = vcat(col_names(lp; data_type = :vars), cobs)),
         # spatial/temporal centroid axes (obsm) — offered as gating scatter axes you can visualise AND
         # gate on (like the old R flow frame). Read/gate-eval already materialise them via as_df.
         spatialColumns = centroid_columns(lp; order = [:x, :y, :z]),   # centroid_x/_y[/_z], present axes
@@ -815,7 +821,9 @@ function api_gating_stats(req::HTTP.Request)
     m = _live_map(img, vn, _read_pop_type(q, img, vn, pop); labels_version = _labels_version_pin(q))
     (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     s = pop_stats(m, pop)
-    200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
+    # a stale cluster pop (or one under it) still counts — the ids it picks may now be other clusters
+    stale = is_root(pop) ? nothing : cluster_pop_stale_in(m, pop, img)
+    200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent, stale = stale))
 end
 
 # ── GET /api/gating/track-classes?...&pop=/frags[&threshold=0.6][&level=2][&tracks=1] ─────────────
@@ -1390,6 +1398,9 @@ function api_gating_summary(req::HTTP.Request)
         "x" => merge(Dict{String,Any}("channel" => x, "transform" => transform_spec(xt)), axis_summary(xv; bins = bins)),
         "y" => merge(Dict{String,Any}("channel" => y, "transform" => transform_spec(yt)), axis_summary(yv; bins = bins)))
     x != y && (out["grid"] = grid_summary(xv, yv))
+    # the distribution of a stale cluster pop (or one built on it) is of whatever its old ids mean now
+    out["stale"] = is_root(pop) ? nothing :
+        cluster_pop_stale_in(_live_map(img, vn, pop_type; labels_version = pin), pop, img)
     200, JSON3.write(out)
 end
 

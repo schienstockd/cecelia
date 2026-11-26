@@ -25,6 +25,7 @@ import { isImageVersionField } from './paramValues'
 import { DEFAULT_VALUE_NAME } from '../utils/imageDelete'
 import { spanAnchorRate, runFrameSeconds, secondsLabel, type RateImage } from '../utils/frameDuration'
 import { getSystemEnvs } from '../utils/systemEnvs'
+import { getJson, postJson } from '../utils/api'
 
 /** What the renderer shows: a one-line readout, a severity, and the full reasoning on hover. */
 export interface ParamAdvisory {
@@ -722,18 +723,13 @@ export const taskBackendAdvisor: ParamAdvisor = {
 async function validateOnBackend(funName: string, paramKey: string, value: unknown,
                                  ctx: AdvisorContext): Promise<ParamAdvisory | null> {
   try {
-    const res = await fetch('/api/tasks/validate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        funName, paramKey, value,
-        projectUid:    ctx.projectUid ?? '',
-        imageUids:     (ctx.images ?? []).map(i => i.uid).filter(Boolean),
-        siblingValues: ctx.values ?? {},
-      }),
-    })
-    if (!res.ok) return null
-    const body = await res.json()
+    // quiet: re-asked on every value change, so a failing validator would flood the log rail
+    const body = await postJson('/api/tasks/validate', {
+      funName, paramKey, value,
+      projectUid:    ctx.projectUid ?? '',
+      imageUids:     (ctx.images ?? []).map(i => i.uid).filter(Boolean),
+      siblingValues: ctx.values ?? {},
+    }, { quiet: true })
     // The endpoint returns `null` (as JSON) when the validator had nothing useful to say. Fall
     // through to `null` on any other shape — an advisory is never load-bearing.
     if (!body || typeof body !== 'object') return null
@@ -788,20 +784,17 @@ export const popsCompatAdvisor: ParamAdvisor = {
     let chanMsg: string | null = null
     if (vns.length >= 2 && imgs[0]?.uid && ctx.projectUid) {
       try {
-        const q = `projectUid=${ctx.projectUid}&imageUid=${imgs[0].uid}`
-              + `&valueNames=${vns.map(encodeURIComponent).join(',')}&popType=track`
-        const res = await fetch(`/api/gating/channels?${q}`)
-        if (res.ok) {
-          const d = await res.json() as { channelNamesPerVn?: Record<string, string[]> }
-          const perVn = d.channelNamesPerVn ?? {}
-          const ref = perVn[vns[0]] ?? []
-          const mismatched = vns.slice(1).some(v => {
-            const list = perVn[v] ?? []
-            return list.length !== ref.length || list.some((c, i) => c !== ref[i])
-          })
-          if (mismatched) {
-            chanMsg = vns.map(v => `${v}: [${(perVn[v] ?? []).join(', ')}]`).join(' vs ')
-          }
+        const d = await getJson<{ channelNamesPerVn?: Record<string, string[]> }>('/api/gating/channels', {
+          query: { projectUid: ctx.projectUid, imageUid: imgs[0].uid, valueNames: vns.join(','), popType: 'track' },
+        }) ?? {}
+        const perVn = d.channelNamesPerVn ?? {}
+        const ref = perVn[vns[0]] ?? []
+        const mismatched = vns.slice(1).some(v => {
+          const list = perVn[v] ?? []
+          return list.length !== ref.length || list.some((c, i) => c !== ref[i])
+        })
+        if (mismatched) {
+          chanMsg = vns.map(v => `${v}: [${(perVn[v] ?? []).join(', ')}]`).join(' vs ')
         }
       } catch { /* silence — advisory never load-bearing */ }
     }
@@ -1031,10 +1024,9 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
       if (!img || !ctx.projectUid) return null
       const vn = (ctx.values?.valueName as string) ?? 'default'
       try {
-        const q = `projectUid=${ctx.projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(vn)}`
-        const res = await fetch(`/api/tracking/motion-dims?${q}`)
-        if (!res.ok) return null
-        return motionDimsAdvisory(value, await res.json() as MotionDims)
+        // quiet 400: the server's answer for a segmentation not made yet (no labelProps) — a normal state
+        return motionDimsAdvisory(value, await getJson<MotionDims>('/api/tracking/motion-dims',
+          { query: { projectUid: ctx.projectUid, imageUid: img.uid, valueName: vn }, quiet: [400] }))
       } catch {
         return null      // an advisory is never load-bearing; silence beats an error banner
       }
@@ -1058,14 +1050,12 @@ export function frameGeometry(
   const key = `${projectUid}|${imageUid}|${opts.version ?? ''}|${opts.rev ?? ''}`
   const hit = _geomCache.get(key)
   if (hit) return hit.then(g => g && { ...g, umPerPx })
-  const vq = opts.version ? `&valueName=${encodeURIComponent(opts.version)}` : ''
   const p = (async (): Promise<FrameGeometry | null> => {
     try {
-      const res = await fetch(`/api/images/geometry?projectUid=${projectUid}&imageUid=${imageUid}${vq}`)
-      if (!res.ok) return null
-      const d = await res.json() as { sizeX?: number; sizeY?: number; sizeT?: number; sizeZ?: number
-                                      sizeC?: number; bytesPerVoxel?: number }
-      if (!d.sizeX || !d.sizeY) return null
+      const d = await getJson<{ sizeX?: number; sizeY?: number; sizeT?: number; sizeZ?: number
+                                sizeC?: number; bytesPerVoxel?: number }>('/api/images/geometry',
+        { query: { projectUid, imageUid, valueName: opts.version || undefined } })
+      if (!d?.sizeX || !d.sizeY) return null
       return { sizeX: d.sizeX, sizeY: d.sizeY, sizeT: d.sizeT ?? 1, sizeZ: d.sizeZ ?? 1, sizeC: d.sizeC ?? 1,
                bytesPerVoxel: d.bytesPerVoxel ?? 2 }
     } catch {

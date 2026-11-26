@@ -14,11 +14,7 @@ describe('profileSettingsApi', () => {
   afterEach(() => { globalThis.fetch = originalFetch })
 
   function jsonRes(status: number, body: object): Response {
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => body,
-    } as unknown as Response
+    return new Response(JSON.stringify(body), { status })
   }
 
   describe('fetchProfileSettings', () => {
@@ -35,11 +31,13 @@ describe('profileSettingsApi', () => {
       expect(r.ok).toBe(true)
     })
 
-    it('GETs /api/profile/settings with no-store cache', async () => {
+    it('GETs /api/profile/settings with a timeout signal, never from the browser cache', async () => {
       fetchMock.mockResolvedValue(jsonRes(200, { profile: 'default', settings: {} }))
       await fetchProfileSettings()
       const [url, init] = fetchMock.mock.calls[0]
       expect(url).toBe('/api/profile/settings')
+      expect((init as RequestInit).method).toBe('GET')
+      expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal)
       expect((init as RequestInit).cache).toBe('no-store')
     })
 
@@ -65,10 +63,7 @@ describe('profileSettingsApi', () => {
     })
 
     it('tolerates a malformed body without throwing', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true, status: 200,
-        json: async () => { throw new Error('bad json') },
-      } as unknown as Response)
+      fetchMock.mockResolvedValue(new Response('not json', { status: 200 }))
       const r = await fetchProfileSettings()
       expect(r).toEqual({ profile: 'default', settings: {}, ok: false })
     })

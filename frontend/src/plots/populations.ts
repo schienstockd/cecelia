@@ -19,6 +19,7 @@
  * then filter them out.
  */
 import type { SegmentationPops } from './types'
+import { getJson, tryApi } from '../utils/api'
 
 export interface PopsQuery {
   projectUid: string
@@ -55,11 +56,6 @@ export function popsUrl(q: PopsQuery): string {
  */
 export async function fetchSegmentationPops(q: PopsQuery): Promise<SegmentationPops[]> {
   if (!q.imageUids.length) return []
-  try {
-    const r = await fetch(popsUrl(q))
-    if (!r.ok) return []
-    return (await r.json()) as SegmentationPops[]
-  } catch {
-    return []
-  }
+  const r = await tryApi(getJson<SegmentationPops[] | null>(popsUrl(q)))
+  return r.ok ? r.data ?? [] : []
 }
