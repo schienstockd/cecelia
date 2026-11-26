@@ -1,10 +1,10 @@
-// Typed HTTP wrappers for /api/blackboard/*. Same pattern as kiwiCaptures.ts (kept small, no framework
-// wrapper): every function catches its own network error and returns a defaulted value so the caller
+// Typed HTTP wrappers for /api/blackboard/*, on `utils/api.ts` (failures are logged to the rail there):
+// every function catches its own failure and returns a defaulted value so the caller
 // can render "no entries" / "not found" without a try/catch of its own. Backend contract is in
 // api/src/blackboard_api.jl and the plan is docs/todo/BIDIR_CONTEXT_PLAN.md → Part 4.
 
 import { parseAuthorStamp, type AuthorStamp } from './authorStamp'
-import { postJson, tryApi } from './api'
+import { getJson, postJson, tryApi } from './api'
 
 /** PROJECT_MEMORY_PLAN Decision 3 — `status ∈ (open | resolved | parked)` on every entry, missing
  *  backfills as "open" server-side; kept as a literal union so a bad enum value gets caught at compile
@@ -238,12 +238,9 @@ export async function listBlackboardEntries(
   projectUid: string, apiBase = '',
 ): Promise<BlackboardEntrySummary[]> {
   if (!projectUid) return []
-  try {
-    const res = await fetch(`${apiBase}/api/blackboard?projectUid=${encodeURIComponent(projectUid)}`)
-    if (!res.ok) return []
-    const json = await res.json() as ListResp
-    return (json.entries ?? []).map(parseSummary).filter((e): e is BlackboardEntrySummary => e !== null)
-  } catch { return [] }
+  const r = await tryApi(getJson<ListResp>(`${apiBase}/api/blackboard`, { query: { projectUid } }))
+  if (!r.ok) return []
+  return (r.data?.entries ?? []).map(parseSummary).filter((e): e is BlackboardEntrySummary => e !== null)
 }
 
 /** GET /api/blackboard/entry — pass `version` to read a historical snapshot; leave off for LIVE. */
@@ -251,15 +248,10 @@ export async function getBlackboardEntry(
   projectUid: string, entryId: string, version?: number, apiBase = '',
 ): Promise<BlackboardEntry | null> {
   if (!projectUid || !entryId) return null
-  try {
-    let url = `${apiBase}/api/blackboard/entry?projectUid=${encodeURIComponent(projectUid)}`
-            + `&entryId=${encodeURIComponent(entryId)}`
-    if (typeof version === 'number') url += `&version=${version}`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const json = await res.json() as EntryResp
-    return parseEntry(json.entry)
-  } catch { return null }
+  const r = await tryApi(getJson<EntryResp>(`${apiBase}/api/blackboard/entry`, {
+    query: { projectUid, entryId, version: typeof version === 'number' ? version : undefined },
+  }))
+  return r.ok ? parseEntry(r.data?.entry) : null
 }
 
 /** POST a JSON body; the parsed reply, or null on a network error or non-2xx (which `utils/api.ts`

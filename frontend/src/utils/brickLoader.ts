@@ -12,6 +12,7 @@ import type { VirtualBrick } from './pageTable'
 import type { BrickPayloadRing, BrickPayloadLease } from './brickPayloadRing'
 import { drainResponseIntoBuffer } from './brickPayloadRing'
 import { maskStoreQuery, type MaskStore } from './viewerLabels'
+import { apiFetch } from './api'
 
 /** Shape of a `cTo`-carrying slab response, parsed from `X-Slab-Shape: nc,nz,ny,nx`. */
 export interface BrickSlabShape {
@@ -169,8 +170,8 @@ export async function fetchLabelBrick(
   signal?: AbortSignal,
 ): Promise<{ bytes: Uint8Array; shape: BrickSlabShape } | null> {
   let res: Response
-  try { res = await fetch(url, { signal }) } catch { return null }
-  if (!res.ok) return null
+  // `quiet`: a viewport loads hundreds of bricks; a failure is a missing brick, not a rail line each.
+  try { res = await apiFetch(url, { signal, quiet: true }) } catch { return null }
   const header = res.headers.get('X-Slab-Shape')
   const shape = parseBrickSlabShape(header)
   if (!shape) return null
@@ -299,11 +300,10 @@ export async function fetchBrick(
 ): Promise<FetchedBrick | null> {
   let res: Response
   try {
-    res = await fetch(url, { signal })
+    res = await apiFetch(url, { signal, quiet: true })   // non-2xx throws; quiet as in fetchLabelBrick
   } catch {
     return null
   }
-  if (!res.ok) return null
   const header = res.headers.get('X-Slab-Shape')
   const shape = parseBrickSlabShape(header)
   if (!shape) return null

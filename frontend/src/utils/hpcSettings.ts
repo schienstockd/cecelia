@@ -8,6 +8,7 @@
 // username + key per profile, account override per project. This file only shapes requests.
 
 import { svcPost } from './serviceApi'
+import { getJson } from './api'
 
 export interface HpcClassSettings {
   queue: string
@@ -58,11 +59,7 @@ export interface HpcPatch {
 }
 
 export async function fetchHpcSettings(projectUid = ''): Promise<HpcSettings> {
-  const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
-  const res = await fetch(`/api/hpc/settings${q}`)
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `HTTP ${res.status}`)
-  return data as HpcSettings
+  return getJson<HpcSettings>('/api/hpc/settings', { query: { projectUid: projectUid || undefined } })
 }
 
 export async function saveHpcSettings(patch: HpcPatch, projectUid = ''): Promise<HpcSettings> {
@@ -169,10 +166,7 @@ export const HPC_ENV_JOB_ID = 'hpc-env-install'
 export const HPC_CLEAN_JOB_ID = 'hpc-env-cleanup'
 
 export async function fetchHpcEnv(): Promise<HpcEnvStatus> {
-  const res = await fetch('/api/hpc/env')
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `HTTP ${res.status}`)
-  return data as HpcEnvStatus
+  return getJson<HpcEnvStatus>('/api/hpc/env')
 }
 
 export async function installHpcEnv(): Promise<void> {
@@ -237,10 +231,7 @@ export interface HpcNodes {
 }
 
 export async function fetchHpcNodes(cls: HpcClassName): Promise<HpcNodes> {
-  const res = await fetch(`/api/hpc/nodes?class=${cls}`)
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `HTTP ${res.status}`)
-  return data as HpcNodes
+  return getJson<HpcNodes>('/api/hpc/nodes', { query: { class: cls } })
 }
 
 /** One row of the Nodes table: display strings, the queue named on its first row only. */

@@ -83,11 +83,7 @@ describe('kiwi profile API round-trip', () => {
   afterEach(() => { globalThis.fetch = originalFetch })
 
   function jsonRes(status: number, body: object): Response {
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => body,
-    } as unknown as Response
+    return new Response(JSON.stringify(body), { status })
   }
 
   it('fetchProfiles returns roster on 200', async () => {
@@ -98,7 +94,7 @@ describe('kiwi profile API round-trip', () => {
       legacyReserved: ['legacy'],
     }))
     const r = await fetchProfiles()
-    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/kiwi/profiles')
     expect(r.active).toBe('alice')
     expect(r.profiles.map(p => p.name)).toEqual(['default', 'alice'])
     expect(r.legacyReserved).toEqual(['legacy'])
@@ -169,7 +165,7 @@ describe('kiwi profile API round-trip', () => {
     fetchMock.mockResolvedValue(jsonRes(200, { command: 'env -u X /bin/bash -i',
                                                 profile: 'default', profileDir: '' }))
     const r = await fetchTerminalCommand()
-    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/terminal/command')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/kiwi/terminal/command')
     expect(r?.profile).toBe('default')
   })
 
@@ -177,15 +173,14 @@ describe('kiwi profile API round-trip', () => {
     fetchMock.mockResolvedValue(jsonRes(200, { command: 'env … alice /bin/bash -i',
                                                 profile: 'alice', profileDir: '/tmp/x' }))
     await fetchTerminalCommand({ profile: 'alice' })
-    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/terminal/command?profile=alice')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/kiwi/terminal/command?profile=alice')
   })
 
   it('fetchTerminalCommand url-encodes the prompt alongside the profile', async () => {
     fetchMock.mockResolvedValue(jsonRes(200, { command: 'env … claude \'hi\'',
                                                 profile: 'alice', profileDir: '/tmp/x' }))
     await fetchTerminalCommand({ profile: 'alice', prompt: "I'm in A & B" })
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/kiwi/terminal/command?profile=alice&prompt=I%27m+in+A+%26+B')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/kiwi/terminal/command?profile=alice&prompt=I%27m+in+A+%26+B')
   })
 
   it('fetchTerminalCommand returns null on non-2xx', async () => {
@@ -203,14 +198,13 @@ describe('Claude login per profile', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
   })
   afterEach(() => { globalThis.fetch = originalFetch })
-  const res = (status: number, body: object) =>
-    ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response
+  const res = (status: number, body: object) => new Response(JSON.stringify(body), { status })
 
   it('fetchClaudeLogin passes profile + fresh and returns the server shape', async () => {
     fetchMock.mockResolvedValue(res(200, { profile: 'alice', state: 'loggedIn', email: 'a@lab.org',
                                            method: 'claude.ai', org: 'Lab' }))
     const l = await fetchClaudeLogin('alice', true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles/auth?profile=alice&fresh=1')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/kiwi/profiles/auth?profile=alice&fresh=1')
     expect(l.state).toBe('loggedIn')
     expect(l.email).toBe('a@lab.org')
   })
@@ -247,8 +241,7 @@ describe('Logging in from Cecelia (P9)', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
   })
   afterEach(() => { globalThis.fetch = originalFetch })
-  const res = (status: number, body: object) =>
-    ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response
+  const res = (status: number, body: object) => new Response(JSON.stringify(body), { status })
   const run = { state: 'waiting', url: 'https://claude.com/x', browser: 'Firefox', message: '' }
 
   it('startClaudeLogin POSTs the name and returns the run; a refusal is a failed run', async () => {
@@ -264,9 +257,9 @@ describe('Logging in from Cecelia (P9)', () => {
   it('fetchClaudeLoginRun: a dropped poll is `none` + error, not a failed login', async () => {
     fetchMock.mockResolvedValue(res(200, { ok: true, ...run }))
     expect((await fetchClaudeLoginRun('alice')).browser).toBe('Firefox')
-    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles/login?profile=alice')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/kiwi/profiles/login?profile=alice')
     fetchMock.mockRejectedValue(new Error('network'))
-    expect(await fetchClaudeLoginRun('alice')).toMatchObject({ state: 'none', error: 'network' })
+    expect(await fetchClaudeLoginRun('alice')).toMatchObject({ state: 'none', error: 'no reply from the backend (network)' })
   })
 
   it('sendClaudeLoginCode surfaces the server error', async () => {

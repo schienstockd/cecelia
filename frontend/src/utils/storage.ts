@@ -2,6 +2,8 @@
 // byte formatter. Kept out of the .vue SFC so the formatting logic is unit-tested (docs/DEV.md →
 // Tests: pure logic in utils/*). Backend: api/src/storage_api.jl.
 
+import { getJson, postJson } from './api'
+
 export interface ReclaimableImage {
   imageUid: string
   name: string
@@ -80,42 +82,23 @@ export interface CompressorSettings {
 }
 
 export async function fetchCompressor(): Promise<CompressorSettings> {
-  const res = await fetch('/api/storage/compressor')
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as CompressorSettings
+  return getJson<CompressorSettings>('/api/storage/compressor')
 }
 
 /** Applies to stores written from here on — existing ones are untouched. */
 export async function setCompressor(name: string): Promise<string> {
-  const res = await fetch('/api/storage/compressor/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return (data as any).current as string
+  const data = await postJson<{ current?: string } | null>('/api/storage/compressor/set', { name })
+  return data?.current as string
 }
 
 export async function fetchStorageSummary(projectUid: string): Promise<StorageSummary> {
-  const res = await fetch(`/api/storage/summary?projectUid=${encodeURIComponent(projectUid)}`)
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as StorageSummary
+  return getJson<StorageSummary>('/api/storage/summary', { query: { projectUid } })
 }
 
 export async function reclaimStorage(
   projectUid: string, imageUids: string[],
 ): Promise<{ freedBytes: number; reclaimed: string[] }> {
-  const res = await fetch('/api/storage/reclaim', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUids }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as { freedBytes: number; reclaimed: string[] }
+  return postJson<{ freedBytes: number; reclaimed: string[] }>('/api/storage/reclaim', { projectUid, imageUids })
 }
 
 /** One selectable store layout — a viable NGFF-version + separator pair, with its measured numbers. */
@@ -150,22 +133,13 @@ export interface StoreLayoutSettings {
 }
 
 export async function fetchStoreLayout(): Promise<StoreLayoutSettings> {
-  const res = await fetch('/api/storage/layout')
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as StoreLayoutSettings
+  return getJson<StoreLayoutSettings>('/api/storage/layout')
 }
 
 /** Applies to images imported from here on — existing stores keep their layout (there is no converter). */
 export async function setStoreLayout(name: string): Promise<string> {
-  const res = await fetch('/api/storage/layout/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return (data as any).current as string
+  const data = await postJson<{ current?: string } | null>('/api/storage/layout/set', { name })
+  return data?.current as string
 }
 
 /**
@@ -195,21 +169,11 @@ export function chunkCacheOptions(choices: string[], autoBytes: number): { value
 }
 
 export async function fetchChunkCache(): Promise<ChunkCacheSettings> {
-  const res = await fetch('/api/viewer/chunk-cache')
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as ChunkCacheSettings
+  return getJson<ChunkCacheSettings>('/api/viewer/chunk-cache')
 }
 
 export async function setChunkCache(value: string): Promise<{ current: string; stats: ChunkCacheStats }> {
-  const res = await fetch('/api/viewer/chunk-cache/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as { current: string; stats: ChunkCacheStats }
+  return postJson<{ current: string; stats: ChunkCacheStats }>('/api/viewer/chunk-cache/set', { value })
 }
 
 /**
@@ -228,21 +192,12 @@ export interface KeepPrevVersionSettings {
 }
 
 export async function fetchKeepPrevVersion(): Promise<KeepPrevVersionSettings> {
-  const res = await fetch('/api/storage/keep-previous-version')
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as KeepPrevVersionSettings
+  return getJson<KeepPrevVersionSettings>('/api/storage/keep-previous-version')
 }
 
 export async function setKeepPrevVersion(value: boolean): Promise<boolean> {
-  const res = await fetch('/api/storage/keep-previous-version/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return Boolean((data as any).current)
+  const data = await postJson<{ current?: unknown } | null>('/api/storage/keep-previous-version/set', { value })
+  return Boolean(data?.current)
 }
 
 // ── VN P5 — inner-version inventory + prune (docs/todo/VN_VERSIONING_PLAN.md → P5) ──
@@ -279,24 +234,14 @@ export interface PruneSummary {
 }
 
 export async function fetchVersionsInventory(projectUid: string): Promise<VersionsInventory> {
-  const res = await fetch(`/api/versions/inventory?projectUid=${encodeURIComponent(projectUid)}`)
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as VersionsInventory
+  return getJson<VersionsInventory>('/api/versions/inventory', { query: { projectUid } })
 }
 
 export async function pruneVersions(params: {
   projectUid: string; imageUid: string; valueName: string;
   versions: string[]; apply: boolean;
 }): Promise<PruneSummary> {
-  const res = await fetch('/api/versions/prune', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return data as PruneSummary
+  return postJson<PruneSummary>('/api/versions/prune', params)
 }
 
 /** True when at least one (image, value_name) has more than one version — the only situation the
