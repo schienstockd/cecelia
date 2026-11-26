@@ -149,7 +149,9 @@ def route_called_by(route: str, callers: dict[str, set[pathlib.Path]]) -> set[pa
     return out
 
 
-#: On a route's line: no caller, on purpose (a smoke test, a consumer to come) — `ARCH-EXEMPT: <reason>`.
+#: The one "on purpose, not a gap" marker — `ARCH-EXEMPT: <reason>` on the line. On a route's line: no
+#: caller, on purpose (a smoke test, a consumer to come). On a frontend `fetch(`: not a backend call
+#: (`scripts/architecture/vue_extract.py`, `fetch-direct`).
 ROUTE_EXEMPT = "ARCH-EXEMPT:"
 
 
