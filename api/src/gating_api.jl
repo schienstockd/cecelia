@@ -771,6 +771,12 @@ function api_gating_channels(req::HTTP.Request)
         channelNamesPerVn = chansPerVnF,  # multi-VN advisor input (empty in single-VN mode)
         obsColumns = cobs,              # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
+        # the markers by NAME (`CD4`, `nuc_CD4`, `af_CD4`) — what a colour-by stores and reads back. Named
+        # with the channel names the readers resolve against (the table view's, not the display version),
+        # and raw where a name is on two channels or IS a real column (`area`): the read would take that
+        # column, not the channel — as `pooled_channel_columns` shadows
+        markerColumns = Cecelia.canonical_channel_columns(chans, something(lp.channel_names, String[]);
+                                                          shadow = vcat(col_names(lp; data_type = :vars), cobs)),
         # spatial/temporal centroid axes (obsm) — offered as gating scatter axes you can visualise AND
         # gate on (like the old R flow frame). Read/gate-eval already materialise them via as_df.
         spatialColumns = centroid_columns(lp; order = [:x, :y, :z]),   # centroid_x/_y[/_z], present axes
@@ -823,7 +829,40 @@ function api_gating_stats(req::HTTP.Request)
     m = _live_map(img, vn, _read_pop_type(q, img, vn, pop); labels_version = _labels_version_pin(q))
     (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     s = pop_stats(m, pop)
-    200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
+    # a stale cluster pop (or one under it) still counts — the ids it picks may now be other clusters
+    stale = is_root(pop) ? nothing : cluster_pop_stale_in(m, pop, img)
+    200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent, stale = stale))
+end
+
+# ── GET /api/gating/track-classes?...&pop=/frags[&threshold=0.6][&level=2][&tracks=1] ─────────────
+# Each track of a `flow` population called one of its sub-populations, or mixed (`track_classes`,
+# app/src/tracking/track_classes.jl; docs/todo/TRACK_SUBPOP_GATING_PLAN.md P5). `threshold` / `level`
+# preview a setting without storing it (the stored one is `pop/update` `trackClass`). `tracks=1` adds
+# the per-track call: `trackIds` and `classes` (index into `children`, -1 = mixed).
+function api_gating_track_classes(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", "")); pop = get(q, "pop", ROOT)
+    m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+    (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
+    th = tryparse(Float64, get(q, "threshold", "")); lv = tryparse(Int, get(q, "level", ""))
+    s = track_class_settings(is_root(pop) ? nothing : m.pops[pop])
+    bad = Cecelia.track_class_setting_error(something(th, s.threshold), something(lv, s.level))
+    bad === nothing || return _gerr(400, bad)
+    r = track_classes(img; value_name = vn, parent = pop, threshold = th, level = lv)
+    sm = Cecelia.track_class_summary(r)
+    kids = [(; path = c, name = pop_name(c), colour = m.pops[c].colour, tracks = n)
+            for (c, n) in zip(r.children, sm.counts)]
+    out = Dict{String,Any}("pop" => r.parent, "threshold" => r.threshold, "level" => r.level,
+                           "maxLevel" => r.max_level, "children" => kids, "mixed" => sm.mixed,
+                           "total" => sm.total, "mixedPct" => isnan(sm.mixed_pct) ? nothing : sm.mixed_pct)
+    if get(q, "tracks", "") in ("1", "true")
+        idx = Dict(c => i - 1 for (i, c) in enumerate(r.children))
+        out["trackIds"] = r.table.track_id
+        out["classes"] = [get(idx, c, -1) for c in r.table.class]
+    end
+    200, JSON3.write(out)
 end
 
 # ── GET /api/gating/membership?...&pops=/a,/b[&binary=1] ──────────────────────
@@ -1384,6 +1423,9 @@ function api_gating_summary(req::HTTP.Request)
         "x" => merge(Dict{String,Any}("channel" => x, "transform" => transform_spec(xt)), axis_summary(xv; bins = bins)),
         "y" => merge(Dict{String,Any}("channel" => y, "transform" => transform_spec(yt)), axis_summary(yv; bins = bins)))
     x != y && (out["grid"] = grid_summary(xv, yv))
+    # the distribution of a stale cluster pop (or one built on it) is of whatever its old ids mean now
+    out["stale"] = is_root(pop) ? nothing :
+        cluster_pop_stale_in(_live_map(img, vn, pop_type; labels_version = pin), pop, img)
     200, JSON3.write(out)
 end
 
@@ -2560,6 +2602,19 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
         any(haskey(body, k) for k in ("colour", "filter", "boolean", "runChecked")) && stamp_edit!(m, String(body["path"]))
         haskey(body, "colour") && (p.colour = String(body["colour"]))
         haskey(body, "show")   && (p.show = Bool(body["show"]))
+        # how its tracks are called one of its sub-populations (`trackClass` {threshold, level}); null = defaults
+        if haskey(body, "trackClass")
+            tc = body["trackClass"]
+            if tc === nothing
+                p.track_class = nothing
+            else
+                tc isa AbstractDict || return _gerr(400, "trackClass must be {threshold, level}")
+                cur = track_class_settings(p)
+                th = get(tc, "threshold", cur.threshold); lv = get(tc, "level", cur.level)
+                bad = Cecelia.track_class_setting_error(th, lv); bad === nothing || return _gerr(400, bad)
+                p.track_class = Dict{String,Any}("threshold" => Float64(th), "level" => Int(lv))
+            end
+        end
         # filter update — the tick-cluster-into-population UX toggles which cluster IDs belong to a
         # `clust`/`trackclust` pop by rewriting its filter (typically filter_values). Mutates only the
         # keys present in the `filter` dict, so a `{values:[…]}` tick leaves measure/fun untouched.

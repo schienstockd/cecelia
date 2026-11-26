@@ -179,3 +179,23 @@ function gate_state_for_hash(task_dir::AbstractString, value_name::AbstractStrin
     end
     nothing
 end
+
+"""
+    removed_pop_path(task_dir, value_name, uid; pop_type) -> Union{String,Nothing}
+
+The path a population that is no longer in the sidecar last had: the newest history state holding
+`uid`. `nothing` when no recorded state has it (removed before the history existed). What a message
+about a deleted population's leftovers — orphaned tracks (`orphan_track_sources`) — names it by.
+"""
+function removed_pop_path(task_dir::AbstractString, value_name::AbstractString, uid::AbstractString;
+                          pop_type::PopTypeArg="flow")::Union{String,Nothing}
+    for e in Iterators.reverse(read_gating_history(task_dir, value_name; pop_type = pop_type))
+        prev = get(e, :previous, get(e, "previous", nothing))
+        prev isa AbstractDict || continue
+        m = try from_tree(json_native(prev)) catch; continue end
+        for (path, p) in m.pops
+            p.uid == uid && return String(path)
+        end
+    end
+    nothing
+end

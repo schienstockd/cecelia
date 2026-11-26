@@ -105,7 +105,7 @@ with `runId`).
 | 1 | `api/src/server.jl` | `"/api/chains/save"` |
 | 2 | `api/src/routes/chain.jl` | `function api_chains_save(` |
 | 2 | `api/src/routes/chain.jl` | `out["updatedBy"] = author_stamp()` |
-| 3 | `frontend/src/modules/ChainModule.vue` | `fetch('/api/chains/preflight'` |
+| 3 | `frontend/src/modules/ChainModule.vue` | `'/api/chains/preflight'` |
 | 3 | `api/src/routes/chain.jl` | `function api_chains_preflight(` |
 | 4 | `frontend/src/modules/ChainModule.vue` | `function startRun(uid: string)` |
 | 4 | `api/src/sockets.jl` | `WS_CHAIN_RUN    => "chain:run",` |

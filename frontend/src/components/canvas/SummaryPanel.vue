@@ -27,6 +27,7 @@ import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
 import { centroidLabel } from '../../utils/gatingAxes'
 import { useProjectStore } from '../../stores/project'
+import { getJson, postJson, tryApi } from '../../utils/api'
 import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, MatrixMode, MatrixNormalize } from '../../plots/types'
@@ -309,9 +310,9 @@ async function loadObsCols() {
       // (any track family reads the same table, so `track` stands for live/track/trackclust here).
       const grain = granularity.value === 'track' ? '&popType=track' : ''
       const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}${grain}`
-      const res = await fetch(`/api/gating/channels?${q}`)
-      if (!res.ok) return {}
-      const d = await res.json() as Partial<ColumnSets> & { trackObsColumns?: string[] }
+      const r = await tryApi(getJson<Partial<ColumnSets> & { trackObsColumns?: string[] }>(`/api/gating/channels?${q}`))
+      if (!r.ok || !r.data) return {}
+      const d = r.data
       // the track table's obs replace the cell obs — never fall back to the cell ones (a cell
       // `clusters.*` run would then pose as a track-cluster measure)
       return grain ? { ...d, obsColumns: d.trackObsColumns ?? [] } : d
@@ -589,11 +590,7 @@ async function fetchData(isCurrent: () => boolean) {
       const body: Record<string, unknown> = {
         projectUid: props.projectUid, popType: popType.value, granularity: granularity.value, chartType: 'elbow' }
       applyImageSelector(body)
-      const res = await fetch('/api/plot_data', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-      const r = await res.json() as PlotDataResponse
+      const r = await postJson<PlotDataResponse>('/api/plot_data', body)
       if (!isCurrent()) return
       result.value = r
     } catch (e) {
@@ -629,11 +626,7 @@ async function fetchData(isCurrent: () => boolean) {
           : { matrixNormalize: matrixNormalize.value }),
       }
       applyImageSelector(body)
-      const res = await fetch('/api/plot_data', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-      const r = await res.json() as PlotDataResponse
+      const r = await postJson<PlotDataResponse>('/api/plot_data', body)
       if (!isCurrent()) return                             // superseded by a newer request — discard
       result.value = r
     } catch (e) {
@@ -648,11 +641,7 @@ async function fetchData(isCurrent: () => boolean) {
   if (imageMetric.value) {
     try {
       const body = imageMetricBody(imageMetric.value.source)
-      const res = await fetch('/api/plot_data', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-      const r = await res.json() as PlotDataResponse
+      const r = await postJson<PlotDataResponse>('/api/plot_data', body)
       if (!isCurrent()) return
       result.value = r
     } catch (e) {
@@ -699,11 +688,7 @@ async function fetchData(isCurrent: () => boolean) {
               ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
       }
       applyImageSelector(body)
-      const res = await fetch('/api/plot_data', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-      return await res.json() as PlotDataResponse
+      return await postJson<PlotDataResponse>('/api/plot_data', body)
     })
 
     const parts = await Promise.all(requests)
@@ -933,12 +918,7 @@ function imageMetricBody(source: string, raw = false): Record<string, unknown> {
 async function fetchRawCsv(): Promise<string | null> {
   // a per-image metric has no population series: one request, one row per image
   if (imageMetric.value) {
-    const res = await fetch('/api/plot_data', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(imageMetricBody(imageMetric.value.source, true)),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-    return plotDataToCsv(await res.json() as PlotDataResponse, csvMeta())
+    return plotDataToCsv(await postJson<PlotDataResponse>('/api/plot_data', imageMetricBody(imageMetric.value.source, true)), csvMeta())
   }
   // a precomputed readout (interaction matrix, HMM state count) has no series — export what it drew
   if (!isPrecomputed.value && !ownSeries.value.length) return null
@@ -961,11 +941,7 @@ async function fetchRawCsv(): Promise<string | null> {
       ...groupAttrBody(),
     }
     applyImageSelector(body)
-    const res = await fetch('/api/plot_data', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-    return await res.json() as PlotDataResponse
+    return await postJson<PlotDataResponse>('/api/plot_data', body)
   })
   const parts = await Promise.all(requests)
   return plotDataToCsv({ ...parts[0], rows: parts.flatMap(p => p.rows ?? []) }, csvMeta())
@@ -1232,23 +1208,18 @@ async function onLinkedBrushCategory(cat: string) {
   if (!cats.length) { linkedBrushSource.clear(); mirrorPickHighlight([]); linkedBrushActiveCategory.value = null; return }
   linkedBrushBusy.value = true
   try {
-    const res = await fetch('/api/labels/by_category', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: props.projectUid,
-        imageUid: targetUid,
-        valueName: s0.valueName,
-        pop: s0.pop,
-        popType: s0.popType,
-        measure: measure.value,
-        category: cat,
-        categories: cats,
-      }),
+    // a failure lands in the catch below (the busy flag clears in `finally`)
+    const body = await postJson<{ labelIds?: number[] } | null>('/api/labels/by_category', {
+      projectUid: props.projectUid,
+      imageUid: targetUid,
+      valueName: s0.valueName,
+      pop: s0.pop,
+      popType: s0.popType,
+      measure: measure.value,
+      category: cat,
+      categories: cats,
     })
-    if (!res.ok) { linkedBrushBusy.value = false; return }
-    const body = await res.json() as { labelIds: number[] }
-    const ids = body.labelIds ?? []
+    const ids = body?.labelIds ?? []
     linkedBrushSource.set(ids)
     mirrorPickHighlight(ids)
     linkedBrushActiveCategory.value = ids.length ? cat : null

@@ -10,6 +10,7 @@ import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops, SeriesTarget } from '../plots/types'
 import { fetchSegmentationPops } from '../plots/populations'
+import { getJson, tryApi } from '../utils/api'
 import { makePopPathRemap, type PopIdent } from '../utils/popRenameRemap'
 import { usePopSelectionMode } from './usePopSelectionMode'
 import { gateSignatures, changedPopPaths, booleanDeps, popChangeKey, seriesReloadToken, type SigNode } from '../utils/popChanges'
@@ -165,8 +166,8 @@ export function useSummaryData(opts: {
     effSpec.value ? granularityFor(effSpec.value, popType.value)
       : (specs.value.some(s => s.dataSource.granularity === 'track') ? 'track' : 'cell'))
   async function loadSpecs() {
-    const q = module ? `?module=${encodeURIComponent(module)}` : ''
-    try { specs.value = await (await fetch(`/api/plots/definitions${q}`)).json() } catch { specs.value = [] }
+    const r = await tryApi(getJson<typeof specs.value>('/api/plots/definitions', { query: { module } }))
+    specs.value = r.ok ? (r.data ?? []) : []
   }
 
   // populations across the selected images, grouped by segmentation (drives the picker — holds ONLY the

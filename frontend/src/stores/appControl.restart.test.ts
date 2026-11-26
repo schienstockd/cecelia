@@ -5,10 +5,9 @@ import { useAppControlStore } from './appControl'
 // Every relaunch path (sidebar Restart, Settings → Restart, worktree switch) goes through the store,
 // and the server kills in-process tasks on restart without checking — so the store must refuse.
 function stubBackend(tasks: unknown[], runner = { enabled: false, running: false }) {
-  const f = vi.fn((url: string, _init?: RequestInit) => Promise.resolve({
-    ok: true,
-    json: () => Promise.resolve(url === '/api/runner/status' ? runner : url === '/api/tasks' ? tasks : { ok: true }),
-  }))
+  const f = vi.fn((url: string, _init?: RequestInit) => Promise.resolve(new Response(
+    JSON.stringify(url === '/api/runner/status' ? runner : url === '/api/tasks' ? tasks : { ok: true }),
+    { status: 200 })))
   vi.stubGlobal('fetch', f)
   return f
 }

@@ -180,6 +180,13 @@ offer CytoMAP's **z-scored counts** encoding (`(count − mean)/SD` across cells
 - **Population basis is user-configurable** — all pops, or a subset, across any poptype(s).
 - `excludeSelfConnections` and `addSelf` options carried over from legacy.
 - Temporal (Decision 7) decides whether composition is per-timepoint or aggregated.
+- **Local diversity (built 2026-11-26).** Beside the composition, every region run writes
+  `spatial.comp.effective_types.{suffix}`: the effective number of basis types around the cell (Hill
+  number of order 1 = exp Shannon entropy, `spatial_utils.effective_types`). Basis columns only — "other"
+  lumps unlabelled cells, so it is not a type; no typed neighbours = 0. A per-cell measure (gate, colour,
+  plot, compare against HMM states), not a clustering feature: it is derived from the composition. From a
+  movie it is per cell per frame only on a per-timepoint graph. Came from the ecology brief
+  (`docs/archive/ECOLOGY_MULTIPLEX_PROMPT.md`).
 
 ### Decision 4 — region clustering method: Leiden default, k-means, SOM optional
 

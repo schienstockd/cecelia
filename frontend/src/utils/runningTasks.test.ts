@@ -2,8 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { runningTaskCount, tasksLostOnRestart, adoptableTasks, staleInFlightStatuses,
          type InFlightTaskRow } from './runningTasks'
 
-const okJson = (body: unknown) =>
-  vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(body) })
+const jsonRes = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+const okJson = (body: unknown) => vi.fn().mockImplementation(async () => jsonRes(body))
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -22,12 +22,12 @@ describe('runningTaskCount', () => {
     const f = okJson([{ id: 'a' }])
     vi.stubGlobal('fetch', f)
     await runningTaskCount()
-    expect(f).toHaveBeenCalledWith('/api/tasks')
+    expect(f.mock.calls[0][0]).toBe('/api/tasks')
   })
 
   // Fails OPEN: the count gates a warning, so a transient error must not block quit/export.
   it('reports 0 on a non-ok response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve([]) }))
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonRes([], 500)))
     expect(await runningTaskCount()).toBe(0)
   })
 
@@ -250,8 +250,8 @@ describe('runningTaskCount counts the whole snapshot', () => {
 // A route-keyed fetch stub: `/api/runner/status` and `/api/tasks` answer independently.
 const routes = (status: unknown, tasks: unknown[]) => vi.fn((url: string) =>
   url === '/api/runner/status'
-    ? (status instanceof Error ? Promise.reject(status) : Promise.resolve({ ok: true, json: () => Promise.resolve(status) }))
-    : Promise.resolve({ ok: true, json: () => Promise.resolve(tasks) }))
+    ? (status instanceof Error ? Promise.reject(status) : Promise.resolve(jsonRes(status)))
+    : Promise.resolve(jsonRes(tasks)))
 
 describe('tasksLostOnRestart', () => {
   it('counts the running tasks when there is no runner — they run in-process and die', async () => {

@@ -4,6 +4,7 @@
 // The address is `StoredCaptureAddress` (utils/captureAddress.ts) — the one shape, read back from disk.
 
 import type { OverlayMark, StoredCaptureAddress } from './captureAddress'
+import { getJson, postJson, tryApi } from './api'
 
 /** Capture surface tags — matches api/src/captures_api.jl `envelope.surface`. */
 export type CaptureSurface = 'ui' | 'plot' | 'viewer_frame' | 'viewer_slab' | 'agent_run'
@@ -36,15 +37,9 @@ export async function fetchRecentCaptures(
   projectUid: string, limit = 10, apiBase = ''
 ): Promise<CaptureRow[]> {
   if (!projectUid) return []
-  try {
-    const url = `${apiBase}/api/viewer/captures?projectUid=${encodeURIComponent(projectUid)}&limit=${limit}`
-    const res = await fetch(url)
-    if (!res.ok) return []
-    const json = await res.json() as CapturesResponse
-    return (json.items ?? []).map(parseCapture).filter((c): c is CaptureRow => c !== null)
-  } catch {
-    return []
-  }
+  const r = await tryApi(getJson<CapturesResponse>(`${apiBase}/api/viewer/captures`, { query: { projectUid, limit } }))
+  if (!r.ok) return []
+  return (r.data?.items ?? []).map(parseCapture).filter((c): c is CaptureRow => c !== null)
 }
 
 function parseCapture(raw: unknown): CaptureRow | null {
@@ -96,16 +91,7 @@ export async function deleteCapture(
   projectUid: string, captureId: string, apiBase = ''
 ): Promise<boolean> {
   if (!projectUid || !captureId) return false
-  try {
-    const res = await fetch(`${apiBase}/api/viewer/capture/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, captureId }),
-    })
-    return res.ok
-  } catch {
-    return false
-  }
+  return (await tryApi(postJson(`${apiBase}/api/viewer/capture/delete`, { projectUid, captureId }))).ok
 }
 
 /** Bulk-clear every capture for a project. Returns the count the server actually removed,
@@ -114,18 +100,9 @@ export async function clearAllCaptures(
   projectUid: string, apiBase = ''
 ): Promise<number | null> {
   if (!projectUid) return null
-  try {
-    const res = await fetch(`${apiBase}/api/viewer/captures/clear`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid }),
-    })
-    if (!res.ok) return null
-    const raw = await res.json() as Record<string, unknown>
-    return typeof raw.cleared === 'number' ? raw.cleared : 0
-  } catch {
-    return null
-  }
+  const r = await tryApi(postJson<Record<string, unknown>>(`${apiBase}/api/viewer/captures/clear`, { projectUid }))
+  if (!r.ok) return null
+  return typeof r.data?.cleared === 'number' ? r.data.cleared : 0
 }
 
 /** Full capture envelope + PNG data URL, as returned by `GET /api/viewer/capture`. Used by
@@ -160,11 +137,9 @@ export async function fetchCaptureEnvelope(
 ): Promise<CaptureEnvelope | null> {
   if (!projectUid || !captureId) return null
   try {
-    const url = `${apiBase}/api/viewer/capture?projectUid=${encodeURIComponent(projectUid)}`
-              + `&captureId=${encodeURIComponent(captureId)}`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const json = await res.json() as { capture?: unknown, frame?: string }
+    // A 404 is a deleted capture still referenced (a Blackboard attachment): degrade quietly.
+    const json = await getJson<{ capture?: unknown, frame?: string } | null>(`${apiBase}/api/viewer/capture`,
+                                                                              { query: { projectUid, captureId }, quiet: [404] }) ?? {}
     const env = (json.capture && typeof json.capture === 'object')
       ? json.capture as Record<string, unknown> : null
     if (!env) return null
@@ -212,15 +187,8 @@ export async function fetchCaptureFrame(
   projectUid: string, captureId: string, apiBase = ''
 ): Promise<string> {
   if (!projectUid || !captureId) return ''
-  try {
-    const url = `${apiBase}/api/viewer/capture?projectUid=${encodeURIComponent(projectUid)}`
-              + `&captureId=${encodeURIComponent(captureId)}`
-    const res = await fetch(url)
-    if (!res.ok) return ''
-    const json = await res.json() as { frame?: string }
-    return typeof json.frame === 'string' ? json.frame : ''
-  } catch {
-    return ''
-  }
+  const r = await tryApi(getJson<{ frame?: string }>(`${apiBase}/api/viewer/capture`,
+                                                     { query: { projectUid, captureId }, quiet: [404] }))
+  return r.ok && typeof r.data?.frame === 'string' ? r.data.frame : ''
 }
 

@@ -26,6 +26,7 @@ import { orderDefaultLast, resolveNewActive, DEFAULT_VALUE_NAME,
          type AnalysisRunInfo, type RunKindInfo } from '../utils/imageDelete'
 import { resolveSetDestination, destinationParams } from '../utils/setDestination'
 import type { CciaImage } from '../stores/project'
+import { postJson } from '../utils/api'
 
 const props = defineProps<{ setUid: string; uids: string[] }>()
 const emit  = defineEmits<{ (e: 'done'): void }>()
@@ -95,14 +96,8 @@ async function doMove() {
   busy.value = { verb: 'Moving', done: 0, total: targets.length }
   try {
     for (const img of targets) {
-      const res = await fetch('/api/images/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, imageUid: img.uid, fromSetUid: props.setUid, ...params }),
-      })
-      const body = await res.json().catch(() => ({})) as
-        { toSetUid?: string; toSetName?: string; error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const body = await post<{ toSetUid?: string; toSetName?: string }>('/api/images/move',
+        { projectUid, imageUid: img.uid, fromSetUid: props.setUid, ...params })
       toName = body.toSetName ?? toName
       project.ensureSet(body.toSetUid!, toName)     // no-op if it already existed
       project.moveImage(props.setUid, body.toSetUid!, img.uid)
@@ -153,14 +148,8 @@ async function openDelete() {
   }
 }
 
-async function post(url: string, body: unknown): Promise<Record<string, any>> {
-  const res = await fetch(url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  })
-  const parsed = await res.json().catch(() => ({})) as { error?: string }
-  if (!res.ok) throw new Error(parsed.error ?? `HTTP ${res.status}`)
-  return parsed as Record<string, any>
-}
+// quiet: every caller logs its own failure (with the image count) and toasts
+const post = <T = Record<string, any>>(url: string, body: unknown) => postJson<T>(url, body, { quiet: true })
 
 // One loop for the three per-image scopes; `step` is whatever that scope does to one image.
 async function runPerImage(verb: string, summary: string,

@@ -3,9 +3,13 @@
 // slice 7): one rounded group with a neutral frame and label (the check icons carry the colour), one `CheckButton` per check — Acquisition,
 // Design (the set's experiment design; amber when there is none or images sit outside it), QC (n flagged; a click filters the image table to them) and Cohort (only where the page banks cohort
 // metrics, so it sits last and the other two never move).
-import { computed } from 'vue'
+// The label is the collapse toggle: collapsed (the default, so the set row stays one line beside the
+// gesture hints) each check keeps its icon + count and moves its name into the tooltip. A per-viewer
+// preference (profileStorage via useStoredSectionOpen), not per set or page.
+import { computed, provide } from 'vue'
 import { useProjectStore } from '../stores/project'
-import { qcCheckView } from '../lib/checks'
+import { CHECKS_COLLAPSED, qcCheckView } from '../lib/checks'
+import { useStoredSectionOpen } from '../utils/sectionOpen'
 import AcqCheckButton from './AcqCheckButton.vue'
 import CohortCheckButton from './CohortCheckButton.vue'
 import DesignCheckButton from './DesignCheckButton.vue'
@@ -15,12 +19,18 @@ const props = defineProps<{ setUid: string; module?: string; cohortFuns?: string
 defineEmits<{ toggleQcFilter: [] }>()
 
 const project = useProjectStore()
+
+const open = useStoredSectionOpen('cc.checksOpen', false)
+provide(CHECKS_COLLAPSED, computed(() => !open.value))
 const qc = computed(() => qcCheckView(project.sets.find(s => s.uid === props.setUid)?.images ?? [], props.qcFilterOn))
 </script>
 
 <template>
   <div class="checks" role="group" aria-label="Checks" data-guide="images.checks">
-    <span class="checks-label cc-eyebrow cc-fs-2xs">Checks</span>
+    <button class="cc-section-toggle cc-eyebrow cc-fs-2xs checks-label" data-guide="checks.toggle" :aria-expanded="open"
+            @click="open = !open" v-tooltip.bottom="open ? 'Hide check names' : 'Show check names'">
+      Checks<i class="pi" :class="open ? 'pi-chevron-left' : 'pi-chevron-right'" />
+    </button>
     <AcqCheckButton :set-uid="setUid" />
     <DesignCheckButton :set-uid="setUid" />
     <CheckButton label="QC" :state="qc.state" :count="qc.count" :tip="qc.tip" :pressed="qcFilterOn"
@@ -39,5 +49,5 @@ const qc = computed(() => qcCheckView(project.sets.find(s => s.uid === props.set
   border-radius: var(--cc-radius-md);
   flex-shrink: 0;
 }
-.checks-label { color: var(--cc-text-dim); padding-right: var(--cc-space-3xs); }
+.checks-label { width: auto; gap: var(--cc-space-3xs); padding: 0 var(--cc-space-3xs) 0 0; }
 </style>

@@ -17,6 +17,7 @@
 
 import { computed, onScopeDispose, ref, watchEffect, type Ref } from 'vue'
 import { endpointsFor, type VaultKind } from '../utils/modelVaultKinds'
+import { getJson } from '../utils/api'
 import type { FlowManifest } from '../utils/flowManifest'
 import type { DenoiseManifest } from '../utils/denoiseManifest'
 import type { VaultOrigin } from '../utils/vaultScope'
@@ -75,10 +76,8 @@ async function _fetchKind(kind: VaultKind): Promise<void> {
   if (existing) return existing
   const p = (async () => {
     try {
-      const r = await fetch(endpointsFor(kind).list)
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const data = await r.json()
-      cache[kind] = { rows: data.models ?? [], err: '' }
+      const data = await getJson<{ models?: VaultRow[] }>(endpointsFor(kind).list)
+      cache[kind] = { rows: data?.models ?? [], err: '' }
     } catch (e) {
       cache[kind] = { rows: [], err: e instanceof Error ? e.message : String(e) }
     } finally {

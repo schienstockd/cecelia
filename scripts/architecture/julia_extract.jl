@@ -14,6 +14,9 @@
 # is static and approximate: a local variable that shadows a package function and is called would
 # count, and a call through a variable (`f = foo; f(x)`) would not. Good enough for a map, not for
 # proofs.
+#
+# `upward_gaps()` is also the package test's `julia-upward` ratchet (app/test/suite/ratchets.jl), which
+# `include`s this file into a scratch module: the files are written only when it runs as the script.
 
 using InteractiveUtils
 using TOML
@@ -26,7 +29,9 @@ const REPO = normpath(joinpath(@__DIR__, "..", ".."))
 const ARCH = something(get(ENV, "CECELIA_ARCH_OUT", nothing), joinpath(REPO, "docs", "architecture"))
 const OUT = joinpath(ARCH, "julia")
 
-rel(p) = relpath(normpath(string(p)), REPO)
+# repo-relative, always with `/` — the area map in julia_areas.toml is written that way, and on Windows
+# `relpath` gives `\\` (every file then fell outside every area and the upward count read 0)
+rel(p) = replace(relpath(normpath(string(p)), REPO), Base.Filesystem.path_separator => "/")
 
 # ── areas ─────────────────────────────────────────────────────────────────────
 
@@ -368,6 +373,29 @@ listed by name in [`gaps.md`](../gaps.md#julia-upward)). Diagram rule: the stron
     println(io, "| Tier | Areas |\n|---|---|")
     for (i, t) in enumerate(tiers); println(io, "| $i | ", join(t, ", "), " |"); end
     println(io)
+    append!(GAPS, upward_gaps(edges))
+    println(io, "<details><summary>Full matrix (rows call columns)</summary>\n")
+    println(io, "| | " * join(pkg, " | ") * " |")
+    println(io, "|---|" * repeat("---|", length(pkg)))
+    for a in vcat(pkg, api)
+        println(io, "| **$a** | " * join((a == b ? "·" : (n = length(get(edges, (a, b), Set{String}())); n == 0 ? "" : string(n)) for b in pkg), " | ") * " |")
+    end
+    println(io)
+    println(io, "</details>\n")
+    if !isempty(unmapped)
+        println(io, "## Unmapped files\n\nAdd these to `julia_areas.toml`:\n")
+        foreach(p -> println(io, "- `$p`"), unmapped); println(io)
+    end
+    return unmapped
+end
+
+"""
+The `julia-upward` gaps: calls from an area to a function (or type) defined in an area of a higher
+tier, one item per name, with the concrete subtypes of one abstract type folded into one item.
+Also the package ratchet's entry point (`app/test/suite/ratchets.jl`), so it writes nothing.
+"""
+function upward_gaps(edges = first(area_graph()))
+    gaps = NamedTuple[]
     owner = Dict{String,Set{String}}()           # name => areas it is called from, below its owner
     owned_by = Dict{String,String}()
     for ((a, b), ns) in edges
@@ -388,31 +416,19 @@ listed by name in [`gaps.md`](../gaps.md#julia-upward)). Diagram rule: the stron
     for ((P, b, froms), ns) in folded
         length(ns) < 3 && continue
         foreach(n -> delete!(owner, n), ns)
-        push!(GAPS, (kind = "julia-upward", subject = "$(length(ns)) `$(short(P))` subtypes", rank = -length(froms) - length(ns),
+        push!(gaps, (kind = "julia-upward", subject = "$(length(ns)) `$(short(P))` subtypes", rank = -length(froms) - length(ns),
                      detail = "defined in $b (tier $(TIER[b])), named from " * join(("$f (tier $(TIER[f]))" for f in froms), ", ") *
                               " — a list of every subtype; deriving it (`subtypes`, self-registration) closes it",
                      where = String[]))
     end
     for (n, froms) in owner
         b = owned_by[n]
-        push!(GAPS, (kind = "julia-upward", subject = "`$n`", rank = -length(froms),
+        push!(gaps, (kind = "julia-upward", subject = "`$n`", rank = -length(froms),
                      detail = "defined in $b (tier $(TIER[b])), called from " *
                               join(("$f (tier $(TIER[f]))" for f in sort(collect(froms))), ", "),
                      where = String[]))
     end
-    println(io, "<details><summary>Full matrix (rows call columns)</summary>\n")
-    println(io, "| | " * join(pkg, " | ") * " |")
-    println(io, "|---|" * repeat("---|", length(pkg)))
-    for a in vcat(pkg, api)
-        println(io, "| **$a** | " * join((a == b ? "·" : (n = length(get(edges, (a, b), Set{String}())); n == 0 ? "" : string(n)) for b in pkg), " | ") * " |")
-    end
-    println(io)
-    println(io, "</details>\n")
-    if !isempty(unmapped)
-        println(io, "## Unmapped files\n\nAdd these to `julia_areas.toml`:\n")
-        foreach(p -> println(io, "- `$p`"), unmapped); println(io)
-    end
-    return unmapped
+    return gaps
 end
 
 const MAX_EDGES = 25
@@ -425,11 +441,14 @@ function write_gaps(path)
 end
 const GENERATED = "> **Generated** by `scripts/architecture/julia_extract.jl` — do not edit; run `pixi run arch-diagrams`.\n"
 
-mkpath(OUT)
-open(io -> interfaces_md(io), joinpath(OUT, "interfaces.md"), "w")
-open(io -> datamodel_md(io), joinpath(OUT, "datamodel.md"), "w")
-unmapped = open(io -> areas_md(io), joinpath(OUT, "areas.md"), "w")
-mkpath(joinpath(ARCH, "gaps"))
-write_gaps(joinpath(ARCH, "gaps", "julia.json"))
-isempty(unmapped) || (println(stderr, "unmapped Julia files (add to julia_areas.toml):"); foreach(p -> println(stderr, "  ", p), unmapped))
-println("wrote ", OUT)
+# Included by the package ratchet for `upward_gaps` alone: write only when run as the script.
+if abspath(PROGRAM_FILE) == @__FILE__
+    mkpath(OUT)
+    open(io -> interfaces_md(io), joinpath(OUT, "interfaces.md"), "w")
+    open(io -> datamodel_md(io), joinpath(OUT, "datamodel.md"), "w")
+    unmapped = open(io -> areas_md(io), joinpath(OUT, "areas.md"), "w")
+    mkpath(joinpath(ARCH, "gaps"))
+    write_gaps(joinpath(ARCH, "gaps", "julia.json"))
+    isempty(unmapped) || (println(stderr, "unmapped Julia files (add to julia_areas.toml):"); foreach(p -> println(stderr, "  ", p), unmapped))
+    println("wrote ", OUT)
+end

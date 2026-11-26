@@ -38,6 +38,7 @@ import { useMovieSuffixes } from '../composables/useMovieSuffixes'
 import { figureSpecFromView, niceFigureBarUm, figureFrames, figureName, figureTipText, type FigureSpec } from '../utils/figureSpec'
 import { pixelSizeUm } from '../utils/physicalSize'
 import type { Severity } from '../lib/severity'
+import { ApiError, postJson, tryApi } from '../utils/api'
 
 const props = withDefaults(defineProps<{
   /** the image recorded — the store's image object (`/api/images/meta` in the viewer window) */
@@ -309,18 +310,15 @@ async function saveFigure() {
   r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
   savingFigure.value = true
   try {
-    const res = await fetch('/api/figures/render', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      // named like a movie: the image, the frames, then the `name` field; a taken name is
-      // overwritten unless "_001" is on
-      body: JSON.stringify({ projectUid, imageUid: img.uid, spec: r.spec,
-                             name: figureName(img.name ?? img.uid, r.spec.frames, movieSuffix.value),
-                             replace: !numberIfTaken.value }),
-    })
-    const body = await res.json().catch(() => ({}))
+    // named like a movie: the image, the frames, then the `name` field; a taken name is
+    // overwritten unless "_001" is on
+    const res = await tryApi(postJson<{ name: string }>('/api/figures/render',
+      { projectUid, imageUid: img.uid, spec: r.spec,
+        name: figureName(img.name ?? img.uid, r.spec.frames, movieSuffix.value),
+        replace: !numberIfTaken.value }))
     recordNote.value = res.ok
-      ? { severity: 'ok', short: `Saved figure ${body.name}`, detail: 'Open it on the Movies page.' }
-      : { severity: 'fail', short: 'Could not save the figure', detail: body.error ?? `HTTP ${res.status}` }
+      ? { severity: 'ok', short: `Saved figure ${res.data.name}`, detail: 'Open it on the Movies page.' }
+      : { severity: 'fail', short: 'Could not save the figure', detail: res.error }
   } catch (e) {
     recordNote.value = { severity: 'fail', short: 'Could not save the figure', detail: String(e) }
   } finally {
@@ -339,13 +337,16 @@ async function saveRoiFigures(projectUid: string, img: NonNullable<typeof opened
     for (const roi of pick.rows) {
       const spec = roiFigureSpec(base, roi, figureEvery.value, roiPad.value, img.sizeT ?? Infinity)
       spec.scaleBarUm = niceFigureBarUm(spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
-      const res = await fetch('/api/figures/render', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, imageUid: img.uid, spec, replace: !numberIfTaken.value, roiSuffix: pick.suffix,
-                               name: figureName(img.name ?? img.uid, spec.frames,
-                                                [pick.suffix, `r${roi.rank}`, movieSuffix.value].filter(Boolean).join('_')) }),
-      })
-      if (res.ok) saved++
+      try {
+        await postJson('/api/figures/render',
+          { projectUid, imageUid: img.uid, spec, replace: !numberIfTaken.value, roiSuffix: pick.suffix,
+            name: figureName(img.name ?? img.uid, spec.frames,
+                             [pick.suffix, `r${roi.rank}`, movieSuffix.value].filter(Boolean).join('_')) })
+        saved++
+      } catch (e) {
+        // a refused ROI counts as not saved (the note says how many); no backend at all stops the run
+        if (!(e instanceof ApiError) || e.status === 0) throw e
+      }
     }
     recordNote.value = saved === pick.rows.length
       ? { severity: 'ok', short: `Saved ${saved} ROI figure(s)`, detail: 'Open them on the Movies page.' }

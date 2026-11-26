@@ -292,10 +292,12 @@ _prep_overrides(colour_overrides) = colour_overrides === nothing ? nothing :
 # a ramp or a palette the same way in the movie, the viewer's payload (`valueKind`) and a plot.
 # Several columns = several segmentations' tables, pooled as the viewer's `pooledColourScale`: the
 # levels' union and the ranges' span, so a value is one colour on every segmentation drawn. The kind
-# is the first table's. `nothing` / `missing` entries are "no value".
-function _cb_scale_of(cols::AbstractVector, cb_col::AbstractString; kind_col = nothing)
+# is the first table's. `nothing` / `missing` entries are "no value". `feature` = the column is a measured
+# feature (a marker by name), not an obs result: a quantity, never a code set — as the plots
+# apply the few-integer-levels rule to obs columns only.
+function _cb_scale_of(cols::AbstractVector, cb_col::AbstractString; kind_col = nothing, feature::Bool = false)
     isempty(cols) && return nothing
-    continuous = !Cecelia._is_categorical_col(something(kind_col, cols[1]), cb_col)
+    continuous = feature || !Cecelia._is_categorical_col(something(kind_col, cols[1]), cb_col)
     if continuous
         vals = Float64[Float64(v) for c in cols for v in c if v isa Real && isfinite(Float64(v))]
         # a column with its own scale (the lens scores' z) keeps it — one colour, one value, every image
@@ -360,11 +362,12 @@ colour-by or no table holds the column — `_cb_prepare` then reads its own tabl
 function _cb_scale(img, value_names, colour_by)
     (colour_by === nothing || isempty(String(colour_by))) && return nothing
     cb_col = String(colour_by)
-    cols = Any[]; kind_col = nothing
+    cols = Any[]; kind_col = nothing; feature = false
     for v in unique(String.(value_names))
         try
             lp = label_props(img; value_name = v)
-            cb_col in col_names(lp; data_type = :obs) || continue
+            isempty(selectable_cols(lp, [cb_col])) && continue
+            kind_col === nothing && (feature = !(cb_col in col_names(lp; data_type = :obs)))
             view_centroid_cols(lp)
             select_cols(lp, [cb_col])
             df = as_df(lp)
@@ -375,7 +378,7 @@ function _cb_scale(img, value_names, colour_by)
             @warn "colour-by scale: column read failed" value_name = v colour_by exception = e
         end
     end
-    isempty(cols) ? nothing : _cb_scale_of(cols, cb_col; kind_col)
+    isempty(cols) ? nothing : _cb_scale_of(cols, cb_col; kind_col, feature)
 end
 
 # Given a df that has the `colour_by` column present, return a per-row resolver
@@ -525,6 +528,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
     hasT = !isempty(temporal_columns(lp))
     obs  = col_names(lp; data_type = :obs)
     hasK = "track_id" in obs
+    # a marker colour-by (`CD4`, `af_CD4`) is a feature, not an obs column: the pop read names it
+    cb_var = cb_col !== nothing && !(cb_col in obs) && !isempty(selectable_cols(lp, [cb_col]))
 
     pts_by_t   = Dict{Int,NamedTuple{(:x, :y, :z, :colour),
                         Tuple{Vector{Float64},Vector{Float64},
@@ -673,7 +678,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                 # draw every co-clustered segmentation's cells on it (as `resolve_pops`, the viewer's).
                 pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
                        centroids = :pixel, include_x = false, include_obs = true,
-                       expand_cluster_pops = false)
+                       pop_cols = cb_var ? [cb_col] : nothing, expand_cluster_pops = false)
             catch e
                 @warn "_build_overlay_state: pop_df failed" value_name pop_type paths = want_paths exception = e
                 nothing
@@ -681,8 +686,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             if df !== nothing && size(df, 1) > 0
                 col_exists(c) = c in names(df)
                 has_z = col_exists("centroid_z")
-                # `pop_df(include_obs=true)` already surfaced every obs column — colour_by is
-                # already present in the df, no extra select_cols round-trip needed.
+                # `pop_df(include_obs=true)` already surfaced every obs column; a marker colour-by
+                # (`cb_var`) was asked for by name through `pop_cols`.
                 cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
                 c = _overlay_cols(df)
                 # presence tested ONCE, not `names(df)` per row per column

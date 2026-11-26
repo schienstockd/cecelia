@@ -10,6 +10,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
+import { getJson } from '../utils/api'
 
 export interface CopyFunParamsRow {
   imageUid: string
@@ -38,10 +39,8 @@ const err     = ref('')
 async function load() {
   loading.value = true; err.value = ''; rows.value = []
   try {
-    const qs = new URLSearchParams({ projectUid: props.projectUid, setUid: props.setUid, fun: props.fun })
-    const r = await fetch(`/api/tasks/funparams/sources?${qs.toString()}`)
-    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`)
-    rows.value = (await r.json()) as CopyFunParamsRow[]
+    rows.value = await getJson<CopyFunParamsRow[]>('/api/tasks/funparams/sources',
+      { query: { projectUid: props.projectUid, setUid: props.setUid, fun: props.fun } })
   } catch (e) {
     err.value = e instanceof Error ? e.message : String(e)
   } finally { loading.value = false }

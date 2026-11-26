@@ -11,6 +11,7 @@ import BaseModal from './BaseModal.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { downloadText } from '../plots/export'
 import { renderMarkdown } from '../utils/sanitizeHtml'
+import { getJson } from '../utils/api'
 import { methodsReportUrl, methodsFileBase, downloadRoCrate, type MethodsReport, type MethodsScope } from '../utils/methodsReport'
 
 const props = defineProps<{ projectUid: string; scope: MethodsScope; name: string }>()
@@ -23,10 +24,7 @@ const { copy, isCopied } = useCopyFlash()
 
 onMounted(async () => {
   try {
-    const res = await fetch(methodsReportUrl(props.projectUid, props.scope))
-    const d = await res.json() as MethodsReport & { error?: string }
-    if (!res.ok) throw new Error(d.error ?? res.statusText)
-    report.value = d
+    report.value = await getJson<MethodsReport>(methodsReportUrl(props.projectUid, props.scope))
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally { loading.value = false }

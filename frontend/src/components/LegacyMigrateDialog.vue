@@ -9,6 +9,7 @@ import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { cleanPathInput } from '../utils/pathInput'
+import { postJson } from '../utils/api'
 
 const props = defineProps<{ projectUid: string; setUid: string }>()
 const emit = defineEmits<{ (e: 'imported', images: unknown[]): void; (e: 'close'): void }>()
@@ -65,15 +66,11 @@ async function scan() {
   if (!src) { error.value = 'Enter the path to a legacy project folder.'; return }
   scanning.value = true
   try {
-    const res = await fetch('/api/import/scan-legacy', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sourceProjectDir: src,
-        ...(rs ? { rscript: rs } : {}),
-      }),
+    const body = await postJson<Manifest>('/api/import/scan-legacy', {
+      sourceProjectDir: src,
+      ...(rs ? { rscript: rs } : {}),
     })
-    const body = await res.json().catch(() => ({})) as Manifest
-    if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
+    if (body.error) throw new Error(body.error)
     manifest.value = body
     selected.value = body.images.map(i => i.uid)   // all ticked by default
   } catch (e) {
@@ -104,18 +101,14 @@ async function confirmImport() {
     const images = m.images.filter(i => selected.value.includes(i.uid))
       .map(i => ({ uid: i.uid, name: i.name }))
     const rs = cleanPathInput(rscript.value)
-    const res = await fetch('/api/import/register-legacy', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: props.projectUid, setUid: props.setUid,
-        sourceProjectDir: cleanPathInput(path.value), images,
-        ...(rs ? { rscript: rs } : {}),
-      }),
-    })
     type Registered = { uid: string; name: string; status?: string }
-    const body = await res.json().catch(() => ({})) as { images?: Registered[]; error?: string }
-    if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
-    const returned = body.images ?? []
+    const body = await postJson<{ images?: Registered[]; error?: string }>('/api/import/register-legacy', {
+      projectUid: props.projectUid, setUid: props.setUid,
+      sourceProjectDir: cleanPathInput(path.value), images,
+      ...(rs ? { rscript: rs } : {}),
+    })
+    if (body?.error) throw new Error(body.error)
+    const returned = body?.images ?? []
     done.value = returned.length || images.length
     repaired.value = returned.filter(i => i.status === 'repaired').length
     emit('imported', returned)   // parent adds to the set; dialog stays open to show next step

@@ -99,7 +99,7 @@ describe('claimApi', () => {
   })
   afterEach(() => { vi.unstubAllGlobals() })
   it('runs the review on the model picked for Kiwi', async () => {
-    const fetch = vi.fn(async (_u: string, _init: { body: string }) => ({ ok: true, status: 200, json: async () => ({ turnId: 'kt-1' }) }))
+    const fetch = vi.fn(async (_u: string, _init: { body: string }) => new Response(JSON.stringify({ turnId: 'kt-1' }), { status: 200 }))
     vi.stubGlobal('fetch', fetch)
     expect(await reviewClaim('p1', 'bb-1', 'opus')).toBe('kt-1')
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ projectUid: 'p1', entryId: 'bb-1', model: 'opus' })

@@ -14,7 +14,8 @@
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
 <script setup lang="ts">
-import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
+import { colourByGroups, fetchColourByColumns, NO_COLOUR_BY, type ColourByColumns } from '../../utils/viewer/colourByColumns'
+import SearchSelect from '../../components/SearchSelect.vue'
 import { computed, ref, watch } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
@@ -53,6 +54,7 @@ import { lookRestore, missingRefs, restoreNote, restoreTargetSet, type MovieRegi
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import RestoreNotice from '../../components/RestoreNotice.vue'
 import { useMovieSuffixes } from '../../composables/useMovieSuffixes'
+import { getJson, tryApi } from '../../utils/api'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -248,12 +250,14 @@ const overlaysModel = computed<string[]>({
 })
 
 // ── colour-by options (obs columns of a representative segmentation) ───────────
-const obsCols = ref<string[]>([])
+const obsCols = ref<ColourByColumns>(NO_COLOUR_BY)
+// cell columns and markers, searchable — a 60-marker panel is past a native select
+const colourGroups = computed(() => colourByGroups(obsCols.value, {}, '— none (population / default colour) —'))
 async function loadObs() {
   const uid = props.selectedUids[0]
   const projectUid = projectMeta.current?.uid
   const seg = segNames.value[0]
-  obsCols.value = uid && projectUid && seg ? await fetchColourByColumns(projectUid, uid, seg) : []
+  obsCols.value = uid && projectUid && seg ? await fetchColourByColumns(projectUid, uid, seg) : NO_COLOUR_BY
 }
 watch(() => [props.selectedUids[0], segNames.value[0]] as const, loadObs, { immediate: true })
 
@@ -275,10 +279,10 @@ async function loadPopPaths() {
   const pt = popType.value
   if (!uid || !projectUid || !seg || !pt) { popPaths.value = []; return }
   try {
-    const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(seg)}&popType=${encodeURIComponent(pt)}`
-    const res = await fetch(`/api/gating/pop-tree?${q}`)
+    const res = await tryApi(getJson<{ tree?: PopTree }>('/api/gating/pop-tree',
+      { query: { projectUid, imageUid: uid, valueName: seg, popType: pt } }))
     if (!res.ok) { popPaths.value = []; return }
-    const j = await res.json() as { tree?: PopTree }
+    const j = res.data ?? {}
     const out: { path: string; label: string; uid: string }[] = []
     const walk = (nodes: PopNode[] | undefined, parent: string, depth: number) => {
       for (const n of nodes ?? []) {
@@ -467,7 +471,7 @@ function outputSnapshot(uid: string) {
 // selection is being set in the same breath, and the prop carrying it back down has not updated yet.
 // `colourBy` is deliberately absent: `obsCols` is fetched per segmentation and is empty on arrival, so
 // checking against it would report every colour-by as dead. A colour-by that no longer exists shows as
-// a blank select instead, which is its own signal.
+// a blank picker instead, which is its own signal.
 function availableFor(uids: string[]) {
   const all = project.sets.flatMap(s => s.images)
   const found = uids.map(u => all.find(i => i.uid === u)).filter((i): i is NonNullable<typeof i> => !!i)
@@ -666,10 +670,8 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
       <!-- Colour by -->
       <section class="bm-sec cc-panel-section">
         <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs" v-tooltip.left="'Measure used to colour tracks / labels'">Colour by</h3>
-        <select v-model="colourBy" v-tooltip.bottom="'Cell measure mapped to track and label colour'">
-          <option value="">— none (population / default colour) —</option>
-          <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <SearchSelect v-model="colourBy" :groups="colourGroups" aria-label="Colour by"
+                      v-tooltip.bottom="'Cell measure mapped to track and label colour'" />
       </section>
 
       <!-- Versions and masks — one chip = that version / mask, two or more = a side-by-side comparison.

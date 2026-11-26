@@ -18,6 +18,7 @@ import {
   hasLabArchives, labArchivesLabel, labArchivesSyncedOn, labArchivesGapText, type LabArchivesCtx,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
+import { getJson, postJson } from '../utils/api'
 
 const pm = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -56,9 +57,8 @@ async function load() {
   if (!projectUid.value) { entries.value = []; return }
   loading.value = true
   try {
-    const r = await fetch(`/api/lablog?projectUid=${encodeURIComponent(projectUid.value)}`)
-    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    const body = await r.json()
+    const body = await getJson<{ entries?: LabLogEntry[]; dismissed?: string[]; imageNames?: Record<string, string>;
+                                 labarchives?: LabArchivesCtx }>('/api/lablog', { query: { projectUid: projectUid.value } })
     entries.value = body.entries ?? []
     dismissed.value = body.dismissed ?? []
     imageNames.value = body.imageNames ?? {}
@@ -102,17 +102,12 @@ async function submit() {
   busy.value = true
   error.value = ''
   try {
-    const r = await fetch('/api/lablog/append', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: projectUid.value,
-        author: correcting.value ? CORRECTION_AUTHOR : USER_AUTHOR,
-        lines,
-      }),
+    const body = await postJson<{ entries?: LabLogEntry[] }>('/api/lablog/append', {
+      projectUid: projectUid.value,
+      author: correcting.value ? CORRECTION_AUTHOR : USER_AUTHOR,
+      lines,
     })
-    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    entries.value = (await r.json()).entries ?? entries.value
+    entries.value = body?.entries ?? entries.value
     draft.value = ''
     correcting.value = false
   } catch (e) {
@@ -158,12 +153,9 @@ async function dismissEntry(entry: LabLogEntry) {
   if (!projectUid.value) return
   const id = entryId(entry.raw)
   try {
-    const r = await fetch('/api/lablog/dismiss', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, id, dismissed: true }),
-    })
-    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    dismissed.value = (await r.json()).dismissed ?? dismissed.value
+    const body = await postJson<{ dismissed?: string[] }>('/api/lablog/dismiss',
+      { projectUid: projectUid.value, id, dismissed: true })
+    dismissed.value = body?.dismissed ?? dismissed.value
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }

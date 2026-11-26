@@ -343,7 +343,8 @@ crossings are in [`flows/`](flows/). Every row of every touchpoint:
         f"`python/cecelia/utils/script_utils.py` | params JSON keys; `[PROGRESS] n/total`; exit code | "
         f"{len(rp_rows)} scripts ({n_tasks_runpy} task runners) | {gl('runner-unlaunched', 'never launched')} |",
         f"| Vue → Julia, HTTP | route table in `api/src/server.jl`, handlers across `api/src` | "
-        f"{len(side_files['Vue'])} files — no single API client | `docs/API.md` → *Route index* | "
+        f"`frontend/src/utils/api.ts` (the client), routes named in {len(side_files['Vue'])} files | "
+        f"`docs/API.md` → *Route index* | "
         f"{len(routes)} routes in {len(by_area)} areas | {gl('route-uncalled', 'uncalled routes')} |",
         f"| MCP → Julia, HTTP | same routes | {fmt_files(side_files['MCP'], 2)} | `mcp/cecelia_mcp` tool specs | "
         f"{len(side_files['MCP'])} files | — |",

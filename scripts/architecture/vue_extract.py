@@ -4,7 +4,8 @@
 
 Views:
   layers.md   — the frontend's directories as groups and the imports between them; where HTTP is
-                spoken (files calling `fetch(` / `new WebSocket`).
+                spoken (files calling the backend — a bare `fetch(` or a `utils/api.ts` shape — or
+                opening a `WebSocket`).
   stores.md   — the Pinia stores: which stores lean on which, and who reads each one.
   viewer.md   — the viewer (lib/webgpu + utils/viewer + components/viewerWindow) and every import
                 it makes into the rest of the app.
@@ -17,6 +18,7 @@ utils/ and lib/ subdirectories with at least MIN_GROUP files (smaller ones fold 
 from __future__ import annotations
 
 import collections
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -38,6 +40,19 @@ VIEWER = ("lib/webgpu", "utils/viewer", "components/viewerWindow")
 IMPORT_RE = re.compile(
     r"""(?:^|\n)\s*(?:import\s+(?!type\b)(?:[^'";]*?\sfrom\s+)?|export\s+[^'";]*?\sfrom\s+)['"]([^'"]+)['"]"""
     r"""|import\(\s*['"]([^'"]+)['"]\s*\)""")
+
+
+#: THE frontend HTTP client — every backend call goes through it (`frontend/CLAUDE.md`).
+CLIENT = "utils/api.ts"
+#: A direct call of the global `fetch` — not a method that happens to be called `fetch` (`io.fetch(`).
+BARE_FETCH = re.compile(r"(?<![.\w$])fetch\s*\(")
+#: A method of that name being declared (`fetch(t: number): Promise<boolean>`), not called.
+METHOD_SIG = re.compile(r"^\s*fetch\s*\([^()]*\)\s*:")
+#: On the call's line: a bare `fetch(` on purpose (a `blob:` / external URL) — the judge's one marker.
+_spec = importlib.util.spec_from_file_location("coherence", REPO / "scripts" / "judge" / "coherence.py")
+coherence = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(coherence)
+EXEMPT = coherence.ROUTE_EXEMPT
 
 
 def is_test(p: Path) -> bool:
@@ -94,6 +109,7 @@ def main() -> int:
     loc = collections.Counter()
     nfiles = collections.Counter()
     http: dict[str, list[str]] = collections.defaultdict(list)
+    bare: dict[str, list[int]] = {}          # file → lines of a bare `fetch(` (not through `utils/api.ts`)
     for p in files:
         src = p.read_text(encoding="utf-8")
         r = rel(p)
@@ -108,8 +124,19 @@ def main() -> int:
                 edges[r].add(t)
                 if m.group(1):
                     static_edges[r].add(t)
-        if re.search(r"\bfetch\(|new WebSocket\(|new EventSource\(", code):
+        # a bare fetch or any `utils/api.ts` shape — the same list as its `BACKEND_CALL` guard regex
+        if re.search(r"\b(?:fetch|apiFetch|getJson|postJson|postJsonOrNull|getBuffer|getText|svcPost)\s*(?:<[^>()]*>)?\s*\("
+                     r"|new WebSocket\(|new EventSource\(", code):
             http[g].append(r)
+        if r != CLIENT:
+            # block and HTML comments blanked with their newlines kept, so line numbers still hold
+            blank = lambda m: re.sub(r"[^\n]", " ", m.group(0))
+            visible = re.sub(r"/\*.*?\*/|<!--.*?-->", blank, src, flags=re.S).splitlines()
+            lines = [i for i, (ln, raw) in enumerate(zip(visible, src.splitlines()), 1)
+                     if BARE_FETCH.search(ln.split("//", 1)[0]) and EXEMPT not in raw
+                     and not METHOD_SIG.match(ln)]
+            if lines:
+                bare[r] = lines
 
     OUT.mkdir(parents=True, exist_ok=True)
     nid = lambda s: "".join(c if c.isalnum() else "_" for c in s)
@@ -147,8 +174,9 @@ arrows show where the code is. The strongest {MAX_EDGES} arrows are drawn; the f
     L.append("</details>\n")
     nhttp = sum(len(v) for v in http.values())
     L.append("## Where the backend is called\n")
-    L.append(f"Files that call `fetch(`, open a `WebSocket` or an `EventSource`: **{nhttp}** of {len(files)}. "
-             "There is no single API client — each of these speaks HTTP itself.\n")
+    L.append(f"Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` "
+             f"or an `EventSource`: **{nhttp}** of {len(files)}. HTTP calls go through `utils/api.ts` "
+             "(status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.\n")
     L.append("| Group | Files |\n|---|---|")
     for g, fs in sorted(http.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         L.append(f"| {g} | {len(fs)} |")
@@ -251,7 +279,11 @@ The viewer is `{'`, `'.join(VIEWER)}`. Below: what it imports from the rest of t
                     "detail": f"imported by {len(fs)} viewer file{'s' if len(fs) != 1 else ''}", "where": sorted(fs)}
                    for t, fs in viewer_store.items()]
     (OUT / "viewer.md").write_text("\n".join(L), encoding="utf-8")
-    gaps.record("vue", STORE_GAPS + VIEWER_GAPS)
+    FETCH_GAPS = [{"kind": "fetch-direct", "subject": f"`{f}`", "rank": -len(ls),
+                   "detail": f"{len(ls)} bare `fetch(` call{'s' if len(ls) != 1 else ''}",
+                   "where": [f"frontend/src/{f}:{i}" for i in ls]}
+                  for f, ls in sorted(bare.items())]
+    gaps.record("vue", STORE_GAPS + VIEWER_GAPS + FETCH_GAPS)
     print(f"wrote {OUT}")
     return 0
 

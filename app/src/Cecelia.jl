@@ -30,7 +30,7 @@ export viewer_chunk_cache_setting, viewer_chunk_cache_bytes, viewer_chunk_cache_
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic, append_jsonl!, read_jsonl
-export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources
+export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources, orphan_track_sources
 export write_http_body!
 export safe_name_part, name_suffix, NAME_SUFFIX_MAX, numbered_name, derived_image_name
 
@@ -152,7 +152,7 @@ export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_tree!, load_pop_tree, gating_dir, gating_path, stored_pop_tree, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
 export copy_gating!, plan_gating_copy, has_gating, with_pop_tree_lock
-export co_clustered_value_names, cluster_run_at, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
+export co_clustered_value_names, cluster_run_at, cluster_pop_stale, cluster_pop_stale_in, refine_source, refine_source_pop, cluster_refine_stale, cluster_run_info, cluster_pop_suffix, cluster_props_path, stamp_cluster_run!,
        cluster_id_owners, as_cluster_id
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export category_colours, category_sort_key, pop_label_overrides, POPULATION_PALETTE
@@ -165,6 +165,7 @@ export pop_positions, pop_index_by_label
 export image_metric_frame, image_metric_summary, IMAGE_METRIC_SOURCES
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
+export track_classes, track_class_table, track_class_children, track_class_settings, track_class_summary
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
 # `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
 # the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.
@@ -356,6 +357,7 @@ include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plo
 include("tracking/track_windows.jl")      # fixed-duration (tracklet) measures (pure; used by trackMeasures)
 include("tracking/track_approach.jl")     # approach toward a contacts target (pure; used by trackMeasures)
 include("tracking/track_cohort.jl")       # (images × population) grouping for the two track plots
+include("tracking/track_classes.jl")      # one sub-population call per track (on read; TRACK_SUBPOP_GATING_PLAN P5)
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")

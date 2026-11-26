@@ -12,6 +12,7 @@ import { useViewerStore } from '../stores/viewer'
 import { fetchColourByColumns } from '../utils/viewer/colourByColumns'
 import { niceFigureBarUm, type FigureSpec } from '../utils/figureSpec'
 import type { MovieEntry } from '../utils/movies'
+import { getJson, postJson, tryApi } from '../utils/api'
 import type { BatchMovieCfg } from '../utils/batchMovie'
 import {
   LENS_QUERY_FUN, figureLensBody, lensFigureSpec, lensFiguresFor, lensOpenPending, lensQueryParams, lensScoreColumn,
@@ -59,7 +60,7 @@ export function useVwLensQuery(d: VwLensQueryDeps) {
   async function refreshColumns() {
     if (!d.projectUid || !d.imageUid) return
     const out: Record<string, string[]> = {}
-    for (const vn of d.segmentations()) out[vn] = await fetchColourByColumns(d.projectUid, d.imageUid, vn)
+    for (const vn of d.segmentations()) out[vn] = (await fetchColourByColumns(d.projectUid, d.imageUid, vn)).cells
     columns.value = out
   }
   // fetched once a lens is pinned (the only time the button shows), and again after a query wrote
@@ -71,12 +72,11 @@ export function useVwLensQuery(d: VwLensQueryDeps) {
   let figureColumns: string[] = []
   async function refreshLensFigures() {
     if (!d.projectUid) return
-    try {
-      const res = await fetch(`/api/movies?projectUid=${d.projectUid}`)
-      const movies = res.ok ? ((await res.json()).movies ?? []) as MovieEntry[] : []
-      lensFigures.value = lensFiguresFor(movies, d.imageUid)
-      figureColumns = movies.flatMap(m => (m.lens ? [m.lens.column] : []))
-    } catch { lensFigures.value = [] }
+    const r = await tryApi(getJson<{ movies?: MovieEntry[] }>('/api/movies', { query: { projectUid: d.projectUid } }))
+    if (!r.ok && r.status === 0) { lensFigures.value = []; return }   // no reply: keep the taken names
+    const movies = r.ok ? (r.data?.movies ?? []) : []
+    lensFigures.value = lensFiguresFor(movies, d.imageUid)
+    figureColumns = movies.flatMap(m => (m.lens ? [m.lens.column] : []))
   }
   void refreshLensFigures()
   // a figure saved, renamed or deleted anywhere — the server broadcasts `movies:changed`
@@ -97,25 +97,15 @@ export function useVwLensQuery(d: VwLensQueryDeps) {
    *  '' goes back to the lens's own name. */
   async function renameLens(row: LensFigureRow, displayName: string) {
     error.value = ''
-    try {
-      const res = await fetch('/api/movies/meta', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: d.projectUid, names: [row.name], displayName }),
-      })
-      if (!res.ok) error.value = `Could not rename ${row.label}`
-    } catch { error.value = `Could not rename ${row.label}` }
+    const r = await tryApi(postJson('/api/movies/meta', { projectUid: d.projectUid, names: [row.name], displayName }))
+    if (!r.ok) error.value = `Could not rename ${row.label}`
     await refreshLensFigures()
   }
   /** Delete a lens figure — the server takes its score column with it. */
   async function deleteLens(row: LensFigureRow) {
     error.value = ''
-    try {
-      const res = await fetch('/api/movies/delete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: d.projectUid, name: row.name }),
-      })
-      if (!res.ok) error.value = `Could not delete ${row.label}`
-    } catch { error.value = `Could not delete ${row.label}` }
+    const r = await tryApi(postJson('/api/movies/delete', { projectUid: d.projectUid, name: row.name }))
+    if (!r.ok) error.value = `Could not delete ${row.label}`
     if (shownScores.value === row.lens.column && d.setUid()) settings.setColourBy(d.setUid(), '')
     await Promise.all([refreshLensFigures(), refreshColumns()]); columnsTick.value++
   }
@@ -144,16 +134,12 @@ export function useVwLensQuery(d: VwLensQueryDeps) {
     if (!p.base) { error.value = 'Scored — no figure saved (needs a visible channel in 2D)'; return }
     const spec: FigureSpec & Record<string, unknown> = { ...lensFigureSpec(p.base, p.lens), look: p.movieLook }
     if (d.umPerPx() > 0) spec.scaleBarUm = niceFigureBarUm(spec.sizePx, d.umPerPx())
-    try {
-      const res = await fetch('/api/figures/render', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: d.projectUid, imageUid: d.imageUid, spec, name: `${d.imageName()}_${p.name}`,
-                               lens: figureLensBody(p.run, p.lens, p.t, column, p.look) }),
-      })
-      const body = await res.json().catch(() => ({}))
-      if (res.ok) saved.value = p.name
-      else error.value = `Scored — figure not saved: ${body.error ?? res.status}`
-    } catch (e) { error.value = `Scored — figure not saved: ${String(e)}` }
+    const r = await tryApi(postJson('/api/figures/render', {
+      projectUid: d.projectUid, imageUid: d.imageUid, spec, name: `${d.imageName()}_${p.name}`,
+      lens: figureLensBody(p.run, p.lens, p.t, column, p.look),
+    }))
+    if (r.ok) saved.value = p.name
+    else error.value = `Scored — figure not saved: ${r.error}`
     void refreshLensFigures()
   }
 

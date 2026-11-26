@@ -393,6 +393,7 @@ include(joinpath(@__DIR__, "suite", "pop_positions.jl"))   # the population posi
 # loads inside this file's aggregating testset scope, so any helpers defined earlier in
 # suite.jl are still in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
+include(joinpath(@__DIR__, "suite", "track_classes.jl"))
 
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 include(joinpath(@__DIR__, "suite", "drift_partial_timepoint.jl"))
