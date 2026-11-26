@@ -499,6 +499,10 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   on its cell plots (cell properties, proportion over time, population positions) beside Behaviour.
   The tracked set is chosen by the tracker, so per-cell readouts on it describe the cells it could
   follow, not the whole gate.
+- **Gating under tracked cells.** `_tracked` is never stored, so nothing can be gated under it. A
+  population's ⋯ menu offers **Add tracked cells** (flow map of a tracked segmentation): an ordinary
+  filter child `tracked`, rule `track_id > 0` — `_tracked`'s rule, so the two hold the same cells — that
+  follows re-tracking and takes gates like any population (`utils/trackedChild.ts`).
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths
