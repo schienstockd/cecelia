@@ -509,3 +509,24 @@ end
     @test isempty(only(board_export_provenance(proj, [uids["u"]]; pops = ["labels::Bcells/labels"])["populations"])["gateFiles"])
     rm(proj.root; recursive = true)
 end
+
+# HMM movement_5 ran on both images: on the three tracked T cell pops the clustering's movement_3 also
+# read, and then, last, on one image's OTI alone. The older image's run makes it a sweep version moved past
+function _hmm_m5_on_oti!(proj, uid)
+    img = init_object(proj.uid, uid)
+    log = read_run_log(img)
+    e = only(e for e in log if e["fun"] == "behaviour.hmm" && e["params"]["colName"] == "movement_5")
+    e["params"]["pops"] = ["Tcells/qc/OTI/_tracked"]
+    e["at"] = "2026-11-20T10:00:00"
+    write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+end
+
+@testset "Chain from history — a sweep version is moved past when any image ran it beside the one read" begin
+    proj, uids = _history_project("a" => "RFtn9f_TKufLV", "b" => "RFtn9f_TKufLV")
+    _hmm_m5_on_oti!(proj, uids["a"])
+    r = chain_from_history(proj, [uids["a"], uids["b"]])
+    m5 = only(f for f in r["finalOutputs"] if f["fn"] == "behaviour.hmm" && f["detail"] == "movement_5")
+    @test m5["siblingRead"]
+    @test any(c -> c["nodeId"] == m5["id"] && c["param"] == "pops", r["conflicts"])
+    rm(proj.root; recursive = true)
+end
