@@ -36,6 +36,7 @@ import { cropSourceLine } from '../utils/cropSource'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { fetchAcqCheck, type AcqCheckResult } from '../utils/acqCheckApi'
 import { findingsFor } from '../utils/acqCheck'
+import { getJson, postJson } from '../utils/api'
 // lazily: the set's check dialog opens this one for an image, so a static import would be circular
 const AcqCheckDialog = defineAsyncComponent(() => import('./AcqCheckDialog.vue'))
 
@@ -141,13 +142,10 @@ onMounted(async () => {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
   try {
-    const res = await fetch(`/api/images/stores?projectUid=${encodeURIComponent(projectUid)}`
-                            + `&imageUid=${encodeURIComponent(img.value.uid)}`)
-    if (res.ok) {
-      const j = await res.json()
-      stores.value = { versions: j.versions ?? {}, labels: j.labels ?? {} }
-    }
-  } catch { /* display-only */ }
+    const j = await getJson<{ versions?: Record<string, StoreInfo>; labels?: Record<string, StoreInfo> }>(
+      '/api/images/stores', { query: { projectUid, imageUid: img.value.uid } })
+    stores.value = { versions: j?.versions ?? {}, labels: j?.labels ?? {} }
+  } catch { /* display-only; the client logged it */ }
 })
 // 0 bytes means "not measured yet / store missing", not an empty store — show it as unknown.
 const size = (s: StoreInfo | null | undefined) => (s && s.bytes > 0 ? formatBytes(s.bytes) : '—')
@@ -229,13 +227,10 @@ async function saveEditVn() {
   if (!from || !projectUid || from === to || editVnError()) return
   editingBusy.value = true
   try {
-    const res = await fetch('/api/images/labels/rename', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: img.value.uid, from, to }),
-    })
-    const body = await res.json().catch(() => ({})) as { error?: string, image?: unknown }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    if (body.image) project.updateImageMeta(img.value.uid, body.image as Partial<CciaImage>)
+    // quiet: the catch below logs and toasts it
+    const body = await postJson<{ image?: unknown }>('/api/images/labels/rename',
+      { projectUid, imageUid: img.value.uid, from, to }, { quiet: true })
+    if (body?.image) project.updateImageMeta(img.value.uid, body.image as Partial<CciaImage>)
     toast.add({ severity: 'success', summary: 'Renamed', life: 2500,
                 detail: `Label set '${from}' → '${to}'` })
     cancelEditVn()

@@ -12,6 +12,7 @@ import InlineNote from './InlineNote.vue'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
+import { postJson } from '../utils/api'
 import { metadataWarning, flaggedFields, downstreamArtifactsNote, type PhysField as WarnField } from '../lib/imageMetadataWarnings'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
@@ -177,12 +178,8 @@ async function pushFieldsTo(fields: Record<string, unknown>, uids: string[]): Pr
   const withCleared = withZFlagCleared(fields)
   const values: Record<string, Record<string, unknown>> = {}
   for (const u of uids) values[u] = withCleared
-  const res = await fetch('/api/images/meta/set', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, values }),
-  })
-  const body = await res.json().catch(() => ({})) as { error?: string }
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+  // quiet: every caller logs the failure itself
+  await postJson('/api/images/meta/set', { projectUid, values }, { quiet: true })
   return true
 }
 

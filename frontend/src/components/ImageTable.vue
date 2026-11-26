@@ -36,6 +36,7 @@ import { allShown, loadThumb, parseShown, PREVIEW_PX, previewCaption, previewHtm
 import ThumbSlot from './ThumbSlot.vue'
 import type { TooltipBinding } from '../utils/tooltipOptions'
 import { setImageAttr } from '../utils/imageAttrApi'
+import { postJson } from '../utils/api'
 import { ALWAYS_SHOWN, CHANNELS_GROUP, DEFAULT_PREFS, applyOrder, applyShown, arrangeColumns, columnPrefsKey, groupsOf,
          orderedGroups, parseColumnPrefs, serializeColumnPrefs, setGroupShown, type ColumnPrefs } from '../utils/imageTableColumns'
 
@@ -182,15 +183,15 @@ async function saveChannel(img: CciaImage, idx: number, val: string) {
   while (names.length < idx) names.push('')
   names[idx - 1] = val
   try {
-    const res = await fetch('/api/images/channelnames', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUids: [img.uid], channelNames: names }),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    await postJson('/api/images/channelnames', { projectUid, imageUids: [img.uid], channelNames: names }, { quiet: true })
     project.updateImageMeta(img.uid, { channelNames: names })     // reflect immediately
   } catch (e) {
     log.error(`Failed to set channel ${idx}: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
+}
+// The per-image flags route (note, rating, include). quiet: every caller reverts and logs its own failure.
+function postInclusion(projectUid: string, imageUid: string, flags: Record<string, unknown>) {
+  return postJson('/api/images/inclusion/set', { projectUid, values: { [imageUid]: flags } }, { quiet: true })
 }
 async function saveNote(img: CciaImage, val: string) {
   const projectUid = projectMeta.current?.uid
@@ -198,11 +199,7 @@ async function saveNote(img: CciaImage, val: string) {
   const prev = img.note ?? ''
   project.setInclusion(img.uid, { note: val })                   // reflect immediately
   try {
-    const res = await fetch('/api/images/inclusion/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, values: { [img.uid]: { note: val } } }),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    await postInclusion(projectUid, img.uid, { note: val })
   } catch (e) {
     project.setInclusion(img.uid, { note: prev })                // revert on failure
     log.error(`Failed to save note: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
@@ -220,11 +217,7 @@ async function setRating(img: CciaImage, rating: ImageRating) {
   const prev = imageRating(img)
   project.setInclusion(img.uid, { rating })                   // reflect immediately
   try {
-    const res = await fetch('/api/images/inclusion/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, values: { [img.uid]: { rating } } }),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    await postInclusion(projectUid, img.uid, { rating })
   } catch (e) {
     project.setInclusion(img.uid, { rating: prev })           // revert on failure
     log.error(`Failed to rate image: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
@@ -293,11 +286,7 @@ async function setIncluded(img: CciaImage, included: boolean) {
     commit()
   }
   try {
-    const res = await fetch('/api/images/inclusion/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, values: { [img.uid]: { included } } }),
-    })
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    await postInclusion(projectUid, img.uid, { included })
   } catch (e) {
     project.setInclusion(img.uid, { included: !included })     // revert on failure
     log.error(`Failed to ${included ? 'include' : 'exclude'} image: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })

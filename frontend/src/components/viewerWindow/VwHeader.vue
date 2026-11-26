@@ -25,6 +25,7 @@ import { NAV_GROUPS, navItemFor } from '../../lib/navGroups'
 import { focusMainWindow, isSideBySide, snapKeys, toggleSideBySide, PLACE_VERDICT_MS, type PlaceOutcome } from '../../lib/popout'
 import { useToast } from '../../composables/useToast'
 import { useWindowListener } from '../../composables/useKeepAlive'
+import { getJson, tryApi } from '../../utils/api'
 
 const props = defineProps<{
   imageName: string
@@ -64,11 +65,9 @@ const movieImg = ref<CciaImage | null>(null)
 async function openMovie() {
   shareOpen.value = false
   movieOpen.value = true
-  try {
-    const q = `projectUid=${encodeURIComponent(props.projectUid)}&imageUid=${encodeURIComponent(props.imageUid)}`
-    const res = await fetch(`/api/images/meta?${q}`)
-    movieImg.value = res.ok ? ((await res.json()) as { image: CciaImage }).image : null
-  } catch { movieImg.value = null }
+  const r = await tryApi(getJson<{ image: CciaImage }>('/api/images/meta',
+    { query: { projectUid: props.projectUid, imageUid: props.imageUid } }))
+  movieImg.value = r.ok ? r.data.image : null
 }
 
 // The opener's page, read when the pointer reaches the button — same origin, so its hash is readable;
