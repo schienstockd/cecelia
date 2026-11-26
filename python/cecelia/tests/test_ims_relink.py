@@ -209,5 +209,66 @@ class PatchTest(unittest.TestCase):
         self.assertIn('[PROGRESS] 1/1', lines)
 
 
+
+def _s1(text):
+    """An Imaris-style string attribute: a 1-D array of single bytes."""
+    return np.frombuffer(text.encode(), dtype='S1')
+
+
+@unittest.skipUnless(HAVE_H5PY, 'h5py not installed')
+class RebuildDenseAttrsTest(unittest.TestCase):
+    """`rebuild_dense_attrs` runs on the import's working copy. What it must keep is everything a
+    reader can see: every attribute (value AND type), every child, the pixels, and the groups it had
+    no reason to touch."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.path = os.path.join(self.d, 'w.ims')
+        rng = np.random.default_rng(0)
+        self.pixels = rng.integers(0, 4095, (1, 8, 8), dtype=np.uint16)
+        with h5py.File(self.path, 'w') as f:
+            f.create_dataset('DataSet/ResolutionLevel 0/TimePoint 0/Channel 0/Data', data=self.pixels)
+            om = f.create_group('DataSetInfo/Original Metadata')
+            for i in range(40):
+                om.attrs[f'Key{i:03d}'] = _s1(f'value {i}')
+            om.attrs['AFloat'] = np.float32(0.5)
+            om.attrs['AnIntVec'] = np.array([1, 2, 3], dtype=np.uint32)
+            om.create_group('Nested').attrs['Inner'] = _s1('kept')
+            om.create_dataset('Table', data=np.arange(5, dtype=np.int16))
+            small = f.create_group('DataSetInfo/Image')
+            small.attrs['X'] = _s1('8')
+            self.small_addr = h5py.h5o.get_info(small.id).addr
+            self.expected = {k: (om.attrs[k], om.attrs.get_id(k).dtype) for k in om.attrs}
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_rebuilds_only_groups_over_the_compact_limit(self):
+        self.assertEqual(ims_relink.rebuild_dense_attrs(self.path, log=lambda _: None),
+                         ['DataSetInfo/Original Metadata'])
+        with h5py.File(self.path, 'r') as f:
+            # an untouched group is the SAME object, not a copy
+            self.assertEqual(h5py.h5o.get_info(f['DataSetInfo/Image'].id).addr, self.small_addr)
+
+    def test_keeps_every_attribute_value_and_type(self):
+        ims_relink.rebuild_dense_attrs(self.path, log=lambda _: None)
+        with h5py.File(self.path, 'r') as f:
+            om = f['DataSetInfo/Original Metadata']
+            self.assertEqual(set(om.attrs), set(self.expected))
+            for k, (v, dt) in self.expected.items():
+                self.assertEqual(om.attrs.get_id(k).dtype, dt, k)
+                np.testing.assert_array_equal(om.attrs[k], v, err_msg=k)
+
+    def test_keeps_children_and_pixels(self):
+        ims_relink.rebuild_dense_attrs(self.path, log=lambda _: None)
+        with h5py.File(self.path, 'r') as f:
+            om = f['DataSetInfo/Original Metadata']
+            self.assertEqual(bytes(om['Nested'].attrs['Inner']), b'kept')
+            np.testing.assert_array_equal(om['Table'][()], np.arange(5, dtype=np.int16))
+            np.testing.assert_array_equal(
+                f['DataSet/ResolutionLevel 0/TimePoint 0/Channel 0/Data'][()], self.pixels)
+            self.assertNotIn('Original Metadata.__cecelia_rebuild', f['DataSetInfo'])
+
+
 if __name__ == '__main__':
     unittest.main()
