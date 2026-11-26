@@ -453,9 +453,13 @@ async function submitFilterPop() {
 
 // "Add tracked cells": the population's tracked cells as a filter child (`track_id > 0`), in its colour,
 // so gates can be drawn under it. docs/todo/TRACK_SUBPOP_GATING_PLAN.md P4.
-const canTracked = (p: FlatPop) => !props.readonly && !bulk.value && canAddTrackedChild(p, g.flat, g.obsColumns, g.popType)
-async function addTrackedChild(p: FlatPop) {
-  await g.addFilterPop(TRACKED_CHILD_NAME, p.path, p.colour, [IS_TRACKED])
+// On a multi-selection it reaches every selected population that can take one (one request, one undo).
+const trackedTargets = computed(() => props.readonly ? []
+  : menuPops.value.filter(p => canAddTrackedChild(p, g.flat, g.obsColumns, g.popType)))
+async function addTrackedChildren() {
+  const under = trackedTargets.value.map(p => ({ parent: p.path, colour: p.colour }))
+  if (under.length === 1) await g.addFilterPop(TRACKED_CHILD_NAME, under[0].parent, under[0].colour, [IS_TRACKED])
+  else if (under.length) await g.addFilterPopUnder(TRACKED_CHILD_NAME, under, [IS_TRACKED])
 }
 
 // a hand-drawn gate vs a declarative filter pop (badge in the list)
@@ -962,10 +966,10 @@ function addMenuPopsToKiwi() {
                     @click.stop="runAction(() => openCreateBool(menuPops))">
               <i class="pi pi-link" /> {{ bulk ? 'Combine these…' : 'Combine with…' }}
             </button>
-            <button v-if="canTracked(actionsPop)" class="cc-actions-item"
+            <button v-if="trackedTargets.length" class="cc-actions-item"
                     v-tooltip.right="'Its cells in a track, as a population to gate under'"
-                    @click.stop="runAction(() => addTrackedChild(actionsPop!))">
-              <i class="pi pi-share-alt" /> Add tracked cells
+                    @click.stop="runAction(addTrackedChildren)">
+              <i class="pi pi-share-alt" /> Add tracked cells{{ bulk ? ` to ${trackedTargets.length}` : '' }}
             </button>
             <ConfirmButton v-if="!readonly && !actionsPop.transient && childCount(actionsPop) > 0"
                            @confirm="runAction(() => g.deletePopChildren(actionsPop!.path))"

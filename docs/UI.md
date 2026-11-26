@@ -3608,6 +3608,7 @@ twin of Julia `selection_roots`). Which actions reach more than one population
 | Delete population | yes | one `pop/delete` with `paths`; refused as a whole if a combined pop that stays would lose a term |
 | Combine with… | yes | the selection seeds the form's terms, under their shared parent (else all cells) |
 | Add to Kiwi | yes | one reference per population, client-side only |
+| Add tracked cells | yes | one `pop/add` with `under` — a `tracked` child under every selected flow pop that lacks one, each in its parent's colour; one undo step |
 | Delete N below it | no | "below a selection" holding a parent and its child is ambiguous (keep the child, or prune it?) |
 | Rename | no | a name is one population's; one name on many collides under a shared parent |
 | Rectangle ⇄ polygon | no | per-gate geometry, and only one direction is lossless — each needs its own look |

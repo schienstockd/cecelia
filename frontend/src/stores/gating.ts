@@ -398,10 +398,14 @@ export function createGatingStore(initialPopType: string) {
       filter: { measure: clusterMeasure(popType.value, suffix), fun: 'in', values: [], default_all: false } })
   // user-defined filter population (Decision 15): a compound AND-ed filter on any obs measures, under a
   // chosen parent, for the current popType. The backend mirrors conditions[1] onto the single fields.
+  const newFilter = (conditions: FilterCondition[]) => ({ conditions, measure: conditions[0]?.measure,
+    fun: conditions[0]?.fun, values: conditions[0]?.values, default_all: false })
   const addFilterPop = (name: string, parent: string, colour: string, conditions: FilterCondition[]) =>
-    _post('/api/gating/pop/add', { name, parent, colour,
-      filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun,
-                values: conditions[0]?.values, default_all: false } })
+    _post('/api/gating/pop/add', { name, parent, colour, filter: newFilter(conditions) })
+  // the same filter child under several parents (bulk "Add tracked cells") — one request, one undo step,
+  // all or none; each child takes the colour given with its parent
+  const addFilterPopUnder = (name: string, under: { parent: string; colour: string }[], conditions: FilterCondition[]) =>
+    _post('/api/gating/pop/add', { name, under, filter: newFilter(conditions) })
   // rewrite a filter pop's conditions (edit) — mirror onto single fields as add does.
   const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
     _post('/api/gating/pop/update', { path,
@@ -588,7 +592,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
+    addPop, addClusterPop, addFilterPop, addFilterPopUnder, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
     renamePop, updatePop, setPopsShown, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,
