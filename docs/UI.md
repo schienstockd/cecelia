@@ -332,6 +332,10 @@ reject a duplicate, so offering the existing ones suggests something guaranteed 
 > twice the size of the field they belong to. No selector reaches it — not a scoped rule, not a
 > global one. The escalation to a real popover was paid for by seeing it on screen, not anticipated.
 
+`groups` (`{ title, options }[]`, in place of `options`) puts a heading over each kind of value when
+one box offers two — the image search's names and uids. Empty groups drop out; the arrow keys walk one
+list across the headings.
+
 Built on `TeleportPopover`, so it inherits teleporting, positioning, theme tokens, outside-click and
 Escape, and owns only the list and the keys. Three behaviours worth knowing before changing it:
 
@@ -1456,8 +1460,10 @@ image table's search box.
 `ModuleLayout` puts a `SuggestInput` in `AttrFilterPanel`'s `#lead`: the one list-search rule
 (`matchesQuery` — every word, case-insensitive substring) over the image **name and uid**
 (`utils/imageTable.ts` `matchesImageSearch`; same answer as the header's jump search), suggestions from
-`imageSearchSuggestions` (names, then uids, capped at 30 so focusing on a 2000-image set doesn't render
-4000 buttons). The box updates per key; the table follows after the same `APPLY_WAIT` pause. Not
+`imageSearchSuggestions` — a *Names* and an *IDs* group (SuggestInput `groups`), each under its
+heading because one flat list of short names and 6-character uids read as one mixed column. Capped at
+30 in total so focusing on a 2000-image set doesn't render 4000 buttons; the cap is shared (each group
+gets half, and either takes what the other leaves), so a set with many names still offers its uids. The box updates per key; the table follows after the same `APPLY_WAIT` pause. Not
 persisted — a lookup, not a standing view. The Filter button now shows on every set (search needs no
 attributes). Two guards keep a keystroke from re-rendering the table when nothing changed: a filter
 that keeps every image yields `undefined` (no filter), and both `filteredUids` and `ImageTable`'s rows
