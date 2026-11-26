@@ -1349,8 +1349,8 @@ async function loadTrackClasses() {
   const next = new Map<string, TrackClassInfo>()
   await Promise.all(want.map(async r => {
     try {
-      const res = await fetch(trackClassesUrl({ projectUid, imageUid, valueName: r.vn, pop: r.path }), { cache: 'no-store' })
-      if (res.ok) next.set(r.key, await res.json() as TrackClassInfo)
+      next.set(r.key, await getJson<TrackClassInfo>(trackClassesUrl({ projectUid, imageUid, valueName: r.vn, pop: r.path }),
+                                                    { cache: 'no-store', quiet: true }))
     } catch { /* that ribbon keeps its population colour */ }
   }))
   if (seq !== trackClassSeq || (!next.size && !trackClassInfo.value.size)) return
@@ -1365,12 +1365,10 @@ async function setTrackClass(key: string, patch: { threshold?: number; level?: n
   const row = trackDrawablePops.value.find(r => r.key === key)
   const cur = trackClassInfo.value.get(key)
   if (!row || !cur) return
-  const res = await fetch('/api/gating/pop/update', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUid, valueName: row.vn, popType: 'flow', path: row.path,
-                           trackClass: { threshold: patch.threshold ?? cur.threshold, level: patch.level ?? cur.level } }),
-  }).catch(() => null)
-  if (!res?.ok) { logStore.error(`Could not save the track class for ${row.name}`, { source: 'viewer' }); return }
+  const res = await tryApi(postJson('/api/gating/pop/update',
+    { projectUid, imageUid, valueName: row.vn, popType: 'flow', path: row.path,
+      trackClass: { threshold: patch.threshold ?? cur.threshold, level: patch.level ?? cur.level } }, { quiet: true }))
+  if (!res.ok) { logStore.error(`Could not save the track class for ${row.name}: ${res.error}`, { source: 'viewer' }); return }
   loadTrackClasses()
 }
 /** The population layers with something to list, for the Populations section — a segmentation
