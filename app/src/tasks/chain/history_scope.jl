@@ -175,9 +175,9 @@ function _history_usage(groups, leaves_of, n_images::Int, runs)::Dict{Int,String
     # a redone A fed nothing after its redo
     reads = _hs_reads
     read_by = [Int[j for (j, b) in enumerate(nodes) if reads(b, a)] for a in nodes]
-    sibling(s) = (s.fn, _history_inputs(s.params, s.lv))
-    read_sweeps = Set(sibling(nodes[i]) for i in eachindex(nodes) if !isempty(read_by[i]))
-    final_try(i) = isempty(read_by[i]) && sibling(nodes[i]) in read_sweeps
+    sibling(s) = _history_sibling_keys(s.fn, s.inputs, s.lv)
+    read_sweeps = union(Set{Tuple{String,String}}(), (sibling(nodes[i]) for i in eachindex(nodes) if !isempty(read_by[i]))...)
+    final_try(i) = isempty(read_by[i]) && !isdisjoint(sibling(nodes[i]), read_sweeps)
     makes_pop(s) = any(r -> s.ns == r[1] && s.out == r[2] && startswith(s.fn, r[3]), runs)
     seed(i) = !(i in redone) && ((length(nodes[i].imgs) >= n_images && !final_try(i)) || makes_pop(nodes[i]))
     used = Set{Int}()
