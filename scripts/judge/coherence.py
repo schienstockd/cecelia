@@ -111,18 +111,54 @@ _JL_ROUTE = re.compile(r'"(/api/[^"$]*)"')
 _CALLER = re.compile(r"""(?:^|[`'"}])(/api/[^`'"$?{\s]*)""")
 
 
+# Where route callers are looked for. Shared with scripts/architecture/boundaries_extract.py, which
+# lists the same callers per route, so its uncalled routes and this count are one number.
+CALLER_DIRS = ["frontend/src", "mcp", "python/cecelia", "app/src", "preview", "scripts"]
+CALLER_SUFFIXES = {".ts", ".vue", ".py", ".mjs"}
+
+
+def strip_comments(text: str, suffix: str) -> str:
+    """Drop comments and docstrings, so a route named in prose ("Called by /api/x") is not a caller."""
+    if suffix == ".py":
+        text = re.sub(r'(?s)("""|\'\'\')(.*?)\1', "", text)
+        return re.sub(r"(?m)#.*$", "", text)
+    if suffix == ".jl":
+        text = re.sub(r'(?s)""".*?"""', "", text)
+        return re.sub(r"(?m)^\s*#.*$", "", text)
+    text = re.sub(r"(?s)/\*.*?\*/", "", text)
+    return re.sub(r"(?m)^\s*//.*$", "", text)
+
+
+def route_callers(root: pathlib.Path) -> dict[str, set[pathlib.Path]]:
+    """Every `/api/...` literal outside tests and comments → the files that name it."""
+    out: dict[str, set[pathlib.Path]] = {}
+    for p in _source_files(root, CALLER_DIRS, CALLER_SUFFIXES):
+        for m in _CALLER.findall(strip_comments(p.read_text(encoding="utf-8", errors="ignore"), p.suffix)):
+            c = m.rstrip("/")
+            if c != "/api":
+                out.setdefault(c, set()).add(p)
+    return out
+
+
+def route_called_by(route: str, callers: dict[str, set[pathlib.Path]]) -> set[pathlib.Path]:
+    """Files calling `route`: as itself, as `/api/x/<id>`, or through a prefix that builds `/api/x/<op>`."""
+    out: set[pathlib.Path] = set()
+    for c, fs in callers.items():
+        if c == route or c.startswith(route + "/") or (route.startswith(c + "/") and c.count("/") > 2):
+            out |= fs
+    return out
+
+
+#: On a route's line: no caller, on purpose (a smoke test, a consumer to come) — `ARCH-EXEMPT: <reason>`.
+ROUTE_EXEMPT = "ARCH-EXEMPT:"
+
+
 def count_routes_uncalled(root: pathlib.Path) -> int:
     routes = {m.rstrip("/") for p in _source_files(root, ["api/src"], {".jl"})
-              for m in _JL_ROUTE.findall(p.read_text(encoding="utf-8", errors="ignore"))}
-    callers = {m.rstrip("/") for p in _source_files(root, ["frontend/src", "mcp", "python/cecelia", "scripts"],
-                                                    {".ts", ".vue", ".py", ".mjs"})
-               for m in _CALLER.findall(p.read_text(encoding="utf-8", errors="ignore"))}
-    callers.discard("/api")
-
-    def called(r: str) -> bool:   # `/api/x` called as `/api/x/<id>`, or a caller's prefix builds `/api/x/<op>`
-        return any(c == r or c.startswith(r + "/") or (r.startswith(c + "/") and c.count("/") > 2)
-                   for c in callers)
-    return sum(1 for r in routes if r.count("/") > 1 and not called(r))
+              for line in p.read_text(encoding="utf-8", errors="ignore").splitlines() if ROUTE_EXEMPT not in line
+              for m in _JL_ROUTE.findall(line)}
+    callers = route_callers(root)
+    return sum(1 for r in routes if r.count("/") > 1 and not route_called_by(r, callers))
 
 
 _CITED = (re.compile(r"`([A-Za-z_][A-Za-z0-9_!]*)\("), re.compile(r"`([a-z_][a-z0-9_]*_[a-z0-9_]*!?)`"))

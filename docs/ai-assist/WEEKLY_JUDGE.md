@@ -478,6 +478,21 @@ has merged; if it hasn't, the bug is still open there and back on the list. The 
 The rules-only PR only carries `EFFECTIVENESS.md` to main: merge it whenever, and answer its
 proposals in `judge-review`.
 
+
+**Coherence gaps.** Last, after `--auto`, the same pass runs `judge-gaps` (`scripts/judge/gaps_fix.py`):
+the gaps `docs/architecture/gaps.md` lists — where the code breaks its declared rules (two ends of a
+boundary that don't match, a Julia call up the layer order, the viewer engine reaching into an app store,
+an import loop). `test_architecture_gaps.py` already stops the list from growing; this makes it shrink.
+
+- The easiest few a pass (`WEEKLY` = 3, or `--limit N`): broken ends first, then in `gaps.md` order.
+  `route-uncalled` is never taken: deleting a route, or keeping it for a consumer to come, is yours.
+- One session and PR per gap, off main, through the same pipeline as `--auto` (`auto_fix.run_job`). The
+  agent closes the gap, regenerates the views, lowers the ceiling (`pixi run arch-gaps-baseline`) and
+  runs the tests, so the PR shows the gap gone and the baseline one lower.
+- A false alarm comes back `not_real` with what the extractor misread; a gap that needs a design choice
+  comes back `left` with the choice. Both stay in `gaps.md` for you. Each gap is tried once
+  (`~/.cecelia-effectiveness/gaps_fix.jsonl`, keyed by kind + subject).
+- `JUDGE_GAPS_FIX=0` in the unit skips it.
 ## The chart
 
 The README embeds two SVGs from the orphan `judge-assets` branch: `effectiveness.svg`, the weekly
@@ -532,6 +547,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`); `--date D` an older record, flagged superseded on every screen |
 | `pixi run judge-review --auto` | Work the `fix` bugs and the `decide` ones you answered, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background, `--resume-stopped` for worktrees a run fixed but stopped before recital) |
 | `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
+| `pixi run judge-gaps` | Close the easiest few coherence gaps from `docs/architecture/gaps.md` unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |
 | `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it, for the newest record only |

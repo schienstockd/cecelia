@@ -1,0 +1,10 @@
+[
+ {
+  "kind": "py-cycle",
+  "subject": "movie_io ↔ title_card",
+  "where": [
+   "python/cecelia/utils/movie_io.py",
+   "python/cecelia/utils/title_card.py"
+  ]
+ }
+]

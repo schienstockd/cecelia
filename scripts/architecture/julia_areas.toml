@@ -1,0 +1,71 @@
+# Curated grouping of Julia source files into areas for docs/architecture/julia/.
+#
+# The backend is ONE module (`Cecelia`, 240+ `include`d files), so there is no module graph to
+# draw. Areas are the substitute: each file belongs to exactly one, and edges between areas come
+# from the code (see julia_extract.jl). This list is the only hand-kept part — the script prints
+# any file no pattern matches, and `python/cecelia/tests/test_architecture_docs.py` fails on one, so a new file forces a
+# decision here rather than silently disappearing from the picture.
+#
+# Patterns are paths relative to the repo root; a trailing "/" matches a whole directory.
+# First match wins, so list specific patterns before broad ones.
+
+[areas]
+"model"            = ["app/src/model/", "app/src/helpers.jl", "app/src/storage.jl",
+                      "app/src/data_source.jl", "app/src/discard.jl", "app/src/events.jl"]
+"jobs (export, import, maintenance)" = ["app/src/jobs.jl", "app/src/project_io.jl", "app/src/stored_zip.jl",
+                      "app/src/maintenance.jl"]
+"config"           = ["app/src/config/", "app/src/config.jl", "app/src/config_dir.jl", "app/src/ports.jl",
+                      "app/src/api_token.jl", "app/src/single_instance.jl", "app/src/utils.jl"]
+"run records"      = ["app/src/run_log.jl", "app/src/run_sidecars.jl", "app/src/run_usage.jl"]
+"scheduler+chains" = ["app/src/tasks/scheduler/", "app/src/tasks/scheduler.jl", "app/src/tasks/chain/",
+                      "app/src/tasks/chain.jl", "app/src/tasks/task_outcomes.jl", "app/src/preview.jl"]
+"task framework"   = ["app/src/tasks/task/", "app/src/tasks/task.jl", "app/src/tasks/task_registry.jl",
+                      "app/src/tasks/param_validators.jl", "app/src/tasks/custom_modules.jl",
+                      "app/src/tasks/plugins.jl", "app/src/tasks/channel_advisory.jl"]
+"tasks"            = ["app/src/tasks/"]
+"runner"           = ["app/src/runner/", "app/src/lifeline.jl"]
+"python bridge"    = ["app/src/py_runner.jl"]
+"cell data"        = ["app/src/label_props.jl", "app/src/label_correction.jl", "app/src/segmentation.jl",
+                      "app/src/correction_staleness.jl"]
+"gating"           = ["app/src/gating/", "app/src/qc_gating.jl"]
+"tracking+spatial" = ["app/src/tracking/", "app/src/behaviour/", "app/src/spatial.jl",
+                      "app/src/spatial_graph_lines.jl", "app/src/skeleton_lines.jl", "app/src/anisotropy.jl",
+                      "app/src/region_lens_query.jl", "app/src/rois.jl"]
+"qc+checks"        = ["app/src/qc/", "app/src/qc.jl", "app/src/qc_cohort.jl", "app/src/acq_check.jl",
+                      "app/src/acq_sampling.jl", "app/src/claim_checks.jl", "app/src/experiment_design.jl"]
+"plots+boards"     = ["app/src/plotting/", "app/src/analysis_board_spec.jl", "app/src/analysis_boards.jl",
+                      "app/src/analysis_runs.jl", "app/src/analysis_export_provenance.jl",
+                      "app/src/figures.jl", "app/src/cell_cards.jl", "app/src/view_profiles.jl"]
+"hpc"              = ["app/src/hpc/"]
+"ai+lab log"       = ["app/src/ai/", "app/src/lab_log.jl", "app/src/lab_log_context.jl"]
+"logging"          = ["app/src/log_stream.jl"]
+"package root"     = ["app/src/Cecelia.jl"]
+
+# The API server (api/src) is a script that `include`s its files into Main, not a package. Its
+# areas are the callers in the API → package view.
+"api: server+ws"   = ["api/src/server.jl", "api/src/sockets.jl", "api/src/push_api.jl", "api/src/push_writer.jl",
+                      "api/src/tls.jl", "api/src/runner_api.jl"]
+"api: rendering"   = ["api/src/image_render.jl", "api/src/image_geometry.jl", "api/src/chunk_cache.jl",
+                      "api/src/movie_", "api/src/gate_plot_render.jl", "api/src/overlay_author.jl",
+                      "api/src/thumbnails_api.jl", "api/src/viewer_", "api/src/shader_constants.jl",
+                      "api/src/captures_api.jl"]
+"api: claude+kiwi" = ["api/src/kiwi_", "api/src/review_turn.jl", "api/src/observer_api.jl",
+                      "api/src/blackboard_", "api/src/claim_review.jl", "api/src/repl_api.jl"]
+"api: routes"      = ["api/src/"]
+
+# Declared layer order, bottom tier first. A package area may call its own tier and the tiers below;
+# a call UP the order is a gap (`julia-upward` in docs/architecture/gaps.md). Same-tier areas may call
+# each other. The api areas sit above every tier. Every package area must be in exactly one tier —
+# test_architecture_docs.py checks. Change the order here when the design changes, not to hide a gap.
+[layers]
+tiers = [
+  ["config", "logging"],                                  # settings, paths, ports, the log stream
+  ["model", "run records"],                               # Project / Set / Image, run logs, and their persistence
+  ["python bridge", "cell data"],                         # run_py; label props, segmentation records
+  ["gating", "tracking+spatial", "qc+checks"],            # analyses over cell data
+  ["task framework"],                                     # CciaTask, specs, param validation
+  ["tasks"],                                              # the task implementations
+  ["scheduler+chains", "hpc", "jobs (export, import, maintenance)"],  # running tasks and jobs
+  ["runner", "plots+boards", "ai+lab log"],               # consumers of everything below
+  ["package root"],
+]
