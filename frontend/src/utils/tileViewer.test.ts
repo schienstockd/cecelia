@@ -3,6 +3,7 @@ import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
   tileSlotShape, tileMaskSourceId, sameMaskLayer, retryWhenMaskMoved, channelRuns, splitChannelSlab,
+  planeNeedsTiling,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -397,5 +398,26 @@ describe('splitChannelSlab — a cTo body is channel-slowest', () => {
   })
   it('refuses a body that is not n equal parts rather than shifting channels', () => {
     expect(() => splitChannelSlab(new ArrayBuffer(10), 3)).toThrow()
+  })
+})
+
+describe('planeNeedsTiling', () => {
+  // I10ZTq/J7OFhM: 58 t × 2 ch × 2576², 512² chunks, 26 MB a plane — far under the byte trigger.
+  const J7: ViewerMeta = { ...META, nX: 2576, nY: 2576, nC: 2, nT: 58, levels: [] }
+  it('tiles a plane wider than a 2048 (integrated) 3D-texture limit, however few bytes', () => {
+    expect(planeNeedsTiling(J7, 2048)).toBe(true)
+    expect(planeNeedsTiling({ ...J7, nX: 1000 }, 2048)).toBe(true)
+  })
+  it('assumes the WebGPU default 2048 before the adapter is known', () => {
+    expect(planeNeedsTiling(J7)).toBe(true)
+  })
+  it('keeps the flat path when the adapter holds the plane (discrete 16384)', () => {
+    expect(planeNeedsTiling(J7, 16384)).toBe(false)
+  })
+  it('keeps the flat path at exactly the limit', () => {
+    expect(planeNeedsTiling({ ...J7, nX: 2048, nY: 2048 }, 2048)).toBe(false)
+  })
+  it('still tiles a whole slide by bytes on any adapter', () => {
+    expect(planeNeedsTiling(META, 16384)).toBe(true)
   })
 })

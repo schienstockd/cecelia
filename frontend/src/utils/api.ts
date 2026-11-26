@@ -25,6 +25,11 @@
  */
 import { useLogStore } from '../stores/log'
 
+/** A call that reaches the backend: a bare `fetch(` or any of this module's shapes. For source-scanning
+ *  guards (`continuousControls.test.ts`, `dataRefreshCoverage.test.ts`) — they matched `fetch(` alone,
+ *  and would go blind as calls move onto this client. */
+export const BACKEND_CALL = /\b(?:fetch|apiFetch|getJson|postJson|postJsonOrNull|getBuffer|getText|svcPost)\s*(?:<[^>()]*>)?\s*\(/
+
 type QueryValue = string | number | boolean | null | undefined
 export type Query = Record<string, QueryValue | QueryValue[]>
 
@@ -42,6 +47,8 @@ export interface ApiOptions {
   /** Don't log the failure: `true` for any status, or the statuses this caller handles itself. */
   quiet?: boolean | number[]
   keepalive?: boolean
+  /** The browser HTTP cache mode — `'no-store'` for a poll or a read that must never be served stale. */
+  cache?: RequestCache
 }
 
 export class ApiError extends Error {
@@ -136,7 +143,7 @@ export async function apiFetch(path: string, opts: ApiOptions = {}): Promise<Res
   }
   let res: Response
   try {
-    res = await fetch(url, { method, headers, body, signal: signalFor(opts), keepalive: opts.keepalive })
+    res = await fetch(url, { method, headers, body, signal: signalFor(opts), keepalive: opts.keepalive, cache: opts.cache })
   } catch (e) {
     if (isAbort(e)) throw e
     const timedOut = !!opts.timeoutMs && e instanceof DOMException && e.name === 'TimeoutError'

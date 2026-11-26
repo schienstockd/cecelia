@@ -118,11 +118,26 @@ describe('imageSearchSuggestions', () => {
     { uid: 'Zz11aa', name: 'LN_ctrl' }, { uid: 'ln22bb', name: 'spleen' },
     { uid: 'Yy33cc', name: 'LN_ctrl' }, { uid: 'Xx44dd', name: 'blood_LN' },
   ]
-  it('offers names (prefix first) then uids, de-duplicated', () => {
-    expect(imageSearchSuggestions(imgs, 'ln')).toEqual(['LN_ctrl', 'blood_LN', 'ln22bb'])
+  it('offers a Names group (prefix first) then an IDs group, each de-duplicated', () => {
+    expect(imageSearchSuggestions(imgs, 'ln')).toEqual([
+      { title: 'Names', options: ['LN_ctrl', 'blood_LN'] },
+      { title: 'IDs', options: ['ln22bb'] },
+    ])
+  })
+  it('drops a group with no match', () => {
+    expect(imageSearchSuggestions(imgs, 'Yy3')).toEqual([{ title: 'IDs', options: ['Yy33cc'] }])
   })
   it('an empty query offers everything up to the cap', () => {
-    expect(imageSearchSuggestions(imgs, '')).toHaveLength(7)
-    expect(imageSearchSuggestions(imgs, '', 2)).toEqual(['LN_ctrl', 'spleen'])
+    expect(imageSearchSuggestions(imgs, '').flatMap(g => g.options)).toHaveLength(7)
+  })
+  it('the cap is shared: many names cannot crowd the uids out', () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ uid: `u${i}`, name: `img_${i}` }))
+    const [names, ids] = imageSearchSuggestions(many, '', 30)
+    expect(names.options).toHaveLength(15)
+    expect(ids.options).toHaveLength(15)
+    // …and a group that needs less than half leaves the rest to the other
+    const [n2, i2] = imageSearchSuggestions([...imgs, ...many.map(m => ({ uid: m.uid, name: 'same' }))], '', 10)
+    expect(n2.options).toEqual(['LN_ctrl', 'spleen', 'blood_LN', 'same'])
+    expect(i2.options).toHaveLength(6)
   })
 })

@@ -483,7 +483,7 @@ const visibleUids = computed<string[]>(() =>
             <div class="cc-filter-row">
               <span class="cc-filter-key cc-eyebrow cc-fs-sm">Search</span>
               <span class="image-search">
-                <SuggestInput v-model="imageQuery" :options="searchSuggestions"
+                <SuggestInput v-model="imageQuery" :groups="searchSuggestions"
                   placeholder="Name or ID…" tip="Show only images whose name or ID contains these words" />
               </span>
               <button v-if="imageQuery" class="cc-btn cc-btn-ghost cc-btn-icon" aria-label="Clear search"

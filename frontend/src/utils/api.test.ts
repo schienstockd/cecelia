@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { ApiError, apiFetch, getBuffer, getJson, postJson, tryApi, withQuery } from './api'
+import { ApiError, BACKEND_CALL, apiFetch, getBuffer, getJson, postJson, tryApi, withQuery } from './api'
 
 // The real log store needs `window` (its cross-window channel); the client only calls `warn`.
 const logged: { message: string; source?: string }[] = []
@@ -62,6 +62,9 @@ describe('api client', () => {
     expect(JSON.parse(init.body)).toEqual({ name: 'p' })
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     expect(await postJson('/api/x', {})).toBeNull()
+    fetchMock.mockResolvedValueOnce(jsonReply(200, {}))
+    await getJson('/api/health', { cache: 'no-store' })
+    expect(fetchMock.mock.calls[2][1].cache).toBe('no-store')
   })
 
   it('a 409 the caller handles is quiet, and its body (the current state) reaches the caller', async () => {
@@ -101,6 +104,14 @@ describe('api client', () => {
     noPinia = true
     fetchMock.mockResolvedValue(jsonReply(500, { error: 'boom' }))
     await expect(apiFetch('/api/a')).rejects.toMatchObject({ status: 500, message: 'boom' })
+  })
+
+  it('BACKEND_CALL sees a bare fetch and every client shape, generic or not, but not a lookalike', () => {
+    for (const src of ['await fetch(`/api/x`)', 'getJson<{ a: number }>(`/api/x`)', 'postJson(url, b)',
+                       'getBuffer (u)', 'apiFetch(u)', 'postJsonOrNull(u, b)', 'svcPost(u)'])
+      expect(BACKEND_CALL.test(src), src).toBe(true)
+    for (const src of ['prefetch(u)', 'refetchJson(u)', 'getJsonPath', 'fetchBuf(q)'])
+      expect(BACKEND_CALL.test(src), src).toBe(false)
   })
 
   it('withQuery drops null/undefined, repeats arrays and appends to an existing query', () => {
