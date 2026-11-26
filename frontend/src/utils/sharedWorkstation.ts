@@ -6,6 +6,8 @@
 // visibility gate, not security. Each item is its own toggle; there is no master "shared machine"
 // switch. To add an item: one entry in SHARED_WORKSTATION_ITEMS on BOTH sides.
 
+import { getJson, postJson } from './api'
+
 export interface SharedWorkstationItem {
   key: string
   label: string
@@ -59,19 +61,11 @@ export function sharedWorkstationRows(items: Record<string, unknown>): SharedWor
 }
 
 export async function fetchSharedWorkstation(): Promise<Record<string, boolean>> {
-  const res = await fetch('/api/config/shared-workstation')
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return (data as any).items ?? {}
+  const data = await getJson<{ items?: Record<string, boolean> } | null>('/api/config/shared-workstation')
+  return data?.items ?? {}
 }
 
 export async function setSharedWorkstation(key: string, value: boolean): Promise<Record<string, boolean>> {
-  const res = await fetch('/api/config/shared-workstation/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return (data as any).items ?? {}
+  const data = await postJson<{ items?: Record<string, boolean> } | null>('/api/config/shared-workstation/set', { key, value })
+  return data?.items ?? {}
 }

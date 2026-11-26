@@ -2,9 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { requestEnvInstall, onSystemEnvsChanged, invalidateSystemEnvs } from './systemEnvs'
 
 function stubResponse(status: number, body: unknown) {
-  vi.stubGlobal('fetch', vi.fn(async () => ({
-    ok: status >= 200 && status < 300, status, json: async () => body,
-  })))
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })))
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -33,9 +31,10 @@ describe('requestEnvInstall', () => {
   })
 
   it('a body that is not JSON still gives an error', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: false, status: 502, json: async () => { throw new SyntaxError('bad') } })))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 502 })))
     expect(await requestEnvInstall('cellpose-v3')).toEqual({ status: 'error', error: 'HTTP 502' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Bad Gateway', { status: 502 })))
+    expect(await requestEnvInstall('cellpose-v3')).toEqual({ status: 'error', error: 'Bad Gateway' })
   })
 })
 

@@ -19,6 +19,7 @@ import { parseOverlays } from './overlayLayers'
 import { channelLegend, type LegendItem } from './viewLegend'
 import { WHITE, OVERLAY_GREY } from '../plots/fixedColours'
 import { categoryColours, categoryKey, compareCategories } from '../plots/categoryColours'
+import { postJson, tryApi } from './api'
 
 // ── Capture-view legend (shared: analysis-board strip + movie title card) ───────
 // The ONE path that turns a captured viewState snapshot into legend pieces: channels from the
@@ -43,14 +44,11 @@ export async function captureViewLegend(
                  ...(o.colour !== undefined ? { colour: o.colour } : {}) }))
   let populations: CapturedViewLegend['populations'] = []
   let cby: CapturedViewLegend['colourBy'] | undefined
-  const res = await fetch('/api/viewer/overlay-legend', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUid, colourBy, overlayPops, colourOverrides }),
-  }).catch(() => undefined)
-  if (res?.ok) {
-    const j = await res.json().catch(() => ({})) as CapturedViewLegend & { ok?: boolean }
-    populations = j.populations ?? []
-    cby = j.colourBy
+  const r = await tryApi(postJson<CapturedViewLegend | null>('/api/viewer/overlay-legend',
+    { projectUid, imageUid, colourBy, overlayPops, colourOverrides }))
+  if (r.ok) {
+    populations = r.data?.populations ?? []
+    cby = r.data?.colourBy
   }
   return { channels, populations, colourBy: cby }
 }
