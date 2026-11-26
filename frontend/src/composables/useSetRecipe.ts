@@ -6,6 +6,7 @@ import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { writtenRecipe, suggestRecipe } from '../utils/setRecipe'
+import { postJson } from '../utils/api'
 
 export function useSetRecipe() {
   const project = useProjectStore()
@@ -23,13 +24,8 @@ export function useSetRecipe() {
     if (!s || !pu) return
     busy.value = true
     try {
-      const res = await fetch('/api/sets/recipe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: pu, setUid: s.uid, recipe: id ?? '' }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      // quiet: the catch below logs the failure itself, with what was being done
+      await postJson('/api/sets/recipe', { projectUid: pu, setUid: s.uid, recipe: id ?? '' }, { quiet: true })
       project.setSetRecipe(s.uid, id)
     } catch (e) {
       log.error(`Failed to set the recipe: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })

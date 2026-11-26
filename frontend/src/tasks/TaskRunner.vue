@@ -72,6 +72,7 @@ import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
 import { isLiveStatus } from '../lib/taskStatus'
 import { expandSweep, parseSweepState, sweepStateKey, sweepableParams, type SweepState } from '../utils/paramSweep'
 import { pinSweepTarget, runSweepInSequence, type SweepTarget } from '../utils/sweepSequence'
+import { getJson, postJson, tryApi } from '../utils/api'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -139,10 +140,8 @@ const selectedPool = ref('cpu')
 const poolOptions = computed<ChipOption[]>(() => pools.value.map(name => ({ value: name, label: name })))
 
 async function loadPools() {
-  try {
-    const res = await fetch('/api/pools')
-    if (res.ok) pools.value = (await res.json() as { name: string }[]).map(p => p.name)
-  } catch { /* backend may not be ready */ }
+  const r = await tryApi(getJson<{ name: string }[]>('/api/pools'))
+  if (r.ok) pools.value = (r.data ?? []).map(p => p.name)   // else: backend may not be ready
 }
 onMounted(loadPools)
 
@@ -352,12 +351,9 @@ async function fetchSavedParams(
   // it found one rather than falling back — the difference decides whether it is safe to replace a
   // form the user may have edited.
   if (valueName) qs.set('valueName', valueName)
-  try {
-    const res = await fetch(`/api/tasks/funparams?${qs.toString()}`)
-    if (!res.ok) return null
-    const d = await res.json() as { params?: ParamValues | null; matched?: boolean }
-    return { params: d.params ?? {}, matched: d.matched === true }
-  } catch { return null }
+  const r = await tryApi(getJson<{ params?: ParamValues | null; matched?: boolean }>(`/api/tasks/funparams?${qs.toString()}`))
+  if (!r.ok) return null
+  return { params: r.data?.params ?? {}, matched: r.data?.matched === true }
 }
 
 // Saved params are fetched from the server, so guard against a slower earlier request landing after
@@ -555,10 +551,8 @@ async function onCopyPick(row: CopyFunParamsRow) {
     imageUid: row.imageUid, valueName: row.valueName,
   })
   try {
-    const r = await fetch(`/api/tasks/funparams?${qs.toString()}`)
-    if (!r.ok) { handoffNote.value = `Could not read settings from ${row.imageName}`; return }
-    const d = await r.json() as { params?: ParamValues | null; matched?: boolean }
-    if (!d.params) { handoffNote.value = `No saved settings for "${row.valueName}" on ${row.imageName}`; return }
+    const d = await getJson<{ params?: ParamValues | null; matched?: boolean }>(`/api/tasks/funparams?${qs.toString()}`)
+    if (!d?.params) { handoffNote.value = `No saved settings for "${row.valueName}" on ${row.imageName}`; return }
     handoff.offer({
       funName: def.fun_name, values: d.params,
       source: `"${row.valueName}" on ${row.imageName}`,
@@ -699,7 +693,7 @@ const whenOpen = useStoredSectionOpen('cc-task-about-open-v2', false)
 const runnerDown = ref(false)
 async function pollRunner() {
   try {
-    const d = await (await fetch('/api/runner/status')).json()
+    const d = await getJson<{ enabled?: boolean; running?: boolean }>('/api/runner/status', { quiet: true })
     runnerDown.value = d?.enabled === true && d?.running !== true
   } catch { runnerDown.value = false }   // can't ask → don't cry wolf
 }
@@ -708,8 +702,7 @@ useActiveInterval(pollRunner, 20000)
 
 async function startRunner() {
   runnerDown.value = false                       // optimistic: the row shows the truth in a moment
-  try { await fetch('/api/runner/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }) }
-  catch { /* the poll below re-asserts reality */ }
+  await tryApi(postJson('/api/runner/restart', {}))   // a failure is logged; the poll below re-asserts reality
   setTimeout(pollRunner, 2000)
 }
 

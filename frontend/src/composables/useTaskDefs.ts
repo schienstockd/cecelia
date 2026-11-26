@@ -2,6 +2,7 @@ import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import type { TaskDef } from '../tasks/types'
 import { useWsStore } from '../stores/ws'
 import { onSystemEnvsChanged } from '../utils/systemEnvs'
+import { getJson } from '../utils/api'
 
 // Fetches task definitions from the package-owned JSON specs via the API.
 // Retries automatically (up to MAX_RETRIES times, RETRY_DELAY ms apart) so that
@@ -31,18 +32,17 @@ export function useTaskDefs(category: string | string[]) {
     try {
       // One category → let the server filter. Several → fetch all and pick, rather than firing N
       // requests that would each retry independently and land out of order.
-      const parts: string[] = []
-      if (cats.length === 1) parts.push(`category=${encodeURIComponent(cats[0])}`)
+      const query: Record<string, string> = {}
+      if (cats.length === 1) query.category = cats[0]
       // Current form values, for params whose options depend on what the user just typed (an
       // importer offering the columns of the file they picked). Sent as one JSON blob because param
       // keys are the task's own and would otherwise collide with `category`. Omitted entirely when
       // there is nothing to send, so an ordinary page load is byte-identical to before.
       if (formParams && Object.keys(formParams).length)
-        parts.push(`params=${encodeURIComponent(JSON.stringify(formParams))}`)
-      const qs  = parts.length ? `?${parts.join('&')}` : ''
-      const res = await fetch(`/api/tasks/definitions${qs}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json() as Record<string, TaskDef[]>
+        query.params = JSON.stringify(formParams)
+      // only the last attempt logs a failure: the retries ride out a cold start
+      const data = await getJson<Record<string, TaskDef[]>>('/api/tasks/definitions',
+        { query, quiet: attempt < MAX_RETRIES }) ?? {}
       // `hidden` tasks stay registered and runnable (REPL, chains) but are kept out of the module
       // page's function list — their job has a purpose-built UI. Filtered HERE, not at the route:
       // ChainModule and the taskDefs label store fetch the same endpoint and must still see them.

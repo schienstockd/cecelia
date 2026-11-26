@@ -1,5 +1,6 @@
 import { ref, watch, type Ref } from 'vue'
 import { resolveTrackValueName } from '../plots/trackDiagnostics'
+import { getJson } from '../utils/api'
 
 /**
  * Load the (all, tracked, active) value-name triple for an image, and resolve the picker's choice.
@@ -29,11 +30,10 @@ export function useTrackValueNames(
     }
     loading.value = true
     try {
-      const q = `projectUid=${projectUid.value}&imageUid=${imageUid.value}&popType=track` +
-                (wanted.value ? `&valueName=${encodeURIComponent(wanted.value)}` : '')
-      const r = await fetch(`/api/gating/channels?${q}`)
-      if (!r.ok) return
-      const d = await r.json() as { valueNames?: string[]; trackedValueNames?: string[]; valueName?: string }
+      const d = await getJson<{ valueNames?: string[]; trackedValueNames?: string[]; valueName?: string }>(
+        '/api/gating/channels',
+        // quiet: the caller's own load of the same route reports a failure
+        { query: { projectUid: projectUid.value, imageUid: imageUid.value, popType: 'track', valueName: wanted.value || undefined }, quiet: true })
       valueNames.value = d.valueNames ?? []
       trackedNames.value = d.trackedValueNames ?? []
       activeName.value = d.valueName ?? ''
