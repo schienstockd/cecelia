@@ -39,6 +39,8 @@ export interface InFlightTaskRow {
   /** every image the run covers — a set run's members (`image_uid` is its representative); absent from
    *  an older backend */
   image_uids?: string[]
+  /** which project `image_uid` belongs to — one server runs every project's tasks */
+  project_uid?: string
   chain_run_id?: string
   /** which node of that run — needed to rebuild the store's `runId::nodeId::imageUid` key */
   chain_node_id?: string

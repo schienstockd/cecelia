@@ -198,3 +198,13 @@ describe('the runner last-run line', () => {
     expect(lastRunSummary([])).toEqual({ live: 0, done: 0, failed: 0 })
   })
 })
+
+describe('taskRow — queued reason', () => {
+  it('carries the reason the context supplies, and blanks when there is none', () => {
+    const reason = { short: 'gpu busy: Cellpose (bob)', tip: 'Waiting for a free gpu slot.' }
+    const q = taskRow(entry({ status: 'queued' }), ctx({ queueReason: () => reason }))
+    expect([q.queuedReason, q.queuedTip]).toEqual([reason.short, reason.tip])
+    const none = taskRow(entry({ status: 'queued' }), ctx())
+    expect([none.queuedReason, none.queuedTip]).toEqual(['', ''])
+  })
+})
