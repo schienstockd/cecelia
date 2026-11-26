@@ -87,6 +87,7 @@ pixi run test-py            # includes test_architecture_docs.py — the pins an
 ## Not here yet
 
 - **A shared frontend API client.** 126 frontend files call the backend themselves. Not a rule yet:
-  there is no canonical client for new code to use instead.
+  there is no canonical client for new code to use instead. Deferred, with its trigger, in
+  [FUTURE.md](../FUTURE.md#a-shared-frontend-api-client).
 - **Freshness of the views.** The generated pages are refreshed by hand; only the gap counts are
   checked on every change.

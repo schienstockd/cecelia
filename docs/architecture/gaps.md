@@ -6,23 +6,10 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Broken ends | [An `/api` route no Vue, MCP or Python code calls](#route-uncalled) | 4 |
 | Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 76 |
 | Layers | [The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store](#viewer-store) | 4 |
 | Tangles | [Python modules that import each other](#py-cycle) | 1 |
 | Tangles | [Pinia stores that import each other](#store-cycle) | 1 |
-
-## Broken ends
-
-<a id="route-uncalled"></a>
-### An `/api` route no Vue, MCP or Python code calls
-
-`route-uncalled` · to close: delete the route, or name the caller (a route built from pieces is invisible here); a route kept without a caller on purpose says so with `# ARCH-EXEMPT: <reason>` on its line.
-
-- **`/api/gating/density`** · `api/src/gating_api.jl`
-- **`/api/projects/list`** · `api/src/routes/project.jl`
-- **`/api/system/weights/fetch`** · `api/src/system_api.jl`
-- **`/api/system/weights`** · `api/src/system_api.jl`
 
 ## Layers
 

@@ -42,13 +42,13 @@ flowchart LR
   tasks -->|25| gating
   ai_lab_log -->|24| model
   scheduler_chains -->|24| task_framework
+  cell_data -->|20| model
   scheduler_chains -->|20| run_records
-  cell_data -->|19| model
+  tracking_spatial -->|20| cell_data
   ai_lab_log -->|18| scheduler_chains
   gating -->|18| model
   runner -->|18| scheduler_chains
   tasks -->|18| qc_checks
-  tracking_spatial -->|18| cell_data
   package_root -->|17| gating
   qc_checks -->|17| model
   gating -->|16| cell_data
@@ -68,7 +68,7 @@ flowchart LR
     api__server_ws["api: server+ws<br/><small>6 files · 3.1k lines</small>"]
     api__rendering["api: rendering<br/><small>16 files · 9.4k lines</small>"]
     api__claude_kiwi["api: claude+kiwi<br/><small>10 files · 4.1k lines</small>"]
-    api__routes["api: routes<br/><small>45 files · 17.2k lines</small>"]
+    api__routes["api: routes<br/><small>45 files · 17.3k lines</small>"]
   end
   subgraph PKG["app/src — Cecelia.jl"]
     model["model<br/><small>8 files · 3.6k lines</small>"]
@@ -86,7 +86,7 @@ flowchart LR
     hpc["hpc<br/><small>9 files · 2.5k lines</small>"]
     ai_lab_log["ai+lab log<br/><small>21 files · 5.1k lines</small>"]
   end
-  api__routes -->|122| gating
+  api__routes -->|121| gating
   api__routes -->|79| model
   api__routes -->|57| config
   api__claude_kiwi -->|47| ai_lab_log
@@ -124,7 +124,7 @@ Both directions present (any n). In one module these are legal, but each pair is
 | model ↔ config | 6: `_path_bytes`, `gen_uid`, `keep_previous_version`, `projects_dir`, … | 4: `img_project_dir`, `img_project_uid`, `json_native`, `read_state_json` |
 | model ↔ run records | 6: `_rl_str`, `_update_run_log!`, `read_run_log`, `read_run_log_archive`, … | 5: `_load_image`, `img_has_value_name`, `resolve_value_name`, `resolve_version`, … |
 | model ↔ scheduler+chains | 2: `_history_leaves`, `rename_label_set_in_params` | 15: `CciaImage`, `CciaSet`, `_fire_chain_event!`, `_load_image`, … |
-| model ↔ cell data | 2: `_label_name_taken`, `free_label_name` | 19: `channel_names`, `commit_state!`, `img_branch_labels_dir`, `img_branch_props_path`, … |
+| model ↔ cell data | 2: `_label_name_taken`, `free_label_name` | 20: `channel_names`, `commit_state!`, `img_branch_labels_dir`, `img_branch_props_path`, … |
 | model ↔ gating | 8: `_clustfeatures_entry`, `_clustfeatures_part_of`, `_clustfeatures_suffixes`, `gating_history_path`, … | 18: `CciaImage`, `_load_image`, `channel_names`, `images`, … |
 | model ↔ tracking+spatial | 2: `load_roi_set`, `roi_suffixes_on` | 16: `channel_names`, `image_attr_groups`, `img_axes`, `img_branch_props_path`, … |
 | jobs (export, import, maintenance) ↔ ai+lab log | 1: `active_profile_name` | 2: `_kill_proc_tree`, `write_stored_zip` |
@@ -149,11 +149,11 @@ Both directions present (any n). In one module these are legal, but each pair is
 | tasks ↔ hpc | 1: `hpc_task_cpus` | 1: `zarr_group_meta_files` |
 | python bridge ↔ hpc | 1: `_run_py_hpc` | 3: `_app_dir`, `_py_task_env`, `pixi_env_name` |
 | cell data ↔ gating | 2: `gating_path`, `is_track_grained` | 16: `_split_channel_column`, `as_df`, `axis_of`, `canonical_channel_columns`, … |
-| cell data ↔ tracking+spatial | 2: `corrections_dir`, `roi_suffixes_on` | 18: `_channel_label`, `as_df`, `branch_paths`, `centroid_columns`, … |
+| cell data ↔ tracking+spatial | 2: `corrections_dir`, `roi_suffixes_on` | 20: `_agg_suffix`, `_channel_label`, `_var_measure_set`, `as_df`, … |
 | cell data ↔ qc+checks | 2: `qc_finding`, `write_qc` | 2: `centroid_columns`, `label_props` |
 | gating ↔ tracking+spatial | 5: `is_tracked`, `track_aggregate_base`, `track_aggregate_measures`, `track_name_sets`, … | 6: `_clustfeatures_entry`, `_clustfeatures_features`, `_clustfeatures_part_of`, `_split_pop_ref`, … |
 | gating ↔ qc+checks | 6: `_cohort_outliers`, `cohort_value_names`, `qc_finding`, `qc_path`, … | 13: `Population`, `_gate_canon`, `_split_pop_ref`, `gate_shape_spec`, … |
-| tracking+spatial ↔ plots+boards | 3: `_catkey`, `_finite`, `_ordered_cats` | 6: `_is_categorical_col`, `approach_cell_col`, `approach_track_col`, `contact_col_regex`, … |
+| tracking+spatial ↔ plots+boards | 3: `_catkey`, `_finite`, `_ordered_cats` | 7: `_is_categorical_col`, `_is_var_measure`, `approach_cell_col`, `approach_track_col`, … |
 | qc+checks ↔ ai+lab log | 1: `append_lab_log!` | 8: `_read_qc_file`, `all_qc_docs`, `cohort_qc_summary_lines`, `qc_fun_dir`, … |
 | plots+boards ↔ ai+lab log | 5: `_collect_contact_stats`, `_collect_pattern_stats`, `_collect_proximity_stats`, `_parse_tkey`, … | 4: `boards_doc_path`, `plot_spec_index`, `plot_summary_data`, `read_boards_doc` |
 
@@ -186,11 +186,11 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **tasks** | 63 | 1 | 36 | 8 | 1 | 5 | · |  | 2 | 29 | 25 | 27 | 18 | 3 | 1 |  |  |  |
 | **runner** | 4 | 1 | 13 |  | 18 | 2 |  | · |  |  |  |  |  |  |  | 1 | 6 |  |
 | **python bridge** |  |  | 7 | 2 |  | 1 |  |  | · |  |  |  |  |  | 1 |  |  |  |
-| **cell data** | 19 |  | 7 | 10 | 1 | 1 |  |  | 2 | · | 2 | 2 | 2 |  |  |  |  |  |
+| **cell data** | 20 |  | 7 | 10 | 1 | 1 |  |  | 2 | · | 2 | 2 | 2 |  |  |  |  |  |
 | **gating** | 18 |  | 12 | 4 |  |  | 1 |  |  | 16 | · | 5 | 6 |  |  |  |  |  |
-| **tracking+spatial** | 16 |  | 1 |  |  |  | 8 |  |  | 18 | 6 | · | 1 | 3 |  |  |  |  |
+| **tracking+spatial** | 16 |  | 1 |  |  |  | 8 |  |  | 20 | 6 | · | 1 | 3 |  |  |  |  |
 | **qc+checks** | 17 |  | 5 | 4 | 3 | 4 | 6 |  |  | 2 | 13 |  | · |  |  | 1 |  |  |
-| **plots+boards** | 39 |  | 7 | 4 | 2 | 4 | 10 |  | 2 | 9 | 31 | 6 | 7 | · |  | 5 |  |  |
+| **plots+boards** | 39 |  | 7 | 4 | 2 | 4 | 10 |  | 2 | 9 | 31 | 7 | 7 | · |  | 5 |  |  |
 | **hpc** | 2 | 1 | 12 | 1 | 4 | 1 | 1 |  | 3 |  |  |  |  |  | · |  |  |  |
 | **ai+lab log** | 24 | 2 | 14 | 9 | 18 | 6 | 2 |  |  | 6 | 27 | 1 | 8 | 4 | 1 | · |  |  |
 | **logging** |  |  | 1 |  |  |  |  |  |  |  |  |  |  |  |  |  | · |  |
@@ -198,7 +198,7 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **api: server+ws** | 8 | 7 | 25 | 2 | 12 | 2 |  | 20 |  |  |  |  |  |  |  | 3 | 6 |  |
 | **api: rendering** | 29 | 4 | 15 |  | 3 |  | 5 |  | 1 | 9 | 17 | 10 |  |  |  |  |  |  |
 | **api: claude+kiwi** | 7 | 5 | 17 | 5 |  | 3 | 1 |  |  | 4 | 5 | 1 |  | 5 |  | 47 |  |  |
-| **api: routes** | 79 | 12 | 57 | 4 | 29 | 27 | 10 | 5 | 3 | 12 | 122 | 22 | 30 | 31 | 15 | 31 | 1 |  |
+| **api: routes** | 79 | 12 | 57 | 4 | 29 | 27 | 10 | 5 | 3 | 12 | 121 | 22 | 30 | 31 | 15 | 31 | 1 |  |
 
 </details>
 

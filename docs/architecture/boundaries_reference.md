@@ -66,8 +66,8 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `utils/store_sweep.py` | `app/src/maintenance.jl:57` | `apply`, `resultPath`, `root` |
 | `writers/render_animation_run.py` | `api/src/movie_render.jl:213`, `api/src/movie_render.jl:280` +1 | `canvasH`, `canvasW`, `fps`, `labelColouring`, `labelColours`, `labelContourPx`, `labelFiles`, `labelOpacity`, `labelsPath`, `outPath`, `outPaths`, `overlaySizeUnit` +10 |
 | `writers/render_figure.py` | `app/src/figures.jl:103` | `states` |
-| `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:832` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
-| `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1153` | — |
+| `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:835` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
+| `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1175` | — |
 
 Call sites with a computed script name (not resolved): `app/src/maintenance.jl:88`, `app/src/model/project.jl:412`, `app/src/py_runner.jl:188`
 
@@ -78,11 +78,11 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | Area | Routes | Julia side | Vue | MCP | Python | preview | No caller |
 |---|---|---|---|---|---|---|---|
 | `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  |  |
-| `/api/gating` | 28 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 16 | 2 | 1 |  | 1 |
+| `/api/gating` | 27 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 16 | 2 | 1 |  |  |
 | `/api/images` | 24 | `api/src/image_geometry.jl`, `api/src/routes/image.jl` +4 | 18 | 2 |  |  |  |
 | `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  |  |
 | `/api/notebooks` | 17 | `api/src/notebooks_api.jl` | 4 | 1 |  |  |  |
-| `/api/projects` | 14 | `api/src/routes/project.jl`, `api/src/server.jl` | 5 | 2 |  |  | 1 |
+| `/api/projects` | 13 | `api/src/routes/project.jl`, `api/src/server.jl` | 5 | 2 |  |  |  |
 | `/api/blackboard` | 12 | `api/src/blackboard_api.jl`, `api/src/blackboard_run_review.jl` | 1 | 1 |  |  |  |
 | `/api/chains` | 12 | `api/src/routes/chain.jl` | 3 | 2 |  |  |  |
 | `/api/analysis` | 11 | `api/src/routes/chain.jl`, `api/src/routes/image.jl` | 4 | 1 |  |  |  |
@@ -103,7 +103,7 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | `/api/optical-flow` | 4 | `api/src/optical_flow_api.jl` | 4 |  |  |  |  |
 | `/api/preview` | 4 | `api/src/preview_api.jl` | 1 |  |  |  |  |
 | `/api/qc` | 4 | `api/src/routes/image.jl` | 1 | 1 |  |  |  |
-| `/api/system` | 4 | `api/src/system_api.jl` | 2 |  |  |  | 2 |
+| `/api/system` | 4 | `api/src/system_api.jl` | 2 |  |  |  |  |
 | `/api/acqcheck` | 3 | `api/src/acq_review.jl`, `api/src/routes/acq_check.jl` | 1 |  |  |  |  |
 | `/api/denoise` | 3 | `api/src/denoise_api.jl` | 1 |  |  |  |  |
 | `/api/figures` | 3 | `api/src/figures_api.jl` | 4 | 1 |  |  |  |
@@ -138,6 +138,8 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
 
 - `/api/kiwi/refs/cells` — kept for MCP / overlay consumers (docs/API.md)
+- `/api/system/weights` — manual status of the model-weights job (curl / script); installer, boot and preview start it
+- `/api/system/weights/fetch` — manual re-fetch of missing weights, e.g. after an offline first start
 - `/api/viewer/record-test` — smoke test of the offline renderer, called from api/test
 
 ## 3. WebSocket `/ws`

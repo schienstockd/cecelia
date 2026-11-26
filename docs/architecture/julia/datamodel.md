@@ -52,12 +52,12 @@ Functions taking each object as their first argument, by area — where the code
 | ai+lab log | 50 |  | 22 |
 | qc+checks | 4 | 32 | 18 |
 | gating |  | 2 | 47 |
-| plots+boards | 11 |  | 28 |
+| plots+boards | 11 |  | 27 |
 | scheduler+chains | 18 |  | 4 |
 | tracking+spatial |  |  | 21 |
 | run records |  |  | 19 |
 | tasks |  |  | 15 |
-| cell data |  |  | 9 |
+| cell data |  |  | 10 |
 | task framework |  |  | 3 |
 | jobs (export, import, maintenance) | 1 |  |  |
 
