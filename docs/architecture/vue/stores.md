@@ -13,14 +13,14 @@ uses instead. Box also shows how many files import the store.
 flowchart LR
   subgraph BASE["base stores"]
     log["log<br/><small>48 importers</small>"]
-    project["project<br/><small>71 importers</small>"]
-    projectMeta["projectMeta<br/><small>60 importers</small>"]
+    project["project<br/><small>72 importers</small>"]
+    projectMeta["projectMeta<br/><small>61 importers</small>"]
     settings["settings<br/><small>65 importers</small>"]
   end
   analysisLayout["analysisLayout<br/><small>5 importers</small><br/><small>uses log, projectMeta</small>"]
   analysisTabs["analysisTabs<br/><small>6 importers</small>"]
   animation["animation<br/><small>3 importers</small><br/><small>uses projectMeta</small>"]
-  appControl["appControl<br/><small>21 importers</small><br/><small>uses settings</small>"]
+  appControl["appControl<br/><small>22 importers</small><br/><small>uses settings</small>"]
   blackboard["blackboard<br/><small>1 importers</small>"]
   canvasPanelExports["canvasPanelExports<br/><small>3 importers</small><br/><small>uses projectMeta</small>"]
   canvasPanels["canvasPanels<br/><small>7 importers</small><br/><small>uses projectMeta</small>"]
@@ -41,7 +41,7 @@ flowchart LR
   push["push<br/><small>7 importers</small>"]
   shareTarget["shareTarget<br/><small>3 importers</small>"]
   staleOutputs["staleOutputs<br/><small>2 importers</small><br/><small>uses project, projectMeta</small>"]
-  taskDefs["taskDefs<br/><small>12 importers</small>"]
+  taskDefs["taskDefs<br/><small>13 importers</small>"]
   taskDrafts["taskDrafts<br/><small>1 importers</small>"]
   taskPreview["taskPreview<br/><small>1 importers</small><br/><small>uses log</small>"]
   tasks["tasks<br/><small>25 importers</small>"]
@@ -90,16 +90,16 @@ Stores that import each other statically (a loop; listed in [`gaps.md`](../gaps.
 
 | Store | Importers | By group |
 |---|---|---|
-| `project` | 71 | components (flat) 22, modules 15, components/plots 9, composables 7, stores 5, components/canvas 4, components (other) 2, tasks 2, utils (flat) 2, app root 1, lib (flat) 1, utils/viewer 1 |
+| `project` | 72 | components (flat) 22, modules 15, components/plots 9, composables 8, stores 5, components/canvas 4, components (other) 2, tasks 2, utils (flat) 2, app root 1, lib (flat) 1, utils/viewer 1 |
 | `settings` | 65 | components (flat) 15, modules 10, components/viewerWindow 9, composables 8, stores 6, components/canvas 5, components (other) 3, tasks 3, utils/viewer 3, app root 2, components/plots 1 |
-| `projectMeta` | 60 | modules 19, components (flat) 17, stores 11, components/canvas 3, composables 3, tasks 3, components (other) 2, app root 1, utils/viewer 1 |
+| `projectMeta` | 61 | modules 19, components (flat) 17, stores 11, composables 4, components/canvas 3, tasks 3, components (other) 2, app root 1, utils/viewer 1 |
 | `log` | 48 | modules 16, components (flat) 13, stores 5, app root 2, components/canvas 2, composables 2, tasks 2, utils (flat) 2, utils/viewer 2, components/plots 1, lib (flat) 1 |
 | `viewer` | 39 | modules 11, components/plots 9, composables 5, components (flat) 4, utils/viewer 3, stores 2, app root 1, components (other) 1, components/canvas 1, components/viewerWindow 1, tasks 1 |
 | `ws` | 30 | components (flat) 8, composables 6, modules 6, stores 4, tasks 2, utils (flat) 2, app root 1, lib (flat) 1 |
 | `tasks` | 25 | components (flat) 8, modules 5, tasks 3, utils (flat) 3, composables 2, stores 2, app root 1, lib (flat) 1 |
 | `observer` | 24 | components (flat) 12, components (other) 4, components/canvas 2, composables 2, stores 2, app root 1, components/viewerWindow 1 |
-| `appControl` | 21 | components (flat) 9, stores 4, modules 3, app root 2, components (other) 1, composables 1, lib (flat) 1 |
-| `taskDefs` | 12 | components (flat) 6, modules 2, components (other) 1, composables 1, stores 1, tasks 1 |
+| `appControl` | 22 | components (flat) 9, stores 4, modules 3, app root 2, composables 2, components (other) 1, lib (flat) 1 |
+| `taskDefs` | 13 | components (flat) 6, composables 2, modules 2, components (other) 1, stores 1, tasks 1 |
 | `kiwi` | 11 | components (other) 3, composables 3, components (flat) 2, components/canvas 2, modules 1 |
 | `canvasPanels` | 7 | components/canvas 2, composables 2, stores 2, modules 1 |
 | `gating` | 7 | modules 4, components/canvas 2, components (flat) 1 |

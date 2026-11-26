@@ -29,7 +29,9 @@ const REPO = normpath(joinpath(@__DIR__, "..", ".."))
 const ARCH = something(get(ENV, "CECELIA_ARCH_OUT", nothing), joinpath(REPO, "docs", "architecture"))
 const OUT = joinpath(ARCH, "julia")
 
-rel(p) = relpath(normpath(string(p)), REPO)
+# repo-relative, always with `/` — the area map in julia_areas.toml is written that way, and on Windows
+# `relpath` gives `\\` (every file then fell outside every area and the upward count read 0)
+rel(p) = replace(relpath(normpath(string(p)), REPO), Base.Filesystem.path_separator => "/")
 
 # ── areas ─────────────────────────────────────────────────────────────────────
 
