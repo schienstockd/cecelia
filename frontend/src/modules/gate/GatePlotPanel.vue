@@ -39,7 +39,8 @@ import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
 import { axisLabelWithUnit, isImageYAxis } from '../../utils/gatingAxes'
-import { measureGroups, groupedCols } from '../../utils/measureGroups'
+import { measureGroups, groupedCols, isTrackPopType, STRUCTURAL_COL } from '../../utils/measureGroups'
+import { splitTrackAxis, trackAxisColumn, TRACK_AGG_LABEL } from '../../utils/trackAxis'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
@@ -490,8 +491,29 @@ function buildCsv(): string {
 // The X/Y options, headed by family (Morphology · Channels · Spatial / Time) instead of one flat run
 // in which a shape descriptor and a marker looked alike — utils/measureGroups.ts, shared with the
 // pairs picker, the population manager and the clustering feature picker.
-const axisGroups = computed(() => measureGroups({
-  columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
+// A TRACK plot also offers every cell measure, summarised per track (median nuc-GFP over the track):
+// the picker lists the measure once, and an aggregate select beside it picks the summary
+// (utils/trackAxis.ts; the server aggregates on read). docs/todo/TRACK_SUBPOP_GATING_PLAN.md (P2).
+const isTrack = computed(() => isTrackPopType(g.popType))
+const cellBases = computed(() => isTrack.value ? g.cellMeasures.filter(c => !STRUCTURAL_COL.test(c)) : [])
+const trackAggs = computed(() => isTrack.value ? g.trackAggregates : [])
+const axisGroups = computed(() => isTrack.value
+  ? measureGroups({ trackColumns: g.columns, columns: cellBases.value, channels: g.channels, spatialAxes: g.spatialAxes })
+  : measureGroups({ columns: g.columns, channels: g.channels, spatialAxes: g.spatialAxes, popType: g.popType }))
+// The picker's view of one axis: the measure (`base`) and its per-track aggregate (`agg`, '' when the
+// measure is not a summarised cell measure). Writing either rebuilds the stored axis column.
+function aggAxis(chan: { value: string }) {
+  const parts = () => splitTrackAxis(chan.value, cellBases.value, trackAggs.value)
+  const base = computed({ get: () => parts().base,
+    set: (v: string) => { chan.value = trackAxisColumn(v, parts().agg, cellBases.value, trackAggs.value) } })
+  const agg = computed({ get: () => parts().agg ?? '',
+    set: (v: string) => { chan.value = trackAxisColumn(parts().base, v, cellBases.value, trackAggs.value) } })
+  return { base, agg }
+}
+const { base: xBase, agg: xAgg } = aggAxis(xChan)
+const { base: yBase, agg: yAgg } = aggAxis(yChan)
+const { base: zBase, agg: zAgg } = aggAxis(zChan)
+const aggTip = 'How each track summarises this cell measure'
 // The same groups for the searchable axis pickers — a multiplex panel lists 40+ channels per axis.
 const axisPickGroups = computed(() => measurePickGroups(axisGroups.value, c => g.colLabel(c)))
 const yPickGroups = computed(() =>
@@ -504,8 +526,8 @@ function ensureChannels() {
   if (!cols.length) return
   // spatial/temporal axes are valid selections too — don't reset a persisted centroid_x/… axis
   const valid = groupedCols(axisGroups.value)
-  if (!valid.includes(xChan.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
-  if (!valid.includes(yChan.value) && !isHist.value) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
+  if (!valid.includes(xBase.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
+  if (!valid.includes(yBase.value) && !isHist.value) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
 }
 // store readiness (channels/image/segmentation): pick default axes then load. `immediate` so the
 // first appearance fetches whether the store became ready BEFORE this panel mounted (values already
@@ -564,8 +586,10 @@ watch(() => props.reloadToken, fetchPlot)
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl" data-guide="gate.axes">
         <label class="ax-row cc-muted"><span class="ax-lbl">X</span>
-          <SearchSelect class="ax-chan" v-model="xChan" :groups="axisPickGroups"
+          <SearchSelect class="ax-chan" v-model="xBase" :groups="axisPickGroups"
                         :aria-label="'Measure on the X axis'" v-tooltip.bottom="'Measure on the X axis'" />
+          <select v-if="xAgg" class="tsel" v-model="xAgg" aria-label="X per-track summary" v-tooltip.bottom="aggTip">
+            <option v-for="a in trackAggs" :key="a" :value="a">{{ TRACK_AGG_LABEL[a] ?? a }}</option></select>
           <select class="tsel" :class="{ 'cc-auto-override': !!xOverride }" v-model="xtSel"
                   v-tooltip.bottom="overrideTooltip(xOverride, transformTip('x'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
@@ -576,8 +600,10 @@ watch(() => props.reloadToken, fetchPlot)
           <i v-if="xOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(xOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
-          <SearchSelect class="ax-chan" v-model="yChan" :groups="yPickGroups"
+          <SearchSelect class="ax-chan" v-model="yBase" :groups="yPickGroups"
                         :aria-label="'Measure on the Y axis'" v-tooltip.bottom="'Measure on the Y axis, or a histogram of X'" />
+          <select v-if="yAgg && !isHist" class="tsel" v-model="yAgg" aria-label="Y per-track summary" v-tooltip.bottom="aggTip">
+            <option v-for="a in trackAggs" :key="a" :value="a">{{ TRACK_AGG_LABEL[a] ?? a }}</option></select>
           <select v-if="!isHist" class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"
                   v-tooltip.bottom="overrideTooltip(yOverride, transformTip('y'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
@@ -588,9 +614,11 @@ watch(() => props.reloadToken, fetchPlot)
           <i v-if="yOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
         <label v-if="!isHist" class="ax-row cc-muted"><span class="ax-lbl">colour</span>
-          <SearchSelect class="ax-chan" v-model="zChan" :groups="colourPickGroups"
+          <SearchSelect class="ax-chan" v-model="zBase" :groups="colourPickGroups"
                         aria-label="Colour the dots by"
                         v-tooltip.bottom="'Colour the dots by a third measure (points / binned)'" />
+          <select v-if="zAgg" class="tsel" v-model="zAgg" aria-label="Colour per-track summary" v-tooltip.bottom="aggTip">
+            <option v-for="a in trackAggs" :key="a" :value="a">{{ TRACK_AGG_LABEL[a] ?? a }}</option></select>
           <select class="tsel" :class="{ 'cc-auto-override': !!zOverride }" v-model="ztSel" :disabled="!colourOn"
                   v-tooltip.bottom="overrideTooltip(zOverride, 'Colour scale')">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>

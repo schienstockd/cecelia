@@ -41,6 +41,8 @@ export interface ViewerLookInput {
   trackVisible: Record<string, boolean>
   trackSourceColours: Record<string, string>
   showGatedTracks: boolean
+  /** the segmentations whose untracked cells' dots are dimmed ("Tracked only", `UNTRACKED_DIM`) */
+  dimUntracked: string[]
   /** per segmentation, the pops whose ribbon eye is off (`settings.getTrackPopHidden`) */
   hiddenTrackPops: Record<string, string[]>
   /** per segmentation, the viewer's point / ribbon eyes `{ "<popType>::<path>": on }`
@@ -135,6 +137,7 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...(Object.keys(popEyes).length ? { popEyes } : {}),
     ...(Object.keys(ribbonEyes).length ? { ribbonEyes } : {}),
     showGatedTracks: i.showGatedTracks,
+    ...(i.dimUntracked.length ? { dimUntracked: [...i.dimUntracked] } : {}),
     ...(Object.keys(hidden).length ? { hiddenTrackPops: hidden } : {}),
     // every segmentation's track clusters — not tied to the pops' segmentation (ViewerWindow
     // `loadTracks` fetches them for every trackable one)

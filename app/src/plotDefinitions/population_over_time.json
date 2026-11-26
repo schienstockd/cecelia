@@ -5,7 +5,7 @@
   "sketch": "popOverTime",
   "answers": "How does each population's size change over time?",
   "modules": {
-    "phenotype": ["flow", "clust"],
+    "phenotype": ["flow", "clust", "live"],
     "behaviourAnalysis": ["flow", "live", "track", "trackclust"]
   },
   "family": "summary",

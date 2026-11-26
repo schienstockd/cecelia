@@ -17,6 +17,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   trackVisible: {},
   trackSourceColours: {},
   showGatedTracks: false,
+  dimUntracked: [],
   hiddenTrackPops: {},
   popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,

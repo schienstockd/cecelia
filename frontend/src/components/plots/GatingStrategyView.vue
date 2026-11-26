@@ -28,7 +28,7 @@ import { dotRadiusFor } from '../../plots/density'
 import { measureGroups } from '../../utils/measureGroups'
 import { measurePickGroups } from '../../utils/searchSelect'
 import SearchSelect from '../SearchSelect.vue'
-import { channelLabel } from '../../utils/channelNames'
+import { measureColumnLabel } from '../../utils/trackAxis'
 import { pairTransform } from '../../plots/pairsMatrix'
 import type { ColourBy, PanelDef } from '../../plots/montage'
 import type { VisProps } from '../../plots/plot'
@@ -91,8 +91,12 @@ const zChan = computed({ get: () => props.state.z ?? '',
 const zt = computed<Kind>({ get: () => props.state.zt ?? zDefault(zChan.value), set: v => { props.state.zt = v } })
 const colourBy = computed<ColourBy | null>(() =>
   zChan.value ? { col: zChan.value, t: pairTransform(zt.value) } : null)
+// track gates may sit on a per-track summary of a cell measure (`mean_intensity_1.median`)
+const cellMeasures = ref<string[]>([])
+const trackAggregates = ref<string[]>([])
 function colLabel(col: string): string {
-  return channels.value.includes(col) ? channelLabel(col, channelNames.value) : col
+  return measureColumnLabel(col, { channels: channels.value, channelNames: channelNames.value,
+    cellMeasures: cellMeasures.value, trackAggregates: trackAggregates.value }) ?? col
 }
 const colourPickGroups = computed(() =>
   measurePickGroups(colourGroups.value, colLabel, [{ value: '', label: 'density' }]))
@@ -119,11 +123,14 @@ async function loadChannelsInner() {
     channelNames.value = d.channelNames ?? []
     columns.value = d.columns ?? []
     obsColumns.value = d.obsColumns ?? []
+    cellMeasures.value = d.cellMeasures ?? []
+    trackAggregates.value = d.trackAggregates ?? []
     spatialAxes.value = [...(d.spatialColumns ?? []), ...(d.temporalColumns ?? [])]
     if (valueNames.value.length && !valueNames.value.includes(valueName.value)) valueName.value = valueNames.value[0]
   } catch {
     valueNames.value = []; channels.value = []; channelNames.value = []
     columns.value = []; obsColumns.value = []; spatialAxes.value = []
+    cellMeasures.value = []; trackAggregates.value = []
   }
 }
 async function loadTreeInner() {

@@ -1,6 +1,6 @@
 # TRACK_SUBPOP_GATING_PLAN
 
-Status: planning (2026-11-25) · branch `docs/track-subpop-gating` (#2513) · no phase built.
+Status: in progress (2026-11-25) · plan #2513 · P1–P4 built (`feat/track-subpop-p1`…`-p4`).
 Brief: [`../archive/TRACK_SUBPOP_GATING_PROMPT.md`](../archive/TRACK_SUBPOP_GATING_PROMPT.md) (its
 banner lists the premises that turned out wrong). Reviewed once by a fresh agent (2026-11-25); its
 corrections are folded in.
@@ -42,15 +42,19 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 ## Decisions (proposed 2026-11-25 — D to lock; ★ = needs D's call)
 
 1. ★ **Tracked cells on Phenotype.** Phenotype gets the Tracked family the Behaviour page already
-   has (one line in `cell_properties.json` + spec tests). On a cell plot the row reads
-   **`P › tracked`**, not `P`: there they are different cells (fix the fold for cell grain, and the
-   doc's contradiction). Alternative: inline `P › tracked` rows in the FLOW list (≈7 touchpoints:
+   has (`cell_properties.json`, `population_over_time.json`, `popPositions` in
+   `interactiveViews.ts`). Rows keep the population's name, as on Behaviour: the family switch already
+   reads *Tracked*, so `P` there is P's tracked cells (built 2026-11-25; the doc's "cell plots keep the
+   leaf" was corrected instead of adding a `P › tracked` label — same meaning, no second naming rule). Alternative: inline `P › tracked` rows in the FLOW list (≈7 touchpoints:
    `pop_df` routing, flow enumeration, `is_track_pop`, `_accept_permits`, labels, tests) — not
    recommended, it puts the same cells under two keys (`flow::` and `live::`) on boards.
-2. ★ **Gating under tracked = materialise on first use.** When the user draws the first gate under
-   `P › tracked`, `P/_tracked` is written into the flow tree as a stored **rule** child (filter
-   `track_id > 0`, reserved name allowed for this one writer), so its children persist and it
-   follows re-tracking. Nothing is created until someone gates there, so no tree clutter and no
+2. ★ **Gating under tracked = made on request, as an ordinary filter child.** *Changed 2026-11-26
+   while building P4:* storing the reserved `_tracked` node in the flow tree would make leaf-name
+   rules class it as a track pop on flow plots (`is_track_pop`) and inject `_tracked/_tracked` under
+   it. Instead, **Add tracked cells** in a population's ⋯ menu writes a plain filter child `tracked`,
+   rule `track_id > 0` (the derived `_tracked`'s rule; a test pins that the two hold the same cells),
+   so its children persist and it follows re-tracking. Originally: materialise `P/_tracked` on the first
+   gate drawn under it. Nothing is created until someone gates there, so no tree clutter and no
    sync. A gate added later under `P` is unaffected; one under `P/_tracked` is tracked-only by
    construction. Rejected: auto-creating under every tracked pop (brief's (a)); a global scope (b);
    "apply to all children" (c) — all three change counts invisibly.
@@ -89,8 +93,8 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 ## Workflow, as the user sees it
 
 1. Gate `frags` and its four quadrants; track `frags` (unchanged).
-2. On Phenotype the family switch gains **Tracked**; rows read `frags › tracked`,
-   `mem-TOM+ nuc-GFP+ › tracked`, … with counts. Drawing a gate under one stores it there.
+2. On Phenotype the family switch gains **Tracked**; its rows `frags`, `mem-TOM+ nuc-GFP+`, … are
+   their tracked cells. Drawing a gate under tracked cells stores it there (P4).
 3. In the viewer, **Tracked only** dims untracked dots.
 4. On a track gating plot the axis picker gains Morphology/Channels; choosing `nuc-GFP` shows
    **median ▾** beside it.
@@ -103,10 +107,10 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 
 | Phase | What | Size |
 |---|---|---|
-| **P1** | Tracked family on Phenotype; `P › tracked` label at cell grain; `POPULATION.md` fixed. Tests: spec test; Julia picker test on `fixture_for(:cells, :movie, :tracked)`; label tests (TS + Julia `pop_display_labels`) | small |
-| **P2** | Track axis picker offers cell-measure aggregates + aggregation dropdown (frontend only). Default `median` | small |
-| **P3** | **Tracked only** dot switch (Decision 9) + per-pop `gated / tracked` count | small |
-| **P4** | Gating under tracked: materialise on first gate (Decision 2); `add_pop!` path, reserved-name writer, `read_pop_type` routing; tests for re-tracking and a later gate under `P` | medium |
+| **P1** ✅ | Tracked family on Phenotype (cell properties, proportion over time, population positions); `POPULATION.md` fold contradiction fixed. Tests: `plot_specs.jl` curation, `interactiveViews.test.ts` | small |
+| **P2** ✅ | Track gating axes list cell measures (Morphology/Channels) beside motility; a summary select (median default) beside a picked cell measure; `colLabel` names `<channel> median`. Frontend only (`utils/trackAxis.ts`, `GatePlotPanel.vue`, `stores/gating.ts`); backend already gated on aggregates (`pop_plot_cols.jl:119`) | small |
+| **P3** ✅ | **Tracked only** switch in the viewer Tracks section (per set, on by default): dims untracked dots by `UNTRACKED_DIM` in segmentations whose tracks are drawn; recorded (`dimUntracked` look key → `_overlay_parts`). Ribbon rows read `tracked / gated` | medium (recording parity) |
+| **P4** ✅ | **Add tracked cells** in a population's ⋯ menu (flow map of a tracked segmentation, once per population): a filter child `tracked`, `track_id > 0`, in the parent's colour (`utils/trackedChild.ts`, `PopulationManager.vue`). Test: it holds exactly the derived `_tracked`'s cells | small |
 | **P5** | Per-track sub-pop fractions + class on read — reuse the categorical branch of `track_props` (`track_props.jl:131`, already count/`nrow` per category) by feeding child membership as one categorical column built with `pop_membership` (`gating_engine.jl:270`); overlapping sibling gates (not quadrants, but possible) need a rule — first child in tree order, or one indicator column per child. Threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
 | **P6** | Tracks Colour by sub-population + dominant sub-population; level picker; recording parity (`ViewerDrawSpec`) | medium |
 | **P7** | **mostly `<child>`** derived pops (Decision 7) at cell and track grain | medium |

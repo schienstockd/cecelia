@@ -57,6 +57,24 @@
         # `numeric` escape-hatch forces it back to numeric aggregates when desired
         forced = track_props(img; value_name="B", cell_measures=["st"], numeric=["st"])
         @test "st.mean" in names(forced) && !("st.1" in names(forced))
+        # a VAR column is a quantity even with few integer levels (`euler_number_mesh` here has a
+        # handful): numeric aggregates, never per-level frequencies — else a track gate on its median
+        # reads an absent column (docs/todo/TRACK_SUBPOP_GATING_PLAN.md P2)
+        eul = label_props(img; value_name="B") |> select_cols(["euler_number_mesh"]) |> as_df
+        vals = filter(isfinite, Float64.(eul.euler_number_mesh))
+        @test all(isinteger, vals) && length(unique(vals)) <= 20          # the case the heuristic misreads
+        @test Cecelia._is_categorical_col(eul.euler_number_mesh, "euler_number_mesh")
+        ev = track_props(img; value_name="B", cell_measures=["euler_number_mesh"])
+        @test "euler_number_mesh.median" in names(ev) && "euler_number_mesh.mean" in names(ev)
+        # the structural rule every reader shares: a var, or a numeric per-track summary of one, is a
+        # quantity; an obs column (`st`) and a per-level frequency (`st.1`) are not
+        vs = Cecelia._var_measure_set(img, "B")
+        @test Cecelia._is_var_measure(vs, "euler_number_mesh")
+        @test Cecelia._is_var_measure(vs, "euler_number_mesh.median") && Cecelia._is_var_measure(vs, "euler_number_mesh.sum")
+        @test !Cecelia._is_var_measure(vs, "st") && !Cecelia._is_var_measure(vs, "st.mean")
+        @test !Cecelia._is_var_measure(vs, "euler_number_mesh.3") && !Cecelia._is_var_measure(vs, "live.track.speed")
+        @test !any(startswith(n, "euler_number_mesh.") && n ∉
+                   ("euler_number_mesh." .* ["mean", "median", "sum", "qUp", "qLow", "sd"]) for n in names(ev))
 
         # An UNTRACKED segmentation → the empty, well-formed table, and SILENTLY. `track_props`
         # handles this case by design, so it must ASK (`is_tracked`, which reads the obs column list
@@ -111,6 +129,35 @@ end
 end
 
 # ── pop_df pop_type="track": gate DIRECTLY on per-track properties (3b) ────────
+# "Add tracked cells" (TRACK_SUBPOP_GATING_PLAN P4) stores the population's tracked cells as an ordinary
+# flow FILTER child, `track_id > 0` — the frontend's `IS_TRACKED` (utils/trackedChild.ts). It must hold
+# exactly the cells the derived `_tracked` does (`_DERIVED_POPS`), or the two "tracked" would disagree.
+@testset "tracked filter child == derived _tracked" begin
+    fx = fixture_for(:cells, :movie, :tracked)
+    if fx === nothing
+        @test_skip "tracked movie fixture (missing)"
+    else
+        td = mktempdir(); pdir = joinpath(td, basename(fx.project)); cp(fx.project, pdir)
+        old = get(Cecelia.cecelia_conf()["dirs"], "projects", nothing)
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = td
+            img = init_object(basename(fx.project), fx.uid); vn = fx.value_name
+            m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+            add_pop!(m, "all"; gate = RectangleGate("area", "area", -1e12, 1e12, -1e12, 1e12))
+            add_pop!(m, "tracked"; parent = "/all", filter_measure = "track_id", filter_fun = "gt", filter_values = 0)
+            save_pop_tree!(m, img)
+            stored  = Set(pop_df(img, "flow", ["$vn/all/tracked"]).label)
+            derived = Set(pop_df(img, "live", ["$vn/all/_tracked"]).label)
+            everyone = Set(pop_df(img, "flow", ["$vn/all"]).label)
+            @test !isempty(stored) && stored == derived
+            @test length(stored) < length(everyone)            # untracked cells (NaN) stay out
+        finally
+            old === nothing ? delete!(Cecelia.cecelia_conf()["dirs"], "projects") :
+                              (Cecelia.cecelia_conf()["dirs"]["projects"] = old)
+        end
+    end
+end
+
 @testset "pop_df pop_type=track (KDIeEm B)" begin
     h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")

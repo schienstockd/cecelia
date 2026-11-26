@@ -80,7 +80,8 @@ aggregates of each requested **cell** column joined by `track_id`:
 
 The numeric/categorical split is detected **automatically** from each column's decoded type +
 values (see `_is_categorical_col`): strings (e.g. `hmm.transitions = "1.3"`) and integer code sets
-(e.g. `hmm.state ∈ {1,2,3}`) → categorical; continuous floats (e.g. `speed = 10.12`) → numeric. No
+(e.g. `hmm.state ∈ {1,2,3}`) → categorical; continuous floats (e.g. `speed = 10.12`) → numeric. A
+`var` column (morphology / intensity) is always numeric, whatever its values. No
 config map (replaces the old R `config.yml` `parameters.labelStats`). `categorical`/`numeric` are
 escape-hatch overrides that force a column's classification when the heuristic misreads it.
 
@@ -106,6 +107,11 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
 
     # read tracked cells: track_id + requested measures (label-keyed)
     cols = unique(vcat("track_id", cell_measures))
+    # A `var` column (morphology / intensity, by raw or channel name) is a QUANTITY, never a code set
+    # (`_is_var_measure`). Without it an integer morphology with few levels (`euler_number_mesh`) got
+    # `{m}.{level}` frequencies instead of `{m}.median`, and a track gate on its median read an absent
+    # column. The few-integer-levels heuristic stays for `obs` (HMM states, cluster codes).
+    var_cols = _var_measure_set(img, vn)
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, cols) |> as_df
     "track_id" in names(cell) || return DataFrame(track_id = Int[], num_cells = Int[], label = Int[])
     keep = [r isa Number && !isnan(r) && Int(r) > 0 for r in cell[!, "track_id"]]
@@ -125,7 +131,7 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
         g = groupby(cell, :track_id)
         # auto-detect type from the decoded column; `categorical`/`numeric` kwargs force the call
         is_cat = m in categorical ? true :
-                 m in numeric     ? false :
+                 (m in numeric || _is_var_measure(var_cols, m)) ? false :
                  _is_categorical_col(cell[!, m], m)
         if is_cat
             cats = sort(unique(_catkey(v) for v in cell[!, m]
@@ -182,6 +188,18 @@ const TRACK_BOOKKEEPING_COLS = ("track_id", "label", "num_cells")
 
 # numeric aggregate suffixes track_props appends to a base cell measure
 const _TRACK_NUM_AGG_SUFFIXES = (".mean", ".median", ".sum", ".qUp", ".qLow", ".sd")
+
+# Is `col` a quantity by STRUCTURE — a `var` column (morphology / intensity), or a numeric per-track
+# summary of one (`area.median`, `CD4.sd`)? `var_cols` is `_var_measure_set` (raw names + channel
+# names). The value-based heuristic (`_is_categorical_col`) is for `obs` only: a whole-number shape
+# measure (`euler_number_mesh`) and its per-track median/sum have few integer levels and would read as
+# a code set. One answer for track_props, the summary plots and the track colour-by.
+function _is_var_measure(var_cols, col::AbstractString)::Bool
+    c = String(col)
+    c in var_cols && return true
+    tail = _agg_suffix(c)
+    !isempty(tail) && c[1:end-ncodeunits(tail)] in var_cols
+end
 
 """
     track_table_cols(img, value_name) -> Vector{String}

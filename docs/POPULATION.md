@@ -446,7 +446,11 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `categorical` name the *base* cell columns to aggregate into gateable track properties (numeric →
   `.mean/.median/.sum/.qUp/.qLow/.sd`; categorical → per-category frequency `{m}.{cat}`); the common
   case (motility-only gating) needs neither, and an aggregate named in `pop_cols` (`area.mean`,
-  `live.cell.hmm.state.movement.1`) is derived without them (`track_aggregate_measures`). **Numeric vs categorical is auto-detected** from the
+  `live.cell.hmm.state.movement.1`) is derived without them (`track_aggregate_measures`). In the GUI
+  the track gating axes list the motility measures, then every cell measure once (Morphology /
+  Channels); picking one adds a summary select beside it (median by default, also mean, sum, 95th / 5th
+  percentile, SD) and the axis stores `<base>.<summary>` (`utils/trackAxis.ts`, `GatePlotPanel.vue`).
+  **Numeric vs categorical is auto-detected** from the
   decoded type + values (strings like `hmm.transitions="1.3"` and integer code sets like
   `hmm.state∈{1,2,3}` → categorical; continuous floats like `speed=10.12` → numeric); no config map
   (replaces the old R `config.yml` `labelStats`). `categorical`/`numeric` are escape-hatch overrides
@@ -490,7 +494,15 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   a plain pop with no `_tracked` of its own, and names the root's `/_tracked` *All tracks*. Chips and
   legends follow (`popDisplayLabels(…, { tracks: true })` / `pop_display_labels(…; tracks = true)` →
   `OTI`, `gBT`; summary-plot keys via `dimsOf(…, tracks)` in `plots/plot.ts`). Selections stay stored
-  as `…/_tracked` paths. Cell plots keep the `_tracked` leaf: there the two are different cells.
+  as `…/_tracked` paths. On a cell-grain plot the fold applies too: the family switch reads
+  *Tracked*, so a row named `P` there is P's tracked cells, not all of P. Phenotype offers that family
+  on its cell plots (cell properties, proportion over time, population positions) beside Behaviour.
+  The tracked set is chosen by the tracker, so per-cell readouts on it describe the cells it could
+  follow, not the whole gate.
+- **Gating under tracked cells.** `_tracked` is never stored, so nothing can be gated under it. A
+  population's ⋯ menu offers **Add tracked cells** (flow map of a tracked segmentation): an ordinary
+  filter child `tracked`, rule `track_id > 0` — `_tracked`'s rule, so the two hold the same cells — that
+  follows re-tracking and takes gates like any population (`utils/trackedChild.ts`).
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths

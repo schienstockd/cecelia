@@ -31,10 +31,13 @@ const props = defineProps<{
   hasZ: boolean
   /** the points' Colour by column — what the `cell` mode paints hops by; null when none is picked */
   colourBy?: string | null
+  /** "Tracked only": dim the dots of cells with no track while tracks are drawn */
+  dimUntracked: boolean
 }>()
 const emit = defineEmits<{
   togglePop: [pop: TrackPopRow]
   'update:colorMode': [mode: TrackColorMode]
+  'update:dimUntracked': [on: boolean]
   sourceColour: [vn: string, hex: string]
   redraw: []
 }>()
@@ -59,12 +62,20 @@ const rowLabels = computed(() => popRowLabels(props.pops))
       <div v-for="(pop, i) in pops" :key="pop.key" class="cc-row cc-row-tight">
         <span class="vw-swatch" :style="{ background: pop.colour }" />
         <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ rowLabels[i] }}</span>
-        <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
+        <span class="cc-readout cc-fs-3xs"
+              v-tooltip.bottom="pop.tracked !== undefined ? 'Tracked / gated cells' : 'Cells'">{{
+          pop.tracked !== undefined ? `${pop.tracked} / ${pop.count}` : pop.count }}</span>
         <CcToggle
           :model-value="pop.drawn" :disabled="pop.clusterHeld"
           v-tooltip.bottom="pop.clusterHeld ? 'Track clusters are drawing this segmentation' : 'Draw this population as a track ribbon layer'"
           :aria-label="'Show tracks for ' + pop.name" @update:modelValue="emit('togglePop', pop)"
         />
+      </div>
+      <div class="cc-row cc-row-tight">
+        <span class="cc-muted cc-fs-2xs cc-lbl-col">Tracked only</span>
+        <CcToggle :model-value="dimUntracked" aria-label="Tracked only"
+                  v-tooltip.bottom="'Dim the dots of cells that are not in a track'"
+                  @update:modelValue="emit('update:dimUntracked', $event)" />
       </div>
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
