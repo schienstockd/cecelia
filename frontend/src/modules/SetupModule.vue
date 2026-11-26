@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 import { useAppControlStore } from '../stores/appControl'
 import { useLogStore } from '../stores/log'
 import { debouncedLatest } from '../utils/debouncedLatest'
-import { getJson, postJson } from '../utils/api'
+import { apiFetch, getJson, postJson } from '../utils/api'
 
 const router = useRouter()
 const appCtl = useAppControlStore()
@@ -68,7 +68,7 @@ async function waitForBackend(timeoutMs = 60000) {
   await new Promise(r => setTimeout(r, 1500))
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
-    try { if ((await fetch('/api/health', { cache: 'no-store' })).ok) return } catch { /* not up yet */ } // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
+    try { await apiFetch('/api/health', { cache: 'no-store', quiet: true }); return } catch { /* not up yet */ }
     await new Promise(r => setTimeout(r, 800))
   }
 }

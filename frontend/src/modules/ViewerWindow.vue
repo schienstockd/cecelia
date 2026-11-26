@@ -533,28 +533,6 @@ watch(() => route.query.image, next => {
   if (nextUid && nextUid !== imageUid) window.location.reload()
 })
 
-/**
- * Read a fetch response as JSON, but tell you WHICH request went wrong when the body is empty or not
- * JSON. `await res.json()` on a 500 with an empty body throws "Failed to execute 'json' on 'Response':
- * Unexpected end of JSON input", which reads as a client bug and hides the real status. Read as text
- * first, then try `JSON.parse` in a try/catch — a non-2xx becomes `Meta 500: <first 120 chars>`, an
- * empty 2xx becomes `Meta 200: empty body`.
- */
-async function readJson<T = unknown>(res: Response, label: string): Promise<T> {
-  const text = await res.text()
-  if (!res.ok) {
-    let msg = `${label} ${res.status}`
-    if (text) {
-      try { msg += `: ${(JSON.parse(text) as { error?: string }).error ?? text.slice(0, 120)}` }
-      catch { msg += `: ${text.slice(0, 120)}` }
-    }
-    throw new Error(msg)
-  }
-  if (!text) throw new Error(`${label} ${res.status}: empty body`)
-  try { return JSON.parse(text) as T }
-  catch { throw new Error(`${label} ${res.status}: not JSON (${text.slice(0, 120)})`) }
-}
-
 const canvas = ref<HTMLCanvasElement | null>(null)
 /** The canvas's CSS size, as reactive state — `clientWidth/Height` are plain DOM reads, so a computed
  *  that reads them is not re-run by a window resize and its overlay stays where the old size put it.
@@ -801,8 +779,8 @@ const presentPopTypes = ref<PresentPopTypes | null>(null)
 async function loadPresentPopTypes() {
   if (!projectUid || !imageUid) return
   try {
-    const res = await fetch(popTypesUrl({ projectUid, imageUid }), { cache: 'no-store' }) // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-    presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Population types')
+    presentPopTypes.value = await getJson<PresentPopTypes>(popTypesUrl({ projectUid, imageUid }),
+                                                           { cache: 'no-store', quiet: true })
   } catch { /* keep the last answer: a failed probe must not hide switches */ }
 }
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
@@ -1157,10 +1135,8 @@ watch(maskTable, () => frame.redraw())
 async function fetchTrackclustPayload(vn: string, cb: string): Promise<OverlayPayload | null> {
   if (!projectUid || !imageUid) return null
   try {
-    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust', // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-                                          colourBy: cb || undefined }),
-                            { cache: 'no-store' })
-    return res.ok ? await res.json() as OverlayPayload : null
+    return await getJson<OverlayPayload>(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust',
+                                                       colourBy: cb || undefined }), { cache: 'no-store' })
   } catch { return null }
 }
 async function loadMaskTrackclust() {
@@ -1188,9 +1164,8 @@ async function loadMaskColourBy() {
   let payload: OverlayPayload | null = have ?? null
   if (!payload) {
     try {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'flow', colourBy: cb }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-                              { cache: 'no-store' })
-      payload = res.ok ? await res.json() as OverlayPayload : null
+      payload = await getJson<OverlayPayload>(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'flow', colourBy: cb }),
+                                              { cache: 'no-store' })
     } catch { payload = null }
   }
   // a later mask / mode / column change has overtaken this fetch
@@ -2172,9 +2147,9 @@ async function loadOverlays(tick: OverlayTick = { imageUid: imageUid ?? '', scop
   const heldLayer = (vn: string, popType: string) => popLayers.value.find(l => l.vn === vn && l.popType === popType)
   const fetched = await Promise.all(wanted.map(async ({ vn, popType }, i): Promise<PopLayer | null> => {
     const whole = async (): Promise<PopLayer> => {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: cb, valueName: vn, popType }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-                              { cache: 'no-store' })
-      const payload = await readJson<OverlayPayload>(res, 'Overlays')
+      // quiet: a failure is collected into `errors` and shown with the others below
+      const payload = await getJson<OverlayPayload>(overlaysUrl({ projectUid, imageUid, colourBy: cb, valueName: vn, popType }),
+                                                    { cache: 'no-store', quiet: true })
       layerColourBy.set(`${vn}::${popType}`, cb)
       return { vn, popType, payload }
     }
@@ -2182,9 +2157,8 @@ async function loadOverlays(tick: OverlayTick = { imageUid: imageUid ?? '', scop
       // a layer no longer held (its last fetch failed) has no cells to reuse: fetched whole
       if (plan[i] === 'full' || !heldLayer(vn, popType)) return await whole()
       if (plan[i] === 'pops') {
-        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType, part: 'pops' }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-                                { cache: 'no-store' })
-        const { pops } = await readJson<OverlayPopsPayload>(res, 'Overlays')
+        const { pops } = await getJson<OverlayPopsPayload>(overlaysUrl({ projectUid, imageUid, valueName: vn, popType, part: 'pops' }),
+                                                           { cache: 'no-store', quiet: true })
         const held = heldLayer(vn, popType)
         return held ? { vn, popType, payload: { ...held.payload, pops } } : await whole()
       }
@@ -2332,9 +2306,7 @@ async function loadSkeletons(force = false) {
     const cached = force ? undefined : skeletonPayloads.value.get(vn)
     if (cached) { next.set(vn, cached); return }
     try {
-      const res = await fetch(skeletonsUrl({ projectUid, imageUid, valueName: vn }), { cache: 'no-store' }) // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-      if (!res.ok) return
-      const payload = await res.json() as SkeletonPayload
+      const payload = await getJson<SkeletonPayload>(skeletonsUrl({ projectUid, imageUid, valueName: vn }), { cache: 'no-store' })
       next.set(vn, payload)
       // a table written before branching stored its paths: say so rather than draw nothing silently
       if (payload.note) overlaysErr.value = `Skeleton ${vn}: ${payload.note}`
@@ -2383,9 +2355,7 @@ async function loadGraphs(force = false) {
     const cached = force ? undefined : graphPayloads.value.get(sfx)
     if (cached) { next.set(sfx, cached); return }
     try {
-      const res = await fetch(spatialGraphsUrl({ projectUid, imageUid, suffix: sfx }), { cache: 'no-store' }) // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-      if (!res.ok) return
-      const payload = await res.json() as SpatialGraphPayload
+      const payload = await getJson<SpatialGraphPayload>(spatialGraphsUrl({ projectUid, imageUid, suffix: sfx }), { cache: 'no-store' })
       next.set(sfx, payload)
       // edges it could not draw (across frames, cells gone from their table): say so
       if (payload.note) overlaysErr.value = `Graph ${sfx}: ${payload.note}`
@@ -2417,9 +2387,7 @@ async function loadTracks() {
   const missing = wantVns.filter(vn => !next.has(vn))
   await Promise.all(missing.map(async vn => {
     try {
-      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn }), // ARCH-EXEMPT: needs cache: 'no-store', which apiFetch does not pass
-                              { cache: 'no-store' })
-      if (res.ok) next.set(vn, await res.json())
+      next.set(vn, await getJson<OverlayPayload>(overlaysUrl({ projectUid, imageUid, valueName: vn }), { cache: 'no-store' }))
     } catch { /* one vn's failure must not take the others down */ }
   }))
   trackPayloads.value = next
