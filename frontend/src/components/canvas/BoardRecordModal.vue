@@ -8,6 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { getJson } from '../../utils/api'
 import BaseModal from '../BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from '../SelectionTable.vue'
 import InlineNote from '../InlineNote.vue'
@@ -88,8 +89,7 @@ async function onFile(e: Event) {
     const uids = rec.images.map(i => i.uid)
     const today = await Promise.all(rec.boards.map(async b => {
       try {
-        const res = await fetch(boardProvenanceUrl(props.projectUid, uids, { pops: b.populations.map(p => p.key), clusterRuns: [] }))
-        return res.ok ? (await res.json()) as BoardProvenanceResponse : null
+        return await getJson<BoardProvenanceResponse>(boardProvenanceUrl(props.projectUid, uids, { pops: b.populations.map(p => p.key), clusterRuns: [] }))
       } catch { return null }
     }))
     nowRuns.value = today.map(t => t?.runs ?? [])

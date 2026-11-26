@@ -18,6 +18,7 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { usePopFamily } from '../../composables/usePopFamily'
 import { useProjectStore } from '../../stores/project'
+import { getBuffer, getJson, tryApi } from '../../utils/api'
 import GateScatterCell from './GateScatterCell.vue'
 import PopFamilySelect from './PopFamilySelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
@@ -122,13 +123,13 @@ async function fetchTiles(isCurrent: () => boolean) {
       const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: uid, popType: family.value })
       if (pops.value.length) q.set('pops', pops.value.map(p => p.token).join(','))
       if (colourBy.value) q.set('colourBy', colourBy.value)
-      const mr = await fetch(`/api/plots/pop-positions?${q}&meta=1`)
+      const mr = await tryApi(getJson<Meta>(`/api/plots/pop-positions?${q}&meta=1`))
       if (!mr.ok) continue
-      const meta = await mr.json() as Meta
-      if (!meta.n) continue
-      const dr = await fetch(`/api/plots/pop-positions?${q}`)
+      const meta = mr.data
+      if (!meta?.n) continue
+      const dr = await tryApi(getBuffer(`/api/plots/pop-positions?${q}`))
       if (!dr.ok) continue
-      out.push({ uid, meta, data: new Float32Array(await dr.arrayBuffer()) })
+      out.push({ uid, meta, data: new Float32Array(dr.data) })
     }
     if (!isCurrent()) return
     tiles.value = out

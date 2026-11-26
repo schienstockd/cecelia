@@ -27,6 +27,7 @@ import { letterboxFrame, type Frame, type FrameCell, type FrameRect } from '../.
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from './PlotPointOutMark.vue'
 import { useLogStore } from '../../stores/log'
+import { getBuffer, getJson, tryApi } from '../../utils/api'
 import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv,
@@ -424,7 +425,7 @@ async function loadPopGroups() {
     popScope: props.popType === 'trackclust' ? 'tracks' : 'cells', includeClusters: 'false' })
   if (props.setUid) { p.set('setUid', props.setUid); p.set('imageUids', props.imageUids.join(',')) }
   else p.set('imageUid', props.imageUids[0])
-  try { popGroups.value = await (await fetch(`/api/plots/populations?${p}`)).json() }
+  try { popGroups.value = await getJson<SegmentationPops[]>(`/api/plots/populations?${p}`) }
   catch { popGroups.value = [] }
 }
 // attributes available to colour by — derived from the SAME client-side source (project store) the
@@ -593,10 +594,10 @@ async function fetchMap(isCurrent: () => boolean) {
                                       suffix: props.suffix, basis: basis.value, withLabels: '1' })
       if (cp.length) q.set('colourPops', cp.join(','))
       if (feat) q.set('colourFeature', feat)
-      const res = await fetch(`/api/plots/cluster-map?${q}`)
+      const r = await tryApi(getBuffer(`/api/plots/cluster-map?${q}`))
       if (!isCurrent()) return
-      if (!res.ok) continue
-      const f = new Float32Array(await res.arrayBuffer())
+      if (!r.ok) continue
+      const f = new Float32Array(r.data)
       if (!isCurrent()) return
       parts.push({ f, ui })
     }
