@@ -84,3 +84,13 @@ export function renamePanelColumns(states: Record<string, unknown>[], remaps: Ch
     if (Array.isArray(s.channels)) s.channels = s.channels.map(c => (typeof c === 'string' && to[c]) || c)
   }
 }
+
+// Picked targets that already have this gating (`value-name-check` → `gated`): the copy REPLACES their
+// map with the source's (not merged), so the dialog counts them beside the Copy button. '' ⇒ none.
+// `gated` null = the check could not say: warn for any pick rather than claim nothing is overwritten.
+export function overwriteSummary(picked: ReadonlySet<string>, gated: ReadonlySet<string> | null): string {
+  if (!gated) return picked.size ? 'Overwrites any existing gating' : ''
+  let n = 0
+  for (const uid of picked) if (gated.has(uid)) n++
+  return n ? `${n} of ${picked.size} selected will be overwritten` : ''
+}

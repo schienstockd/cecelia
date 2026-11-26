@@ -29,8 +29,10 @@ _gated(img) = has_pop(load_pop_tree(img; value_name = "B", pop_type = "flow", ba
 
 @testset "copy_gating! — replace = false keeps an image's own gates" begin
     _gate_fixture() do src, tgt
+        @test !has_gating(tgt, "B", "flow") && has_gating(src, "B", "flow")
         r = copy_gating!(src, [tgt]; value_name = "B", pop_type = "flow", replace = false)
-        @test r.copied == ["TgtImg"] && _gated(tgt)
+        @test r.copied == ["TgtImg"] && _gated(tgt) && has_gating(tgt, "B", "flow")
+        @test !has_gating(tgt, "B", "track")
         # now gated: a second prefill must not overwrite it
         m = load_pop_tree(tgt; value_name = "B", pop_type = "flow")
         add_pop!(m, "mine"; filter_measure = "track_id", filter_fun = "gt", filter_values = 1); save_pop_tree!(m, tgt)
@@ -42,6 +44,24 @@ _gated(img) = has_pop(load_pop_tree(img; value_name = "B", pop_type = "flow", ba
         @test !has_pop(load_pop_tree(tgt; value_name = "B", pop_type = "flow"), "/mine")
         # a source with no gating on that label set has nothing to copy
         @test_throws ArgumentError copy_gating!(tgt, [src]; value_name = "nope", pop_type = "flow")
+    end
+end
+
+@testset "has_gating — read-only; an unreadable map throws (the caller decides)" begin
+    _gate_fixture() do src, tgt
+        @test !has_gating(tgt, "B", "flow")                      # no sidecar
+        path = gating_path(tgt._dir, "B"; pop_type = "flow")
+        mkpath(dirname(path))
+        # a pre-uid sidecar: loading it backfills uids, which a plain load would SAVE — this must not
+        strip_uids(x::AbstractDict) = Dict{String,Any}(k => strip_uids(v) for (k, v) in x if k != "uid")
+        strip_uids(x::AbstractVector) = Any[strip_uids(v) for v in x]
+        strip_uids(x) = x
+        legacy = JSON3.write(strip_uids(JSON3.read(read(gating_path(src._dir, "B"; pop_type = "flow"), String), Dict{String,Any})))
+        write(path, legacy)
+        @test has_gating(tgt, "B", "flow")
+        @test read(path, String) == legacy
+        write(path, "{not json")                                  # the API counts it as gated; the keep-own prefill errors
+        @test_throws Exception has_gating(tgt, "B", "flow")
     end
 end
 

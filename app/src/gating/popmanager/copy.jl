@@ -12,6 +12,19 @@ const _POP_TREE_LOCK = ReentrantLock()
 with_pop_tree_lock(f) = lock(f, _POP_TREE_LOCK)
 
 """
+    has_gating(img, value_name, pop_type) -> Bool
+
+Whether `img` already has a `pop_type` gating map with at least one population on `value_name` — what
+`copy_gating!` would replace (`replace = true`) or keep (`replace = false`). A missing or empty sidecar
+is not gating; one that will not load throws (the caller decides: the copy dialog's precheck,
+`POST /api/images/value-name-check` with `popType`, counts it as gated, since a copy overwrites the file).
+Read-only (`backfill_save = false`).
+"""
+has_gating(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)::Bool =
+    isfile(gating_path(img._dir, value_name; pop_type = String(pop_type))) &&
+    !isempty(load_pop_tree(img; value_name = value_name, pop_type = String(pop_type), backfill_save = false).order)
+
+"""
     plan_gating_copy(m, timg; value_name, needed = _needed_columns(m), src_names) -> (; tree, remapped, skip)
 
 What copying the source map `m` onto `timg` would write, without writing it: `tree` — `m` with its
@@ -78,10 +91,8 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
         for timg in targets
             tuid = timg.uid
             tuid == src.uid && continue
-            if !replace && img_has_value_name(timg, vn) &&
-               !isempty(load_pop_tree(timg; value_name = vn, pop_type = pt, backfill_save = false).order)
-                skipped[tuid] = "already gated"; continue
-            end
+            img_has_value_name(timg, vn) || (skipped[tuid] = "no segmentation '$vn'"; continue)
+            (!replace && has_gating(timg, vn, pt)) && (skipped[tuid] = "already gated"; continue)
             plan = plan_gating_copy(m, timg; value_name = vn, needed, src_names)
             plan.skip === nothing || (skipped[tuid] = plan.skip; continue)
             tm, mt = plan.tree, plan

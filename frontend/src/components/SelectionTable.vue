@@ -30,7 +30,7 @@
 // Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
-import { computed, ref, watch, nextTick, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, nextTick, getCurrentInstance, useSlots, onMounted, onUpdated, onBeforeUnmount } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { sortRows, cycleSort, sortIconFor, parseSortState,
          type SortState, type SortValue } from '../utils/sortRows'
@@ -38,6 +38,7 @@ import { useColumnResize } from '../composables/useColumnResize'
 import { fillColumnKey, fillExtraPx, lengthPx } from '../utils/columnFill'
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { headerLift, liftScrollBox, verticalScrollBox } from '../utils/stickyHead'
+import { nextRange, rowOffsets, type RowRange } from '../utils/rowWindow'
 import { allSelected as allChosen, someSelected as someChosen,
          toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep,
          fileManagerPick } from '../utils/tableSelection'
@@ -231,6 +232,17 @@ const props = withDefaults(defineProps<{
    *          through and pick from — the viewer's ROI list: click to go to an ROI, tick to record it.
    */
   pickBy?: 'row' | 'box'
+  /**
+   * Render only the rows near the viewport, two spacer rows standing in for the rest
+   * (`utils/rowWindow.ts`). For a list that can run to thousands of rows: every rendered row is laid
+   * out and painted on each frame anything on the page changes, and mounted with all its cell slots
+   * when it comes back from a filter — the image table at 2000 rows spent ~80 ms a frame on an
+   * unrelated keystroke and seconds on clearing a filter. Needs a SIZED table (`columnWidthKey` or
+   * `headerless`): under auto layout the column widths would follow whichever rows are rendered.
+   * Selection, ranges, select-all and sort all work on every row, rendered or not; the browser's own
+   * find-in-page sees only the rendered ones.
+   */
+  windowed?: boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -441,6 +453,40 @@ const sortedRows = computed(() => {
   return sortRows(props.rows, (r: Row) => r[field] as SortValue, s.dir)
 })
 
+// ── Windowed rendering (`windowed`) ──────────────────────────────────────────────
+// Which rows are in the DOM. Everything that reasons about rows — ranges, select-all, the drag sweep's
+// `renderedIds` — keeps using `sortedRows`; only the template's loop reads `shownRows`. Heights are
+// measured per row id as rows render (a note line or a thumbnail makes a row taller), unmeasured rows
+// count at the mean of the measured ones; `view` is the visible band in tbody px, set from the scroll
+// box each frame something scrolls.
+const windowing = computed(() => props.windowed && sized.value)
+const rowHeights = new Map<string, number>()
+const heightsRev = ref(0)
+const DEFAULT_ROW_PX = 32
+let meanRowPx = DEFAULT_ROW_PX
+const view = ref({ y0: 0, y1: typeof window === 'undefined' ? 800 : window.innerHeight })
+const offsets = computed(() => {
+  void heightsRev.value
+  return windowing.value
+    ? rowOffsets(sortedRows.value.map(r => rowHeights.get(idOf(r)) ?? meanRowPx))
+    : null
+})
+const range = computed<RowRange>(prev => {
+  const off = offsets.value
+  if (!off) return { start: 0, end: sortedRows.value.length }
+  const next = nextRange(off, prev ?? null, view.value.y0, view.value.y1)
+  return prev && prev.start === next.start && prev.end === next.end ? prev : next
+})
+const shownRows = computed(() =>
+  windowing.value ? sortedRows.value.slice(range.value.start, range.value.end) : sortedRows.value)
+const padTop = computed(() => offsets.value ? offsets.value[range.value.start] : 0)
+const padBottom = computed(() => {
+  const off = offsets.value
+  return off ? off[off.length - 1] - off[range.value.end] : 0
+})
+const colCount = computed(() =>
+  props.columns.length + (props.selectionMode !== 'none' ? 1 : 0) + (slots.actions ? 1 : 0))
+
 // ── Column widths (opt-in) ─────────────────────────────────────────────────────
 // Only when the caller asks (`columnWidthKey`). Sizing the columns means `table-layout: fixed`, and
 // under fixed layout EVERY column shares the width evenly unless it is given one — which is how the
@@ -526,9 +572,27 @@ const tableStyle = computed(() =>
 // the observer callback: the column it widens sits inside the observed box.
 const tableEl = ref<HTMLTableElement | null>(null)
 // `followSelection`: after the DOM has the new `.sel-on`, bring it into view
-watch(() => props.modelValue, () => {
+watch(() => props.modelValue, async id => {
   if (!props.followSelection) return
-  void nextTick(() => tableEl.value?.querySelector('tbody tr.sel-on')?.scrollIntoView({ block: 'nearest' }))
+  await nextTick()
+  // windowed, the row may not be rendered: scroll its spot into the box first, then it is
+  if (windowing.value && id !== undefined && !tableEl.value?.querySelector('tbody tr.sel-on')) {
+    const i = sortedRows.value.findIndex(r => idOf(r) === id)
+    const off = offsets.value
+    const body = tableEl.value?.tBodies[0]
+    if (i >= 0 && off && body) {
+      const box = verticalScrollBox(tableEl.value)
+      const boxTop = box ? box.getBoundingClientRect().top : 0
+      const boxH = box ? box.clientHeight : window.innerHeight
+      const delta = body.getBoundingClientRect().top + off[i] - boxTop - boxH / 2
+      if (box) box.scrollTop += delta
+      else window.scrollBy(0, delta)
+      updateView.cancel()
+      measureView()
+      await nextTick()
+    }
+  }
+  tableEl.value?.querySelector('tbody tr.sel-on')?.scrollIntoView({ block: 'nearest' })
 })
 const parentPx = ref(0)
 const measureParent = rafCoalesce((w: number) => { parentPx.value = w })
@@ -573,6 +637,64 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', onAnyScroll, { capture: true })
   window.removeEventListener('resize', onAnyScroll)
   updateLift.cancel()
+})
+// `windowed`: the visible band, in tbody px, from the box that scrolls the table (or the page)
+function measureView() {
+  const table = tableEl.value
+  const body = table?.tBodies[0]
+  if (!windowing.value || !table || !body) return
+  const box = verticalScrollBox(table)
+  const r = box?.getBoundingClientRect()
+  const top = body.getBoundingClientRect().top
+  const y0 = (r ? r.top : 0) - top, y1 = (r ? r.bottom : window.innerHeight) - top
+  if (y0 !== view.value.y0 || y1 !== view.value.y1) view.value = { y0, y1 }
+}
+const updateView = rafCoalesce(measureView)
+// …and the rendered rows' heights, which `offsets` reads. A ResizeObserver rather than a read per
+// render, so a row that grows by itself (a thumbnail arriving, a note line opening) is caught too.
+let rowRo: ResizeObserver | null = null
+function measureRows() {
+  const body = tableEl.value?.tBodies[0]
+  if (!body) return
+  let changed = false, sum = 0, count = 0
+  for (const tr of body.querySelectorAll<HTMLElement>(':scope > tr[data-sel-id]')) {
+    let h = tr.getBoundingClientRect().height
+    const next = tr.nextElementSibling
+    if (next?.classList.contains('sel-detail-row')) h += next.getBoundingClientRect().height
+    if (!h) continue                                  // hidden (collapsed section, kept-alive page)
+    const id = tr.dataset.selId!
+    if (Math.abs((rowHeights.get(id) ?? -1) - h) > 0.5) { rowHeights.set(id, h); changed = true }
+    sum += h; count++
+  }
+  if (count) meanRowPx = sum / count
+  if (changed) heightsRev.value++
+}
+const remeasure = rafCoalesce(() => { measureRows(); measureView() })
+function observeRows() {
+  const body = tableEl.value?.tBodies[0]
+  if (!windowing.value || !body || typeof ResizeObserver === 'undefined') return
+  // measured a frame later, never in the callback: the new heights re-render the rows it observes
+  rowRo ??= new ResizeObserver(() => remeasure.schedule(undefined))
+  rowRo.disconnect()
+  for (const tr of body.querySelectorAll(':scope > tr:not(.sel-spacer)')) rowRo.observe(tr)
+}
+onMounted(observeRows)
+onUpdated(observeRows)
+// the rows changed (a filter, a sort): the band is where it was, the rows under it are not
+watch(sortedRows, () => updateView.schedule(undefined))
+const onWindowScroll = () => updateView.schedule(undefined)
+onMounted(() => {
+  if (!props.windowed) return
+  window.addEventListener('scroll', onWindowScroll, { capture: true, passive: true })
+  window.addEventListener('resize', onWindowScroll, { passive: true })
+  measureView()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onWindowScroll, { capture: true })
+  window.removeEventListener('resize', onWindowScroll)
+  updateView.cancel()
+  remeasure.cancel()
+  rowRo?.disconnect(); rowRo = null
 })
 const headStyle = computed(() => headLift.value ? { transform: `translateY(${headLift.value}px)` } : undefined)
 const fillKey = computed(() => sized.value && props.fit === 'fill' ? fillColumnKey(props.columns) : null)
@@ -637,7 +759,11 @@ function colStyle(c: SelectionColumn) {
       </tr>
     </thead>
     <tbody>
-      <template v-for="row in sortedRows" :key="idOf(row)">
+      <!-- `windowed`: the rows above the rendered ones -->
+      <tr v-if="windowing" class="sel-spacer" aria-hidden="true">
+        <td :colspan="colCount" :style="{ height: `${padTop}px` }" />
+      </tr>
+      <template v-for="row in shownRows" :key="idOf(row)">
       <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isOn(row) }, rowClass?.(row)]" :data-sel-id="idOf(row)"
           v-tooltip.top="tipOf(row)"
           @click="pick(row, $event)" @dblclick="onRowDblClick(row, $event)"
@@ -670,14 +796,16 @@ function colStyle(c: SelectionColumn) {
            a diff. The caller decides which row is open (the slot simply renders nothing for the rest),
            so the table keeps no expansion state of its own. -->
       <tr v-if="$slots['row-detail'] && isExpanded?.(row)" class="sel-detail-row">
-        <td :colspan="columns.length + (selectionMode !== 'none' ? 1 : 0) + ($slots.actions ? 1 : 0)">
+        <td :colspan="colCount">
           <slot name="row-detail" :row="row" />
         </td>
       </tr>
       </template>
+      <tr v-if="windowing" class="sel-spacer" aria-hidden="true">
+        <td :colspan="colCount" :style="{ height: `${padBottom}px` }" />
+      </tr>
       <tr v-if="!sortedRows.length && $slots.empty">
-        <td :colspan="columns.length + (selectionMode !== 'none' ? 1 : 0) + ($slots.actions ? 1 : 0)"
-            class="sel-empty">
+        <td :colspan="colCount" class="sel-empty">
           <slot name="empty" />
         </td>
       </tr>
@@ -791,6 +919,8 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 }
 /* an over-long value truncates instead of widening the table; the row tooltip carries the full text */
 .sel-ellipsis { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* `windowed`: the stand-ins for the rows not rendered — no rule, no padding, just their height */
+.sel-table .sel-spacer > td { padding: 0; border: 0; }
 /* an EMPTY `row-detail` slot still renders a <tr>, so it must not draw a border/hover of its own */
 .sel-detail-row:hover { background: none; }
 .sel-empty { text-align: center; padding: 0.6rem; }

@@ -1,13 +1,15 @@
 <!--
   AttrFilterPanel — the ONE "filter these rows by their attributes" dropdown: a chip row per attribute
-  key, then Apply / Reset / Invert.
+  key, then Reset / Invert. Picking a chip filters LIVE — the draft is applied once the clicks pause
+  (APPLY_WAIT), so assembling a multi-chip filter re-renders the list once, not per click.
 
   Extracted from `ModuleLayout.vue`, which owned it inline for the image table. It is not about images:
   it needs rows carrying an `attr` bag and nothing else, so the Movies list — whose rows are joined back
   to their source image — asks the same question with the same control. The rule lives in
   `utils/attrFilter.ts` (pure, tested); this is the chrome.
 
-  It renders NOTHING when the rows carry no attributes, so a host can place it unconditionally.
+  It renders NOTHING when the rows carry no attributes (and the host passes no `#lead` row), so a host
+  can place it unconditionally.
 
   What it does NOT own: whether it is open. That is the host's action bar (a Filter button next to its
   own toggles), and the two pages phrase it in their own button idiom.
@@ -15,11 +17,12 @@
   See docs/UI.md → Filtering rows by attribute.
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
+import { debouncedSave } from '../utils/debouncedSave'
 import ChipSelect from './ChipSelect.vue'
 import CcToggle from './CcToggle.vue'
 import { attrKeysOf, attrValueMap, attrChipOptions, attrFilterActive, attrFilterDrafted,
-         applyAttrFilter, emptyAttrFilter,
+         applyAttrFilter, emptyAttrFilter, APPLY_WAIT,
          type AttrBearing, type AttrFilterState } from '../utils/attrFilter'
 
 const props = withDefaults(defineProps<{
@@ -37,13 +40,29 @@ const valueMap  = computed(() => attrValueMap(props.rows))
 const hasDraft  = computed(() => attrFilterDrafted(props.modelValue))
 const hasApplied = computed(() => attrFilterActive(props.modelValue))
 
-const setDraft = (key: string, next: string[]) =>
+// Live, but coalesced: every chip click updates the draft at once (the chip lights up), and the draft
+// becomes the applied filter once the clicks pause — re-rendering the list is the cost, so a burst of
+// clicks pays it once (numbers: docs/UI.md → Filtering rows by attribute).
+const applySoon = debouncedSave(() => emit('update:modelValue', applyAttrFilter(props.modelValue)),
+                                { wait: APPLY_WAIT })
+// closing the pane mid-pause still applies what was picked
+onBeforeUnmount(() => { void applySoon.flush() })
+// a persisted state can hold picked chips that were never applied — apply them now
+if (JSON.stringify(applyAttrFilter(props.modelValue).applied) !== JSON.stringify(props.modelValue.applied))
+  applySoon.schedule()
+
+const setDraft = (key: string, next: string[]) => {
   emit('update:modelValue', { ...props.modelValue, draft: { ...props.modelValue.draft, [key]: next } })
+  applySoon.schedule()
+}
+const reset = () => { applySoon.cancel(); emit('update:modelValue', emptyAttrFilter()) }
 </script>
 
 <template>
-  <div v-if="attrKeys.length" class="cc-filter-panel">
+  <div v-if="attrKeys.length || $slots.lead" class="cc-filter-panel">
     <div class="cc-filter-rows">
+      <!-- a host's own leading row(s), e.g. the image table's search box — same shell, same row idiom -->
+      <slot name="lead" />
       <div v-for="key in attrKeys" :key="key" class="cc-filter-row">
         <span class="cc-filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
         <ChipSelect class="cc-filter-chips" multiple :options="attrChipOptions(key, valueMap[key] ?? [])"
@@ -52,13 +71,9 @@ const setDraft = (key: string, next: string[]) =>
           @update:model-value="v => setDraft(key, v as string[])" />
       </div>
     </div>
-    <div class="filter-actions">
-      <button class="cc-btn cc-btn-ghost" :disabled="!hasDraft"
-        @click="emit('update:modelValue', applyAttrFilter(modelValue))"
-        v-tooltip.top="`Apply selected filters to the ${noun}`">Apply</button>
+    <div v-if="attrKeys.length" class="filter-actions">
       <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasDraft"
-        @click="emit('update:modelValue', emptyAttrFilter())"
-        v-tooltip.top="'Clear the attribute filters'">Reset</button>
+        @click="reset" v-tooltip.top="'Clear the attribute filters'">Reset</button>
       <CcToggle class="filter-invert" :model-value="modelValue.invert" :disabled="!hasApplied"
         label="Invert" v-tooltip.top="'Invert the filter — show what does NOT match'"
         @update:model-value="v => emit('update:modelValue', { ...modelValue, invert: v })" />

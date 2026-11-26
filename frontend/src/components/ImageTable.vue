@@ -306,14 +306,18 @@ async function setIncluded(img: CciaImage, included: boolean) {
 
 // every image in the set, before `filterUids` — tells "no images" apart from "all filtered out"
 const setImages = computed(() => project.sets.find(s => s.uid === props.setUid)?.images ?? [])
-const images = computed(() => {
+// Keeps the PREVIOUS array when the rows are the same objects in the same order: a new array re-renders
+// every row, ~1 s on a 2000-image set even when nothing came or went (a search keystroke that still
+// matches everything, a filter whose result equals no filter). Measured: docs/UI.md → Image search.
+const images = computed<CciaImage[]>(prev => {
   let all = setImages.value
   if (props.filterUids) {
     const keep = new Set(props.filterUids)
     all = all.filter(i => keep.has(i.uid))
   }
   const s = project.getImageSort(scope.value, props.setUid)
-  return s ? sortImages(all, s.key, s.dir) : all
+  const next = s ? sortImages(all, s.key, s.dir) : all
+  return prev && prev.length === next.length && next.every((img, i) => img === prev[i]) ? prev : next
 })
 
 
@@ -734,7 +738,8 @@ function thumbTip(img: CciaImage): TooltipBinding {
   <div v-else class="table-scroll">
   <!-- The canonical table (docs/UI.md). It owns the header, the checkboxes and their tri-state
        select-all, the sticky left columns, the resize handles and the row hit target; every cell below
-       is this component's, through a `#cell-` slot. -->
+       is this component's, through a `#cell-` slot. `windowed`: only the rows near the viewport are in
+       the DOM, so a 2000-image set costs what a screenful does (docs/UI.md → Image search). -->
   <SelectionTable
     class="image-table"
     data-guide="images.table"
@@ -748,6 +753,7 @@ function thumbTip(img: CciaImage): TooltipBinding {
     v-model:sort="sortModel"
     :disabled-ids="unselectableUids"
     sticky-header
+    windowed
     column-width-key="cc-imagetable-cols"
     :row-class="img => ({ 'cc-row-excluded': isExcluded(img) })"
     :row-tooltip="img => isExcluded(img) && !canSelectExcluded

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { timelapseDuration, imageTableCsvRows, sortImages, imageSortValue } from './imageTable'
+import { timelapseDuration, imageTableCsvRows, sortImages, imageSortValue,
+         matchesImageSearch, imageSearchSuggestions } from './imageTable'
 import type { CciaImage } from '../stores/project'
 
 const img = (o: Partial<CciaImage>): CciaImage => ({ uid: 'u', name: 'n', status: 'done', ...o } as CciaImage)
@@ -89,5 +90,39 @@ describe('imageTableCsvRows', () => {
                                     ['Treatment', 'name'])
     expect(row).toMatchObject({ Name: 'n', attr_name: 'mouse 1', Treatment: 'X' })
     expect(Object.keys(row).some(k => k.startsWith('attr:'))).toBe(false)
+  })
+})
+
+describe('matchesImageSearch', () => {
+  const img = { uid: 'aB3xYz', name: 'Mouse1_LN_4h' }
+  it('matches a case-insensitive substring of the name or the uid', () => {
+    expect(matchesImageSearch(img, 'ln_4')).toBe(true)
+    expect(matchesImageSearch(img, 'B3X')).toBe(true)
+    expect(matchesImageSearch(img, '  mouse1 ')).toBe(true)
+    expect(matchesImageSearch(img, 'spleen')).toBe(false)
+  })
+  it('every word must appear, in either field — the jump search rule', () => {
+    expect(matchesImageSearch(img, 'ln 4h')).toBe(true)
+    expect(matchesImageSearch(img, 'mouse1 b3x')).toBe(true)
+    expect(matchesImageSearch(img, 'ln spleen')).toBe(false)
+  })
+  it('blank text matches everything, a nameless image still matches on its uid', () => {
+    expect(matchesImageSearch(img, '')).toBe(true)
+    expect(matchesImageSearch({ uid: 'q1W2e3' }, 'w2')).toBe(true)
+    expect(matchesImageSearch({ uid: 'q1W2e3', name: null }, 'x')).toBe(false)
+  })
+})
+
+describe('imageSearchSuggestions', () => {
+  const imgs = [
+    { uid: 'Zz11aa', name: 'LN_ctrl' }, { uid: 'ln22bb', name: 'spleen' },
+    { uid: 'Yy33cc', name: 'LN_ctrl' }, { uid: 'Xx44dd', name: 'blood_LN' },
+  ]
+  it('offers names (prefix first) then uids, de-duplicated', () => {
+    expect(imageSearchSuggestions(imgs, 'ln')).toEqual(['LN_ctrl', 'blood_LN', 'ln22bb'])
+  })
+  it('an empty query offers everything up to the cap', () => {
+    expect(imageSearchSuggestions(imgs, '')).toHaveLength(7)
+    expect(imageSearchSuggestions(imgs, '', 2)).toEqual(['LN_ctrl', 'spleen'])
   })
 })
