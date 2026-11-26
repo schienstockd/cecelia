@@ -92,6 +92,24 @@ describe('ModuleLayout filter pane', () => {
     expect(names(host)[0]).toContain('LN_mertk_1')
   })
 
+  it('the suggestions come under a Names and an IDs heading, not as one mixed list', async () => {
+    const host = mountPane()
+    await frames()
+    const input = host.querySelector<HTMLInputElement>('.image-search input')!
+    input.focus()
+    await frames()
+    const groups = [...document.querySelectorAll<HTMLElement>('.si-group')]
+    expect(groups.map(g => g.querySelector('.si-head')?.textContent?.trim())).toEqual(['Names', 'IDs'])
+    const items = (g: HTMLElement) => [...g.querySelectorAll('.si-item')].map(b => b.textContent?.trim())
+    expect(items(groups[0])).toEqual(['LN_ctrl_1', 'LN_mertk_1', 'spleen_ctrl'])
+    expect(items(groups[1])).toEqual(['aaa111', 'bbb222', 'ccc333'])
+    // the arrow keys walk ONE list across the headings: down ×4 lands on the first uid
+    for (let i = 0; i < 4; i++) input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    await frames()
+    expect(document.querySelector('.si-hot')?.textContent?.trim()).toBe('aaa111')
+    input.blur()
+  })
+
   it('picking a chip filters without an Apply button', async () => {
     const host = mountPane()
     await frames()
