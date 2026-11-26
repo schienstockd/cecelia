@@ -17,7 +17,7 @@ segment, the member labels and their basis-population codes.
 
 Params: suffix, segments [{uID, valueName, propsPath, labels, popCodes}], basis (population names ↔
 code index), graphPaths {uID: path}, graphSuffix, compCols (composition column names, aligned to basis),
-otherCol, densityCol, includeOther, pooling ("frame"|"track"|"movie", spatial_utils.POOLINGS), clusterMethod ("leiden"|"kmeans"), numClusters, resolution, createUmap,
+otherCol, densityCol, diversityCol (effective types nearby, `spatial_utils.effective_types`), includeOther, pooling ("frame"|"track"|"movie", spatial_utils.POOLINGS), clusterMethod ("leiden"|"kmeans"), numClusters, resolution, createUmap,
 randomState, qcOutPath.
 """
 from collections import defaultdict
@@ -163,6 +163,10 @@ def run(params):
     comp_obs = {comp_cols[j]: X[:, j] for j in range(len(comp_cols))}
     if windows:
         comp_obs[density_col] = density[inverse]       # cells in its window per frame (edge-corrected)
+    # local diversity: how many basis types each cell effectively has around it (basis only, not "other")
+    diversity_col = script_utils.get_param(params, "diversityCol", default=None)
+    if diversity_col is not None:
+        comp_obs[diversity_col] = spatial_utils.effective_types(X[:, :n_basis])
 
     # an all-zero "other" column means a basis-only graph, not a measure — dropped, and Julia is told
     other_all_zero = bool(inc_other) and spatial_utils.drop_empty_other(comp_obs, other_col)

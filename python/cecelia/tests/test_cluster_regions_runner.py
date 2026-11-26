@@ -181,6 +181,47 @@ class ClusterRegionsRunnerQcTest(unittest.TestCase):
             'randomState': 0, 'qcOutPath': os.path.join(td, 'region_qc.json')})
         return props_path, labels, left
 
+    def test_effective_types_counts_basis_types_not_other(self):
+        """Hub 1 touches one A and one C cell → 2 types. Hub 2 touches one A cell and one cell outside
+        the basis → 1 type: "other" lumps unlabelled cells, so it is not a type. Lone cell 7 has no
+        neighbours → 0."""
+        import anndata as ad
+        import pandas as pd
+        import scipy.sparse as sp
+        from cecelia.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.spatial_utils import save_graph
+        labels = [1, 2, 3, 4, 5, 6, 7]
+        edges = [(1, 2), (1, 3), (4, 5), (4, 6)]
+        idx = {l: i for i, l in enumerate(labels)}
+        rows = [idx[a] for a, b in edges] + [idx[b] for a, b in edges]
+        cols = [idx[b] for a, b in edges] + [idx[a] for a, b in edges]
+        n = len(labels)
+        with tempfile.TemporaryDirectory() as td:
+            g = ad.AnnData(np.zeros((n, 2), dtype=np.float32))
+            g.obsp['spatial_connectivities'] = sp.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+            graph_path = os.path.join(td, 'spatialGraph', 'default.h5ad')
+            save_graph(g, pd.DataFrame({'valueName': ['T'] * n, 'label': labels}), graph_path)
+            props_path = os.path.join(td, 'T.h5ad')
+            props = ad.AnnData(X=np.zeros((n, 1)), obs=pd.DataFrame(index=[str(l) for l in labels]))
+            props.var_names = ['f0']
+            props.write_h5ad(props_path)
+            basis_labels = [1, 2, 3, 4, 5, 7]         # cell 6 is in the graph, outside the basis
+            _load_runner().run({
+                'suffix': 'reg', 'basis': ['A', 'C'], 'graphPaths': {'img1': graph_path},
+                'graphSuffix': 'default', 'pooling': 'frame',
+                'segments': [{'uID': 'img1', 'valueName': 'T', 'propsPath': props_path,
+                              'labels': basis_labels, 'popCodes': [0, 0, 1, 0, 0, 1]}],
+                'compCols': ['spatial.comp.A.reg', 'spatial.comp.C.reg'], 'includeOther': True,
+                'otherCol': 'spatial.comp.other.reg',
+                'diversityCol': 'spatial.comp.effective_types.reg',
+                'clusterMethod': 'kmeans', 'numClusters': 2, 'createUmap': False,
+                'randomState': 0, 'qcOutPath': os.path.join(td, 'region_qc.json')})
+            d = LabelPropsView(props_path).view_cols(['spatial.comp.effective_types.reg']).as_df()
+        div = dict(zip(d['label'], d['spatial.comp.effective_types.reg']))
+        self.assertAlmostEqual(div[1], 2.0, places=5)
+        self.assertAlmostEqual(div[4], 1.0, places=5)
+        self.assertEqual(div[7], 0.0)
+
     def test_too_many_regions_writes_nothing(self):
         """A run over the region limit fails before writing: the pages that plot regions draw one label,
         legend row and heatmap column per region."""

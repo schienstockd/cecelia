@@ -87,7 +87,7 @@ end
     # the shipped region-clustering spec, as loaded: Leiden only for a Leiden run
     reg = _task_from_fun_name("clustRegions.cluster")
     @test "10.1038/s41598-019-41695-z" in Cecelia.task_citations(reg, Dict{String,Any}("clusterMethod" => "leiden"))
-    @test Cecelia.task_citations(reg, Dict{String,Any}("clusterMethod" => "kmeans")) == ["10.1016/j.celrep.2020.107523"]
+    @test Cecelia.task_citations(reg, Dict{String,Any}("clusterMethod" => "kmeans")) == ["10.1016/j.celrep.2020.107523", "10.2307/1934352"]
     # a composite cites its steps: segment + measure names Cellpose, track + measures names btrack
     @test "10.1038/s41592-020-01018-x" in Cecelia.task_citations(_task_from_fun_name("segment.cellposeMeasure"))
     @test "10.3389/fcomp.2021.734559" in Cecelia.task_citations(_task_from_fun_name("tracking.bayesian_track_measures"))
