@@ -763,6 +763,12 @@ function api_gating_channels(req::HTTP.Request)
         channelNamesPerVn = chansPerVnF,  # multi-VN advisor input (empty in single-VN mode)
         obsColumns = cobs,              # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
+        # the markers by NAME (`CD4`, `nuc_CD4`, `af_CD4`) — what a colour-by stores and reads back. Named
+        # with the channel names the readers resolve against (the table view's, not the display version),
+        # and raw where a name is on two channels or IS a real column (`area`): the read would take that
+        # column, not the channel — as `pooled_channel_columns` shadows
+        markerColumns = Cecelia.canonical_channel_columns(chans, something(lp.channel_names, String[]);
+                                                          shadow = vcat(col_names(lp; data_type = :vars), cobs)),
         # spatial/temporal centroid axes (obsm) — offered as gating scatter axes you can visualise AND
         # gate on (like the old R flow frame). Read/gate-eval already materialise them via as_df.
         spatialColumns = centroid_columns(lp; order = [:x, :y, :z]),   # centroid_x/_y[/_z], present axes

@@ -136,6 +136,46 @@
     end
 end
 
+# A colour-by naming a MARKER (`CD4`, `af_CD4`) colours the cells by that feature, as a result column
+# does: echoed back, one value per drawn cell, on a numeric ramp. The channels route lists the markers.
+@testset "API: viewer overlays colour by a marker" begin
+    fx = fixture_for(:cells, Symbol("marker-names"))
+    if fx === nothing
+        @test_skip "no fixture with marker names"
+    else
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dirname(fx.project)
+            pu, iu, vn = basename(fx.project), fx.uid, fx.value_name
+            q = "projectUid=$pu&imageUid=$iu&valueName=$vn"
+            ch = JSON3.read(api_gating_channels(HTTP.Request("GET", "/api/gating/channels?" * q))[2])
+            markers = String.(ch.markerColumns)
+            img = init_object(pu, iu)
+            lp  = label_props(img; value_name = vn)
+            named = [m for (m, r) in zip(markers, channel_columns(lp)) if m != r]
+            @test !isempty(named)                            # by name, not `mean_intensity_0`
+            m = first(named)
+            d = JSON3.read(api_viewer_overlays(HTTP.Request("GET",
+                "/api/viewer/overlays?$q&colourBy=" * HTTP.escapeuri(m)))[2])
+            @test d.colourBy == m && d.valueKind == "numeric"
+            @test length(d.values) == d.nCells
+            # the drawn cells' own values: the raw column the name resolves to, in label order
+            df = as_df(label_props(img; value_name = vn) |> v -> select_cols(v, [m]))
+            byl = Dict(Int(l) => Float64(v) for (l, v) in zip(df.label, getproperty(df, Symbol(m))))
+            same(i) = (v = d.values[i]; w = byl[Int(d.cells.label[i])]; v === nothing ? isnan(w) : Float64(v) ≈ w)
+            @test all(same, eachindex(d.values)) && any(!isnothing, d.values)
+            fin = Float64[v for v in d.values if v !== nothing]
+            @test d.valueRange[1] ≈ minimum(fin) && d.valueRange[2] ≈ maximum(fin)
+            # the movie / still path reads its scale through `_cb_scale`: the same ramp, never a code set
+            sc = _cb_scale(img, [vn], m)
+            @test sc !== nothing && sc.continuous
+            @test sc.range[1] ≈ minimum(fin) && sc.range[2] ≈ maximum(fin)
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 @testset "API: viewer overlays part=pops — the populations alone, as the whole payload has them" begin
     # A gate write changes membership, never the cells, so the viewer asks for `part=pops` after one
     # (`frontend/src/utils/viewer/overlayTick.ts`). It must be the SAME populations the whole payload

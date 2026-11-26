@@ -25,7 +25,7 @@ import PlotSpinner from './PlotSpinner.vue'
 import CcToggle from '../CcToggle.vue'
 import SearchSelect from '../SearchSelect.vue'
 import ColourBarLegend from './ColourBarLegend.vue'
-import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
+import { allColourBy, colourByGroups, fetchColourByColumns, NO_COLOUR_BY, type ColourByColumns } from '../../utils/viewer/colourByColumns'
 import { useLensNames } from '../../composables/useLensNames'
 import { lensLabel } from '../../utils/viewer/lensQuery'
 import type { PopLayer } from './PlotLayers.vue'
@@ -36,7 +36,7 @@ import { fetchSegmentationPops } from '../../plots/populations'
 import type { CompareMode } from '../../plots/trackGroups'
 import type { VisProps } from '../../plots/plot'
 import { dotRadiusFor } from '../../plots/density'
-import { colourByGroups, GATE_CELL_PAD, framesIn, tileBox, positionLayers, positionPops, resolveFrame,
+import { GATE_CELL_PAD, framesIn, tileBox, positionLayers, positionPops, resolveFrame,
          sharedValueScale } from '../../plots/popPositions'
 import { fitGridCols } from '../../plots/montage'
 import { useBoxSize } from '../../composables/usePlotResize'
@@ -97,10 +97,10 @@ const pops = computed(() => positionPops({
 
 const tiles = ref<Tile[]>([])
 // the columns to offer: the first image's cell table the tiles draw (a lens score is on every image of its run)
-const columns = ref<string[]>([])
+const columns = ref<ColourByColumns>(NO_COLOUR_BY)
 const columnsVn = computed(() => tiles.value[0]?.meta.valueNames?.[0] ?? '')
 watch([() => uids.value[0], columnsVn], async ([uid, vn]) => {
-  columns.value = uid && vn ? await fetchColourByColumns(props.projectUid, uid, vn) : []
+  columns.value = uid && vn ? await fetchColourByColumns(props.projectUid, uid, vn) : NO_COLOUR_BY
 }, { immediate: true })
 // a lens is named as it was renamed (Movies & figures / the viewer's Lenses), not by its column
 const lensNames = useLensNames(() => props.projectUid)
@@ -196,7 +196,7 @@ const tileStyle = (e: Ext) => {
     <div class="ppv-ctrl cc-panel-controls">
       <div class="cc-row">
         <PopFamilySelect v-if="onRail" :options="familyOptions" v-model="railFamily" />
-        <span v-if="columns.length" class="cc-row-group" v-tooltip.top="'Colour the cells by populations or a measure'">
+        <span v-if="allColourBy(columns).length" class="cc-row-group" v-tooltip.top="'Colour the cells by populations or a measure'">
           <span class="cc-fs-xs">Colour</span>
           <SearchSelect v-model="colourBy" :groups="colourGroups" aria-label="Colour by" />
         </span>
