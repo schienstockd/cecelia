@@ -44,6 +44,7 @@ import FlowModelDetails from './FlowModelDetails.vue'
 import DenoiseModelDetails from './DenoiseModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useInlineEdit } from '../../composables/useInlineEdit'
+import { errorMessage, getJson, postJson, tryApi } from '../../utils/api'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
@@ -100,12 +101,10 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await fetch(endpointsFor(kind.value).list)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    models.value = data.models ?? []
+    const data = await getJson<{ models?: VaultRow[] } | null>(endpointsFor(kind.value).list)
+    models.value = data?.models ?? []
   } catch (e) {
-    error.value = String(e)
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -126,11 +125,7 @@ async function remove(m: VaultRow) { await post(endpointsFor(kind.value).delete,
 async function post(url: string, body: Record<string, unknown>) {
   error.value = ''
   try {
-    const res = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+    await postJson(url, body)
     await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -187,9 +182,9 @@ const metricOptions = ref<string[]>([])
 
 async function loadMetricOptions() {
   try {
-    const res = await fetch('/api/tasks/definitions')
+    const res = await tryApi(getJson<any>('/api/tasks/definitions'))
     if (!res.ok) return
-    const defs = await res.json()
+    const defs = res.data
     const list = Array.isArray(defs) ? defs : (defs.tasks ?? defs.definitions ?? [])
     const def = list.find((d: { fun_name?: string }) => d.fun_name === 'opticalFlow.train')
     const flat = (ps: { key?: string; options?: { value?: string }[]; params?: unknown[] }[]): typeof ps =>
