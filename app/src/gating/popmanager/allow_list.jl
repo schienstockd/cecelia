@@ -334,6 +334,34 @@ function label_track_sources(img::CciaImage, value_name::AbstractString)::Dict{I
     label_to_source
 end
 
+"""
+    orphan_track_sources(img, value_name) -> Vector{NamedTuple}
+
+The tracks on a segmentation whose authoring population is gone: one `(source, path, cells)` per
+`track_source` that is a pop UID no longer in the flow map (tracking only ever stamps a flow pop's
+UID or `WHOLE_SEG_TRACK_SOURCE`). `path` is where that pop last was (`removed_pop_path`), `nothing`
+when the gate history doesn't reach back; `cells` counts its tracked cells. No pop can draw these
+(`_pop_has_authored_tracks` refuses them, MULTI_POP_TRACKING_ORPHANS_PLAN.md decision 1) until the
+next tracking run sweeps them, so the viewer says why its ribbons are missing rather than "turn
+tracks on". Legacy unmarked rows are everyone's, never orphans. Sorted by `cells`, most first.
+"""
+function orphan_track_sources(img::CciaImage, value_name::AbstractString)::Vector{NamedTuple}
+    counts = Dict{String,Int}()
+    for src in values(_label_track_sources_cached(img, value_name))
+        (src === nothing || src == WHOLE_SEG_TRACK_SOURCE) && continue
+        counts[src] = get(counts, src, 0) + 1
+    end
+    isempty(counts) && return NamedTuple[]
+    m = load_pop_tree(img; value_name = value_name, pop_type = "flow")
+    out = NamedTuple[]
+    for (src, n) in counts
+        pop_path_by_uid(m, src) === nothing || continue
+        path = try removed_pop_path(img._dir, value_name, src; pop_type = "flow") catch; nothing end
+        push!(out, (source = src, path = path, cells = n))
+    end
+    sort!(out; by = o -> -o.cells)
+end
+
 # MODULE-LEVEL, NOT ON THE IMAGE: `init_object` builds a fresh `CciaImage` per request, so the
 # image-held cache this used to live in never survived one — every viewer overlay, landscape and
 # mask-colour request re-ran the gate evaluation (the same trap `_TRACKED_PARENTS_CACHE` documents).

@@ -133,9 +133,22 @@ export function overlaysUrl(q: {
   return '/api/viewer/overlays?' + p.toString()
 }
 
+/** Tracks on a segmentation whose population was deleted (`orphan_track_sources`): no pop can draw
+ *  them until tracking is re-run. `path` = where that pop last was, null when the history doesn't say. */
+export interface OrphanTracks { valueName: string; path: string | null; cells: number }
 /** `/api/viewer/pop-types` — which stored pop types this image has pops of, and whether any of its
- *  segmentations is tracked. What the "On the image" switches are filtered by (`onImageSwitches`). */
-export interface PresentPopTypes { popTypes: string[]; tracked: boolean }
+ *  segmentations is tracked. What the "On the image" switches are filtered by (`onImageSwitches`).
+ *  `orphanTracks` is absent from a server older than it. */
+export interface PresentPopTypes { popTypes: string[]; tracked: boolean; orphanTracks?: OrphanTracks[] }
+/** The Tracks section's line for orphaned tracks — the problem; `orphanTracksTip` is the fix. No
+ *  population's ribbon draws them, but the segmentation's own tracks button (On the image) draws
+ *  every track it has, theirs included; re-tracking gives them to a current population. */
+export function orphanTracksLine(o: OrphanTracks): string {
+  return `${o.valueName} tracks came from ${o.path ?? 'a population'} — deleted since`
+}
+export function orphanTracksTip(o: OrphanTracks): string {
+  return `Show them with the ${o.valueName} tracks button under On the image, or re-run tracking`
+}
 export function popTypesUrl(q: { projectUid: string; imageUid: string }): string {
   return '/api/viewer/pop-types?' + new URLSearchParams({ projectUid: q.projectUid, imageUid: q.imageUid }).toString()
 }

@@ -186,6 +186,17 @@ un-gated run. Four rules turn that marker into the guarantees the viewer + batch
    keeps it invisible meanwhile. `liveTrackSources=None` (legacy handler that never emits the param)
    disables the sweep — behaviour matches the shipped code path.
 
+5. **The viewer names them.** Until that next run, no population's ribbon draws an orphan's tracks
+   (only the segmentation's own tracks button under On the image, which draws every track it has),
+   so with Cell-track ribbons on the Tracks section read just "turn tracks on" and gave no reason.
+   `orphan_track_sources(img, vn)` (`allow_list.jl`) lists each `track_source` that is a UID no
+   longer in the flow map, with the path that pop last had (`removed_pop_path`, from the gate
+   history) and its cell count; `/api/viewer/pop-types` carries it as `orphanTracks`, and the section
+   says "Bcells tracks came from /qc/Kat-/cells- — deleted since", its tooltip pointing at that
+   button or a re-track.
+   Deleting a gate that a tracking run used, then copying the strategy across the set, orphans those
+   tracks on every image the copy reaches.
+
 The `WHOLE_SEG_TRACK_SOURCE = "whole_seg"` sentinel is a single named constant in both languages
 (`app/src/gating/population_manager.jl` and `python/cecelia/utils/tracking_utils.py`) so the writer,
 the guard, and the sweep can't drift apart.

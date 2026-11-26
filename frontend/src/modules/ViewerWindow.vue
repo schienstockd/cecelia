@@ -7038,7 +7038,7 @@ onUnmounted(() => {
                               @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
 
         <!-- a still image has no tracks -->
-        <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" v-model:color-mode="trackColorMode"
+        <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" :orphans="presentPopTypes?.orphanTracks ?? []" v-model:color-mode="trackColorMode"
                          v-model:dim-untracked="dimUntracked"
                          :colour-by="colourBy"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
