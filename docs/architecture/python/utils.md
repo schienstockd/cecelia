@@ -18,18 +18,18 @@ flowchart TB
   dim_utils["dim_utils<br/><small>imported by 29</small>"]
   label_props_utils["label_props_utils<br/><small>imported by 13</small>"]
   loopback["loopback<br/><small>imported by 7</small>"]
-  gpu_utils["gpu_utils<br/><small>imported by 6</small>"]
   cpu_utils["cpu_utils<br/><small>imported by 6</small>"]
+  gpu_utils["gpu_utils<br/><small>imported by 6</small>"]
   spatial_utils["spatial_utils<br/><small>imported by 5</small>"]
-  correction_utils["correction_utils<br/><small>imported by 4</small>"]
   clustering_utils["clustering_utils<br/><small>imported by 4</small>"]
-  slice_utils["slice_utils<br/><small>imported by 4</small>"]
-  units["units<br/><small>imported by 4</small>"]
-  segmentation_utils["segmentation_utils<br/><small>imported by 4</small>"]
+  correction_utils["correction_utils<br/><small>imported by 4</small>"]
   intensity_utils["intensity_utils<br/><small>imported by 4</small>"]
+  segmentation_utils["segmentation_utils<br/><small>imported by 4</small>"]
+  slice_utils["slice_utils<br/><small>imported by 4</small>"]
   title_card["title_card<br/><small>imported by 4</small>"]
-  ims_meta["ims_meta<br/><small>imported by 3</small>"]
+  units["units<br/><small>imported by 4</small>"]
   coastal_utils["coastal_utils<br/><small>imported by 3</small>"]
+  ims_meta["ims_meta<br/><small>imported by 3</small>"]
   mesh_utils["mesh_utils<br/><small>imported by 3</small>"]
   script_utils --> atomic_io
   script_utils --> cpu_utils
@@ -42,12 +42,12 @@ flowchart TB
   spatial_utils --> atomic_io
   spatial_utils --> clustering_utils
   spatial_utils --> label_props_utils
+  clustering_utils --> label_props_utils
   correction_utils --> cpu_utils
   correction_utils --> intensity_utils
   correction_utils --> script_utils
   correction_utils --> slice_utils
   correction_utils --> zarr_utils
-  clustering_utils --> label_props_utils
   segmentation_utils --> cpu_utils
   segmentation_utils --> gpu_utils
   segmentation_utils --> intensity_utils
@@ -81,26 +81,26 @@ Groups of modules that import each other (directly or round a loop). Lazy import
 | `staged_store` | `cecelia.utils.zarr_utils` | 21 |
 | `open_multiscales_for_writing` | `cecelia.utils.zarr_utils` | 20 |
 | `get_param` | `cecelia.utils.script_utils` | 17 |
-| `write_multiscale_pyramid` | `cecelia.utils.zarr_utils` | 15 |
 | `save_meta_in_zarr` | `cecelia.utils.ome_xml_utils` | 15 |
 | `write_calibration` | `cecelia.utils.zarr_utils` | 15 |
+| `write_multiscale_pyramid` | `cecelia.utils.zarr_utils` | 15 |
 | `read_timepoint` | `cecelia.utils.zarr_utils` | 12 |
 | `LabelPropsView` | `cecelia.utils.label_props_utils` | 10 |
-| `carry_valid_box` | `cecelia.utils.zarr_utils` | 9 |
 | `channel_indices` | `cecelia.utils.script_utils` | 9 |
+| `carry_valid_box` | `cecelia.utils.zarr_utils` | 9 |
 | `write_h5ad_atomic` | `cecelia.utils.atomic_io` | 6 |
 | `torch_device` | `cecelia.utils.gpu_utils` | 5 |
 | `write_label_pyramid` | `cecelia.utils.zarr_utils` | 5 |
-| `native_dtype` | `cecelia.utils.zarr_utils` | 4 |
+| `atomic_path` | `cecelia.utils.atomic_io` | 4 |
+| `default_base_url` | `cecelia.utils.loopback` | 4 |
 | `channel_index` | `cecelia.utils.script_utils` | 4 |
 | `fortify` | `cecelia.utils.zarr_utils` | 4 |
-| `atomic_path` | `cecelia.utils.atomic_io` | 4 |
+| `native_dtype` | `cecelia.utils.zarr_utils` | 4 |
 | `store_axes` | `cecelia.utils.zarr_utils` | 4 |
-| `default_base_url` | `cecelia.utils.loopback` | 4 |
-| `task_workers` | `cecelia.utils.cpu_utils` | 3 |
 | `split_back_and_write` | `cecelia.utils.clustering_utils` | 3 |
-| `load_graph` | `cecelia.utils.spatial_utils` | 3 |
-| `graph_metrics` | `cecelia.utils.spatial_utils` | 3 |
+| `task_workers` | `cecelia.utils.cpu_utils` | 3 |
+| `skimage_centroid_axis_names` | `cecelia.utils.label_props_utils` | 3 |
+| `api_token` | `cecelia.utils.loopback` | 3 |
 
 ## Class hierarchies
 

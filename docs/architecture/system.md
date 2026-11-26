@@ -63,7 +63,7 @@ flowchart LR
 | # | Arrow | What crosses | Contract lives in |
 |---|---|---|---|
 | 1 | browser → API, HTTP | `/api/*` JSON + binary (tiles, slabs) | `docs/API.md` → *Route index* |
-| 2 | browser ↔ API, WebSocket | task status / progress / log, broadcasts | `docs/ARCHITECTURE.md` → *WS message type reference* |
+| 2 | browser ↔ API, WebSocket | commands in (`task:run`, `chain:run`, cancel, export…); task status / progress / log and change broadcasts out — every type: [`boundaries_reference.md`](boundaries_reference.md) §3 | `docs/ARCHITECTURE.md` → *WS message type reference* |
 | 3 | main ↔ pop-outs | window handles; cross-window events via `localStorage` + `storage` event | `frontend/src/lib/*Channel.ts` |
 | 4 | API → package | plain Julia calls; the API owns no data model | `docs/ARCHITECTURE.md` → *Layer ownership* |
 | 5 | package → runner | task / chain requests over HTTP; runner relays frames back | `docs/RUNNER.md` |
@@ -74,7 +74,7 @@ flowchart LR
 | 10 | Claude → MCP | MCP tools over stdio | `mcp/cecelia_mcp/tools.json` |
 | 11 | MCP → API | `/api/*` with the API token (file path in env) | `docs/ARCHITECTURE.md` → *API token* |
 | 12 | package → Kiwi | `claude` CLI subprocess with an MCP config pointing at 10 | `docs/ai-assist/` |
-| 13 | Julia → disk | `ccid.json` / `project.json` via `save!`; cell data via `label_props` | `docs/OBJECTMODEL.md`, `docs/DATAMODEL.md` |
+| 13 | Julia → disk | `ccid.json` / `project.json` via `save!`, or `commit_state!` (transactional read-modify-write) when a task registers its outputs; cell data via `label_props` | `docs/OBJECTMODEL.md`, `docs/DATAMODEL.md` |
 | 14 | Python → disk | OME-ZARR via `zarr_utils` (staged writes), `.h5ad` via `LabelPropsView` / `write_h5ad_atomic` | root `CLAUDE.md` → *Image / OME-ZARR access*, *H5AD* |
 
 ## Pins
@@ -109,6 +109,7 @@ One row per arrow end. `Symbol` must appear in `File` (as a definition or a call
 | 12 | `app/src/ai/agent_runner.jl` | `function run_agent_turn` |
 | 12 | `app/src/ai/agent_runner.jl` | `function _agent_spawn_cmd` |
 | 13 | `app/src/model/image.jl` | `function save!(img::CciaImage)` |
+| 13 | `app/src/model/project.jl` | `function commit_state!(` |
 | 13 | `app/src/label_props.jl` | `function label_props(img::CciaImage` |
 | 14 | `python/cecelia/utils/zarr_utils.py` | `def staged_store` |
 | 14 | `python/cecelia/utils/atomic_io.py` | `def write_h5ad_atomic` |

@@ -35,21 +35,21 @@ flowchart LR
   runners__importImages -->|11| cecelia_utils
   runners__editImages -->|9| cecelia_utils
   runners__segment -->|9| cecelia_utils
+  MCP_server__cecelia_mcp_ -->|6| cecelia_utils
   runners__cleanupImages -->|6| cecelia_utils
   runners__spatialAnalysis -->|6| cecelia_utils
-  MCP_server__cecelia_mcp_ -->|6| cecelia_utils
-  dev_tooling__effectiveness_ -->|4| cecelia_utils
   cecelia_writers -->|4| cecelia_utils
+  dev_tooling__effectiveness_ -->|4| cecelia_utils
   runners__tracking -->|3| cecelia_utils
   runners__opticalFlow -->|2| cecelia_utils
+  cecelia_client -->|1| cecelia_utils
+  preview_worker -->|1| cecelia_utils
+  preview_worker -->|1| cecelia_writers
   runners__behaviour -->|1| cecelia_utils
   runners__clustPops -->|1| cecelia_utils
   runners__clustRegions -->|1| cecelia_utils
   runners__clustTracks -->|1| cecelia_utils
   runners__exportImages -->|1| cecelia_utils
-  cecelia_client -->|1| cecelia_utils
-  preview_worker -->|1| cecelia_utils
-  preview_worker -->|1| cecelia_writers
 ```
 
 Runners and side processes never import each other; everything shared goes through `cecelia.utils`. An arrow between two runner groups or into a runner would be a violation.

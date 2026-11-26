@@ -23,8 +23,8 @@ flowchart LR
   components_viewerWindow -->|3| stores["stores"]
   components_viewerWindow -->|2| lib__flat_["lib (flat)"]
   components_viewerWindow -->|1| components__other_["components (other)"]
-  utils_viewer -->|1| plots["plots"]
   utils_viewer -->|1| lib__flat_["lib (flat)"]
+  utils_viewer -->|1| plots["plots"]
   modules["modules"] -.->|39| V
   composables["composables"] -.->|7| V
   stores["stores"] -.->|5| V
@@ -33,8 +33,8 @@ flowchart LR
   components__flat_["components (flat)"] -.->|2| V
   plots["plots"] -.->|2| V
   utils__flat_["utils (flat)"] -.->|2| V
-  components_canvas["components/canvas"] -.->|1| V
   app_root["app root"] -.->|1| V
+  components_canvas["components/canvas"] -.->|1| V
   tasks["tasks"] -.->|1| V
 ```
 

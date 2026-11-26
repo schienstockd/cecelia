@@ -3,9 +3,9 @@
 `docs/architecture/` is mostly generated (`pixi run arch-diagrams`). Two parts are kept by hand, and
 hand-kept parts rot silently:
 
-* **`system.md` → Pins** — every arrow of the system view names the file and symbol at each end.
-  A pin whose file is gone, or whose file no longer contains the symbol, fails here. This catches a
-  dead arrow; it cannot catch a new arrow nobody drew.
+* **Pins** — `system.md` and every `flows/*.md` sequence diagram name the file and symbol behind each
+  arrow or step in a *Pins* table. A pin whose file is gone, or whose file no longer contains the
+  symbol, fails here. This catches a dead arrow; it cannot catch a new arrow nobody drew.
 * **`scripts/architecture/julia_areas.toml`** — the grouping of Julia files into areas. A new
   `app/src` or `api/src` file no pattern matches would vanish from the area view, so it fails here and
   forces a decision in the toml.
@@ -18,21 +18,42 @@ import tomllib
 import unittest
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-_SYSTEM = os.path.join(_REPO, 'docs', 'architecture', 'system.md')
+_ARCH = os.path.join(_REPO, 'docs', 'architecture')
+_SYSTEM = os.path.join(_ARCH, 'system.md')
+_FLOWS = os.path.join(_ARCH, 'flows')
 _AREAS = os.path.join(_REPO, 'scripts', 'architecture', 'julia_areas.toml')
 
 
-def _pins():
-    with open(_SYSTEM, encoding='utf-8') as f:
+def _pinned_docs():
+    docs = [_SYSTEM]
+    if os.path.isdir(_FLOWS):
+        docs += sorted(os.path.join(_FLOWS, f) for f in os.listdir(_FLOWS) if f.endswith('.md'))
+    return docs
+
+
+def _pins(doc=_SYSTEM):
+    with open(doc, encoding='utf-8') as f:
         text = f.read()
     section = text.split('## Pins', 1)[1]
-    rows = re.findall(r'^\|\s*(\d+)\s*\|\s*`([^`]+)`\s*\|\s*`(.+)`\s*\|\s*$', section, flags=re.M)
-    return [(int(n), path, sym) for n, path, sym in rows]
+    # A row is a numbered step/arrow, or a `note` (a side path the diagram does not draw) — both pinned.
+    rows = re.findall(r'^\|\s*(\d+|[a-z]+)\s*\|\s*`([^`]+)`\s*\|\s*`(.+)`\s*\|\s*$', section, flags=re.M)
+    return [(int(n) if n.isdigit() else n, path, sym.replace('\\|', '|')) for n, path, sym in rows]
 
 
 class TestSystemPins(unittest.TestCase):
     def test_pins_parse(self):
-        self.assertGreater(len(_pins()), 20, 'the Pins table did not parse — check its row format')
+        for doc in _pinned_docs():
+            self.assertGreater(len(_pins(doc)), 5, f'{doc}: the Pins table did not parse — check its row format')
+
+    def test_every_flow_step_is_pinned(self):
+        for doc in _pinned_docs()[1:]:
+            with open(doc, encoding='utf-8') as f:
+                text = f.read()
+            diagram = text.split('```mermaid', 1)[1].split('```', 1)[0]
+            # autonumber: every message line (`A->>B`, `A-->>B`, `A-)B`) is one numbered step
+            steps = len(re.findall(r'^\s*\w[\w ]*?(?:-{1,2}>>|-{1,2}\)|-{1,2}x)', diagram, flags=re.M))
+            pinned = {n for n, _, _ in _pins(doc)}
+            self.assertEqual(set(range(1, steps + 1)) - pinned, set(), f'{os.path.basename(doc)}: steps with no pin')
 
     def test_every_arrow_is_pinned(self):
         with open(_SYSTEM, encoding='utf-8') as f:
@@ -42,15 +63,15 @@ class TestSystemPins(unittest.TestCase):
 
     def test_pinned_symbols_exist(self):
         missing = []
-        for n, path, sym in _pins():
+        for doc, n, path, sym in [(d, *p) for d in _pinned_docs() for p in _pins(d)]:
             full = os.path.join(_REPO, path)
             if not os.path.isfile(full):
-                missing.append(f'arrow {n}: {path} (file gone)')
+                missing.append(f'{os.path.basename(doc)} #{n}: {path} (file gone)')
                 continue
             with open(full, encoding='utf-8') as f:
                 if sym not in f.read():
-                    missing.append(f'arrow {n}: {path} has no `{sym}`')
-        self.assertEqual(missing, [], 'system.md pins that no longer match the code — '
+                    missing.append(f'{os.path.basename(doc)} #{n}: {path} has no `{sym}`')
+        self.assertEqual(missing, [], 'pins that no longer match the code — '
                                       'redraw the arrow or move the pin')
 
 

@@ -20,6 +20,9 @@ import collections
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+import gaps  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "docs" / "architecture" / "python"
 GENERATED = ("> **Generated** by `scripts/architecture/python_extract.py` — do not edit; "
@@ -167,7 +170,7 @@ Python has three jobs here: **task runners** (`app/src/tasks/<category>/*_run.py
     L += [f'    {nid(p)}["{label(p)}"]' for p in runner_parts]
     L.append("  end")
     L += [f'  {nid(p)}["{label(p)}"]' for p in parts if p not in runner_parts]
-    for (a, b), fs in sorted(part_edges.items(), key=lambda kv: -len(kv[1])):
+    for (a, b), fs in sorted(part_edges.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         L.append(f"  {nid(a)} -->|{len(fs)}| {nid(b)}")
     L.append("```\n")
     L.append("Runners and side processes never import each other; everything shared goes through "
@@ -185,7 +188,7 @@ Python has three jobs here: **task runners** (`app/src/tasks/<category>/*_run.py
             if t in utils:
                 fan_in[t] += 1
     short = lambda r: r.split("/")[-1][:-3]
-    top = [r for r, _ in fan_in.most_common(TOP_MODULES)]
+    top = [r for r, _ in sorted(fan_in.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_MODULES]]
     L = ["# Python — inside `cecelia.utils`\n", GENERATED, f"""
 `cecelia.utils` is {len(utils)} modules, {sum(Path(REPO / u).read_text(encoding='utf-8').count(chr(10)) for u in utils)/1000:.1f}k lines. Which ones carry the weight, and how they lean on each other.
 
@@ -201,30 +204,7 @@ Box: module and how many repo files import it. Arrow `a → b`: a imports b. Onl
                 L.append(f"  {nid(short(r))} --> {nid(short(t))}")
     L.append("```\n")
 
-    # cycles (Tarjan SCC over utils)
-    idx, low, stack, on, sccs, counter = {}, {}, [], set(), [], [0]
-    sys.setrecursionlimit(10000)
-
-    def strong(v):
-        idx[v] = low[v] = counter[0]; counter[0] += 1; stack.append(v); on.add(v)
-        for w in file_edges.get(v, ()):
-            if w not in utils:
-                continue
-            if w not in idx:
-                strong(w); low[v] = min(low[v], low[w])
-            elif w in on:
-                low[v] = min(low[v], idx[w])
-        if low[v] == idx[v]:
-            comp = []
-            while True:
-                w = stack.pop(); on.discard(w); comp.append(w)
-                if w == v:
-                    break
-            if len(comp) > 1:
-                sccs.append(sorted(comp))
-    for u in sorted(utils):
-        if u not in idx:
-            strong(u)
+    sccs = gaps.cycles(set(utils), lambda v: file_edges.get(v, ()))
     L.append("## Import cycles\n")
     if sccs:
         L.append("Groups of modules that import each other (directly or round a loop). Lazy imports "
@@ -233,12 +213,14 @@ Box: module and how many repo files import it. Arrow `a → b`: a imports b. Onl
     else:
         L.append("None.")
     L.append("")
+    gaps.record("python", [{"kind": "py-cycle", "subject": " ↔ ".join(short(m) for m in c), "where": list(c)}
+                           for c in sccs])
 
     L.append("## The de-facto API — most-imported functions and classes\n")
     L.append("`from cecelia.utils.x import y` counted per importing file, or `zarr_utils.open_as_zarr(…)` after a module import, counted per using file; dev tooling included. "
              "These are the interfaces a change ripples through.\n")
     L.append("| Name | Module | Imported by |\n|---|---|---|")
-    ranked = sorted(symbol_use.items(), key=lambda kv: -len(kv[1]))
+    ranked = sorted(symbol_use.items(), key=lambda kv: (-len(kv[1]), kv[0]))
     ranked = [kv for kv in ranked if kv[0][0].startswith(("cecelia.utils", "cecelia.writers"))
               and not kv[0][1].startswith("_")]
     for (mod, n), users in ranked[:30]:

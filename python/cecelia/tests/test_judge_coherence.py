@@ -44,6 +44,12 @@ class RoutesTest(_Tree):
         self.write("frontend/src/x.test.ts", "fetch('/api/d')")   # a test is not a caller
         self.assertEqual(self.c.count_routes_uncalled(self.root), 1)
 
+    def test_a_route_named_only_in_a_comment_or_docstring_is_uncalled(self):
+        self.write("api/src/server.jl", '"/api/a" => f, "/api/b" => g, "/api/c" => h,')
+        self.write("python/cecelia/r.py", '"""Called by `/api/a` when importing."""\n# see "/api/b"\nx = 1\n')
+        self.write("frontend/src/x.ts", "// posts to '/api/c'\nconst y = 2\n")
+        self.assertEqual(self.c.count_routes_uncalled(self.root), 3)
+
 
 class InventoryTest(_Tree):
     def test_a_cited_name_counts_when_no_source_file_has_it(self):

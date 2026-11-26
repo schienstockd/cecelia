@@ -453,9 +453,10 @@ judge-issues = "python scripts/judge/issues.py"
 effectiveness-chart = "python scripts/judge/chart.py"
 
 # Architecture diagrams (docs/architecture/): regenerate every generated view from the code — Julia
-# interfaces + areas (loads Cecelia, ~10 s), Python imports, Vue imports. Deterministic, no network.
+# interfaces + areas (loads Cecelia, ~10 s), Python imports, Vue imports, cross-language touchpoints, then
+# the coherence-gap list (docs/architecture/gaps.md). Deterministic, no network.
 # The hand-traced system view is pinned by python/cecelia/tests/test_architecture_docs.py.
-arch-diagrams = { cmd = "julia --project=app scripts/architecture/julia_extract.jl && python scripts/architecture/python_extract.py && python scripts/architecture/vue_extract.py" }
+arch-diagrams = { cmd = "julia --project=app scripts/architecture/julia_extract.jl && python scripts/architecture/python_extract.py && python scripts/architecture/vue_extract.py && python scripts/architecture/boundaries_extract.py && python scripts/architecture/gaps.py" }
 
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the

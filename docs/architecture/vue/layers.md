@@ -4,7 +4,8 @@
 
 
 Groups are the directories under `frontend/src/` (rule in the script header). `A → B (n)`: n import
-statements from files in A to files in B. The strongest 30 arrows are drawn; the full matrix is below.
+statements from files in A to files in B. **A size map:** big directories import more, so the thick
+arrows show where the code is. The strongest 30 arrows are drawn; the full matrix is below.
 
 ```mermaid
 flowchart LR
@@ -58,7 +59,7 @@ flowchart LR
   modules -->|22| utils_viewer
 ```
 
-## Full matrix (rows import columns)
+<details><summary>Full matrix (rows import columns)</summary>
 
 | | app root | components (flat) | components (other) | components/canvas | components/lightPath | components/plots | components/viewerWindow | composables | directives | lib (flat) | lib/guides | lib/webgpu | modules | plots | stores | tasks | utils (flat) | utils/viewer |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -80,6 +81,8 @@ flowchart LR
 | **tasks** |  | 20 | 1 |  |  |  |  | 5 |  | 7 |  |  |  |  | 20 | · | 47 | 1 |
 | **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 9 | 8 | · | 1 |
 | **utils/viewer** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | 1 | 11 |  | 23 | · |
+
+</details>
 
 ## Where the backend is called
 

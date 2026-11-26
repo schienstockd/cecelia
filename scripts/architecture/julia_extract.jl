@@ -17,6 +17,7 @@
 
 using InteractiveUtils
 using TOML
+using JSON3
 using Cecelia
 
 const C = Cecelia
@@ -75,7 +76,7 @@ function def_area(f)
         a === nothing && continue
         counts[a] = get(counts, a, 0) + 1
     end
-    isempty(counts) ? nothing : first(sort(collect(counts); by = kv -> -kv[2]))[1]
+    isempty(counts) ? nothing : first(sort(collect(counts); by = kv -> (-kv[2], kv[1])))[1]
 end
 
 type_file(T) = (ms = methods(T); isempty(ms) ? nothing : rel(first(ms).file))
@@ -184,15 +185,16 @@ function interfaces_md(io)
 A Julia "interface" is an abstract type plus the functions its subtypes are expected to implement
 (multiple dispatch — there are no classes). For each abstract type in `Cecelia`:
 
-- **contract** — functions with a method specialised on a concrete subtype. *Kind*: **required** (no
-  default, every subtype implements it), *optional* (a default on the abstract type, some subtypes
-  override — note a default can itself raise, as `_run_task`'s does), or *partial* (no default and only
-  some subtypes: a subtype-specific function, not a contract).
+- **contract** — functions with a method specialised on a concrete subtype. **Required**: no
+  default, every subtype implements it. *Optional*: a default on the abstract type that some subtypes
+  override (a default can itself raise, as `_run_task`'s does). A function with no default that only
+  some subtypes have is listed apart as *subtype-specific* — it belongs to those subtypes, not the type.
 - **operations** — functions that take the abstract type but that no subtype overrides: the shared
   API every subtype gets for free.
 
-Diagram rule: each subtype appears with the contract functions it overrides. More than 10 subtypes
-are grouped by the directory they are defined in.
+Each type opens with the checklist for adding a subtype. Up to 10 subtypes: a class diagram, each
+subtype with the functions it overrides. More: a table of subtypes by directory (a diagram of 60
+names shows nothing). How to add a task end to end: [`docs/MODULES.md`](../../MODULES.md).
 """)
     absts = sort([T for T in values(TYPES) if isabstracttype(T)]; by = T -> (-length(leaf_subtypes(T)), short(T)))
     for A in absts
@@ -203,45 +205,55 @@ are grouped by the directory they are defined in.
         shared = sort([k for (k, v) in con if isempty(v[2])])
         a = short(A)
         println(io, "## `$a`\n")
-        println(io, "Defined in `$(abstract_file(A))` · $(length(leaves)) concrete subtypes · $(length(overridden)) contract functions · $(length(shared)) shared operations\n")
-        println(io, "```mermaid\nclassDiagram")
-        println(io, "  class $a {\n    <<abstract>>")
-        for f in overridden; println(io, "    +$f()"); end
-        println(io, "  }")
+        n_req = count(f -> !con[f][1] && length(con[f][2]) == length(leaves), overridden)
+        n_spec = count(f -> !con[f][1] && length(con[f][2]) < length(leaves), overridden)
+        println(io, "Defined in `$(abstract_file(A))` · $(length(leaves)) subtypes · $n_req required, ",
+                "$(length(overridden) - n_req - n_spec) with a default", n_spec > 0 ? ", $n_spec subtype-specific" : "", "\n")
+        # 1 required · 2 expected (a default exists, but ≥ 90% of subtypes override it — in practice part of
+        # the contract) · 3 optional · 4 subtype-specific
+        kind_of(f) = (d = con[f][1]; n = length(con[f][2]);
+                      d ? (n >= 0.9 * length(leaves) && length(leaves) > 2 ? 2 : 3) : n == length(leaves) ? 1 : 4)
+        checklist = sort([f for f in overridden if kind_of(f) != 4]; by = f -> (kind_of(f), f))
+        specific = [f for f in overridden if kind_of(f) == 4]
+        if !isempty(checklist)
+            println(io, "**To add a subtype** — implement the required and expected functions; override an optional one only to change its default.\n")
+            println(io, "| Function | Kind | Implemented by |\n|---|---|---|")
+            for f in checklist
+                names_ = sort(short.(collect(con[f][2])))
+                shown = length(names_) > 8 ? join(names_[1:8], ", ") * ", … ($(length(names_)) of $(length(leaves)))" :
+                                             join(names_, ", ") * (length(leaves) > 8 ? " ($(length(names_)) of $(length(leaves)))" : "")
+                println(io, "| `$f` | ", ("**required**", "**expected** — has a default, but nearly every subtype overrides it", "optional", "")[kind_of(f)], " | $shown |")
+            end
+            println(io)
+        end
+        if !isempty(specific)
+            println(io, "Subtype-specific (no default; only these subtypes have one, so not part of the contract): ",
+                    join(("`$f` ($(join(sort(short.(collect(con[f][2]))), ", ")))" for f in specific), "; "), "\n")
+        end
         if length(leaves) <= 10
+            println(io, "```mermaid\nclassDiagram")
+            println(io, "  class $a {\n    <<abstract>>")
+            for f in overridden; println(io, "    +$f()"); end
+            println(io, "  }")
             for S in sort(leaves; by = short)
                 s = short(S)
                 fs = sort([f for f in overridden if S in con[f][2]])
                 println(io, "  class $s {"); for f in fs; println(io, "    +$f()"); end; println(io, "  }")
                 println(io, "  $a <|-- $s")
             end
+            println(io, "```\n")
         else
             groups = Dict{String,Vector{DataType}}()
             for S in leaves; push!(get!(groups, group_of(S), DataType[]), S); end
+            println(io, "Subtypes by where they are defined:\n")
+            println(io, "| Directory | Subtypes |\n|---|---|")
             for (g, ss) in sort(collect(groups); by = first)
-                id = replace(g, r"[^A-Za-z0-9]" => "_")
-                println(io, "  class $id[\"$g ($(length(ss)))\"] {")
-                for S in sort(ss; by = short); println(io, "    $(short(S))"); end
-                println(io, "  }")
-                println(io, "  $a <|-- $id")
-            end
-        end
-        println(io, "```\n")
-        if !isempty(overridden)
-            println(io, "| Contract function | Kind | Implemented by |\n|---|---|---|")
-            for f in overridden
-                d, ov, _ = con[f]
-                names_ = sort(short.(collect(ov)))
-                shown = length(names_) > 8 ? join(names_[1:8], ", ") * ", … ($(length(names_)) of $(length(leaves)))" :
-                                             join(names_, ", ") * (length(leaves) > 8 ? " ($(length(names_)) of $(length(leaves)))" : "")
-                kind = d ? "optional — default on `$a`" :
-                       length(ov) == length(leaves) ? "**required** — no default, every subtype has one" :
-                       "partial — no default, only these subtypes (others: MethodError)"
-                println(io, "| `$f` | $kind | $shown |")
+                println(io, "| `$g` | ", join(sort(short.(ss)), ", "), " |")
             end
             println(io)
         end
-        isempty(shared) || println(io, "Shared operations: ", join(("`$f`" for f in shared), ", "), "\n")
+        isempty(shared) || println(io, "<details><summary>$(length(shared)) shared operations — take any `$a`, no subtype overrides them</summary>\n\n",
+                                    join(("`$f`" for f in shared), ", "), "\n\n</details>\n")
     end
 end
 
@@ -280,7 +292,7 @@ convention: [`docs/OBJECTMODEL.md`](../../OBJECTMODEL.md).
         a = something(area_of(rel(m.file)), "?")
         counts[(a, P)] = get(counts, (a, P), 0) + 1
     end
-    for a in sort(unique(first.(collect(keys(counts)))); by = a -> -sum(get(counts, (a, T), 0) for T in roots))
+    for a in sort(unique(first.(collect(keys(counts)))); by = a -> (-sum(get(counts, (a, T), 0) for T in roots), a))
         println(io, "| $a | " * join((string(get(counts, (a, T), "")) for T in roots), " | ") * " |")
     end
     println(io)
@@ -296,8 +308,10 @@ areas are a curated grouping of files (`scripts/architecture/julia_areas.toml`);
 the code: `A → B (n)` means files in A call `n` distinct functions (or name `n` types) defined in B.
 Static name matching — approximate, see the script header.
 
-Diagram rule: the strongest $(MAX_EDGES) arrows per diagram (ties at the cut-off included); every
-count is in the full matrix below.
+**Read it as a size map.** Big areas call more, so the thickest arrows mostly show where the code
+is, not where it is wrong. What to act on is the two-way pairs below, listed in
+[`gaps.md`](../gaps.md#julia-two-way). Diagram rule: the strongest $(MAX_EDGES) arrows per diagram
+(ties at the cut-off included); every count is in the full matrix at the bottom.
 """)
     pkg = [a for a in AREA_ORDER if !startswith(a, "api:") && haskey(loc, a)]
     api = [a for a in AREA_ORDER if startswith(a, "api:") && haskey(loc, a)]
@@ -312,7 +326,7 @@ count is in the full matrix below.
         println(io, "```mermaid\nflowchart LR")
         used = Set{String}()
         lines = String[]
-        cand = sort([kv for kv in edges if kv[1][1] in srcs && kv[1][2] in dsts]; by = kv -> -length(kv[2]))
+        cand = sort([kv for kv in edges if kv[1][1] in srcs && kv[1][2] in dsts]; by = kv -> (-length(kv[2]), kv[1]))
         cut = isempty(cand) ? 0 : length(cand[min(MAX_EDGES, length(cand))][2])
         for ((a, b), ns) in cand
             length(ns) >= cut || continue
@@ -335,15 +349,22 @@ count is in the full matrix below.
         (isempty(x) || isempty(y)) && continue
         ex(s) = "$(length(s)): " * join(("`$n`" for n in first(sort(collect(s)), 4)), ", ") * (length(s) > 4 ? ", …" : "")
         println(io, "| $a ↔ $b | $(ex(x)) | $(ex(y)) |")
+        (wa, wb, weak, strong) = length(x) <= length(y) ? (a, b, x, y) : (b, a, y, x)
+        push!(GAPS, (kind = "julia-two-way", subject = "$a ↔ $b", rank = length(weak),
+                     detail = "the weaker side is $wa → $wb, $(length(weak)) name$(length(weak) == 1 ? "" : "s"): " *
+                              join(("`$n`" for n in first(sort(collect(weak)), 5)), ", ") * (length(weak) > 5 ? ", …" : "") *
+                              " ($(length(strong)) the other way)",
+                     where = String[]))
     end
     println(io)
-    println(io, "## Full matrix (rows call columns)\n")
+    println(io, "<details><summary>Full matrix (rows call columns)</summary>\n")
     println(io, "| | " * join(pkg, " | ") * " |")
     println(io, "|---|" * repeat("---|", length(pkg)))
     for a in vcat(pkg, api)
         println(io, "| **$a** | " * join((a == b ? "·" : (n = length(get(edges, (a, b), Set{String}())); n == 0 ? "" : string(n)) for b in pkg), " | ") * " |")
     end
     println(io)
+    println(io, "</details>\n")
     if !isempty(unmapped)
         println(io, "## Unmapped files\n\nAdd these to `julia_areas.toml`:\n")
         foreach(p -> println(io, "- `$p`"), unmapped); println(io)
@@ -352,11 +373,20 @@ count is in the full matrix below.
 end
 
 const MAX_EDGES = 25
+const GAPS = NamedTuple[]
+
+"Write the Julia gaps in the shape `gaps.py` reads (`docs/architecture/gaps/julia.json`)."
+function write_gaps(path)
+    order = Dict("julia-two-way" => 1)
+    open(io -> JSON3.pretty(io, sort(GAPS; by = g -> (order[g.kind], g.rank, g.subject))), path, "w")
+end
 const GENERATED = "> **Generated** by `scripts/architecture/julia_extract.jl` — do not edit; run `pixi run arch-diagrams`.\n"
 
 mkpath(OUT)
 open(io -> interfaces_md(io), joinpath(OUT, "interfaces.md"), "w")
 open(io -> datamodel_md(io), joinpath(OUT, "datamodel.md"), "w")
 unmapped = open(io -> areas_md(io), joinpath(OUT, "areas.md"), "w")
+mkpath(joinpath(REPO, "docs", "architecture", "gaps"))
+write_gaps(joinpath(REPO, "docs", "architecture", "gaps", "julia.json"))
 isempty(unmapped) || (println(stderr, "unmapped Julia files (add to julia_areas.toml):"); foreach(p -> println(stderr, "  ", p), unmapped))
 println("wrote ", rel(OUT))

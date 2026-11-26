@@ -1,0 +1,290 @@
+[
+    {
+        "kind": "julia-two-way",
+        "subject": "config ↔ ai+lab log",
+        "rank": 1,
+        "detail": "the weaker side is config → ai+lab log, 1 name: `active_profile_name` (14 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "hpc ↔ ai+lab log",
+        "rank": 1,
+        "detail": "the weaker side is hpc → ai+lab log, 1 name: `_last_line` (1 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "jobs (export, import, maintenance) ↔ ai+lab log",
+        "rank": 1,
+        "detail": "the weaker side is jobs (export, import, maintenance) → ai+lab log, 1 name: `active_profile_name` (2 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "model ↔ jobs (export, import, maintenance)",
+        "rank": 1,
+        "detail": "the weaker side is model → jobs (export, import, maintenance), 1 name: `store_debris_summary` (5 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "python bridge ↔ hpc",
+        "rank": 1,
+        "detail": "the weaker side is python bridge → hpc, 1 name: `_run_py_hpc` (3 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "qc+checks ↔ ai+lab log",
+        "rank": 1,
+        "detail": "the weaker side is qc+checks → ai+lab log, 1 name: `append_lab_log!` (8 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "task framework ↔ cell data",
+        "rank": 1,
+        "detail": "the weaker side is cell data → task framework, 1 name: `_task_spec` (6 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "task framework ↔ qc+checks",
+        "rank": 1,
+        "detail": "the weaker side is task framework → qc+checks, 1 name: `channel_signal_flags` (4 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tasks ↔ cell data",
+        "rank": 1,
+        "detail": "the weaker side is cell data → tasks, 1 name: `_run_task` (29 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tasks ↔ gating",
+        "rank": 1,
+        "detail": "the weaker side is gating → tasks, 1 name: `Track` (26 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tasks ↔ hpc",
+        "rank": 1,
+        "detail": "the weaker side is tasks → hpc, 1 name: `hpc_task_cpus` (1 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "cell data ↔ gating",
+        "rank": 2,
+        "detail": "the weaker side is cell data → gating, 2 names: `gating_path`, `is_track_grained` (16 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "cell data ↔ qc+checks",
+        "rank": 2,
+        "detail": "the weaker side is cell data → qc+checks, 2 names: `qc_finding`, `write_qc` (2 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "cell data ↔ tracking+spatial",
+        "rank": 2,
+        "detail": "the weaker side is cell data → tracking+spatial, 2 names: `corrections_dir`, `roi_suffixes_on` (19 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "model ↔ cell data",
+        "rank": 2,
+        "detail": "the weaker side is model → cell data, 2 names: `_label_name_taken`, `free_label_name` (20 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "model ↔ tracking+spatial",
+        "rank": 2,
+        "detail": "the weaker side is model → tracking+spatial, 2 names: `load_roi_set`, `roi_suffixes_on` (16 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ ai+lab log",
+        "rank": 2,
+        "detail": "the weaker side is scheduler+chains → ai+lab log, 2 names: `_parse_tkey`, `active_profile_name` (27 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ cell data",
+        "rank": 2,
+        "detail": "the weaker side is scheduler+chains → cell data, 2 names: `_stale_reads_names`, `stale_outputs_for` (11 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ python bridge",
+        "rank": 2,
+        "detail": "the weaker side is python bridge → scheduler+chains, 2 names: `read_local_py_usage`, `record_run_usage!` (3 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ qc+checks",
+        "rank": 2,
+        "detail": "the weaker side is scheduler+chains → qc+checks, 2 names: `chain_cohort_qc!`, `write_defaulted_scale_qc!` (7 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ runner",
+        "rank": 2,
+        "detail": "the weaker side is scheduler+chains → runner, 2 names: `TaskRequest`, `execute_task` (18 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ tasks",
+        "rank": 2,
+        "detail": "the weaker side is scheduler+chains → tasks, 2 names: `_str_list`, `validate_params` (9 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ hpc",
+        "rank": 3,
+        "detail": "the weaker side is scheduler+chains → hpc, 3 names: `_with_run_target`, `hpc_resources`, `task_runs_on_hpc` (5 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ task framework",
+        "rank": 3,
+        "detail": "the weaker side is task framework → scheduler+chains, 3 names: `_fun_name_from_task`, `list_tasks`, `run_env_of` (27 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tasks ↔ plots+boards",
+        "rank": 3,
+        "detail": "the weaker side is tasks → plots+boards, 3 names: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` (10 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tracking+spatial ↔ plots+boards",
+        "rank": 3,
+        "detail": "the weaker side is tracking+spatial → plots+boards, 3 names: `_catkey`, `_finite`, `_ordered_cats` (6 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "model ↔ config",
+        "rank": 4,
+        "detail": "the weaker side is config → model, 4 names: `img_project_dir`, `img_project_uid`, `json_native`, `read_state_json` (7 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "plots+boards ↔ ai+lab log",
+        "rank": 4,
+        "detail": "the weaker side is ai+lab log → plots+boards, 4 names: `boards_doc_path`, `plot_spec_index`, `plot_summary_data`, `read_boards_doc` (5 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "scheduler+chains ↔ gating",
+        "rank": 4,
+        "detail": "the weaker side is gating → scheduler+chains, 4 names: `drop_props_sidecar_keys!`, `props_sidecar_path`, `put_props_sidecar_entry!`, `read_props_sidecar` (11 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "gating ↔ tracking+spatial",
+        "rank": 5,
+        "detail": "the weaker side is gating → tracking+spatial, 5 names: `is_tracked`, `track_aggregate_base`, `track_aggregate_measures`, `track_name_sets`, `track_props` (6 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "gating ↔ qc+checks",
+        "rank": 6,
+        "detail": "the weaker side is gating → qc+checks, 6 names: `_cohort_outliers`, `cohort_value_names`, `qc_finding`, `qc_path`, `severity_symbol`, … (13 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tasks ↔ qc+checks",
+        "rank": 6,
+        "detail": "the weaker side is qc+checks → tasks, 6 names: `Denoise`, `Track`, `import_source_fingerprint`, `ngff_multiscales`, `series_base`, … (18 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "model ↔ gating",
+        "rank": 8,
+        "detail": "the weaker side is model → gating, 8 names: `_clustfeatures_entry`, `_clustfeatures_part_of`, `_clustfeatures_suffixes`, `gating_history_path`, `gating_path`, … (18 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "model ↔ scheduler+chains",
+        "rank": 8,
+        "detail": "the weaker side is model → scheduler+chains, 8 names: `_history_leaves`, `_rl_str`, `_update_run_log!`, `read_run_log`, `read_run_log_archive`, … (18 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "task framework ↔ tasks",
+        "rank": 8,
+        "detail": "the weaker side is tasks → task framework, 8 names: `ParamValidationError`, `_picked_channels`, `_spec_output_value_name`, `live_outputs`, `manual_check`, … (64 the other way)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-two-way",
+        "subject": "tasks ↔ tracking+spatial",
+        "rank": 8,
+        "detail": "the weaker side is tracking+spatial → tasks, 8 names: `Track`, `_comp_col`, `roi_review_labels`, `store_written_at`, `track_displacement`, … (27 the other way)",
+        "where": [
+        ]
+    }
+]
