@@ -27,6 +27,7 @@ import { canCancelTask, canRerunTask } from '../utils/taskRerun'
 // the foreign-project LABEL now comes off the row (utils/taskRows.ts); the scope predicate stays here
 import { taskInScope } from '../utils/taskScope'
 import { profileLabel } from '../utils/authorStamp'
+import { useQueueReasons } from '../composables/useQueueReasons'
 
 // `standalone` = this is the pop-out window (modules/TasksView.vue), not the /tasks page. The only
 // thing it changes is the pop-out button itself, which would otherwise offer to open the window you
@@ -120,6 +121,8 @@ const now = useNowTick()
 const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
 // who launched it — '' for the default profile (a one-person install names nobody) and for this tab's own
 const launcher = (t: TaskEntry) => profileLabel(t.by)
+// what a queued row is waiting behind — possibly another profile's or project's run (utils/queueReason.ts)
+const reasonFor = useQueueReasons(filtered, now)
 
 // The table reads row FIELDS (and sorts by them), so the entries are flattened by the shared mapper —
 // the same one the per-module list uses, so the two lists can't drift again. Where the two surfaces
@@ -129,6 +132,7 @@ const rows = computed(() => taskRows(filtered.value, {
   thisProjectOnly:   settings.tasksThisProjectOnly,
   nameOfProject:     uid => projectMeta.recent.find(p => p.uid === uid)?.name,
   now:               now.value,
+  queueReason:       reasonFor,
 }))
 
 // Starting widths, not minimums: the table is `fit="fill"` (the default), so it is exactly the pane's
@@ -365,7 +369,7 @@ const FILTERS: ChipOption[] = [
           <template #cell-status="{ row: r }">
             <i :class="['pi', TASK_STATUS[r.shownStatus].icon, 'row-icon']"
               :style="{ color: TASK_STATUS[r.shownStatus].color }"
-              v-tooltip.right="r.hpcTip || TASK_STATUS[r.shownStatus].label" />
+              v-tooltip.right="r.hpcTip || r.queuedTip || TASK_STATUS[r.shownStatus].label" />
           </template>
 
           <template #cell-module="{ row: r }">
@@ -381,6 +385,7 @@ const FILTERS: ChipOption[] = [
               <i class="pi pi-sitemap" />{{ r.chainLabel }}
             </span>
             {{ r.task }}
+            <span v-if="r.queuedReason" class="cc-muted cc-fs-2xs" v-tooltip.right="r.queuedTip">· {{ r.queuedReason }}</span>
           </template>
 
           <template #cell-pool="{ row: r }">
