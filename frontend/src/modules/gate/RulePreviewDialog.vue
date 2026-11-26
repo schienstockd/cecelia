@@ -13,6 +13,7 @@ import BaseModal from '../../components/BaseModal.vue'
 import PlotSpinner from '../../components/plots/PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
 import { imagesWithValueName } from '../../lib/valueNames'
+import { getJson, errorMessage } from '../../utils/api'
 import { previewStatus, previewSummary, type RulePreviewImage } from '../../plots/followRule'
 
 const props = defineProps<{
@@ -47,13 +48,13 @@ onMounted(async () => {
   for (let i = 0; i < order.value.length; i += BATCH) {
     const targets = order.value.slice(i, i + BATCH)
     try {
-      const res = await fetch(`/api/gating/rule-preview?${props.plotQuery}&path=${encodeURIComponent(props.path)}` +
-                              `&targets=${targets.map(encodeURIComponent).join(',')}`)
-      const d = await res.json().catch(() => ({})) as { images?: RulePreviewImage[]; error?: string }
-      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+      // quiet: a failure is shown on its own cards
+      const d = await getJson<{ images?: RulePreviewImage[] }>(
+        `/api/gating/rule-preview?${props.plotQuery}&path=${encodeURIComponent(props.path)}` +
+        `&targets=${targets.map(encodeURIComponent).join(',')}`, { quiet: true })
       for (const im of d.images ?? []) got.value = { ...got.value, [im.uid]: im }
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e)
+      const error = errorMessage(e)
       for (const uid of targets) got.value = { ...got.value, [uid]: { uid, error } }
     }
   }
