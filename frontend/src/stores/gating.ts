@@ -7,7 +7,7 @@ import { useProjectStore } from './project'
 import { useImageMetaRefresh } from '../composables/useImageMetaRefresh'
 import { clusterMeasure } from '../utils/clusterMeasure'
 import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
-import { channelLabel } from '../utils/channelNames'
+import { measureColumnLabel } from '../utils/trackAxis'
 import { popPath } from '../utils/popName'
 import { gateSignatures, changedPopPaths, booleanDeps, statsToFetch } from '../utils/popChanges'
 import { OVERLAY_TICK_KEY, encodeOverlayTick, lookOf, widerScope, writeScope, type OverlayTickScope } from '../utils/viewer/overlayTick'
@@ -178,12 +178,10 @@ export function createGatingStore(initialPopType: string) {
   // resolve a raw column to its display label: intensity columns → channel name by channel index
   // (channelLabel — `nuc_mean_intensity_2` → "nuc_<ch2>"), centroids → "X position"/"Time"
   // (centroidLabel), everything else (morphology, etc.) stays as-is.
+  // (a per-track summary of a cell measure reads "<channel> median" — utils/trackAxis.ts)
   function colLabel(col: string): string {
-    if (channels.value.includes(col)) {
-      const name = channelLabel(col, channelNames.value)
-      if (name !== col) return name
-    }
-    return centroidLabel(col)
+    return measureColumnLabel(col, { channels: channels.value, channelNames: channelNames.value,
+      cellMeasures: cellMeasures.value, trackAggregates: trackAggregates.value }) ?? centroidLabel(col)
   }
 
   // ── Undo / redo (hand-drawn gating only: flow + track) ────────────────────────
