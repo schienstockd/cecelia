@@ -7,7 +7,7 @@ import { isExcluded, isBlocked } from './inclusion'
 import { pixelSizeUm } from './physicalSize'
 import { sortRows, type SortDir } from './sortRows'
 import { toSeconds } from './timeAxis'      // ONE time-unit conversion, shared with the time axis
-import { filterSuggestions } from './suggestInput'
+import { filterSuggestions, type SuggestGroup } from './suggestInput'
 import { matchesQuery } from './textQuery'
 
 // Total elapsed duration of a timelapse = (frames − 1) × interval — the time span from the FIRST to
@@ -123,18 +123,27 @@ export const matchesImageSearch = (img: { uid: string; name?: string | null }, q
   matchesQuery([img.name, img.uid], query)
 
 /**
- * What the search box offers while typing: names first, then uids — each matching `query`
- * (prefix matches ranked first, `filterSuggestions`), de-duplicated, capped at `limit`. Capped because
- * the box opens on focus with everything on offer, and a 2000-image set would otherwise render 4000
- * buttons into a popover nobody scrolls; the first keystroke narrows it to what matters.
+ * What the search box offers while typing: a *Names* group and an *IDs* group, each matching `query`
+ * (prefix matches ranked first, `filterSuggestions`), de-duplicated. Grouped because names and uids
+ * are both short strings, and one flat list of them read as one mixed column.
+ *
+ * Capped at `limit` in total, because the box opens on focus with everything on offer and a 2000-image
+ * set would otherwise render 4000 buttons into a popover nobody scrolls. The cap is SHARED: each group
+ * is guaranteed half, and either takes what the other leaves — so a set with many names still offers
+ * its uids instead of the names filling the whole list.
  */
 export function imageSearchSuggestions(images: readonly { uid: string; name?: string | null }[],
-                                       query: string, limit = 30): string[] {
-  const names = [...new Set(images.map(i => i.name ?? '').filter(Boolean))]
-  const uids = images.map(i => i.uid)
+                                       query: string, limit = 30): SuggestGroup[] {
   // Ranked substring of the whole text, as SuggestInput itself re-filters what it is given — so a
   // several-word query ("ln 4h") narrows the TABLE (every word, `matchesImageSearch`) but offers no
   // suggestion: a suggestion is one name or uid, and the box completes one, not a phrase.
-  const out = [...new Set([...filterSuggestions(names, query), ...filterSuggestions(uids, query)])]
-  return out.slice(0, limit)
+  const names = filterSuggestions([...new Set(images.map(i => i.name ?? '').filter(Boolean))], query)
+  const uids = filterSuggestions([...new Set(images.map(i => i.uid))], query)
+  const half = Math.floor(limit / 2)
+  const nUids = Math.min(uids.length, Math.max(half, limit - names.length))
+  const nNames = Math.min(names.length, limit - nUids)
+  return [
+    { title: 'Names', options: names.slice(0, nNames) },
+    { title: 'IDs', options: uids.slice(0, nUids) },
+  ].filter(g => g.options.length > 0)
 }

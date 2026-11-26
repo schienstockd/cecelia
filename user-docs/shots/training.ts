@@ -37,6 +37,7 @@ export const TRAINING_SHOTS: ShotSet = {
       profile: 'trainer',
       project: 'lt',
       route: '/manage-images',
+      actions: [{ open: 'checks.toggle' }],   // collapsed by default — names show expanded
       point: { anchor: 'checks.acquisition', label: 'Open the Acquisition check', side: 'bottom' },
       crop: ['images.checks', 'images.table'],
       masks: ['css:.img-uid'],

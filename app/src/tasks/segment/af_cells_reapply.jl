@@ -41,16 +41,14 @@ function af_cells_reapply!(img::CciaImage, value_name::AbstractString; by::Abstr
     end
     on_log(">> afCells: the table was rebuilt — re-applying the autofluorescence correction " *
            "(settings of its last run)")
-    pv  = run_provenance("segment.afCells", img, params)
-    tid = "afCells-reapply-" * string(rand(UInt32); base = 16)
-    open_run_log!(img, "segment.afCells", value_name, params; task_id = tid, by = by,
-                  inputs = pv.inputs, replaces = pv.replaces)
-    res = try
-        _run_task(AfCells(), img, params; on_log, on_progress, on_process)
+    try
+        # inside the re-measure's pool job the request scope is unbound: `caller_stamp()` would say "app"
+        # whoever queued it, and only `_by` reaches the task — so the caller is left unknown, not guessed
+        run_task_logged!(AfCells(), img, "segment.afCells", value_name, params; by,
+                         caller = Dict{String,Any}(), id_prefix = "afCells-reapply",
+                         on_log, on_progress, on_process)
     catch e
         on_log("[ERROR] afCells: re-applying the correction failed: $e")
         nothing
     end
-    close_run_log!(img, tid, res === nothing ? "failed" : "done")
-    res
 end
