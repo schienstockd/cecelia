@@ -196,7 +196,8 @@ population)` for an orphan, `(unattributed)` for legacy rows — so a mistaken w
 can go without re-tracking anything. The delete is `merge_track_lineage` (the `_write_back` merge,
 module-level) with an EMPTY run: DELETE + orphan-free COMPACT + the `live.*` invalidation, i.e. the
 state a re-run of that source leaves; then track measures are rebuilt for the survivors (or the
-`__tracks` table removed when none survive). So HMM states, live contacts and track clusters on that
+`__tracks` table removed when none survive). The rebuild is logged as its own `tracking.track_measures`
+run, so the record dates the track table correctly. So HMM states, live contacts and track clusters on that
 segmentation go too, and the dialog names them before the confirm. Registry:
 `app/src/analysis_runs.jl` (`tracks` kind).
 
