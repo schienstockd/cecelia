@@ -217,3 +217,26 @@ end
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end
 end
+
+@testset "tracks whose population was deleted are reported by its last path" begin
+    if !_have_kdieem_b()
+        @test_skip "KDIeEm B fixture missing"
+    else
+        img = _kdieem_b_img(); props = img_label_props_path(img, "B")
+        m = load_pop_tree(img; value_name = "B", pop_type = "flow")
+        add_pop!(m, "gone"; filter_measure = "centroid_x", filter_fun = "gte", filter_values = -1.0)
+        add_pop!(m, "kept"; filter_measure = "centroid_x", filter_fun = "gte", filter_values = -1.0)
+        save_pop_tree!(m, img)
+        gone, kept = pop_uid(m, "/gone"), pop_uid(m, "/kept")
+        del_pop!(m, "/gone"); save_pop_tree!(m, img)
+        # a live pop, whole-seg, legacy unmarked, the deleted pop, and a uid no history state holds
+        src(t) = (gone, kept, Cecelia.WHOLE_SEG_TRACK_SOURCE, nothing, "neverX")[mod(t, 5) + 1]
+        df = _stamp_sources!(props, src)
+        n_of(k) = count(t -> t isa Real && isfinite(t) && t > 0 && mod(Int(t), 5) == k, df.track_id)
+        orph = orphan_track_sources(img, "B")
+        got = Dict(o.source => o for o in orph)
+        @test Set(keys(got)) == Set([gone, "neverX"])
+        @test got[gone].path == "/gone" && got[gone].cells == n_of(0)
+        @test got["neverX"].path === nothing && got["neverX"].cells == n_of(4)
+    end
+end

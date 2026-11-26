@@ -1240,7 +1240,8 @@ end
 # ── GET /api/viewer/pop-types ─────────────────────────────────────────────────────
 # ?projectUid=&imageUid= → {popTypes: [...], tracked}: the stored pop types with at least one population
 # on any of the image's segmentations, and whether any segmentation has a `track_id` column (the
-# cell-track ribbons switch needs both). The "On the image" switches show only these — `/overlays` fetches only
+# cell-track ribbons switch needs both), plus `orphanTracks` — per segmentation, the tracks whose population was
+# deleted, by its last path. The "On the image" switches show only these — `/overlays` fetches only
 # the types switched ON, so it cannot say which exist. Names only: map files are read, no membership is
 # evaluated, so the viewer refetches it with every overlay reload (gate write, task finish).
 function api_viewer_pop_types(req::HTTP.Request)
@@ -1253,7 +1254,13 @@ function api_viewer_pop_types(req::HTTP.Request)
         # `is_tracked` reads only the obs column list; an unreadable table counts as untracked, not
         # as a failed answer.
         tracked = any(vn -> try is_tracked(img; value_name = vn) catch; false end, vns)
-        200, JSON3.write((; popTypes = present, tracked))
+        # tracks no population can draw because the one that made them is gone — the Tracks section
+        # names it instead of saying "turn tracks on" (`orphan_track_sources`). Cached on the table,
+        # so a gate write re-reads only the map.
+        orphanTracks = [(; valueName = vn, path = o.path, cells = o.cells)
+                        for vn in vns
+                        for o in (try orphan_track_sources(img, vn) catch; NamedTuple[] end)]
+        200, JSON3.write((; popTypes = present, tracked, orphanTracks))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
     end

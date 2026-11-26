@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  orphanTracksLine, orphanTracksTip,
   appendSkeletonLines, skeletonLineRanges, SEG_STRIDE as SEG_W, type SkeletonPayload, type SpatialGraphPayload, graphEdgesBetween,
   SKELETON_BY_TYPE, BRANCH_TYPE_COLOURS, BRANCH_TYPE_NAMES,
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
@@ -957,5 +958,19 @@ describe('timeOrder / labelRows (the point buffer on a whole movie)', () => {
     // frame 0: cell 11; frame 1: cell 13; frame 2: /a's 10, 12 then /a/b's 12, 10 (emission order)
     expect(xs).toEqual([2, 4, 1, 3, 3, 1])
     expect([...b.ranges]).toEqual([[0, [0, 1]], [1, [1, 1]], [2, [2, 4]]])
+  })
+})
+
+describe('orphanTracksLine — tracks whose population was deleted', () => {
+  it('names the segmentation and the population the tracks came from', () => {
+    expect(orphanTracksLine({ valueName: 'Bcells', path: '/qc/Kat-/cells-', cells: 10 }))
+      .toBe('Bcells tracks came from /qc/Kat-/cells- — deleted since')
+  })
+  it('says "a population" when the gate history does not reach back', () => {
+    expect(orphanTracksLine({ valueName: 'B', path: null, cells: 1 })).toBe('B tracks came from a population — deleted since')
+  })
+  it('the tip points at the segmentation\'s own tracks button, which draws them', () => {
+    expect(orphanTracksTip({ valueName: 'Bcells', path: null, cells: 1 }))
+      .toBe("Show them with the Bcells tracks button under On the image, or re-run tracking")
   })
 })
