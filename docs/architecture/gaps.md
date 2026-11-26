@@ -20,8 +20,8 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 - **56 `CciaTask` subtypes** — defined in tasks (tier 6), named from task framework (tier 5) — a list of every subtype; deriving it (`subtypes`, self-registration) closes it
 - **`_history_leaves`** — defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)
+- **`active_profile_name`** — defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7), task framework (tier 5)
 - **`Track`** — defined in tasks (tier 6), called from gating (tier 4), qc+checks (tier 4), tracking+spatial (tier 4)
-- **`active_profile_name`** — defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7)
 - **`Denoise`** — defined in tasks (tier 6), called from qc+checks (tier 4), task framework (tier 5)
 - **`_composite_step_names`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
 - **`_history_output`** — defined in scheduler+chains (tier 7), called from qc+checks (tier 4), run records (tier 2)

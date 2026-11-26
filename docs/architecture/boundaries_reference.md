@@ -244,4 +244,4 @@ Files per language that name each kind of project file (a reference, not necessa
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |
 | gating JSON | 28 |  | 5 |
-| run log | 39 | 5 | 23 |
+| run log | 40 | 5 | 23 |

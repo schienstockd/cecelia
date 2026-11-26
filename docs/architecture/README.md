@@ -42,12 +42,15 @@ that adds one, naming it, and fails again once gaps are closed until the ceiling
 | Rule | Declared in | Gap kind |
 |---|---|---|
 | Both ends of every boundary match: no WebSocket type sent without a handler or handled without a sender, no route nothing calls, no runner nothing launches, every shared data file named by a test | `boundaries_extract.py` | `ws-*`, `route-uncalled`, `runner-unlaunched`, `shared-file-unguarded` |
-| Julia areas call down the declared layer order, never up | `[layers]` in `scripts/architecture/julia_areas.toml` | `julia-upward` |
+| Julia areas call down the declared layer order, never up | `[layers]` in `scripts/architecture/julia_areas.toml` | `julia-upward` (live in `test-pkg`) |
 | The viewer engine (`lib/webgpu`, `utils/viewer`) takes inputs and imports no app store but its own | `vue_extract.py` | `viewer-store` |
 | No import loops between Python modules or between Pinia stores | `python_extract.py`, `vue_extract.py` | `py-cycle`, `store-cycle` |
 
-The Julia kinds need the package loaded, so the test reads them from the committed
-`gaps/julia.json` rather than regenerating them; `pixi run arch-diagrams` refreshes it.
+The Julia kind needs the package loaded, so `test_architecture_gaps.py` reads it from the committed
+`gaps/julia.json`. The live check is in the package suite instead: the *julia-upward ratchet* testset
+(`app/test/suite/ratchets.jl`, part of `pixi run test-pkg`, so CI on every PR) computes the upward
+calls from the code with the extractor's own `upward_gaps` and holds them to the same ceiling, with
+the same two failures. `pixi run arch-diagrams` refreshes `gaps/julia.json` for the docs.
 
 **On purpose, not a gap.** A route kept without a caller on purpose (a smoke test, a consumer to
 come) carries `# ARCH-EXEMPT: <reason>` on its line in `api/src/server.jl`; it is listed with its
@@ -63,7 +66,7 @@ decision (deleting a route nobody calls, a design choice) come back to the maint
 
 - **Before changing a boundary** (a route, a WebSocket type, a `run_py` runner's params, a shared data
   file), find its row in `boundaries.md` and change both ends in the same PR.
-- **When `test_architecture_gaps.py` fails**, it names the gap your change added and how to close it.
+- **When `test_architecture_gaps.py` or the julia-upward ratchet fails**, it names the gap your change added and how to close it.
   A false alarm (a name built at runtime) is closed by making the name a literal the extractor can
   see — never by raising the baseline.
 - **After closing gaps**, `pixi run arch-diagrams && pixi run arch-gaps-baseline`, and commit both.
@@ -90,4 +93,4 @@ pixi run test-py            # includes test_architecture_docs.py — the pins an
   (`frontend/CLAUDE.md`); the remaining bare `fetch(` calls are being moved onto it, one PR per
   directory. A ratchet on their count lands when they are done.
 - **Freshness of the views.** The generated pages are refreshed by hand; only the gap counts are
-  checked on every change.
+  checked on every change (the Julia upward calls by `test-pkg`, the rest by `test-py`).
