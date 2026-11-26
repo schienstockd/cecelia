@@ -1541,6 +1541,43 @@ function _gating_pop_add_under(img, vn, pt, body, under)
     end
 end
 
+# ── POST /api/gating/pop/add-track-classes — "mostly <child>" per sub-population, as one change ─────
+# { projectUid, imageUid, valueName, parent } → the pop tree, like /pop/add. Under `parent` (a flow pop of
+# a tracked segmentation), one population per sub-population its tracks are classed among
+# (`track_class_children`) that has none yet: `mostly <child>`, the parent's cells whose track's class is
+# that child (`Population.track_class_of`; docs/todo/TRACK_SUBPOP_GATING_PLAN.md Decision 7), in the
+# child's colour. One request = one undo step; a taken name writes nothing.
+function api_gating_pop_add_track_classes(body_bytes::Vector{UInt8})
+    img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    pt == "flow" || return _gerr(400, "track classes are for flow populations")
+    parent = _wstr(body, "parent", "")
+    _with_pop_tree_lock() do
+        m = load_pop_tree(img; value_name = vn, pop_type = pt)
+        has_pop(m, parent) || return _pop_not_found(m, parent)
+        is_tracked(img; value_name = vn) || return _gerr(400, "this segmentation has no tracks")
+        kids = track_class_children(m, parent; level = track_class_settings(m.pops[parent]).level)
+        have = Set(m.pops[c].track_class_of for c in direct_children(m, parent) if m.pops[c].track_class_of !== nothing)
+        todo = [k for k in kids if !(k in have)]
+        isempty(todo) && return _gerr(400, isempty(kids) ? "$parent has no sub-populations" :
+                                              "every sub-population of $parent already has one")
+        for k in todo
+            name = Cecelia.track_class_pop_name(k)
+            conflict = pop_name_conflict(img, vn, pop_path(parent, name); pop_type = pt)
+            conflict === nothing || return _gerr(400,
+                "A $conflict population named \"$name\" already exists — rename it first.")
+        end
+        try
+            for k in todo
+                add_pop!(m, Cecelia.track_class_pop_name(k); parent = parent, colour = m.pops[k].colour,
+                         show = true, track_class_of = k)
+            end
+        catch e
+            return _gerr(400, sprint(showerror, e))      # nothing persisted: `m` is discarded
+        end
+        200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
+    end
+end
+
 # ── POST /api/gating/pop/add-split — every region of a split gate, as one change ───────────────────
 # { projectUid, imageUid, valueName, popType, parent?, gate:{kind: slice|quadrant|bisector, x_channel, y_channel,
 #   x_transform, y_transform, vertices | centre + arms | cut + rule?}, pops:[{name, colour, region}, …] }

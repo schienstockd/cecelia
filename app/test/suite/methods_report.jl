@@ -183,6 +183,10 @@ end
     p = (; gate = nothing, pop_type = "flow", parent = "root", boolean_op = "and",
            boolean_pops = ["/qc/OTI"], boolean_not = ["/other/OTI"])
     @test Cecelia._mr_pop_detail(p, String[], names["Tcells"]) == (:boolean, "qc/OTI without other/OTI")
+    # a "mostly <child>" pop says which sub-population its tracks are mostly in
+    mp = (; gate = nothing, pop_type = "flow", parent = "/qc", boolean_op = nothing, track_class_of = "/qc/OTI")
+    @test Cecelia._mr_pop_detail(mp, String[], names["Tcells"])[1] == :trackclass
+    @test endswith(Cecelia._mr_pop_detail(mp, String[], names["Tcells"])[2], "mostly in qc/OTI")
 end
 
 @testset "Methods report — what a population is, and what Claude did to make it" begin

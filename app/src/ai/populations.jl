@@ -11,13 +11,14 @@
 const _POP_SUMMARY_CAP = 300   # hard cap per image (plan: caps on every list); `truncated` flags a cut
 
 # One population → its definition (names/tree links + the gate geometry, the filter spec, or the
-# combination — a boolean pop has neither gate nor filter, and without `boolean` reads as empty).
+# combination — a boolean pop has neither gate nor filter, and without `boolean` reads as empty; a
+# "mostly <child>" pop is `trackClassOf`, the sub-population its tracks are mostly in).
 function _pop_summary(p::Population)
     gate = p.gate === nothing ? nothing : gate_spec(p.gate)
     (; path = p.path, name = p.name, parent = p.parent, popType = string(p.pop_type),
        valueName = p.value_name, colour = p.colour, isTrack = is_track_pop(p.pop_type, p.path), gate = gate,
        filter = filter_spec(p),        # every AND-ed condition, not just the first (`conditions`)
-       boolean = boolean_spec(p))
+       boolean = boolean_spec(p), trackClassOf = p.track_class_of)
 end
 
 # Every persisted population defined on an image (via the shared enumerator), capped.

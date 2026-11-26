@@ -23,6 +23,7 @@ function _node_dict(m::PopulationTree, path::AbstractString; include_transient::
     p.updated_by === nothing || (d["updatedBy"] = p.updated_by)
     p.run_at === nothing || (d["runAt"] = p.run_at)      # cluster pops: the run its ids were picked on
     p.track_class === nothing || (d["trackClass"] = p.track_class)
+    p.track_class_of === nothing || (d["trackClassOf"] = p.track_class_of)
     # explicit-label pops (the napari selection) have no gate/filter, so the client can't tell
     # from gate/filter alone that membership changed (e.g. the user resizes the selection shape).
     # Emit a membership signature so the client bumps its per-pop version and refreshes the plots.
@@ -82,6 +83,7 @@ function _add_node!(m::PopulationTree, node::AbstractDict, parent::AbstractStrin
                     updated_by = let c = g("updatedBy"); c isa AbstractDict ? c : nothing end,
                     run_at = let r = g("runAt"); r isa AbstractString ? r : nothing end,
                     track_class = let c = g("trackClass"); c isa AbstractDict ? c : nothing end,
+                    track_class_of = let c = g("trackClassOf"); c isa AbstractString ? c : nothing end,
                     boolean_op   = bl === nothing ? nothing : get(bl, "op", get(bl, :op, nothing)),
                     boolean_pops = bl === nothing ? nothing : get(bl, "pops", get(bl, :pops, nothing)),
                     boolean_not  = bl === nothing ? nothing : get(bl, "not", get(bl, :not, nothing)))

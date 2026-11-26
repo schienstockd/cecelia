@@ -72,6 +72,7 @@ export interface PopNode {
   membership_sig?: string          // explicit-label pops (viewer selection): hash of label set
   createdBy?: unknown              // `author_stamp()` — present on a gate Claude proposed (utils/authorStamp)
   updatedBy?: unknown              // who last edited a proposal — a person's edit makes it theirs
+  trackClassOf?: string            // "mostly <child>": the parent's cells whose track is classed as this child
   runAt?: string                   // cluster pops: the run its clusters were picked on (`clusterPopStale`)
   children: PopNode[]
 }
@@ -87,6 +88,7 @@ export interface FlatPop {
   createdBy?: unknown    // who drew it, when Claude did (`claudeProposal`)
   updatedBy?: unknown    // who last edited it, on a proposal
   runAt?: string         // cluster pops: the run its clusters were picked on
+  trackClassOf?: string  // "mostly <child>": that child's path (utils/trackedChild.ts)
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -96,7 +98,7 @@ function flatten(tree: PopTree): FlatPop[] {
       const path = popPath(parent, n.name)
       out.push({ path, name: n.name, uid: n.uid ?? '', parent, colour: n.colour, show: n.show,
                  depth, gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean,
-                 createdBy: n.createdBy, updatedBy: n.updatedBy, runAt: n.runAt })
+                 createdBy: n.createdBy, updatedBy: n.updatedBy, runAt: n.runAt, trackClassOf: n.trackClassOf })
       walk(n.children ?? [], path, depth + 1)
     }
   }
@@ -410,6 +412,8 @@ export function createGatingStore(initialPopType: string) {
   // all or none; each child takes the colour given with its parent
   const addFilterPopUnder = (name: string, under: { parent: string; colour: string }[], conditions: FilterCondition[]) =>
     _post('/api/gating/pop/add', { name, under, filter: newFilter(conditions) })
+  // "mostly <child>" under `parent`, one per sub-population still without one — one request, one undo
+  const addTrackClassPops = (parent: string) => _post('/api/gating/pop/add-track-classes', { parent })
   // rewrite a filter pop's conditions (edit) — mirror onto single fields as add does.
   const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
     _post('/api/gating/pop/update', { path,
@@ -596,7 +600,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, addFilterPopUnder, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
+    addPop, addClusterPop, addFilterPop, addFilterPopUnder, addTrackClassPops, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
     renamePop, updatePop, setPopsShown, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,

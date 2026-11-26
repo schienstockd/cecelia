@@ -57,7 +57,7 @@ import { actionEnabled, actionTargets, deleteCount, moveTargetsFor, selectionRoo
          SINGLE_ONLY_TIP, type PopAction } from '../../utils/popSelection'
 import { contextAncestors, refinedBy, runLabel, type ClusterRun } from '../../utils/clusterRefine'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
-import { canAddTrackedChild, IS_TRACKED, TRACKED_CHILD_NAME } from '../../utils/trackedChild'
+import { canAddTrackedChild, IS_TRACKED, TRACKED_CHILD_NAME, canAddMostlyPops } from '../../utils/trackedChild'
 
 const AXIS_OPTIONS: ChipOption[] = [
   { value: 'zero', label: '', icon: 'pi pi-arrows-alt',     tip: 'Whole-dataset scale (origin at 0) — axis stays fixed across populations' },
@@ -462,6 +462,11 @@ async function addTrackedChildren() {
   else if (under.length) await g.addFilterPopUnder(TRACKED_CHILD_NAME, under, [IS_TRACKED])
 }
 
+// "Add mostly populations": per sub-population, the parent's cells whose TRACK is mostly in it
+// (TRACK_SUBPOP_GATING_PLAN P7) — one request for all of them
+const canMostly = (p: FlatPop) => !props.readonly && !bulk.value && canAddMostlyPops(p, g.flat, g.obsColumns, g.popType)
+const mostlyTip = (p: FlatPop) => `Tracks mostly in ${g.flat.find(c => c.path === p.trackClassOf)?.name ?? p.trackClassOf}`
+
 // a hand-drawn gate vs a declarative filter pop (badge in the list)
 const isFilterPop = (p: FlatPop) => !!p.filter && !p.gate
 const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
@@ -858,6 +863,9 @@ function addMenuPopsToKiwi() {
           <i v-else-if="isBoolPop(p)" class="pi pi-link pm-filter-badge pm-bool-badge"
              v-tooltip.top="popBoolSummary(p)" />
 
+          <!-- a "mostly <child>" pop: its cells are the parent's tracks classed as that child -->
+          <i v-if="p.trackClassOf" class="pi pi-share-alt pm-filter-badge" v-tooltip.top="mostlyTip(p)" />
+
           <!-- a gate Claude proposed (observer add_gate) — the same ✦ that marks Claude's work elsewhere -->
           <i v-if="claudeProposal(p.createdBy)" class="pi pi-sparkles pm-filter-badge"
              v-tooltip.top="claudeProposal(p.createdBy, p.updatedBy)"
@@ -970,6 +978,11 @@ function addMenuPopsToKiwi() {
                     v-tooltip.right="'Its cells in a track, as a population to gate under'"
                     @click.stop="runAction(addTrackedChildren)">
               <i class="pi pi-share-alt" /> Add tracked cells{{ bulk ? ` to ${trackedTargets.length}` : '' }}
+            </button>
+            <button v-if="canMostly(actionsPop)" class="cc-actions-item"
+                    v-tooltip.right="'One per sub-population: the tracks mostly in it'"
+                    @click.stop="runAction(() => g.addTrackClassPops(actionsPop!.path))">
+              <i class="pi pi-share-alt" /> Add “mostly” populations
             </button>
             <ConfirmButton v-if="!readonly && !actionsPop.transient && childCount(actionsPop) > 0"
                            @confirm="runAction(() => g.deletePopChildren(actionsPop!.path))"
