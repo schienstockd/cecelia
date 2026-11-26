@@ -3,6 +3,7 @@
 // saving a plan writes the set's Blackboard entry; the model review (one Kiwi turn) writes its points onto
 // it. Routes: api/src/routes/acq_check.jl, api/src/acq_review.jl; rules: app/src/acq_check.jl.
 import { postJsonOrNull } from './blackboardApi'
+import { getJson, tryApi } from './api'
 import type { QcFinding } from '../lib/qc'
 import { parseCategoryLabels, parseReview, type ModelReview } from './modelReview'
 
@@ -105,11 +106,8 @@ export function parseAcqResult(r: Record<string, unknown> | null): AcqCheckResul
 }
 
 export async function fetchAcqCheck(projectUid: string, setUid: string): Promise<AcqCheckResult | null> {
-  try {
-    const res = await fetch(`/api/acqcheck?${new URLSearchParams({ projectUid, setUid })}`)
-    if (!res.ok) return null
-    return parseAcqResult(await res.json() as Record<string, unknown>)
-  } catch { return null }
+  const r = await tryApi(getJson<Record<string, unknown> | null>('/api/acqcheck', { query: { projectUid, setUid } }))
+  return r.ok ? parseAcqResult(r.data) : null
 }
 
 export async function saveAcqPlan(projectUid: string, setUid: string, plan: AcqPlan): Promise<AcqCheckResult | null> {
