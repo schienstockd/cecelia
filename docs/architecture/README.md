@@ -19,14 +19,14 @@ and the flows) are pinned to the code by a test.
 
 | View | Read it when |
 |---|---|
-| [`julia/interfaces.md`](julia/interfaces.md) | Adding a task, gate, transform or HPC backend — the checklist of what a new subtype must implement |
-| [`julia/datamodel.md`](julia/datamodel.md) | Project / Set / Image, and which areas hold the code that works on each |
-| [`julia/areas.md`](julia/areas.md) | Which part of the backend leans on which. A size map; the two-way pairs are the part to act on |
-| [`python/packages.md`](python/packages.md) | Runners vs the `cecelia` library vs side processes |
-| [`python/utils.md`](python/utils.md) | The helpers everything depends on (the de-facto API), cycles, class trees |
-| [`vue/layers.md`](vue/layers.md) | How the frontend directories depend on each other (a size map); where HTTP is spoken |
-| [`vue/stores.md`](vue/stores.md) | The Pinia stores, which lean on which, who reads each |
-| [`vue/viewer.md`](vue/viewer.md) | How self-contained the viewer is |
+| [julia/interfaces.md](julia/interfaces.md) | Adding a task, gate, transform or HPC backend — the checklist of what a new subtype must implement |
+| [julia/datamodel.md](julia/datamodel.md) | Project / Set / Image, and which areas hold the code that works on each |
+| [julia/areas.md](julia/areas.md) | Which part of the backend leans on which. A size map; the two-way pairs are the part to act on |
+| [python/packages.md](python/packages.md) | Runners vs the `cecelia` library vs side processes |
+| [python/utils.md](python/utils.md) | The helpers everything depends on (the de-facto API), cycles, class trees |
+| [vue/layers.md](vue/layers.md) | How the frontend directories depend on each other (a size map); where HTTP is spoken |
+| [vue/stores.md](vue/stores.md) | The Pinia stores, which lean on which, who reads each |
+| [vue/viewer.md](vue/viewer.md) | How self-contained the viewer is |
 
 Lookup tables — every `run_py` script and the params it reads, every route area, every WebSocket
 type with sender and handler — are in [`boundaries_reference.md`](boundaries_reference.md).
