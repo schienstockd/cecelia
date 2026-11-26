@@ -11,7 +11,8 @@ dir, from the code as it is now, and fails when:
   `pixi run arch-diagrams && pixi run arch-gaps-baseline`.
 
 The Julia kinds (`julia-upward`) need the package loaded, so they are not regenerated here: they are
-read from the committed `gaps/julia.json`, which `pixi run arch-diagrams` refreshes.
+read from the committed `gaps/julia.json`, which `pixi run arch-diagrams` refreshes. Their live check is
+the "julia-upward ratchet" testset in `app/test/suite/ratchets.jl` (`pixi run test-pkg`).
 
 Run with `pixi run test-py`.
 """
