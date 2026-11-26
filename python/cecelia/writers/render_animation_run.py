@@ -82,16 +82,19 @@ def _ray_steps(params):
     return int(params.get('raySteps') or 256)
 
 
-def _load_at_t(arr, t_idx, axes, want=('c', 'z', 'y', 'x'), z_slice=None, yx=None):
+def _load_at_t(arr, t_idx, axes, want=('c', 'z', 'y', 'x'), z_slice=None, yx=None, c_slice=None):
     """``arr`` (one level) at timepoint ``t_idx`` as the axes in ``want``, honouring the store's own
     order (``read_axes``). A missing axis becomes a leading size-1 dim. ``z_slice`` reads only those
-    planes of this level (a 2D frame's slab), ``yx`` = ``(y_slice, x_slice)`` only that region."""
+    planes of this level (a 2D frame's slab), ``yx`` = ``(y_slice, x_slice)`` only that region,
+    ``c_slice`` only those channels (a 60-marker panel read whole for one channel is 60× the memory)."""
     ax = [a.lower() for a in (axes or [])]
     idx = [slice(None)] * arr.ndim
     if 't' in ax:
         idx[ax.index('t')] = int(t_idx)
     if z_slice is not None and 'z' in ax:
         idx[ax.index('z')] = z_slice
+    if c_slice is not None and 'c' in ax:
+        idx[ax.index('c')] = c_slice
     if yx is not None:
         for a, sl in zip(('y', 'x'), yx):
             if a in ax:

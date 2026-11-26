@@ -25,7 +25,7 @@ _observer_image_header(img::CciaImage) = (; uid = img.uid, name = img.name, incl
 # branch included. "live" derived pops (e.g. _tracked) are NOT persisted maps — they're addressed
 # directly through pop_df, not enumerated here.
 
-# Iterate every persisted (non-transient) population on an image — `f(pop)` per pop, across the image's
+# Iterate every persisted (non-transient) population on an image — `f(pop, tree)` per pop, across the image's
 # segmentations × pop_type flavours. The shared enumerator for the population-based summary tools
 # (definitions AND measures), so the "walk the gating maps" loop lives once.
 function _observer_each_population(f::Function, img::CciaImage)
@@ -36,7 +36,7 @@ function _observer_each_population(f::Function, img::CciaImage)
         m === nothing && continue
         for path in pop_paths(m)
             p = pop_at(m, path); p.transient && continue
-            f(p)
+            f(p, m)                                    # the pop, and the tree it is defined in
         end
     end
 end

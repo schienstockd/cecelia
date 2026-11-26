@@ -46,13 +46,15 @@ function _measure_cols(img::CciaImage, vn::AbstractString, gran::Symbol)::Vector
     end
 end
 
-# Populations grouped by their segmentation (value_name), from the persisted gating maps.
-function _gated_by_value_name(img::CciaImage)
+# Populations grouped by their segmentation (value_name), from the persisted gating maps. `stale`, when
+# given, gets each one's `cluster_pop_stale_in` reason (built on cluster ids picked before a re-run).
+function _gated_by_value_name(img::CciaImage; stale::Union{Nothing,AbstractDict} = nothing)
     d = Dict{String,Vector{Population}}()
-    _observer_each_population(img) do p
+    _observer_each_population(img) do p, m
         # measure summaries are per cell or per track; a branch pop's rows are skeleton branches
         p.pop_type === POP_BRANCH && return
         push!(get!(d, p.value_name, Population[]), p)
+        stale === nothing || (stale[p] = cluster_pop_stale_in(m, p.path, img))
     end
     d
 end
@@ -117,7 +119,8 @@ end
 # CLI's tool-result limit, so an assistant asking for the whole set got nothing and fell back to one
 # image at a time (Kiwi, 2026-09-24: "only looked at 3 images from 7").
 function _measures_image(img::CciaImage; kind::AbstractString = "", value_names = String[])
-    gated = _gated_by_value_name(img)
+    stale = IdDict{Population,Union{String,Nothing}}()
+    gated = _gated_by_value_name(img; stale = stale)
     cache = Dict{Tuple{String,Symbol},Vector{String}}()
     out = Any[]; truncated = false
     for vn in sort(img_value_names(img))
@@ -126,7 +129,11 @@ function _measures_image(img::CciaImage; kind::AbstractString = "", value_names 
             isempty(kind) || tgt[5] == kind || continue
             length(out) >= _MEASURE_TARGET_CAP && (truncated = true; break)
             s = _target_summary(img, vn, tgt, cache)
-            s === nothing || push!(out, s)
+            s === nothing && continue
+            # the population a gated target summarises (a tracked one's motility target is `live`)
+            ps = get(gated, vn, Population[])
+            i = findfirst(q -> q.path == tgt[3] && (tgt[2] == "live" || string(q.pop_type) == tgt[2]), ps)
+            push!(out, merge(s, (; stale = i === nothing ? nothing : stale[ps[i]])))
         end
         truncated && break
     end

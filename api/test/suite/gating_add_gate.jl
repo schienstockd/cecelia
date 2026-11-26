@@ -325,7 +325,7 @@ end
         m = load_pop_tree(img; value_name = "B", pop_type = "flow")
         p = pop_at(m, "/qc/non-OTI")
         @test p.boolean_op == BOOL_AND && p.boolean_not == ["/qc/OTI"] && p.created_by["via"] == "claude"
-        summ = Cecelia._pop_summary(p)
+        summ = Cecelia._pop_summary(p, m, img)
         @test summ.boolean == boolean_spec(p) && summ.gate === nothing && summ.filter === nothing
         @test pop_at(m, "/qc/OTI").created_by === nothing          # the user's gate untouched
 
@@ -433,7 +433,7 @@ end
         p = pop_at(m, "/qc/big-dim")
         @test p.gate === nothing && length(p.filter_conditions) == 2 && p.filter_measure == "area" &&
               p.created_by["via"] == "claude"
-        summ = Cecelia._pop_summary(p)
+        summ = Cecelia._pop_summary(p, m, img)
         @test summ.filter == filter_spec(p) && length(summ.filter["conditions"]) == 2 && summ.boolean === nothing
         @test pop_at(m, "/qc").created_by === nothing          # the user's gate untouched
 

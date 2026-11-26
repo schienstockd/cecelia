@@ -75,10 +75,13 @@ names in index order.
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
 {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or
 asinh sent without its parameters takes the channel's own (logicle top = its max), as gate_plot draws it.
-One spec sets both axes; `{"x": spec, "y": spec}` sets each."""
+One spec sets both axes; `{"x": spec, "y": spec}` sets each. `stale` (else null): as gate_stats — the pop is
+built on cluster ids picked before a re-run of their clustering."""
 
 GATE_STATS_DOC = """Cells in population `pop` and its % of the parent. `pop` may be a gate (`/qc`) or a
-tracked set (`/qc/_tracked`, `/_tracked`) — the same paths a task takes as input."""
+tracked set (`/qc/_tracked`, `/_tracked`) — the same paths a task takes as input. `stale` (else null) says
+the pop, or a cluster pop it is built on (above it, or one it combines or excludes), picked its ids on an earlier run of a clustering that was re-run since:
+the count is of whatever those ids mean now. Say so before using it; re-pick with set_cluster_pops."""
 
 GATE_SHAPE_DOC = """`gate` is in TRANSFORMED coordinates — the space gate_plot reports `extent` and gates in, not its
 raw tick labels:
