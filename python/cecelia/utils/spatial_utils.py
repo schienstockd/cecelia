@@ -616,6 +616,24 @@ def normalise_counts(counts):
     return (counts / totals).astype(np.float32)
 
 
+def effective_types(comp):
+    """Local diversity of a neighbourhood: the effective number of cell types around each row of a
+    composition matrix `comp` (n, k) — the Hill number of order 1, exp of the Shannon entropy
+    (Hill 1973, Ecology 54:427, DOI 10.2307/1934352; Jost 2006, Oikos 113:363,
+    DOI 10.1111/j.2006.0030-1299.14714.x). k types in equal shares give k; one type gives 1.
+
+    Pass the BASIS columns only, never the "other" bin: "other" lumps every unlabelled cell into one
+    column, so it is not a type. Rows are renormalised over what is passed. A row with no typed
+    neighbours gets 0, not NaN — it is a real place (an isolated cell, or one ringed by "other"), and a
+    NaN would drop it from gates, plots and the HMM."""
+    p = normalise_counts(comp).astype(np.float64)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        h = -np.where(p > 0, p * np.log(p), 0.0).sum(axis=1)
+    out = np.exp(h)
+    out[p.sum(axis=1) == 0] = 0.0
+    return out.astype(np.float32)
+
+
 def sum_rows_by_group(rows, keys):
     """Sum the rows of `rows` (n, k) that share a key. `keys` is a length-n sequence of hashables (e.g.
     (uID, valueName, track_id) tuples). Returns `(sums, inverse, uniques)`: `sums[g]` is group g's summed

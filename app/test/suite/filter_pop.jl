@@ -16,6 +16,7 @@
     @test Cecelia._comp_col("B/qc/_tracked", "immune") == "spatial.comp.B_qc__tracked.immune"
     @test Cecelia._comp_col("T cells", "x") == "spatial.comp.T_cells.x"
     @test Cecelia._comp_col("plain", "s") == "spatial.comp.plain.s"
+    @test Cecelia._comp_col(Cecelia.DIVERSITY_NAME, "s") == "spatial.comp.effective_types.s"   # the runner test writes this name
 end
 
 @testset "compound filter populations (Decision 15 — AND-ed conditions)" begin
