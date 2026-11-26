@@ -4,6 +4,7 @@
 //
 // A check's STATE is a severity (lib/severity.ts: its icon and `--cc-sev-*` colour, never colour
 // alone) or one of two non-verdicts: `none` (nothing to say yet — never run, no plan) and `busy`.
+import type { InjectionKey, Ref } from 'vue'
 import { SEVERITY, type Severity } from './severity'
 import type { AcqCheckResult } from '../utils/acqCheckApi'
 import { badgeOf } from '../utils/acqCheck'
@@ -11,6 +12,9 @@ import { qcFindings, type QcDoc } from './qc'
 import { designSummary, type DesignGrid, type ExperimentDesign } from '../utils/experimentDesign'
 
 export type CheckState = Severity | 'none' | 'busy'
+
+/** ChecksCluster → CheckButton: the cluster is collapsed, so each check draws its icon (+ count) only. */
+export const CHECKS_COLLAPSED: InjectionKey<Readonly<Ref<boolean>>> = Symbol('checksCollapsed')
 
 export interface CheckLook { icon: string; color?: string }
 
