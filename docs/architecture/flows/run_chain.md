@@ -12,39 +12,65 @@ task path, and streams `chain:node:*` frames back while it rewrites `settings/ch
 after every node transition.
 
 ```mermaid
+%%{init: {"sequence": {"mirrorActors": false, "actorMargin": 40, "messageMargin": 28}}}%%
 sequenceDiagram
   autonumber
-  participant C as Vue ChainModule.vue
-  participant W as Vue stores/ws.ts
-  participant A as Julia api/src sockets.jl + routes/chain.jl
-  participant R as Julia runner app/src/runner/server.jl
-  participant E as Julia chain engine app/src/tasks/chain/
-  participant T as Task path execute_task
-  participant D as Disk project/settings/chains/
+  box Vue
+    participant C as ChainModule.vue
+    participant W as ws.ts
+  end
+  box Julia
+    participant A as sockets.jl + routes/chain.jl
+    participant R as runner (dev)
+    participant E as chain engine
+    participant T as execute_task
+  end
+  participant D as Disk chains/
 
-  C->>A: POST /api/chains/save with projectUid and template
-  A->>D: write settings/chains/NAME.json with createdBy and updatedBy stamps
-  C->>A: POST /api/chains/preflight, problems shown as Run anyway or Cancel
-  C->>A: WS chain:run with projectUid, chain name, imageUids, reuse
-  A-->>W: chain:run:started, or chain:run:failed on bad input or all images excluded
+  C->>A: POST /api/chains/save
+  A->>D: write chains/NAME.json
+  C->>A: POST /api/chains/preflight
+  C->>A: chain:run
+  A-->>W: chain:run:started
   alt detached runner is up
-    A->>R: HTTP POST /submit-chain with ChainRequest dict, 409 if run id already claimed
-    R->>E: claim run id, Threads spawn execute_chain
+    A->>R: POST /submit-chain
+    R->>E: execute_chain
   else no runner
-    A->>E: Threads spawn execute_chain in-process
+    A->>E: execute_chain (in-process)
   end
-  E->>D: load_chain_template reads NAME.json, freeze snapshot into new runs/RUNID dir
-  Note over E: topo sort, one thread per image, set-scope nodes wait at a barrier for all images, then run once on the image vector
-  E->>T: execute_task with TaskRequest carrying chain_run_id and chain_node_id, per node
-  E->>D: _save_run! rewrites runs/RUNID/run.json on every node state change
-  E-->>A: chain node event via _fire_chain_event! to subscribe_chain_frames!, from the runner over WS /events
-  A-->>W: broadcast chain:node:queued, running, waiting, done, failed plus task:progress
+  E->>D: freeze snapshot into runs/RUNID
+  Note over E: one thread per image, set-scope nodes wait at a barrier
+  E->>T: execute_task per node
+  E->>D: rewrite run.json
+  E-->>A: chain node event
+  A-->>W: chain:node:*, task:progress
   opt manual step parked as NODE_WAITING
-    C->>A: WS chain:continue with runId, nodeId, optional imageUids
-    A-->>W: chain:continue:result with continued and refused
+    C->>A: chain:continue
+    A-->>W: chain:continue:result
   end
-  A-->>W: chain:run:done or chain:run:failed from on_finished, in-process path only
+  A-->>W: chain:run:done / failed
 ```
+
+## Steps
+
+| # | What happens |
+|---|---|
+| 1 | POST /api/chains/save with projectUid and template |
+| 2 | write settings/chains/NAME.json with createdBy and updatedBy stamps |
+| 3 | POST /api/chains/preflight, problems shown as Run anyway or Cancel |
+| 4 | WS chain:run with projectUid, chain name, imageUids, reuse |
+| 5 | chain:run:started, or chain:run:failed on bad input or all images excluded |
+| 6 | HTTP POST /submit-chain with ChainRequest dict, 409 if run id already claimed |
+| 7 | claim run id, Threads spawn execute_chain |
+| 8 | Threads spawn execute_chain in-process |
+| 9 | load_chain_template reads NAME.json, freeze snapshot into new runs/RUNID dir |
+| 10 | execute_task with TaskRequest carrying chain_run_id and chain_node_id, per node |
+| 11 | _save_run! rewrites runs/RUNID/run.json on every node state change |
+| 12 | chain node event via _fire_chain_event! to subscribe_chain_frames!, from the runner over WS /events |
+| 13 | broadcast chain:node:queued, running, waiting, done, failed plus task:progress |
+| 14 | WS chain:continue with runId, nodeId, optional imageUids |
+| 15 | chain:continue:result with continued and refused |
+| 16 | chain:run:done or chain:run:failed from on_finished, in-process path only |
 
 `T` is the shared single-task pathway (`run_task` / pools / Python subprocess) and is traced in its own
 flow; a chain node is just a `TaskRequest` with the two chain correlation fields set. In the manual

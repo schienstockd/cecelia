@@ -11,40 +11,68 @@ redraws the population tree in the open browser. In the `opt` block, the in-app 
 reaches the same server: Julia spawns `claude -p` with an MCP config that points back at this API.
 
 ```mermaid
+%%{init: {"sequence": {"mirrorActors": false, "actorMargin": 40, "messageMargin": 28}}}%%
 sequenceDiagram
   autonumber
-  participant CC as Claude Code (terminal or claude -p)
-  participant MCP as Python cecelia_mcp server.py + client.py + gating_views.py
-  participant API as Julia api/src/server.jl
-  participant H as Julia route handler + package
-  participant Disk as Disk gating sidecar JSON
-  participant WS as Vue stores/ws.ts
-  participant GS as Vue stores/gating.ts + PopulationManager.vue
-  participant K as Vue utils/kiwiTurn.ts + stores/kiwi.ts
+  participant CC as Claude Code
+  box Python
+    participant MCP as cecelia_mcp
+  end
+  box Julia
+    participant API as server.jl
+    participant H as route handler
+  end
+  participant Disk as Disk gating JSON
+  box Vue
+    participant WS as ws.ts
+    participant GS as gating.ts
+    participant K as kiwi.ts
+  end
 
   Note over CC,GS: Read - get_populations
-  CC->>MCP: tools/call get_populations over stdio
-  MCP->>API: client.py _request allow-list then http_json GET /api/analysis/populations with Bearer token
-  API->>H: token gate passes, route table calls api_analysis_populations
-  H->>Disk: populations_summary reads each stored pop tree
-  H-->>CC: 200 JSON images with populations, back via MCP as the tool result
+  CC->>MCP: get_populations (stdio)
+  MCP->>API: GET /api/analysis/populations
+  API->>H: api_analysis_populations
+  H->>Disk: read pop trees
+  H-->>CC: populations (tool result)
 
   Note over CC,GS: Write - add_gate
-  CC->>MCP: tools/call add_gate with name, parent, gate spec
-  MCP->>API: POST /api/gating/pop/add-gate with ids, parent, name, gate, colour, dryRun
-  API->>H: api_gating_pop_add_gate validates, locks, add_pop! stamped by author_stamp
-  H->>Disk: _persist_and_broadcast! calls save_pop_tree!
-  H->>WS: broadcast_ws type gating:pop-tree with tree, missingColumns, canUndo
-  WS->>GS: dispatch to onPopTreePush, applyBroadcast sets the tree
-  H-->>CC: 200 ok, dryRun, path, counts, back via MCP as the tool result
+  CC->>MCP: add_gate
+  MCP->>API: POST /api/gating/pop/add-gate
+  API->>H: validate, add_pop!
+  H->>Disk: save_pop_tree!
+  H->>WS: gating:pop-tree
+  WS->>GS: apply tree
+  H-->>CC: ok + counts (tool result)
 
   opt In-app Kiwi turn
     K->>API: POST /api/kiwi/turn
-    API->>CC: kiwi_start_turn spawns claude -p with --mcp-config observer-mcp-headless.json, prompt on stdin
-    CC->>MCP: claude spawns python -m cecelia_mcp.server, then steps 1-5 with KIWI_READ_TOOLS only
-    API->>K: broadcast_ws kiwi:step then kiwi:done via stores/ws.ts
+    API->>CC: spawn claude -p
+    CC->>MCP: start MCP server, read tools only
+    API->>K: kiwi:step, kiwi:done
   end
 ```
+
+## Steps
+
+| # | What happens |
+|---|---|
+| 1 | tools/call get_populations over stdio |
+| 2 | client.py _request allow-list then http_json GET /api/analysis/populations with Bearer token |
+| 3 | token gate passes, route table calls api_analysis_populations |
+| 4 | populations_summary reads each stored pop tree |
+| 5 | 200 JSON images with populations, back via MCP as the tool result |
+| 6 | tools/call add_gate with name, parent, gate spec |
+| 7 | POST /api/gating/pop/add-gate with ids, parent, name, gate, colour, dryRun |
+| 8 | api_gating_pop_add_gate validates, locks, add_pop! stamped by author_stamp |
+| 9 | _persist_and_broadcast! calls save_pop_tree! |
+| 10 | broadcast_ws type gating:pop-tree with tree, missingColumns, canUndo |
+| 11 | dispatch to onPopTreePush, applyBroadcast sets the tree |
+| 12 | 200 ok, dryRun, path, counts, back via MCP as the tool result |
+| 13 | POST /api/kiwi/turn |
+| 14 | kiwi_start_turn spawns claude -p with --mcp-config observer-mcp-headless.json, prompt on stdin |
+| 15 | claude spawns python -m cecelia_mcp.server, then steps 1-5 with KIWI_READ_TOOLS only |
+| 16 | broadcast_ws kiwi:step then kiwi:done via stores/ws.ts |
 
 ## What crosses each boundary
 

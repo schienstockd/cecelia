@@ -285,7 +285,7 @@ function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{Stri
                   map_hook = _pick_hook(img, pop_type))
 end
 
-# transformed Float32 vectors for plotdata/density/plotmeta
+# transformed Float32 vectors for plotdata/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
     xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = labels_version)
     Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv))
@@ -1330,24 +1330,6 @@ function api_plots_pop_positions(req::HTTP.Request)
     200, collect(reinterpret(UInt8, buf))
 end
 
-# ── GET /api/gating/density → binary Float32 grid (bins×bins, row-major) ──────
-function api_gating_density(req::HTTP.Request)
-    q = HTTP.queryparams(HTTP.URI(req.target))
-    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
-    err === nothing || return err
-    vn = _resolve_vn(img, get(q, "valueName", ""))
-    x = get(q, "x", ""); y = get(q, "y", "")
-    (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
-    bins = parse(Int, get(q, "bins", "256"))
-    pop = get(q, "pop", ROOT)
-    xt, yt = _auto_axes(q, img, vn, _read_pop_type(q, img, vn, pop), x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
-                        labels_version = _labels_version_pin(q))
-    xv, yv = _plot_xy(img, vn, _read_pop_type(q, img, vn, pop), x, y, pop, xt, yt;
-                       labels_version = _labels_version_pin(q))
-    d = density_2d(xv, yv; bins = bins)
-    200, collect(reinterpret(UInt8, Float32.(vec(d.counts))))
-end
-
 # ── GET /api/gating/summary → the distribution a gate is chosen from (JSON) ───
 # ?projectUid&imageUid&valueName&x&y[&pop&popType&bins&xt…&yt…] → { n, x:{channel, …axis_summary},
 # y:{…}, grid?:grid_summary } over the SAME read as the gate plot (`_plot_xy`), so the numbers
@@ -1361,7 +1343,7 @@ function api_gating_summary(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     bins = clamp(something(tryparse(Int, get(q, "bins", "30")), 30), 5, 80)
-    pin = _labels_version_pin(q)           # the session pin, threaded like plotdata/density
+    pin = _labels_version_pin(q)           # the session pin, threaded like plotdata
     xt, yt = _auto_axes(q, img, vn, pop_type, x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
                         labels_version = pin)
     xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import gaps  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / "docs" / "architecture" / "python"
+OUT = gaps.ARCH / "python"
 GENERATED = ("> **Generated** by `scripts/architecture/python_extract.py` — do not edit; "
              "run `pixi run arch-diagrams`.\n")
 MAX_EDGES = 25
@@ -244,7 +244,7 @@ Box: module and how many repo files import it. Arrow `a → b`: a imports b. Onl
         L += [f"- `{n}` ← `{b}` — `{rel}`" for n, b, rel in sorted(rows)]
     L.append("")
     (OUT / "utils.md").write_text("\n".join(L), encoding="utf-8")
-    print(f"wrote {OUT.relative_to(REPO)}")
+    print(f"wrote {OUT}")
     return 0
 
 

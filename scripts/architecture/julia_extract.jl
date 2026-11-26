@@ -22,7 +22,9 @@ using Cecelia
 
 const C = Cecelia
 const REPO = normpath(joinpath(@__DIR__, "..", ".."))
-const OUT = joinpath(REPO, "docs", "architecture", "julia")
+# CECELIA_ARCH_OUT redirects every extractor's output (see gaps.py).
+const ARCH = something(get(ENV, "CECELIA_ARCH_OUT", nothing), joinpath(REPO, "docs", "architecture"))
+const OUT = joinpath(ARCH, "julia")
 
 rel(p) = relpath(normpath(string(p)), REPO)
 
@@ -37,6 +39,9 @@ const AREA_ORDER = let ks = String[]
     end
     ks
 end
+
+# Declared layer order (julia_areas.toml [layers]): area => tier, bottom = 1.
+const TIER = Dict(a => i for (i, t) in enumerate(TOML.parsefile(joinpath(@__DIR__, "julia_areas.toml"))["layers"]["tiers"]) for a in t)
 
 function area_of(path::AbstractString)
     for a in AREA_ORDER, pat in AREA_SPEC[a]
@@ -91,9 +96,11 @@ end
 
 function area_graph()
     fn_area = Dict{String,String}()
+    fn_areas = Dict{String,Set}()   # every area that defines a method of the function
     for (n, f) in FUNCS
         length(string(n)) >= 4 || continue
         a = def_area(f); a === nothing || (fn_area[string(n)] = a)
+        fn_areas[string(n)] = Set(filter(!isnothing, [area_of(rel(m.file)) for m in methods(f)]))
     end
     ty_area = Dict{String,String}()
     for (n, T) in TYPES
@@ -117,6 +124,9 @@ function area_graph()
             name, called = m[1], m[2] !== nothing
             b = called ? get(fn_area, name, get(ty_area, name, nothing)) : get(ty_area, name, nothing)
             (b === nothing || b == a) && continue
+            # Calling a function your own area adds a method to is dispatch into your own extension
+            # point (the framework calling `_run_task`), not a dependency on the majority owner.
+            called && a in get(fn_areas, name, ()) && continue
             push!(get!(edges, (a, b), Set{String}()), name)
         end
     end
@@ -309,8 +319,8 @@ the code: `A → B (n)` means files in A call `n` distinct functions (or name `n
 Static name matching — approximate, see the script header.
 
 **Read it as a size map.** Big areas call more, so the thickest arrows mostly show where the code
-is, not where it is wrong. What to act on is the two-way pairs below, listed in
-[`gaps.md`](../gaps.md#julia-two-way). Diagram rule: the strongest $(MAX_EDGES) arrows per diagram
+is, not where it is wrong. What to act on is the calls up the declared layer order (below, and
+listed by name in [`gaps.md`](../gaps.md#julia-upward)). Diagram rule: the strongest $(MAX_EDGES) arrows per diagram
 (ties at the cut-off included); every count is in the full matrix at the bottom.
 """)
     pkg = [a for a in AREA_ORDER if !startswith(a, "api:") && haskey(loc, a)]
@@ -349,14 +359,47 @@ is, not where it is wrong. What to act on is the two-way pairs below, listed in
         (isempty(x) || isempty(y)) && continue
         ex(s) = "$(length(s)): " * join(("`$n`" for n in first(sort(collect(s)), 4)), ", ") * (length(s) > 4 ? ", …" : "")
         println(io, "| $a ↔ $b | $(ex(x)) | $(ex(y)) |")
-        (wa, wb, weak, strong) = length(x) <= length(y) ? (a, b, x, y) : (b, a, y, x)
-        push!(GAPS, (kind = "julia-two-way", subject = "$a ↔ $b", rank = length(weak),
-                     detail = "the weaker side is $wa → $wb, $(length(weak)) name$(length(weak) == 1 ? "" : "s"): " *
-                              join(("`$n`" for n in first(sort(collect(weak)), 5)), ", ") * (length(weak) > 5 ? ", …" : "") *
-                              " ($(length(strong)) the other way)",
-                     where = String[]))
     end
     println(io)
+    # ── upward calls against the declared layer order ──
+    tiers = TOML.parsefile(joinpath(@__DIR__, "julia_areas.toml"))["layers"]["tiers"]
+    println(io, "## Layers — calls up the declared order\n")
+    println(io, "The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may call its own tier and the ones below; a call up the order is a gap, listed by name in [`gaps.md`](../gaps.md#julia-upward).\n")
+    println(io, "| Tier | Areas |\n|---|---|")
+    for (i, t) in enumerate(tiers); println(io, "| $i | ", join(t, ", "), " |"); end
+    println(io)
+    owner = Dict{String,Set{String}}()           # name => areas it is called from, below its owner
+    owned_by = Dict{String,String}()
+    for ((a, b), ns) in edges
+        (haskey(TIER, a) && haskey(TIER, b) && TIER[a] < TIER[b]) || continue
+        for n in ns
+            push!(get!(owner, n, Set{String}()), a); owned_by[n] = b
+        end
+    end
+    # Naming the concrete subtypes of one abstract type from the same places (a registry listing every
+    # task) is one dependency, not one per subtype: fold them into a single item.
+    parent_of(n) = (T = get(TYPES, Symbol(n), nothing); T === nothing || isabstracttype(T) ? nothing : supertype(T))
+    folded = Dict{Tuple{Any,String,Vector{String}},Vector{String}}()
+    for (n, froms) in collect(owner)
+        P = parent_of(n)
+        (P === nothing || P === Any || parentmodule(P) !== C) && continue
+        push!(get!(folded, (P, owned_by[n], sort(collect(froms))), String[]), n)
+    end
+    for ((P, b, froms), ns) in folded
+        length(ns) < 3 && continue
+        foreach(n -> delete!(owner, n), ns)
+        push!(GAPS, (kind = "julia-upward", subject = "$(length(ns)) `$(short(P))` subtypes", rank = -length(froms) - length(ns),
+                     detail = "defined in $b (tier $(TIER[b])), named from " * join(("$f (tier $(TIER[f]))" for f in froms), ", ") *
+                              " — a list of every subtype; deriving it (`subtypes`, self-registration) closes it",
+                     where = String[]))
+    end
+    for (n, froms) in owner
+        b = owned_by[n]
+        push!(GAPS, (kind = "julia-upward", subject = "`$n`", rank = -length(froms),
+                     detail = "defined in $b (tier $(TIER[b])), called from " *
+                              join(("$f (tier $(TIER[f]))" for f in sort(collect(froms))), ", "),
+                     where = String[]))
+    end
     println(io, "<details><summary>Full matrix (rows call columns)</summary>\n")
     println(io, "| | " * join(pkg, " | ") * " |")
     println(io, "|---|" * repeat("---|", length(pkg)))
@@ -377,7 +420,7 @@ const GAPS = NamedTuple[]
 
 "Write the Julia gaps in the shape `gaps.py` reads (`docs/architecture/gaps/julia.json`)."
 function write_gaps(path)
-    order = Dict("julia-two-way" => 1)
+    order = Dict("julia-upward" => 1)
     open(io -> JSON3.pretty(io, sort(GAPS; by = g -> (order[g.kind], g.rank, g.subject))), path, "w")
 end
 const GENERATED = "> **Generated** by `scripts/architecture/julia_extract.jl` — do not edit; run `pixi run arch-diagrams`.\n"
@@ -386,7 +429,7 @@ mkpath(OUT)
 open(io -> interfaces_md(io), joinpath(OUT, "interfaces.md"), "w")
 open(io -> datamodel_md(io), joinpath(OUT, "datamodel.md"), "w")
 unmapped = open(io -> areas_md(io), joinpath(OUT, "areas.md"), "w")
-mkpath(joinpath(REPO, "docs", "architecture", "gaps"))
-write_gaps(joinpath(REPO, "docs", "architecture", "gaps", "julia.json"))
+mkpath(joinpath(ARCH, "gaps"))
+write_gaps(joinpath(ARCH, "gaps", "julia.json"))
 isempty(unmapped) || (println(stderr, "unmapped Julia files (add to julia_areas.toml):"); foreach(p -> println(stderr, "  ", p), unmapped))
-println("wrote ", rel(OUT))
+println("wrote ", OUT)

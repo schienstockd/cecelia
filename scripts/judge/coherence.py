@@ -149,9 +149,14 @@ def route_called_by(route: str, callers: dict[str, set[pathlib.Path]]) -> set[pa
     return out
 
 
+#: On a route's line: no caller, on purpose (a smoke test, a consumer to come) — `ARCH-EXEMPT: <reason>`.
+ROUTE_EXEMPT = "ARCH-EXEMPT:"
+
+
 def count_routes_uncalled(root: pathlib.Path) -> int:
     routes = {m.rstrip("/") for p in _source_files(root, ["api/src"], {".jl"})
-              for m in _JL_ROUTE.findall(p.read_text(encoding="utf-8", errors="ignore"))}
+              for line in p.read_text(encoding="utf-8", errors="ignore").splitlines() if ROUTE_EXEMPT not in line
+              for m in _JL_ROUTE.findall(line)}
     callers = route_callers(root)
     return sum(1 for r in routes if r.count("/") > 1 and not route_called_by(r, callers))
 
