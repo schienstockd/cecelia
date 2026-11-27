@@ -16,7 +16,7 @@ def run(params):
     if not im_path:
         log.log('[ERROR] imPath is required')
         raise SystemExit(1)
-    names = rebuild_dense_attrs(im_path, log=log.log)
+    names = rebuild_dense_attrs(im_path, log=log.log, progress=log.progress)
     log.log(f'>> rebuilt {len(names)} group(s) with dense attribute storage')
 
 

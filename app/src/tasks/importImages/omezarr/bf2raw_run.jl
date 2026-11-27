@@ -45,7 +45,7 @@ function _ims_heap_workcopy(src_path::AbstractString, staged::Union{AbstractStri
         end
     end
     ok = run_py("tasks/importImages/ims_rebuild_attrs_run.py", (; imPath = work), run_dir;
-                on_log = on_log, on_process = on_process)
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok ? String(work) : nothing
 end
 

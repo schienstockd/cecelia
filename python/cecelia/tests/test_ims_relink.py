@@ -243,6 +243,19 @@ class RebuildDenseAttrsTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.d, ignore_errors=True)
 
+    def test_progress_counts_attributes_up_to_the_total(self):
+        with h5py.File(self.path, 'r+') as f:          # a second dense group: 10 attributes
+            ti = f.create_group('DataSetInfo/TimeInfo')
+            for i in range(10):
+                ti.attrs[f'T{i}'] = _s1(f'{i}')
+        seen = []
+        ims_relink.rebuild_dense_attrs(self.path, log=lambda _: None,
+                                       progress=lambda n, t: seen.append((n, t)))
+        # 42 (40 keys + AFloat + AnIntVec) + 10, one report per group, in whichever group order
+        self.assertEqual(len(seen), 2)
+        self.assertIn(seen[0], [(42, 52), (10, 52)])
+        self.assertEqual(seen[1], (52, 52))
+
     def test_rebuilds_only_groups_over_the_compact_limit(self):
         self.assertEqual(ims_relink.rebuild_dense_attrs(self.path, log=lambda _: None),
                          ['DataSetInfo/Original Metadata'])

@@ -259,7 +259,7 @@ def _rebuild_group(f, name):
     f.move(tmp, name)
 
 
-def rebuild_dense_attrs(path, log=print):
+def rebuild_dense_attrs(path, log=print, progress=None):
     """Rewrite every group of `path` whose attributes are in dense storage. Returns the names rebuilt.
 
     WHY: Bio-Formats reads Imaris through netcdf-java, whose fractal-heap reader fails on the dense
@@ -272,14 +272,21 @@ def rebuild_dense_attrs(path, log=print):
     with the same attribute count converted fine.
 
     Writes to `path` — the import calls it on its LOCAL working copy only, never the user's source.
+    `progress(n, total)` is called once per group, counted in attributes (one group can hold
+    nearly all of them).
     """
     h5py = _h5py()
     with h5py.File(path, 'r+') as f:
         names = dense_attr_groups(f)
+        total = sum(len(f[name].attrs) for name in names)
+        done = 0
         for name in names:
             n = len(f[name].attrs)
             _rebuild_group(f, name)
             log(f'  rebuilt /{name} ({n} attributes)')
+            done += n
+            if progress is not None:
+                progress(done, total)
     return names
 
 
