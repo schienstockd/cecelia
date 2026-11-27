@@ -40,6 +40,7 @@ export interface GateSpec {
   rule?: GateRule | FollowRule               // bisector: cut at the parent's density valley instead ·
                                              // rectangle / polygon: move with the cloud it was drawn on
   rule_ok?: boolean                          // server outline: the rule found its valley / cloud on this parent
+  rule_peak?: [number, number]               // server outline: the peak a following shape found here (display coords)
   lo_rule?: GateRule; hi_rule?: GateRule     // range: an end that follows its own valley
   lo_rule_ok?: boolean; hi_rule_ok?: boolean // server outline: that end's rule found a valley
 }

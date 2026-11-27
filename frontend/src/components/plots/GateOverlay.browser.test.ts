@@ -13,15 +13,15 @@ type Entry = { path: string; colour: string; gate: GateSpec }
 const SIZE = 200                                    // px; the data extent is 0–100 on both axes
 const base = { x_channel: 'x', y_channel: 'y', x_transform: { kind: 'linear' }, y_transform: { kind: 'linear' } } as const
 
-function overlay(mode: Mode, gates: Entry[] = []) {
-  const draws: Partial<GateSpec>[] = [], edits: { path: string; gate: GateSpec }[] = []
+function overlay(mode: Mode, gates: Entry[] = [], extra: Record<string, unknown> = {}) {
+  const draws: Partial<GateSpec>[] = [], edits: { path: string; gate: GateSpec }[] = [], selects: (string | null)[] = []
   let cancels = 0
   const m = ref<Mode>(mode)
   const host = mountInto({
     render: () => h('div', { style: `position:relative;width:${SIZE}px;height:${SIZE}px` }, [
       h(GateOverlay, { mode: m.value, gates, extents: { xMin: 0, xMax: 100, yMin: 0, yMax: 100 },
         onDraw: (g: Partial<GateSpec>) => draws.push(g), onEdit: (e: { path: string; gate: GateSpec }) => edits.push(e),
-        onCancel: () => { cancels++ } })]),
+        onCancel: () => { cancels++ }, onSelect: (p: string | null) => selects.push(p), ...extra })]),
   })
   const canvas = host.querySelector('canvas')!
   // a mouse event at a DATA point (y up), on the canvas or the window
@@ -31,7 +31,7 @@ function overlay(mode: Mode, gates: Entry[] = []) {
       clientX: r.left + x / 100 * SIZE, clientY: r.top + (1 - y / 100) * SIZE }))
   }
   const click = (x: number, y: number) => { fire('mousedown', x, y); fire('mouseup', x, y); fire('click', x, y) }
-  return { draws, edits, cancels: () => cancels, fire, click }
+  return { draws, edits, selects, cancels: () => cancels, fire, click, host, canvas }
 }
 const close = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) < 0.6)
 
@@ -164,6 +164,41 @@ describe('a rectangle that follows its cloud', () => {
     o2.click(40, 40); o2.click(40, 40); o2.fire('dblclick', 40, 40)
     expect(o2.edits[0].gate.rule).toBeUndefined()
     expect(o2.edits[0].gate.rule_ok).toBeUndefined()
+  })
+
+  it('reports its selection to the host; a press on a control marked to keep it does not deselect', async () => {
+    const g: Entry = { path: '/r', colour: '#f00', gate: { ...base, kind: 'rectangle', x_min: 20, x_max: 60, y_min: 20, y_max: 60 } }
+    const o = overlay('off', [g]); await frames()
+    o.click(40, 40); await frames()
+    expect(o.selects).toEqual(['/r'])
+    // the panel's follow switch lives outside the plot: pressing it keeps the gate selected
+    const keep = document.createElement('button'); keep.dataset.keepsGateSelection = ''
+    document.body.appendChild(keep)
+    keep.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); await frames()
+    expect(o.selects).toEqual(['/r'])
+    // anything else outside deselects
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); await frames()
+    expect(o.selects).toEqual(['/r', null])
+    keep.remove()
+  })
+
+  it('a selected following one marks the peak it found', async () => {
+    const g: Entry = { path: '/r', colour: '#ff0000', gate: { ...base, kind: 'rectangle', x_min: 20, x_max: 60, y_min: 20,
+      y_max: 60, rule: { kind: 'follow' }, rule_ok: true, rule_peak: [40, 40] } }
+    const o = overlay('off', [g]); await frames()
+    // anything painted at the peak's centre (device pixels)? The cross only, once the gate is selected
+    const inked = () => {
+      const dpr = o.canvas.width / o.canvas.clientWidth, c = o.canvas.getContext('2d')!
+      return c.getImageData(Math.round(0.4 * SIZE * dpr), Math.round(0.6 * SIZE * dpr), 1, 1).data[3] > 0
+    }
+    expect(inked()).toBe(false)
+    o.click(30, 30); await frames()
+    expect(inked()).toBe(true)
+    // missed on this parent: no peak to mark
+    const o2 = overlay('off', [{ ...g, gate: { ...g.gate, rule_ok: false } }]); await frames()
+    o2.click(30, 30); await frames()
+    const dpr = o2.canvas.width / o2.canvas.clientWidth
+    expect(o2.canvas.getContext('2d')!.getImageData(Math.round(0.4 * SIZE * dpr), Math.round(0.6 * SIZE * dpr), 1, 1).data[3]).toBe(0)
   })
 })
 

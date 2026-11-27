@@ -96,7 +96,7 @@ const props = withDefaults(defineProps<{
   hideAxisLabels: false, fontSize: 11, plotId: '', family: 'gate-scatter', cellKey: '',
   labels: null, hist: null, imageUid: '', valueName: '', popType: '',
 })
-const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
+const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: []; select: [string | null] }>()
 
 // delayed spinner for the full-size scatter only; compact montage cells (gating strategy) are small
 // plots — they keep the unobtrusive dot rather than a wheel over every tile.
@@ -360,7 +360,8 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"
                    :flip-y="flipY"
                    :line-width="gateLineWidth" :show-labels="gateLabels" :readonly="readonly" :pending="pendingGate"
-                   @draw="emit('draw', $event)" @edit="emit('edit', $event)" @cancel="emit('cancel')" />
+                   @draw="emit('draw', $event)" @edit="emit('edit', $event)" @cancel="emit('cancel')"
+                   @select="emit('select', $event)" />
       <span class="axisline axisline-x" />
       <span class="axisline axisline-y" />
       <span v-for="t in xTicks" :key="'x'+t.pos" class="xtick" :style="{ left: tickX(t.pos, viewExtents) }">

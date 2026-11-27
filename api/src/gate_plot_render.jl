@@ -138,6 +138,26 @@ function _stroke!(img::AbstractMatrix, segs, colour, width::Real)
     end
 end
 
+# Canvas-space segments cut into `on`-px dashes with `off`-px gaps, the pattern running on across segments.
+function _dashed(segs, on::Real, off::Real)
+    out = Tuple{Float64,Float64,Float64,Float64}[]
+    phase = 0.0                                   # distance into the current on+off period
+    for (c0, r0, c1, r1) in segs
+        len = hypot(c1 - c0, r1 - r0); len > 0 || continue
+        t = 0.0
+        while t < len
+            inon = phase < on
+            step = min(len - t, inon ? on - phase : on + off - phase)
+            if inon
+                a, b = t / len, (t + step) / len
+                push!(out, (c0 + a * (c1 - c0), r0 + a * (r1 - r0), c0 + b * (c1 - c0), r0 + b * (r1 - r0)))
+            end
+            t += step; phase = mod(phase + step, on + off)
+        end
+    end
+    out
+end
+
 # ── density ──────────────────────────────────────────────────────────────────────
 # FlowJo-style pseudocolour, ported from the browser (`plots/density.ts`): bin into a 160² grid over
 # the view, box-blur (radius 2, 2 passes), each point takes its cell's LOG-scaled density through the
@@ -293,7 +313,27 @@ function render_gate_plot(xv::AbstractVector, yv::AbstractVector,
         end
         segs = clipped([(pts[i], pts[mod1(i + 1, length(pts))]) for i in eachindex(pts)])
         isempty(segs) && continue
-        _stroke!(img, dividers === nothing ? segs : clipped(dividers), colour, _GATE_WIDTH * s)
+        # a rule that missed on this parent stands where it was drawn: dashed, as `GateOverlay` draws it —
+        # a range per end (`lo_rule_ok` / `hi_rule_ok`), anything else whole (`rule_ok`)
+        missed = kind == "range" ? [get(g, "lo_rule_ok", true) === false, get(g, "hi_rule_ok", true) === false] :
+                 fill(get(g, "rule_ok", true) === false, dividers === nothing ? 1 : length(dividers))
+        if dividers === nothing
+            _stroke!(img, missed[1] ? _dashed(segs, 5s, 4s) : segs, colour, _GATE_WIDTH * s)
+        else
+            for (d, miss) in zip(dividers, missed)
+                ds = clipped([d])
+                _stroke!(img, miss ? _dashed(ds, 5s, 4s) : ds, colour, _GATE_WIDTH * s)
+            end
+        end
+        # a following shape's peak: a small white cross over a dark one — it sits on the densest dots,
+        # which the heat ramp paints red / orange, where a cross in the gate's colour vanishes
+        pk = get(g, "rule_peak", nothing)
+        if pk !== nothing && xlo <= pk[1] <= xhi && ylo <= pk[2] <= yhi
+            c0, r0 = col(pk[1]), row(pk[2])
+            arms = [(c0 - 5s, r0 - 5s, c0 + 5s, r0 + 5s), (c0 - 5s, r0 + 5s, c0 + 5s, r0 - 5s)]
+            _stroke!(img, arms, RGB{N0f8}(0, 0, 0), 4s)
+            _stroke!(img, arms, _PLOT_TEXT, _GATE_WIDTH * s)
+        end
         parts = split(string(get(g, "path", "")), '/'; keepempty = false)
         name = isempty(parts) ? "" : String(last(parts))
         isempty(name) && continue
