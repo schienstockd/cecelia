@@ -49,7 +49,7 @@ const TABLE: Record<ChartType, VisControl[]> = {
   // transposes the grid
   heatmap: ['legend', 'rotateXLabel', 'rotate', ...LABELS],
   elbow: ['legend', 'grid', ...LABELS],
-  trend: ['legend', 'logScale', 'grid', 'rotateXLabel', 'facetBy', 'palette', ...LABELS],
+  trend: ['legend', 'logScale', 'grid', 'rotateXLabel', 'facetBy', 'yRange', 'palette', ...LABELS],
 }
 
 export function visControlsFor(k: PlotKind): VisControl[] {

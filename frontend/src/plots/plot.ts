@@ -1047,6 +1047,12 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   if (!fit.length) return null
   const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   const yhi = o.logScale ? hi : hi * 1.05
+  // auto: 0 (1 on log) … the curve's top; Y min / Y max replace either side — the measure-axis rule the
+  // distribution charts use, so a fraction can be read on 0…1 rather than 0…0.65
+  const autoLo = o.logScale ? 1 : 0
+  const yDomain = distDomain({ min: autoLo, max: hi }, { ...o, nonNegative: true }) ?? [autoLo, yhi > 0 ? yhi : 1]
+  // a user range narrower than the curve: clip the line/ribbon to the frame rather than let it run out
+  const clip = yDomain[0] > autoLo || yDomain[1] < yhi ? { clip: true } : {}
   const legend = dedupLegend(color)
   const legendN = legend.domain.length
   const topPad = legendTopPad(legendN, o)
@@ -1058,9 +1064,9 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const f = fxCh(o)                       // facet channel (rows carry `fkey`); {} when not faceting
   const marks: unknown[] = []
   if (o.interval) marks.push(
-    Plot.areaY(fit, { x: 'x', y1: 'lo', y2: 'hi', fill: 'series', z: 'series', fillOpacity: 0.15, ...f }))
+    Plot.areaY(fit, { x: 'x', y1: 'lo', y2: 'hi', fill: 'series', z: 'series', fillOpacity: 0.15, ...clip, ...f }))
   marks.push(
-    Plot.line(fit, { x: 'x', y: 'y', stroke: 'series', z: 'series', strokeWidth: 2, ...f }),
+    Plot.line(fit, { x: 'x', y: 'y', stroke: 'series', z: 'series', strokeWidth: 2, ...clip, ...f }),
     // Plot repeats a frame per facet, so the left anchor becomes a divider at every panel boundary
     // (same reason the distribution charts drop it) — keep only the shared bottom baseline.
     ...(faceted(o) ? [] : [Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 })]),
@@ -1074,7 +1080,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     x: { label: o.labX || (o.timeScale ? `Time (${tu.unit})` : frameAxisLabel(r.groupBy)), grid: o.grid,
          ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
-         ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },
+         ...(o.logScale ? { type: 'log' } : {}), domain: yDomain },
     ...fxScale(o),
     marks,
   }
