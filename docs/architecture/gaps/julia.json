@@ -89,14 +89,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`_catkey`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_clustfeatures_entry`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from model (tier 2)",
@@ -161,22 +153,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`_obs_suffixes`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_ordered_cats`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_parse_tkey`",
         "rank": -1,
         "detail": "defined in ai+lab log (tier 8), called from scheduler+chains (tier 7)",
@@ -196,14 +172,6 @@
         "subject": "`_preflight_has`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_rm_if`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
         "where": [
         ]
     },
@@ -420,14 +388,6 @@
         "subject": "`pop_gate_hashes`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`prune_stale_hmmfit!`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
         "where": [
         ]
     },

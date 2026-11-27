@@ -6,7 +6,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 74 |
+| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 69 |
 
 ## Layers
 
@@ -26,7 +26,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`task_params_name`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
 - **`TaskRequest`** — defined in runner (tier 8), called from scheduler+chains (tier 7)
 - **`Track`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
-- **`_catkey`** — defined in plots+boards (tier 8), called from tracking+spatial (tier 4)
 - **`_clustfeatures_entry`** — defined in gating (tier 4), called from model (tier 2)
 - **`_clustfeatures_part_of`** — defined in gating (tier 4), called from model (tier 2)
 - **`_clustfeatures_suffixes`** — defined in gating (tier 4), called from model (tier 2)
@@ -35,12 +34,9 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`_fun_name_from_task`** — defined in scheduler+chains (tier 7), called from task framework (tier 5)
 - **`_keyed_strings`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
 - **`_label_name_taken`** — defined in cell data (tier 3), called from model (tier 2)
-- **`_obs_suffixes`** — defined in plots+boards (tier 8), called from tasks (tier 6)
-- **`_ordered_cats`** — defined in plots+boards (tier 8), called from tracking+spatial (tier 4)
 - **`_parse_tkey`** — defined in ai+lab log (tier 8), called from scheduler+chains (tier 7)
 - **`_preflight_fields`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
 - **`_preflight_has`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
-- **`_rm_if`** — defined in plots+boards (tier 8), called from tasks (tier 6)
 - **`_run_py_hpc`** — defined in hpc (tier 7), called from python bridge (tier 3)
 - **`_run_tar`** — defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)
 - **`_stored_key`** — defined in task framework (tier 5), called from qc+checks (tier 4)
@@ -68,7 +64,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`plugin_roots`** — defined in task framework (tier 5), called from python bridge (tier 3)
 - **`pool_status`** — defined in scheduler+chains (tier 7), called from tasks (tier 6)
 - **`pop_gate_hashes`** — defined in gating (tier 4), called from run records (tier 2)
-- **`prune_stale_hmmfit!`** — defined in plots+boards (tier 8), called from tasks (tier 6)
 - **`qc_finding`** — defined in qc+checks (tier 4), called from cell data (tier 3)
 - **`read_state_json`** — defined in model (tier 2), called from config (tier 1)
 - **`rename_label_set_in_params`** — defined in scheduler+chains (tier 7), called from model (tier 2)
