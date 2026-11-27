@@ -20,19 +20,19 @@ flowchart LR
     runners__clustTracks["runners: clustTracks<br/><small>1 files · 0.1k lines</small>"]
     runners__editImages["runners: editImages<br/><small>9 files · 1.6k lines</small>"]
     runners__exportImages["runners: exportImages<br/><small>1 files · 0.2k lines</small>"]
-    runners__importImages["runners: importImages<br/><small>11 files · 0.8k lines</small>"]
+    runners__importImages["runners: importImages<br/><small>12 files · 0.9k lines</small>"]
     runners__opticalFlow["runners: opticalFlow<br/><small>2 files · 1.7k lines</small>"]
     runners__segment["runners: segment<br/><small>9 files · 2.0k lines</small>"]
     runners__spatialAnalysis["runners: spatialAnalysis<br/><small>6 files · 0.7k lines</small>"]
     runners__tracking["runners: tracking<br/><small>3 files · 0.1k lines</small>"]
   end
   MCP_server__cecelia_mcp_["MCP server (cecelia_mcp)<br/><small>19 files · 6.9k lines</small>"]
-  cecelia_utils["cecelia.utils<br/><small>61 files · 22.4k lines</small>"]
+  cecelia_utils["cecelia.utils<br/><small>61 files · 22.5k lines</small>"]
   cecelia_writers["cecelia.writers<br/><small>4 files · 1.2k lines</small>"]
   cecelia_client["cecelia_client<br/><small>1 files · 0.1k lines</small>"]
   dev_tooling__effectiveness_["dev tooling (effectiveness)<br/><small>19 files · 6.1k lines</small>"]
   preview_worker["preview worker<br/><small>1 files · 1.7k lines</small>"]
-  runners__importImages -->|11| cecelia_utils
+  runners__importImages -->|12| cecelia_utils
   runners__editImages -->|9| cecelia_utils
   runners__segment -->|9| cecelia_utils
   MCP_server__cecelia_mcp_ -->|6| cecelia_utils

@@ -15,10 +15,10 @@ flowchart LR
   py["Python runners + cecelia lib"]
   mcp["MCP server<br/>mcp/cecelia_mcp"]
   disk[("Project dir")]
-  vue -->|"HTTP: 127 files call it"| jl
+  vue -->|"HTTP: 128 files call it"| jl
   vue -->|"WS: 14 types in"| jl
   jl -->|"WS: 42 types out"| vue
-  jl -->|"run_py: 57 scripts"| py
+  jl -->|"run_py: 58 scripts"| py
   mcp -->|"HTTP: 4 files"| jl
   py -->|"HTTP: 1 file"| jl
   vue -.-|"11 shared files"| py
@@ -34,8 +34,8 @@ Solid: a call or a message. Dotted: a data file both sides read (a schema, a sha
 
 | Boundary | Julia end | Other end | Contract kept by | Size | Gaps |
 |---|---|---|---|---|---|
-| Julia → Python | `app/src/py_runner.jl` `run_py` | `script_params()` in `python/cecelia/utils/script_utils.py` | params JSON keys; `[PROGRESS] n/total`; exit code | 57 scripts (51 task runners) | none |
-| Vue → Julia, HTTP | route table in `api/src/server.jl`, handlers across `api/src` | `frontend/src/utils/api.ts` (the client), routes named in 127 files | `docs/API.md` → *Route index* | 335 routes in 57 areas | none |
+| Julia → Python | `app/src/py_runner.jl` `run_py` | `script_params()` in `python/cecelia/utils/script_utils.py` | params JSON keys; `[PROGRESS] n/total`; exit code | 58 scripts (52 task runners) | none |
+| Vue → Julia, HTTP | route table in `api/src/server.jl`, handlers across `api/src` | `frontend/src/utils/api.ts` (the client), routes named in 128 files | `docs/API.md` → *Route index* | 336 routes in 57 areas | none |
 | MCP → Julia, HTTP | same routes | `mcp/cecelia_mcp/autonomous.py`, `mcp/cecelia_mcp/client.py` +2 | `mcp/cecelia_mcp` tool specs | 4 files | — |
 | Python → Julia, HTTP | same routes | `python/cecelia/cecelia_client.py` | — | 1 file | — |
 | Vue ↔ Julia, WebSocket | `api/src/sockets.jl` `handle_message` (in), `api/src/server.jl` `broadcast_ws` (out) | `frontend/src/stores/ws.ts` | `WsMsgType` table (in); type strings (out) | 14 in, 42 out | none, none, none |

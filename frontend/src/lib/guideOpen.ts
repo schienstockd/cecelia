@@ -7,7 +7,8 @@
 // runtime, and `GuideBubble` would import the dialog's state to close it.
 //
 // Entry points: Help ▾ → Guides (HelpMenu.vue), the "Show me" button on a What's New tip card
-// (`WhatNewCard`) and the bubble's "More guides" when a guide finishes. Maturity links open their own
+// (`WhatNewCard`) and the bubble's "More guides" when a guide finishes. The header's jump search
+// starts a guide directly (`guide.start`), without the picker. Maturity links open their own
 // dialog (`lib/maturityOpen.ts`).
 
 import { ref } from 'vue'

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { jumpHits, isJumpShortcut, type JumpSources } from './jumpSearch'
+import { allNavGroups } from '../lib/navGroups'
+import { guidesByGroup } from '../lib/guides'
+import { guideGroupsFor } from './aiSwitch'
 
 const src: JumpSources = {
   pages: [
@@ -44,5 +47,47 @@ describe('jump search', () => {
     expect(isJumpShortcut({ key: 'K', metaKey: true })).toBe(true)
     expect(isJumpShortcut({ key: 'k' })).toBe(false)
     expect(isJumpShortcut({ key: 'k', ctrlKey: true, shiftKey: true })).toBe(false)
+  })
+})
+
+// The real sidebar and the real guides: "how do I …?" typed into the box must land on the guide that
+// SHOWS the control (docs/todo/HELP_SEARCH_PLAN.md, H1). The question that motivated it: a user asking
+// for a screenshot of where to capture a movie.
+describe('jump search finds guides', () => {
+  const guidesFor = (ai: boolean) => guideGroupsFor(guidesByGroup(), ai).flatMap(g => g.guides)
+    .map(g => ({ id: g.id, title: g.title, group: g.group, keywords: g.keywords }))
+  const real = (ai = true): JumpSources => ({
+    pages: allNavGroups([]).flatMap(g => g.items.map(i => ({ to: i.to, label: i.label, group: g.heading, tip: i.tip }))),
+    guides: guidesFor(ai), functions: [], images: [],
+  })
+  const first = (q: string) => jumpHits(q, real())[0]
+
+  it.each(['capture movie', 'record movie', 'export video', 'where is the button to capture a movie?'])(
+    '"%s" starts Record a movie', q => {
+      expect(first(q)).toMatchObject({ kind: 'guide', guideId: 'record-a-movie' })
+    })
+  it('a page whose label starts with the query still comes first', () => {
+    expect(first('movies')).toMatchObject({ kind: 'page', route: '/movies' })
+    expect(jumpHits('movies', real()).some(h => h.guideId === 'record-a-movie')).toBe(true)
+    expect(first('track')).toMatchObject({ kind: 'page', route: '/track' })
+  })
+  it('matches a guide on its title and keywords, not on its summary', () => {
+    // the clustering guide's summary says "instead of gating two channels"
+    const guides = jumpHits('gating', real()).filter(h => h.kind === 'guide')
+    expect(guides.map(h => h.guideId)).toEqual(['gate-populations'])
+    expect(first('fix segmentation')).toMatchObject({ kind: 'guide', guideId: 'correct-a-mask' })
+  })
+  it('offers the guides the Guides dialog offers for the AI state', () => {
+    expect(jumpHits('kiwi', real(false)).some(h => h.guideId === 'assist-with-kiwi')).toBe(false)
+    expect(jumpHits('kiwi', real(true)).some(h => h.guideId === 'assist-with-kiwi')).toBe(true)
+  })
+  it('says how many prerequisites are missing on the second line', () => {
+    const src: JumpSources = { pages: [], functions: [], images: [],
+      guides: [{ id: 'g', title: 'Record a movie', group: 'Analysis', missing: 2 }] }
+    expect(jumpHits('record', src)[0].sub).toBe('Guide · 2 missing')
+  })
+  it('a query of only filler words matches them as typed, not everything', () => {
+    // only the Segment page's tip ("Find the cells") holds "the"; skipping it would list everything
+    expect(jumpHits('the', src).map(h => h.label)).toEqual(['Segment'])
   })
 })

@@ -23,6 +23,7 @@ export const animationGuide: GuideDef = {
   group: 'Analysis',
   icon: 'pi-images',
   summary: 'Capture viewer views as keyframes and tween between them — a camera move, not a time sweep.',
+  keywords: ['keyframe', 'camera move', 'fly-through'],
   prereqs: [PREREQ.projectOpen, PREREQ.imageImported],
 
   steps: [

@@ -46,7 +46,27 @@
                 @test o.rule_ok isa Bool
                 xs = x == xc ? (o.x_min, o.x_max) : (o.y_min, o.y_max)
                 @test all(isapprox.(xs, (x0, x1); atol = 1e-9))
+                # the peak it locked onto: on the image it was saved on, its anchor (linear axes: as is),
+                # in the plot's axis order
+                if o.rule_ok
+                    a = g.rule.anchor
+                    @test collect(o.rule_peak) ≈ (x == xc ? [a[1], a[2]] : [a[2], a[1]])
+                else
+                    @test !haskey(o, :rule_peak)
+                end
             end
+            # where it would land on each image, before any copy: drawn on that image's same parent
+            rq = "projectUid=$puid&imageUid=$uid&valueName=$vn&path=/f&x=$xc&y=$yc&targets=$uid,nope"
+            st, b = api_gating_rule_preview(HTTP.Request("GET", "/x?$rq"))
+            @test st == 200
+            ims = JSON3.read(b).images
+            @test [i.uid for i in ims] == [uid, "nope"]
+            @test !isempty(ims[1].png) && only(ims[1].gates).path == "/f" && ims[1].rule_ok isa Bool
+            @test ims[2].error == "Image not found"
+            @test api_gating_rule_preview(HTTP.Request("GET", "/x?$q&path=/nothere&x=$xc&y=$yc&targets=$uid"))[1] == 404
+            # track gating: its rule runs on per-track rows, which a cell picture cannot show
+            tq = replace(rq, "imageUid=" => "popType=track&imageUid=")
+            @test api_gating_rule_preview(HTTP.Request("GET", "/x?$tq"))[1] == 400
             # dragged on the plot: the plot's spec carries no anchor, and the save anchors it again
             moved = merge(rect, Dict("x_min" => x0 - 1.0))
             @test post(api_gating_pop_set_gate, Dict{String,Any}("path" => "/f", "gate" => moved))[1] == 200

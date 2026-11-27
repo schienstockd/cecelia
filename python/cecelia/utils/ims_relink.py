@@ -1,4 +1,8 @@
-"""Repair Imaris `.ims` files whose dataset sits behind an HDF5 soft link.
+"""Repair Imaris `.ims` files Bio-Formats cannot read: a dataset behind an HDF5 soft link (the data
+patch below), and dense attribute storage (`rebuild_dense_attrs`, run by the import on its working
+copy — see that function).
+
+SOFT LINKS.
 
 Imaris 11 writes "merged"/workflow files with the real data under `/Workflows/InitialImages/DataSet`
 and only a **soft link** at `/DataSet`. Bio-Formats reads Imaris through netcdf-java, whose HDF5
@@ -211,6 +215,79 @@ def patch(root, apply=False, log=print):
     if repaired and apply:
         log('Re-run the import for these images.')
     return repaired, failed, skipped
+
+
+
+# ── Dense attribute storage Bio-Formats cannot read (import-time, on a working copy) ─────────────
+
+#: Above this many attributes an HDF5 object keeps them in "dense" storage — a fractal heap — instead
+#: of in its own header (the library default `max_compact`). Rebuilding a group below it changes
+#: nothing, so it is the cut for what `rebuild_dense_attrs` touches.
+DENSE_ATTR_MIN = 9
+
+
+def dense_attr_groups(f):
+    """Groups of the open file `f` holding more than the compact attribute limit, deepest first.
+
+    Deepest first so a rebuild never renames the path of a group still waiting its turn: rebuilding a
+    parent moves its children's LINKS, which keeps their paths, and a child rebuilt before it is just
+    another child to move. The root group is left out — it cannot be replaced.
+    """
+    h5py = _h5py()
+    found = []
+
+    def visit(name, obj):
+        if isinstance(obj, h5py.Group) and len(obj.attrs) >= DENSE_ATTR_MIN:
+            found.append(name)
+    f.visititems(visit)
+    return sorted(found, key=lambda n: (-n.count('/'), n))
+
+
+def _rebuild_group(f, name):
+    """Replace group `name` with a new one holding the same attributes (name, value AND type) and the
+    same children. Built beside the old one and swapped in last, so a failure part-way leaves the old
+    group where it was."""
+    old = f[name]
+    parent, _, leaf = name.rpartition('/')
+    tmp = f'{parent}/{leaf}.__cecelia_rebuild' if parent else f'{leaf}.__cecelia_rebuild'
+    new = f.create_group(tmp)
+    for k in old.attrs:
+        new.attrs.create(k, old.attrs[k], dtype=old.attrs.get_id(k).dtype)
+    for child in list(old):
+        f.move(f'{name}/{child}', f'{tmp}/{child}')
+    del f[name]
+    f.move(tmp, name)
+
+
+def rebuild_dense_attrs(path, log=print, progress=None):
+    """Rewrite every group of `path` whose attributes are in dense storage. Returns the names rebuilt.
+
+    WHY: Bio-Formats reads Imaris through netcdf-java, whose fractal-heap reader fails on the dense
+    attribute storage some Imaris files carry — Imaris' "Original Metadata" group from a converted
+    CZI held 10,929 attributes, and the import died at `setId` with `java.io.IOException: Invalid
+    argument` under `ucar.nc2.iosp.hdf5.FractalHeap.readIndirectBlock`. Deleting that group made the
+    file convert; so did writing the SAME attributes back through libhdf5, which lays out a heap
+    netcdf-java can walk — so this rebuilds rather than drops, and the source metadata survives into
+    the OME-XML. Which property of the original heap trips netcdf-java is not pinned: a synthetic file
+    with the same attribute count converted fine.
+
+    Writes to `path` — the import calls it on its LOCAL working copy only, never the user's source.
+    `progress(n, total)` is called once per group, counted in attributes (one group can hold
+    nearly all of them).
+    """
+    h5py = _h5py()
+    with h5py.File(path, 'r+') as f:
+        names = dense_attr_groups(f)
+        total = sum(len(f[name].attrs) for name in names)
+        done = 0
+        for name in names:
+            n = len(f[name].attrs)
+            _rebuild_group(f, name)
+            log(f'  rebuilt /{name} ({n} attributes)')
+            done += n
+            if progress is not None:
+                progress(done, total)
+    return names
 
 
 # ── run_py entry (Settings → Data patches) ────────────────────────────────────

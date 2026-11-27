@@ -51,7 +51,7 @@ Functions taking each object as their first argument, by area — where the code
 | model | 21 | 10 | 79 |
 | ai+lab log | 50 |  | 22 |
 | qc+checks | 4 | 32 | 18 |
-| gating |  | 2 | 48 |
+| gating |  | 2 | 50 |
 | plots+boards | 11 |  | 27 |
 | tracking+spatial |  |  | 23 |
 | scheduler+chains | 18 |  | 4 |

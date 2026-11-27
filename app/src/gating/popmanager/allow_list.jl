@@ -346,11 +346,7 @@ next tracking run sweeps them, so the viewer says why its ribbons are missing ra
 tracks on". Legacy unmarked rows are everyone's, never orphans. Sorted by `cells`, most first.
 """
 function orphan_track_sources(img::CciaImage, value_name::AbstractString)::Vector{NamedTuple}
-    counts = Dict{String,Int}()
-    for src in values(_label_track_sources_cached(img, value_name))
-        (src === nothing || src == WHOLE_SEG_TRACK_SOURCE) && continue
-        counts[src] = get(counts, src, 0) + 1
-    end
+    counts = _pop_track_source_counts(img, value_name)
     isempty(counts) && return NamedTuple[]
     m = load_pop_tree(img; value_name = value_name, pop_type = "flow")
     out = NamedTuple[]
@@ -360,6 +356,29 @@ function orphan_track_sources(img::CciaImage, value_name::AbstractString)::Vecto
         push!(out, (source = src, path = path, cells = n))
     end
     sort!(out; by = o -> -o.cells)
+end
+
+# tracked cells per authoring POP uid — whole-seg runs and legacy unmarked rows belong to no one pop
+function _pop_track_source_counts(img::CciaImage, value_name::AbstractString)::Dict{String,Int}
+    counts = Dict{String,Int}()
+    for src in values(_label_track_sources_cached(img, value_name))
+        (src === nothing || src == WHOLE_SEG_TRACK_SOURCE) && continue
+        counts[src] = get(counts, src, 0) + 1
+    end
+    counts
+end
+
+"""
+    pop_track_sources(img, value_name) -> Vector{String}
+
+The UIDs of the populations whose tracking run made this segmentation's tracks (`track_source`),
+sorted. The population manager warns on deleting one of them: its tracks stay in the cell table but
+no population draws them as ribbons until the next tracking run (`orphan_track_sources`). Empty when
+the segmentation has no cell table or no pop-authored tracks.
+"""
+function pop_track_sources(img::CciaImage, value_name::AbstractString)::Vector{String}
+    haskey(img.label_props, value_name) || return String[]
+    sort!(collect(keys(_pop_track_source_counts(img, value_name))))
 end
 
 # MODULE-LEVEL, NOT ON THE IMAGE: `init_object` builds a fresh `CciaImage` per request, so the
