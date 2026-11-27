@@ -1,4 +1,5 @@
 struct MeasureLabels <: CciaTask end
+register_builtin_task!("segment.measureLabels", MeasureLabels(); spec = joinpath(@__DIR__, "measure_labels.json"))
 
 Base.@kwdef struct MeasureLabelsParams
     outputValueName::String    = VERSIONED_DEFAULT_VAL

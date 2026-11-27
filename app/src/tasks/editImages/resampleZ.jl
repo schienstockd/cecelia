@@ -1,4 +1,5 @@
 struct ResampleZ <: CciaTask end
+register_builtin_task!("editImages.resampleZ", ResampleZ(); spec = joinpath(@__DIR__, "resampleZ.json"))
 
 task_output_effect(::ResampleZ) = "new-image"
 

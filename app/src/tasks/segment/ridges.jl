@@ -1,4 +1,5 @@
 struct Ridges <: CciaTask end
+register_builtin_task!("segment.ridges", Ridges(); spec = joinpath(@__DIR__, "ridges.json"))
 
 # Ridge segmentation of curvilinear structures (collagen fibres in SHG, other label-free structure
 # in THG). Wraps `skimage.filters.{meijering,sato,frangi}` — three Hessian-family filters that

@@ -1,4 +1,5 @@
 struct Flip <: CciaTask end
+register_builtin_task!("editImages.flip", Flip(); spec = joinpath(@__DIR__, "flip.json"))
 
 task_output_effect(::Flip) = "new-version"
 

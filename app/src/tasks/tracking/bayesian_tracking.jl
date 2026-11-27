@@ -1,4 +1,5 @@
 struct BayesianTracking <: CciaTask end
+register_builtin_task!("tracking.bayesian_tracking", BayesianTracking(); spec = joinpath(@__DIR__, "bayesian_tracking.json"))
 
 # Typed shape of what `_run_task(::BayesianTracking, …)` reads from `params`. Names mirror the
 # btrack Bayesian tracker's inputs (accuracy / probToAssign / noise* / lambda* / theta* / *Thresh);

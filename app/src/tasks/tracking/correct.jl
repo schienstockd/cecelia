@@ -28,6 +28,8 @@
 using DataFrames: DataFrame, select!, Not
 
 struct TrackCorrect <: CciaTask end
+register_builtin_task!("tracking.correct", TrackCorrect(); spec = joinpath(@__DIR__, "correct.json"))
+register_builtin_task!("tracking.staleness_report", TrackingStalenessReport(); spec = joinpath(@__DIR__, "staleness_report.json"))
 
 # Typed shape of what `_run_task(::TrackCorrect, …)` reads from `params`. `trackOps` is normalised
 # by `parse_track_ops` (Vector | JSON string) — a separate helper because it throws

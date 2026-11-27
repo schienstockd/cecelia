@@ -1,4 +1,5 @@
 struct Denoise <: CciaTask end
+register_builtin_task!("cleanupImages.denoise", Denoise(); spec = joinpath(@__DIR__, "denoise.json"))
 
 task_output_effect(::Denoise) = "new-version"
 

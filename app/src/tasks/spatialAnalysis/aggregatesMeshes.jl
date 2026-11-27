@@ -12,6 +12,7 @@
 using DataFrames: nrow
 
 struct AggregatesMeshes <: CciaTask end
+register_builtin_task!("spatialAnalysis.aggregatesMeshes", AggregatesMeshes(); spec = joinpath(@__DIR__, "aggregatesMeshes.json"))
 
 Base.@kwdef struct AggregatesMeshesParams
     pops::Vector{String}      = String[]

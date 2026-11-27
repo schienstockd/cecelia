@@ -9,6 +9,7 @@
 # intensities*.
 
 struct AfCells <: CciaTask end
+register_builtin_task!("segment.afCells", AfCells(); spec = joinpath(@__DIR__, "af_cells.json"))
 
 const AF_CELLS_GROUP_BY = ("dye", "order")
 

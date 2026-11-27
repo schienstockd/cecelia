@@ -1,6 +1,7 @@
 using Statistics: median
 
 struct DriftCorrect <: CciaTask end
+register_builtin_task!("cleanupImages.driftCorrect", DriftCorrect(); spec = joinpath(@__DIR__, "drift_correct.json"))
 
 task_output_effect(::DriftCorrect) = "new-version"
 

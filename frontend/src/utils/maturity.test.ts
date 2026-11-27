@@ -16,7 +16,7 @@ import {
 const ROUTES = NAV_GROUPS.flatMap(g => g.items.map(i => i.to))
 
 // The registered tasks, read the way taskDiscovery.test.ts reads them: the JSON specs on disk (the
-// registry in task_registry.jl maps 1:1 onto these). `fragments/` are param snippets, `testTasks.*`
+// built-in task registry maps 1:1 onto these). `fragments/` are param snippets, `testTasks.*`
 // exist only for the test suite, and a spec with no fun_name (tracking/cell_config.json) is btrack's
 // config, not a task.
 const SPECS = import.meta.glob('../../../app/src/tasks/**/*.json', { eager: true, import: 'default' }) as

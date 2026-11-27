@@ -14,6 +14,7 @@
 #   af_correct/run.jl       — the task itself: `AfCorrectParams`, `parse_af_correct_params`,
 #                             `preview_params`, `task_previewable`, and `_run_task`.
 struct AfCorrect <: CciaTask end
+register_builtin_task!("cleanupImages.afCorrect", AfCorrect(); spec = joinpath(@__DIR__, "af_correct.json"))
 
 include(joinpath(@__DIR__, "af_correct", "translate.jl"))
 include(joinpath(@__DIR__, "af_correct", "qc.jl"))

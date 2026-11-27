@@ -1,4 +1,5 @@
 struct Branching <: CciaTask end
+register_builtin_task!("segment.branching", Branching(); spec = joinpath(@__DIR__, "branching.json"))
 
 # Typed shape of what `_run_task(::Branching, …)` reads from `params`. `fibreChannels` stays a bag
 # here (resolved via `channel_indices` inside the handler; the image's channel names live there,

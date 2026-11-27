@@ -20,6 +20,7 @@ using DataFrames: nrow, DataFrame
 import Dates
 
 struct HmmStates <: CciaTask end
+register_builtin_task!("behaviour.hmm_states", HmmStates(); spec = joinpath(@__DIR__, "hmm_states.json"))
 
 # Typed shape of what `_run_task(::HmmStates, …)` reads from `params`. String-list fields normalise
 # blanks/NONE at parse (via `_hmm_pops` for the standard drop-and-string list, and inline

@@ -1,4 +1,5 @@
 struct TProject <: CciaTask end
+register_builtin_task!("editImages.tProject", TProject(); spec = joinpath(@__DIR__, "tProject.json"))
 
 task_output_effect(::TProject) = "new-image"
 

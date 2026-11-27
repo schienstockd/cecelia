@@ -1,6 +1,6 @@
 # ── Task machinery testsets ─────────────────────────────────────────────────────────
-# Five small task-machinery testsets that lived between larger extracted suite includes:
-# params-NOT-declared pass-through, Custom module registry (drop-in tasks), Section params
+# Six small task-machinery testsets that lived between larger extracted suite includes:
+# params-NOT-declared pass-through, Built-in task registry, Custom module registry (drop-in tasks), Section params
 # flatten (chain nesting), flow_register QC, and fun_name dispatch. Gathered here so
 # suite.jl carries only include lines and their comments. The extracted file loads inside
 # this file's aggregating testset scope, so any helpers defined earlier in suite.jl are
@@ -16,6 +16,39 @@
                            "z0"=>2, "z1"=>8, "t0"=>-1, "t1"=>-1)
     @test validate_params(
         CropImage(), Dict{String,Any}("cropBox" => box, "extraKey" => "unknown")) === nothing
+end
+
+@testset "Built-in task registry (self-registration)" begin
+    # Each built-in registers itself beside its struct (`register_builtin_task!`); the framework keeps
+    # no list of task types. So every concrete CciaTask the package defines must have registered
+    # exactly once, under one fun_name, with a spec that exists.
+    reg = Cecelia._fun_name_map()
+    @test length(reg) == 68                                  # 59 task types + 9 composites
+    src = joinpath(pkgdir(Cecelia), "src")
+    pkg_types = Set(S for S in (getfield(Cecelia, n) for n in names(Cecelia; all = true)
+                                if isdefined(Cecelia, n))
+                    if S isa DataType && S <: Cecelia.CciaTask && isconcretetype(S) &&
+                       S !== Cecelia.CompositeTask && parentmodule(S) === Cecelia &&
+                       startswith(string(first(methods(S)).file), src))
+    reg_types = [typeof(t) for t in values(reg) if !(t isa Cecelia.CompositeTask)]
+    @test length(reg_types) == length(unique(reg_types)) == 59
+    @test Set(reg_types) == pkg_types                         # none forgotten, none extra
+    for (fn, t) in reg
+        @test isfile(Cecelia._spec_path(t))
+        @test Cecelia._task_from_fun_name(fn) === t
+    end
+    @test reg["cleanupImages.denoise"] isa Cecelia.Denoise
+    @test endswith(Cecelia._spec_path(Cecelia.Denoise()), joinpath("cleanupImages", "denoise.json"))
+    @test reg["segment.staleness_report"] isa SegmentStalenessReport   # struct outside tasks/
+    @test reg["segment.cellposeMeasure"] == CompositeTask("segment.cellposeMeasure")
+    @test endswith(Cecelia._spec_path(reg["segment.cellposeMeasure"]), "cellpose_measure.json")
+    # a second registration of a name is refused, and leaves the first in place
+    @test_throws ErrorException Cecelia.register_builtin_task!("cleanupImages.denoise", Cecelia.Denoise();
+                                                             spec = Cecelia._spec_path(Cecelia.Denoise()))
+    @test Cecelia._fun_name_map()["cleanupImages.denoise"] isa Cecelia.Denoise
+    # the map is a copy: mutating it cannot unregister a task
+    delete!(reg, "cleanupImages.denoise")
+    @test haskey(Cecelia._fun_name_map(), "cleanupImages.denoise")
 end
 
 @testset "Custom module registry (drop-in tasks)" begin

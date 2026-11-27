@@ -21,6 +21,7 @@ using DataFrames: nrow, DataFrame
 using Clustering: dbscan
 
 struct DetectAggregates <: CciaTask end
+register_builtin_task!("spatialAnalysis.detectAggregates", DetectAggregates(); spec = joinpath(@__DIR__, "detectAggregates.json"))
 
 Base.@kwdef struct DetectAggregatesParams
     pops::Vector{String}          = String[]
