@@ -227,7 +227,7 @@ async function render() {
     // settings by the shared `readViewerLook` — the snapshot carries only channel layers, so building
     // the look from it alone recorded no pops or tracks. Channels stay the keyframes' union.
     const live = activeImage.value
-      ? readViewerLook(activeImage.value, setUid, { requireOpen: false }) : null
+      ? readViewerLook(activeImage.value, setUid, settings, { requireOpen: false }) : null
     const look = {
       ...(live ?? {}),
       ...seedConfigFromViewState(union as ViewStateLike, activeImage.value?.channelNames ?? []),

@@ -1,43 +1,5 @@
 [
  {
-  "kind": "viewer-store",
-  "subject": "`linkedSelection`",
-  "rank": -1,
-  "detail": "imported by 1 viewer file",
-  "where": [
-   "frontend/src/utils/viewer/showTracksInViewer.ts"
-  ]
- },
- {
-  "kind": "viewer-store",
-  "subject": "`projectMeta`",
-  "rank": -1,
-  "detail": "imported by 1 viewer file",
-  "where": [
-   "frontend/src/utils/viewer/showTracksInViewer.ts"
-  ]
- },
- {
-  "kind": "viewer-store",
-  "subject": "`project`",
-  "rank": -1,
-  "detail": "imported by 1 viewer file",
-  "where": [
-   "frontend/src/utils/viewer/showTracksInViewer.ts"
-  ]
- },
- {
-  "kind": "viewer-store",
-  "subject": "`settings`",
-  "rank": -3,
-  "detail": "imported by 3 viewer files",
-  "where": [
-   "frontend/src/utils/viewer/drawSpec.ts",
-   "frontend/src/utils/viewer/showTracksInViewer.ts",
-   "frontend/src/utils/viewer/trackSelectionFromViewer.ts"
-  ]
- },
- {
   "kind": "fetch-direct",
   "subject": "`stores/analysisLayout.ts`",
   "rank": -2,
@@ -53,7 +15,7 @@
   "rank": -1,
   "detail": "1 bare `fetch(` call",
   "where": [
-   "frontend/src/stores/animation.ts:42"
+   "frontend/src/stores/animation.ts:44"
   ]
  },
  {
@@ -150,8 +112,8 @@
    "frontend/src/stores/projectMeta.ts:124",
    "frontend/src/stores/projectMeta.ts:161",
    "frontend/src/stores/projectMeta.ts:196",
-   "frontend/src/stores/projectMeta.ts:223",
-   "frontend/src/stores/projectMeta.ts:255"
+   "frontend/src/stores/projectMeta.ts:224",
+   "frontend/src/stores/projectMeta.ts:256"
   ]
  },
  {
@@ -192,14 +154,6 @@
    "frontend/src/stores/ws.ts:71",
    "frontend/src/stores/ws.ts:704",
    "frontend/src/stores/ws.ts:759"
-  ]
- },
- {
-  "kind": "store-cycle",
-  "subject": "animation ↔ projectMeta",
-  "where": [
-   "frontend/src/stores/animation.ts",
-   "frontend/src/stores/projectMeta.ts"
   ]
  }
 ]

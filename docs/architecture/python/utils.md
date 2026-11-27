@@ -26,11 +26,11 @@ flowchart TB
   intensity_utils["intensity_utils<br/><small>imported by 4</small>"]
   segmentation_utils["segmentation_utils<br/><small>imported by 4</small>"]
   slice_utils["slice_utils<br/><small>imported by 4</small>"]
-  title_card["title_card<br/><small>imported by 4</small>"]
   units["units<br/><small>imported by 4</small>"]
   coastal_utils["coastal_utils<br/><small>imported by 3</small>"]
   ims_meta["ims_meta<br/><small>imported by 3</small>"]
   mesh_utils["mesh_utils<br/><small>imported by 3</small>"]
+  title_card["title_card<br/><small>imported by 3</small>"]
   script_utils --> atomic_io
   script_utils --> cpu_utils
   zarr_utils --> ome_xml_utils
@@ -61,9 +61,7 @@ flowchart TB
 
 ## Import cycles
 
-Groups of modules that import each other (directly or round a loop). Lazy imports inside functions make these legal at runtime, but each group is one unit to understand.
-
-- `movie_io`, `title_card`
+None.
 
 ## The de-facto API — most-imported functions and classes
 

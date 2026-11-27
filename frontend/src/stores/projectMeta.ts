@@ -115,7 +115,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)
     // rehydrate the Animation page's captured view snapshots (animations.json); always call so a
     // project with none clears any leftover from the previously-open project
-    useAnimationStore().load(body.animations as never)
+    useAnimationStore().load(body.animations as never, body.project.uid)
   }
 
   async function openProject(uid: string): Promise<boolean> {
@@ -213,6 +213,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     const projectStore = useProjectStore()
     current.value = null
     projectStore.clear()
+    useAnimationStore().detachProject()
     log.info('Project closed.', { source: 'project' })
   }
 

@@ -886,7 +886,7 @@ const specSource: DrawSpecSource = {
   get viewState() { return (viewerStore.viewState ?? null) as unknown as ViewerDrawSpec['viewState'] },
   get gating() { return gatingCurrent.value },
 }
-const spec = drawSpecOf(specSource)
+const spec = drawSpecOf(specSource, settings)
 // The pop-type and ribbon switches are also set in THIS window now ("On the image",
 // docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md), and a window's own localStorage write fires no `storage`
 // event here — so the window watches the switches itself rather than waiting for a ping. Mask and label-file
@@ -995,7 +995,7 @@ let allocatedZLo: number | null = null
 const labelName = computed(() => spec.maskValueName)
 /** The mask a meta about to land would draw — `spec.maskValueName` over `names`, before `meta` is set. */
 function pickLabelName(names: string[]): string {
-  return drawSpecOf({ ...specSource, labelNames: names }).maskValueName
+  return drawSpecOf({ ...specSource, labelNames: names }, settings).maskValueName
 }
 // The task preview's mask for THIS image, '' when none. It wins over the ticked mask while it exists:
 // a preview is "show me what these params do, here", and losing it under a ticked segmentation made it

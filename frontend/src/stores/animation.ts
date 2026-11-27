@@ -5,7 +5,6 @@
 // the boards autosave). See AnimationModule.vue and docs/todo/ANIMATION_PLAN.md (F2).
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
-import { useProjectMetaStore } from './projectMeta'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
 import { debouncedSave } from '../utils/debouncedSave'
 
@@ -34,10 +33,13 @@ export const useAnimationStore = defineStore('animation', () => {
   const sizeY = ref<number | null>(null)
   const suffix = ref('')                 // filename addition, so two renders of one image can coexist
   const titleCard = ref<TitleCardCfg>({ ...TITLE_CARD_DEFAULT })   // description slide (per project)
+  // The project these keyframes were loaded for — the autosave writes back to it. Handed in by `load`
+  // (projectMeta's open path), so this store does not import projectMeta (no store import loop).
+  let projectUid: string | null = null
   // Write-behind autosave → /api/projects/animations (dirty on any keyframe/fps change, incl. deep
   // edits to a keyframe's viewState from the row toggles). Shared helper — utils/debouncedSave.
   const _autosave = debouncedSave(async () => {
-    const uid = useProjectMetaStore().current?.uid
+    const uid = projectUid
     if (!uid) return
     await fetch('/api/projects/animations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -57,7 +59,9 @@ export const useAnimationStore = defineStore('animation', () => {
   // project open posted the animations it had just read straight back.
   function load(data: { snapshots?: AnimSnapshot[]; fps?: number; sizeX?: number | null;
                         sizeY?: number | null; suffix?: string;
-                        titleCard?: TitleCardCfg } | null | undefined) {
+                        titleCard?: TitleCardCfg } | null | undefined,
+                forProjectUid: string | null) {
+    projectUid = forProjectUid
     _autosave.duringRestore(() => {
       snapshots.value = data?.snapshots ?? []
       fps.value = data?.fps ?? 15
@@ -67,6 +71,8 @@ export const useAnimationStore = defineStore('animation', () => {
       titleCard.value = data?.titleCard ?? { ...TITLE_CARD_DEFAULT }
     })
   }
+  /** No project open (closed): the autosave has nowhere to write, as before it read `current`. */
+  function detachProject() { projectUid = null }
   function add(s: AnimSnapshot) { snapshots.value = [...snapshots.value, s] }
   function remove(id: string) { snapshots.value = snapshots.value.filter(s => s.id !== id) }
 
@@ -97,7 +103,7 @@ export const useAnimationStore = defineStore('animation', () => {
     snapshots.value = arr
   }
 
-  return { snapshots, selectedId, fps, sizeX, sizeY, suffix, titleCard, load, add, remove, move, reorder }
+  return { snapshots, selectedId, fps, sizeX, sizeY, suffix, titleCard, load, detachProject, add, remove, move, reorder }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
