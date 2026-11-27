@@ -104,10 +104,10 @@ precondition (e.g. "these populations exist") adds a method for its own type.
 manual_check(::CciaTask, ::CciaImage, ::Dict{String,Any})::Union{String,Nothing} = nothing
 
 # ── fun_name dispatch ─────────────────────────────────────────────────────────
-# _FUN_NAME_MAP is populated in task_registry.jl (included after all task types).
+# Built-ins register themselves at include time (`register_builtin_task!`, task/registry.jl).
 
 function _task_from_fun_name(fun_name::String)::CciaTask
-    map = _fun_name_map()
+    map = _BUILTIN_TASKS
     haskey(map, fun_name) && return map[fun_name]   # built-ins win on clash
     custom = lock(_CUSTOM_TASK_LOCK) do
         get(_CUSTOM_TASKS, fun_name, nothing)

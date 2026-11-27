@@ -20,7 +20,7 @@ This doc has grown; use this as the run-list. Details for each are in the number
 Each box that has a mechanical gate names the ratchet — a green suite means the box got checked.
 
 - [ ] **Two co-located files, same base name** — `.jl` (struct + `_run_task`) + `.json` (param spec). §1, §3
-- [ ] **Register** in `task_registry.jl` — `_spec_path` overload + `"category.myTask"` in `_fun_name_map`. §4
+- [ ] **Register** — one `register_builtin_task!("category.myTask", MyTask(); spec = …)` line right after the struct. §4
 - [ ] **`resource_pool`** in the JSON. §3
 - [ ] **Typed params** — a `Base.@kwdef struct <Task>Params` + `parse_<task>_params(::AbstractDict)`; `_run_task` calls it at the top and reads `p.field` thereafter. §1 → *Struct*. Enforced by `typed params ratchet` in `app/test/suite.jl`.
 - [ ] **Collapse advanced params** — task JSONs with more than 6 top-level params put the tuning ones behind a `type: "section"` block with `collapsed: true` (see `segment/cellpose.json`). §3. Enforced by `test_task_json_convention.py`.
@@ -491,7 +491,7 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 }
 ```
 
-`fun_name` is the canonical identifier — must match the `_fun_name_map` key and the WS `funName` field.
+`fun_name` is the canonical identifier — must match the `register_builtin_task!` name and the WS `funName` field.
 
 `resource_pool` sets the default pool for this task. Pools are defined in `app/config.toml`. Standard values:
 
@@ -1345,29 +1345,20 @@ frontend half of the same rule: `docs/ui/COPY.md` → *Tooltip coverage*.
 
 ## 4. Register the task
 
-**`app/src/tasks/task_registry.jl`** — two additions:
+**In the task's own `.jl`, right after the struct** — one line:
 
 ```julia
-# 1. spec path (used by _task_spec to load and cache the JSON)
-function _spec_path(::MyTask)
-    joinpath(@__DIR__, "<category>", "<name>.json")
-end
-
-# 2. fun_name → struct instance (used by _task_from_fun_name)
-function _fun_name_map()::Dict{String, CciaTask}
-    Dict{String, CciaTask}(
-        # ... existing entries ...
-        "myCategory.myTask" => MyTask(),
-    )
-end
+struct MyTask <: CciaTask end
+register_builtin_task!("myCategory.myTask", MyTask(); spec = joinpath(@__DIR__, "<name>.json"))
 ```
 
-**`app/src/Cecelia.jl`** — include the `.jl` file **before** `task_registry.jl`:
+It records the instance under its `fun_name` (what `_task_from_fun_name` and `_fun_name_map()` read)
+and the spec path by type (what `_spec_path` → `_task_spec` reads). The framework never names a task
+type, so nothing else lists it. A name or type registered twice is an error at load. Custom drop-in
+modules do the same with `register_task!` (`docs/CUSTOM_MODULES.md`).
 
-```julia
-include("tasks/<category>/<name>.jl")
-include("tasks/task_registry.jl")   # already there — keep this order
-```
+**`app/src/Cecelia.jl`** — `include` the `.jl` with the other task files (after `tasks/task.jl`, which
+defines the registry).
 
 Both `app/src/` files are Revise-tracked. Adding a new struct requires a server restart; changing a function body does not.
 
@@ -1547,20 +1538,11 @@ A generic `CompositeTask` struct in `task.jl` handles execution:
 
 ### Registration
 
-Two additions to `task_registry.jl` — no `.jl` file for the composite itself:
+One line in `app/src/tasks/task_registry.jl` — the composite has no `.jl` of its own:
 
 ```julia
-# 1. Register the JSON spec path (outside _fun_name_map)
-_COMPOSITE_SPEC_PATHS["myCategory.myComposite"] =
-    joinpath(@__DIR__, "myCategory", "my_composite.json")
-
-# 2. Add to the dispatch map (single-arg constructor — looks up path from _COMPOSITE_SPEC_PATHS)
-function _fun_name_map()::Dict{String, CciaTask}
-    Dict{String, CciaTask}(
-        # ...
-        "myCategory.myComposite" => CompositeTask("myCategory.myComposite"),
-    )
-end
+register_builtin_task!("myCategory.myComposite", CompositeTask("myCategory.myComposite");
+    spec = joinpath(@__DIR__, "myCategory", "my_composite.json"))
 ```
 
 No `.py` script for the composite — the steps' Python scripts are reused.
@@ -1970,9 +1952,9 @@ Add an entry to the `navItems` array:
 
 ## 9. API category registration
 
-The API endpoint `GET /api/tasks/definitions?category=X` reads specs by looking up tasks registered in `_fun_name_map` whose `fun_name` starts with `X.` and whose JSON spec has a matching category.
+The API endpoint `GET /api/tasks/definitions?category=X` reads specs by looking up the registered tasks (`_fun_name_map()`) whose `fun_name` starts with `X.` and whose JSON spec has a matching category.
 
-**No explicit API registration step is needed.** Once the task is in `_fun_name_map` and its JSON has the right `fun_name`, the endpoint automatically serves it. The category grouping in the response is derived from the part before the `.` in `fun_name` (`cleanupImages`, `importImages`, etc.).
+**No explicit API registration step is needed.** Once the task is registered and its JSON has the right `fun_name`, the endpoint automatically serves it. The category grouping in the response is derived from the part before the `.` in `fun_name` (`cleanupImages`, `importImages`, etc.).
 
 ---
 
@@ -1982,7 +1964,7 @@ The API endpoint `GET /api/tasks/definitions?category=X` reads specs by looking 
 
 **Adding a Julia dependency.** Add it to `app/Project.toml`, then run `julia --project -e 'import Pkg; Pkg.instantiate()'` from the `api/` directory before restarting. The `api/` environment has its own manifest and won't pick up new deps automatically — the server will fail to precompile Cecelia until you do this.
 
-**`fun_name` must be consistent.** The same string must appear in: the JSON spec's `"fun_name"` field, the `_fun_name_map` key in `task_registry.jl`, and the `funName` field sent in the WS `task:run` message. The frontend derives `funName` from `TaskDef.fun_name` which it reads from the JSON spec. A mismatch between the map key and the spec field causes the task to be found by fun_name but dispatched to the wrong handler.
+**`fun_name` must be consistent.** The same string must appear in: the JSON spec's `"fun_name"` field, the `register_builtin_task!` name, and the `funName` field sent in the WS `task:run` message. The frontend derives `funName` from `TaskDef.fun_name` which it reads from the JSON spec. A mismatch between the map key and the spec field causes the task to be found by fun_name but dispatched to the wrong handler.
 
 **Group param values arrive as a dict with string keys.** In Julia: `params["models"]` is a `Dict` (or JSON3 object) with keys `"0"`, `"1"`, … If you iterate entries, coerce with `String(k)`. See `cellpose_models_for_python` (`tasks/segment/cellpose.jl`) for the pattern.
 
@@ -2011,9 +1993,8 @@ The `.jl`/`.json` (and `_run.py` if present) filenames must match — `remove.jl
 
 The JSON spec is served to Vue via `GET /api/tasks/definitions?category=X` — Vue never maintains its own copy. Do **not** add task JSONs to `frontend/`. The `frontend/src/tasks/definitions/` directory is intentionally empty.
 
-When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
-- Add a `_spec_path(::MyTask)` overload pointing at the `.json` file
-- Add `"category.myTask" => MyTask()` to `_fun_name_map()`
+When adding a new task, also register it — one line after the struct in its `.jl`:
+`register_builtin_task!("category.myTask", MyTask(); spec = joinpath(@__DIR__, "myTask.json"))` (§4).
 
 **And emit QC** — every result-producing task MUST bank sensible QC via `write_qc` (an objective
 `metrics` count + a `warn` finding for the bad case) and add cohort-comparable metrics to

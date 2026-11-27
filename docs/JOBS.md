@@ -18,7 +18,7 @@ doc is the map: what each is, why both exist, and where new code goes.
 ### Scheduler task — `CciaTask` (`app/src/tasks/scheduler.jl`, `docs/SCHEDULER.md`)
 **Image/set-scoped analysis work.** Segmentation, tracking, clustering, measurement, corrections — the
 pipeline. A task is a `CciaTask` struct + `_run_task` + a `.json` param spec, registered by `fun_name`
-in `task_registry.jl`. The scheduler gives it: **resource-pool concurrency limits**, a queue + worker
+(`register_builtin_task!`). The scheduler gives it: **resource-pool concurrency limits**, a queue + worker
 threads, **per-image threading**, **chainability + resume**, per-image logfiles, and **mandatory QC**.
 Launched from the frontend as `task:run` (needs an `imageUid`/`imageUids`).
 

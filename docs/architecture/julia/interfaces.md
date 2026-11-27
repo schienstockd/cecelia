@@ -25,8 +25,8 @@ Defined in `app/src/tasks/task.jl:9` · 60 subtypes · 0 required, 16 with a def
 | Function | Kind | Implemented by |
 |---|---|---|
 | `_run_task` | **expected** — has a default, but nearly every subtype overrides it | AfCells, AfCorrect, AggregatesMeshes, BayesianTracking, BinImage, Branching, CellContacts, CellNeighbours, … (58 of 60) |
-| `_spec_path` | **expected** — has a default, but nearly every subtype overrides it | AfCells, AfCorrect, AggregatesMeshes, BayesianTracking, BinImage, Branching, CellContacts, CellNeighbours, … (60 of 60) |
 | `_clamp_to_spec` | optional | CompositeTask (1 of 60) |
+| `_spec_path` | optional | CompositeTask (1 of 60) |
 | `_task_spec` | optional | CompositeTask (1 of 60) |
 | `live_outputs` | optional | CellposeSegment, CoastalSegment, CompositeTask (3 of 60) |
 | `manual_check` | optional | ManualGate (1 of 60) |
@@ -64,9 +64,9 @@ Subtypes by where they are defined:
 | `tasks/testTasks` | IncrementalPlotTask, TestImageTask, TestSetTask |
 | `tasks/tracking` | BayesianTracking, TrackCorrect, TrackMeasures |
 
-<details><summary>36 shared operations — take any `CciaTask`, no subtype overrides them</summary>
+<details><summary>37 shared operations — take any `CciaTask`, no subtype overrides them</summary>
 
-`_apply_group_order`, `_apply_param_requires`, `_apply_param_requires_by_axes`, `_apply_spec_defaults`, `_composite_step_names`, `_composite_steps`, `_flatten_sections`, `_fun_name_from_task`, `_inject_dynamic_options!`, `_live_outputs_for`, `_needs_dynamic_options`, `_repeatable_group_keys`, `_section_keys`, `_spec_output_value_name`, `_task_pool_name`, `_with_run_target`, `effective_pool_name`, `hpc_dispatch_for`, `hpc_resources`, `hpc_task_class`, `output_registry`, `preview_env`, `preview_params_for_run`, `preview_steps_not_previewed`, `register_task!`, `resolve_params_unscoped`, `resolve_run_params`, `run_task`, `run_tasks`, `task_applicability_reason`, `task_applies`, `task_citations`, `task_manual`, `task_missing_scale`, `task_runs_on_hpc`, `task_scope`
+`_apply_group_order`, `_apply_param_requires`, `_apply_param_requires_by_axes`, `_apply_spec_defaults`, `_composite_step_names`, `_composite_steps`, `_flatten_sections`, `_fun_name_from_task`, `_inject_dynamic_options!`, `_live_outputs_for`, `_needs_dynamic_options`, `_repeatable_group_keys`, `_section_keys`, `_spec_output_value_name`, `_task_pool_name`, `_with_run_target`, `effective_pool_name`, `hpc_dispatch_for`, `hpc_resources`, `hpc_task_class`, `output_registry`, `preview_env`, `preview_params_for_run`, `preview_steps_not_previewed`, `register_builtin_task!`, `register_task!`, `resolve_params_unscoped`, `resolve_run_params`, `run_task`, `run_tasks`, `task_applicability_reason`, `task_applies`, `task_citations`, `task_manual`, `task_missing_scale`, `task_runs_on_hpc`, `task_scope`
 
 </details>
 
@@ -183,9 +183,9 @@ classDiagram
   Gate <|-- SliceGate
 ```
 
-<details><summary>11 shared operations — take any `Gate`, no subtype overrides them</summary>
+<details><summary>14 shared operations — take any `Gate`, no subtype overrides them</summary>
 
-`_gate_mask`, `_rule_values`, `anchor_rule`, `gate_channels`, `gate_shape_spec`, `inside`, `needs_anchor`, `project_gate`, `resolve_gate`, `rule_flags`, `set_gate!`
+`_disp_map`, `_gate_mask`, `_rule_values`, `anchor_rule`, `gate_channels`, `gate_shape_spec`, `inside`, `needs_anchor`, `project_gate`, `project_point`, `resolve_gate`, `resolve_with_flags`, `rule_flags`, `set_gate!`
 
 </details>
 
@@ -245,9 +245,9 @@ classDiagram
   AxisTransform <|-- LogicleTransform
 ```
 
-<details><summary>6 shared operations — take any `AxisTransform`, no subtype overrides them</summary>
+<details><summary>8 shared operations — take any `AxisTransform`, no subtype overrides them</summary>
 
-`effective_transform`, `invert_column`, `project_gate`, `transform_column`, `transform_key`, `transform_kind`
+`_disp_map`, `effective_transform`, `invert_column`, `project_gate`, `project_point`, `transform_column`, `transform_key`, `transform_kind`
 
 </details>
 

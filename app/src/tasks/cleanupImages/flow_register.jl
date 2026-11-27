@@ -1,4 +1,5 @@
 struct FlowRegister <: CciaTask end
+register_builtin_task!("cleanupImages.flowRegister", FlowRegister(); spec = joinpath(@__DIR__, "flow_register.json"))
 
 task_output_effect(::FlowRegister) = "new-version"
 

@@ -1,12 +1,46 @@
-# ── Custom (user-drop-in) task registry ──────────────────────────────────────
-# Extracted from tasks/task.jl (2026-09-16).
+# ── Task registries: built-in and custom (user drop-in) ──────────────────────
+#
+# Every task registers itself at include time, beside its struct: a built-in with
+# `register_builtin_task!` (composites, which have no .jl, in task_registry.jl), a user module dropped
+# into `<config_dir>/modules/` with `register_task!`. Both fill runtime dicts that
+# `_task_from_fun_name` and the default `_spec_path` consult, so the framework never names a concrete
+# task type. Built-ins always win on a fun_name clash. See `load_custom_modules!` (custom_modules.jl),
+# docs/MODULES.md and docs/CUSTOM_MODULES.md.
+
+const _BUILTIN_TASKS      = Dict{String, CciaTask}()   # fun_name     => instance
+const _BUILTIN_SPEC_PATHS = Dict{DataType, String}()   # concrete type => spec .json path
+
+"""
+    register_builtin_task!(fun_name, task; spec) -> CciaTask
+
+Register a task that ships with Cecelia — called once at top level, right after the task's struct, with
+its spec beside it: `register_builtin_task!("cleanupImages.denoise", Denoise(); spec = joinpath(@__DIR__,
+"denoise.json"))`. One `fun_name` per concrete type, and a name registers once: a duplicate is an error
+at load, not a silent overwrite. A `CompositeTask` (one type for every composite) keys its spec by name.
+"""
+function register_builtin_task!(fun_name::AbstractString, task::CciaTask; spec::AbstractString)
+    fn = String(fun_name)
+    haskey(_BUILTIN_TASKS, fn) && error("built-in task \"$fn\" is registered twice")
+    if task isa CompositeTask
+        _COMPOSITE_SPEC_PATHS[fn] = String(spec)
+    else
+        T = typeof(task)
+        haskey(_BUILTIN_SPEC_PATHS, T) && error("built-in task type $T is registered twice (\"$fn\")")
+        _BUILTIN_SPEC_PATHS[T] = String(spec)
+    end
+    _BUILTIN_TASKS[fn] = task
+    task
+end
+
+"""
+    _fun_name_map() -> Dict{String,CciaTask}
+
+Every built-in task by `fun_name` — a fresh copy, so a caller may mutate it. Custom tasks are not in it
+(they live in `_CUSTOM_TASKS`).
+"""
+_fun_name_map()::Dict{String, CciaTask} = copy(_BUILTIN_TASKS)
 
 # ── Custom (user-drop-in) task registry ───────────────────────────────────────
-# Built-in tasks are compiled into the package (a _spec_path method + a _fun_name_map entry, both in
-# task_registry.jl). User modules dropped into `<config_dir>/modules/` self-register at include time
-# via `register_task!`, populating these runtime dicts that `_task_from_fun_name` and the default
-# `_spec_path` consult. Built-ins always win on a fun_name clash. See `load_custom_modules!`
-# (custom_modules.jl) and docs/CUSTOM_MODULES.md.
 const _CUSTOM_TASKS      = Dict{String, CciaTask}()   # fun_name       => instance
 const _CUSTOM_SPEC_PATHS = Dict{String, String}()     # string(type)   => spec .json path
 const _CUSTOM_TASK_LOCK  = ReentrantLock()
@@ -96,7 +130,7 @@ function register_task!(fun_name::AbstractString, task::CciaTask; spec::Abstract
     # Built-ins outrank everything and are resolved AHEAD of this registry by `_task_from_fun_name`,
     # so such a registration is already inert. Record it so Settings can say why the task never shows
     # up, rather than leaving the author to guess.
-    if haskey(_fun_name_map(), fn)
+    if haskey(_BUILTIN_TASKS, fn)
         _record_task_clash!(fn, path, plugin, tier, nothing, TIER_BUILTIN)
         return task
     end

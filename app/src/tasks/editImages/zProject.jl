@@ -1,4 +1,5 @@
 struct ZProject <: CciaTask end
+register_builtin_task!("editImages.zProject", ZProject(); spec = joinpath(@__DIR__, "zProject.json"))
 
 task_output_effect(::ZProject) = "new-image"
 

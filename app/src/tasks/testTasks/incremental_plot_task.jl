@@ -1,4 +1,5 @@
 struct IncrementalPlotTask <: CciaTask end
+register_builtin_task!("testTasks.incremental_plot_task", IncrementalPlotTask(); spec = joinpath(@__DIR__, "incremental_plot_task.json"))
 
 function _run_task(::IncrementalPlotTask, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),

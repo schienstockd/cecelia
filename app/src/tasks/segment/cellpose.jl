@@ -1,4 +1,5 @@
 struct CellposeSegment <: CciaTask end
+register_builtin_task!("segment.cellpose", CellposeSegment(); spec = joinpath(@__DIR__, "cellpose.json"))
 
 # Typed shape of what `_run_task(::CellposeSegment, …)` reads from `params`. `models` stays a
 # bag here (parsed separately by `cellpose_models_for_python`, which needs the image's channel

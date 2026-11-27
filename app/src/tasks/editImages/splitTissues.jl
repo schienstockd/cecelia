@@ -1,4 +1,5 @@
 struct SplitTissues <: CciaTask end
+register_builtin_task!("editImages.splitTissues", SplitTissues(); spec = joinpath(@__DIR__, "splitTissues.json"))
 
 task_output_effect(::SplitTissues) = "new-image"
 

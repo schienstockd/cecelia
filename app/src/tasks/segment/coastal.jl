@@ -1,4 +1,5 @@
 struct CoastalSegment <: CciaTask end
+register_builtin_task!("segment.coastal", CoastalSegment(); spec = joinpath(@__DIR__, "coastal.json"))
 
 # Typed shape of what `_run_task(::CoastalSegment, …)` reads from `params`. `models` stays a bag
 # here (parsed separately by `coastal_models_for_python`, which needs channel names to resolve

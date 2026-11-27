@@ -15,6 +15,7 @@
 using DataFrames: nrow, groupby
 
 struct SpatialPattern <: CciaTask end
+register_builtin_task!("spatialAnalysis.spatialPattern", SpatialPattern(); spec = joinpath(@__DIR__, "spatialPattern.json"))
 
 Base.@kwdef struct SpatialPatternParams
     pops::Vector{String}  = String[]

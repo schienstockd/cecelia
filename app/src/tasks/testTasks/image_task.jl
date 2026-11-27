@@ -1,4 +1,5 @@
 struct TestImageTask <: CciaTask end
+register_builtin_task!("testTasks.image_task", TestImageTask(); spec = joinpath(@__DIR__, "image_task.json"))
 
 function _run_task(::TestImageTask, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),

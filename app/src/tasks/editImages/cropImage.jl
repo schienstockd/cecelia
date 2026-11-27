@@ -1,4 +1,5 @@
 struct CropImage <: CciaTask end
+register_builtin_task!("editImages.cropImage", CropImage(); spec = joinpath(@__DIR__, "cropImage.json"))
 
 task_output_effect(::CropImage) = "new-image"
 

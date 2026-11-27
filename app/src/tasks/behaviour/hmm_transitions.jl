@@ -9,6 +9,7 @@
 using DataFrames: nrow
 
 struct HmmTransitions <: CciaTask end
+register_builtin_task!("behaviour.hmm_transitions", HmmTransitions(); spec = joinpath(@__DIR__, "hmm_transitions.json"))
 
 # Typed shape of what `_run_task(::HmmTransitions, …)` reads from `params`. `hmmStates` is the
 # cross-model list threaded from the composite; `nothing` / empty falls back to the standalone

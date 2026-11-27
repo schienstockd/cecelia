@@ -1,4 +1,5 @@
 struct Smooth <: CciaTask end
+register_builtin_task!("cleanupImages.smooth", Smooth(); spec = joinpath(@__DIR__, "smooth.json"))
 
 task_output_effect(::Smooth) = "new-version"
 
