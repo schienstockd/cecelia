@@ -282,7 +282,7 @@ end
             "thetaDist"      => 7.5))
         @test p.valueName == "corrected"
         @test p.popsToTrack == ["T/tracked"]         # a saved single-select string reads as a list
-        @test p.maxSearchRadius === 30
+        @test p.maxSearchRadius === 30.0             # µm, so a float: sub-µm on super-resolution data
         @test p.maxLost === 5
         @test p.trackBranching === true
         @test p.accuracy === 0.9
@@ -292,7 +292,7 @@ end
     end
     let p = Cecelia.parse_bayesian_tracking_params(Dict{String,Any}())
         @test p.popsToTrack == String[]              # default = track whole segmentation
-        @test p.maxSearchRadius === 20
+        @test p.maxSearchRadius === 20.0
         @test p.noiseInital === 300                  # historical spelling preserved
         @test p.thetaDist === 5.0
     end

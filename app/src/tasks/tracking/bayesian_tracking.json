@@ -45,7 +45,8 @@
     {
       "key": "maxSearchRadius",
       "label": "Max search radius (µm)",
-      "type": "int",
+      "unit": "um",
+      "type": "float",
       "min": 1,
       "max": 200,
       "step": 1,
@@ -138,6 +139,7 @@
         {
           "key": "distThresh",
           "label": "Distance threshold (µm)",
+          "unit": "um",
           "type": "float",
           "min": 1,
           "max": 50,
@@ -218,6 +220,7 @@
         {
           "key": "thetaDist",
           "label": "Theta dist (µm)",
+          "unit": "um",
           "type": "float",
           "min": 1,
           "max": 50,

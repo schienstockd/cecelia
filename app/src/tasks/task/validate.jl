@@ -8,6 +8,38 @@ struct ParamValidationError <: Exception
 end
 Base.showerror(io::IO, e::ParamValidationError) = print(io, "ParamValidationError: ", e.msg)
 
+# A numeric param's bounds. A `unit` param (`"um"` length, `"um2"` area) is the exception: its spec
+# range is the slider span at the pixel size the defaults were tuned for, and the form scales that span
+# to the image (`frontend/src/tasks/umRange.ts`) — 5 µm is the floor of a 2P window and the ceiling of a
+# SIM one. So only the sign is checked: ≥ 0, or > 0 when the spec's own floor is above zero (there 0
+# means nothing, not "off"). docs/MODULES.md → *Length params (`unit`)*.
+const _LENGTH_UNITS = ("um", "um2")
+_is_length_param(spec::AbstractDict) = string(get(spec, "unit", "")) in _LENGTH_UNITS
+
+# The nearest value `_validate_range` accepts — what a STORED value is pulled to (`_clamp_to_spec`).
+function _clamp_to_range(v::Real, spec::AbstractDict)
+    mn = get(spec, "min", nothing)
+    mx = get(spec, "max", nothing)
+    if _is_length_param(spec)
+        positive = !isnothing(mn) && mn > 0
+        return (positive ? v <= 0 : v < 0) ? (positive ? mn : 0) : v
+    end
+    (!isnothing(mn) && v < mn) ? mn : (!isnothing(mx) && v > mx) ? mx : v
+end
+
+function _validate_range(key, v::Real, spec::AbstractDict)
+    mn = get(spec, "min", nothing)
+    mx = get(spec, "max", nothing)
+    if _is_length_param(spec)
+        positive = !isnothing(mn) && mn > 0
+        (positive ? v <= 0 : v < 0) &&
+            throw(ParamValidationError("'$key' = $v must be $(positive ? "above" : "at least") 0"))
+        return
+    end
+    (!isnothing(mn) && v < mn) && throw(ParamValidationError("'$key' = $v is below minimum $mn"))
+    (!isnothing(mx) && v > mx) && throw(ParamValidationError("'$key' = $v exceeds maximum $mx"))
+end
+
 function _validate_leaf(key, value, spec::Dict{String,Any};
                         extra_options::Set{String} = Set{String}())
     type_str = get(spec, "type", "")
@@ -15,18 +47,12 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
     if type_str == "int"
         v = value isa Integer ? value : tryparse(Int, string(value))
         isnothing(v) && throw(ParamValidationError("'$key' must be an integer, got: $value"))
-        mn = get(spec, "min", nothing)
-        mx = get(spec, "max", nothing)
-        (!isnothing(mn) && v < mn) && throw(ParamValidationError("'$key' = $v is below minimum $mn"))
-        (!isnothing(mx) && v > mx) && throw(ParamValidationError("'$key' = $v exceeds maximum $mx"))
+        _validate_range(key, v, spec)
 
     elseif type_str == "float"
         v = value isa AbstractFloat ? value : tryparse(Float64, string(value))
         isnothing(v) && throw(ParamValidationError("'$key' must be a number, got: $value"))
-        mn = get(spec, "min", nothing)
-        mx = get(spec, "max", nothing)
-        (!isnothing(mn) && v < mn) && throw(ParamValidationError("'$key' = $v is below minimum $mn"))
-        (!isnothing(mx) && v > mx) && throw(ParamValidationError("'$key' = $v exceeds maximum $mx"))
+        _validate_range(key, v, spec)
 
     elseif type_str == "bool"
         value isa Bool || throw(ParamValidationError("'$key' must be a boolean, got: $value"))

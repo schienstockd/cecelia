@@ -112,7 +112,7 @@ end
             [ChainEdge("n1", "n2"), ChainEdge("n2", "n1")]))
     bad(tpl([ok_node("n1")], ChainEdge[]; starts=["ghost"]))        # startTargets must be a node
     bad(tpl([node("n1", "tracking.bayesian_tracking";               # param out of spec range
-                  params=Dict{String,Any}("maxSearchRadius"=>9999))], ChainEdge[]))
+                  params=Dict{String,Any}("maxLost"=>9999))], ChainEdge[]))
 
     # A configured pool name and the inherit-from-spec empty string are both fine
     @test validate_chain_template(

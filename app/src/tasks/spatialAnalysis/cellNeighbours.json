@@ -51,6 +51,7 @@
     {
       "key": "neighbourRadius",
       "label": "Radius (µm)",
+      "unit": "um",
       "type": "float",
       "min": 0,
       "max": 200,
@@ -73,6 +74,7 @@
     {
       "key": "windowSize",
       "label": "Window size (µm)",
+      "unit": "um",
       "type": "float",
       "min": 5,
       "max": 500,

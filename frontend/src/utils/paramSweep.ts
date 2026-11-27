@@ -8,6 +8,7 @@
 
 import type { ParamDef, ParamValues, TaskDef } from '../tasks/types'
 import { imageNamesForField } from '../tasks/paramValues'
+import { isUmParam, badLength } from '../tasks/umRange'
 import { consumerField, isValueNameNamespace } from './taskOutput'
 import { registryNames } from '../tasks/paramAdvisors'
 
@@ -59,8 +60,8 @@ function roundTo(v: number, step: number): number {
 /**
  * The values the user typed for `p`: a comma/space separated list, where any item may be a range
  * `a:b` (step 1) or `a:b:step`. Every value must be valid for the param AS IT IS — inside its
- * `[min, max]`, an integer for `int`, an option for `select` — since a silently clamped value would
- * run under a name that says something else.
+ * `[min, max]` (a length: only its sign, `badLength`), an integer for `int`, an option for `select` —
+ * since a silently clamped value would run under a name that says something else.
  */
 export function parseSweepValues(text: string, p: ParamDef): { values: SweepValue[]; error?: string } {
   const items = text.split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
@@ -100,6 +101,10 @@ export function parseSweepValues(text: string, p: ParamDef): { values: SweepValu
   }
   for (const v of out as number[]) {
     if (isInt && !Number.isInteger(v)) return { values: [], error: `${v} is not a whole number` }
+    if (isUmParam(p)) {   // a length: only the sign is a bound, as on the server (umRange.ts)
+      if (badLength(p, v)) return { values: [], error: `${v} is not a length` }
+      continue
+    }
     if (p.min !== undefined && v < p.min) return { values: [], error: `${v} is below ${p.min}` }
     if (p.max !== undefined && v > p.max) return { values: [], error: `${v} is above ${p.max}` }
   }
