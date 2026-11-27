@@ -396,6 +396,7 @@ include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
 include(joinpath(@__DIR__, "suite", "track_classes.jl"))
 
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
+include(joinpath(@__DIR__, "suite", "import_bf2raw_run.jl"))
 include(joinpath(@__DIR__, "suite", "drift_partial_timepoint.jl"))
 include(joinpath(@__DIR__, "suite", "acquisition_settings.jl"))
 # the import probe's signal pass (photons, shared structure, drift) — ome_qc.jl is review-guarded
