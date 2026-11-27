@@ -18,6 +18,7 @@ import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 import { imageAxes, type Axis } from '../utils/taskGating'
 import { asRoleMap } from '../utils/channelRoles'
+import { isUmParam, badLength } from './umRange'
 
 /** A param's saved value: its own key, else the first former key (a renamed param) holding one. */
 export function savedValueFor(p: ParamDef, saved: ParamValues): unknown {
@@ -55,6 +56,9 @@ function buildGroupEntry(params: TaskDef['params'][number]['params'], saved: Par
  */
 export function clampToSpec(p: ParamDef, v: unknown): unknown {
   if ((p.type !== 'int' && p.type !== 'float') || typeof v !== 'number' || !Number.isFinite(v)) return v
+  // A length/area's spec range is a slider span scaled to the image, not a bound (`umRange.ts`); the
+  // server checks only its sign — mirror `_clamp_to_range` (validate.jl).
+  if (isUmParam(p)) return badLength(p, v) ? Math.max(p.min ?? 0, 0) : v
   if (p.min !== undefined && v < p.min) return p.min
   if (p.max !== undefined && v > p.max) return p.max
   return v

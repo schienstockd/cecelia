@@ -80,6 +80,7 @@
         {
           "key": "mergeGapUm",
           "label": "Join gap (µm)",
+          "unit": "um",
           "type": "int",
           "min": 0,
           "max": 5000,
@@ -100,6 +101,7 @@
         {
           "key": "marginUm",
           "label": "Edge margin (µm)",
+          "unit": "um",
           "type": "int",
           "min": 0,
           "max": 1000,

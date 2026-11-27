@@ -110,6 +110,7 @@
         {
           "key": "cellDiameter",
           "label": "Cell diameter (µm)",
+          "unit": "um",
           "type": "float",
           "min": 2.0,
           "max": 60.0,
@@ -237,6 +238,7 @@
         {
           "key": "minCellSize",
           "label": "Min cell size (µm²)",
+          "unit": "um2",
           "type": "float",
           "min": 0.0,
           "max": 1000.0,
@@ -247,6 +249,7 @@
         {
           "key": "cellSizeMax",
           "label": "Max cell size (µm²)",
+          "unit": "um2",
           "type": "float",
           "min": 0.0,
           "max": 10000.0,
@@ -257,6 +260,7 @@
         {
           "key": "labelSmoothing",
           "label": "Smooth outlines (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0.0,
           "max": 3.0,
@@ -267,6 +271,7 @@
         {
           "key": "labelExpansion",
           "label": "Label expansion (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0.0,
           "max": 10.0,
@@ -277,6 +282,7 @@
         {
           "key": "labelErosion",
           "label": "Label erosion (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0.0,
           "max": 10.0,
@@ -287,6 +293,7 @@
         {
           "key": "haloSize",
           "label": "Halo (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0.0,
           "max": 10.0,

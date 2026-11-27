@@ -58,6 +58,7 @@
     {
       "key": "bandWidth",
       "label": "Band width (µm)",
+      "unit": "um",
       "type": "float",
       "min": 1,
       "max": 500,

@@ -5,6 +5,8 @@
 -->
 <script setup lang="ts">
 import { pixelSizeUm } from '../utils/physicalSize'
+import { isUmParam, umSliderRange, autoUmScale, finestPixelUm, badLength } from './umRange'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import { computed, ref, watch, onUnmounted, onDeactivated } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import { useProjectStore, type CciaImage } from '../stores/project'
@@ -64,6 +66,8 @@ export interface ParamContext {
                                // step's gates, tracking's `/_tracked`) — offered beside the image's
   keepChosenNames?: boolean    // valueNameSelection: never replace a chosen name (the chain editor —
                                // the node's name is the plan; see `autoValueName`)
+  umScale?: number             // a `unit` param's slider factor (`tasks/umRange.ts`); absent = auto
+                               // from the finest selected pixel size
 }
 
 const props = defineProps<{
@@ -129,6 +133,18 @@ const val = computed({
   get: () => props.modelValue ?? props.param.default,
   set: (v) => emit('update:modelValue', v),
 })
+
+// int/float slider range. A `unit` param's range follows the image scale (`umRange.ts`), and a typed
+// value outside it is kept — the slider just sits at its end.
+const umParam = computed(() => isUmParam(props.param))
+const sliderRange = computed(() => umSliderRange(props.param,
+  props.context?.umScale ?? autoUmScale(finestPixelUm(props.context?.images)?.um)))
+const numDraft = useFieldDraft(() => val.value as number | undefined)
+function commitNumber() {
+  const n = props.param.type === 'int' ? parseInt(numDraft.value) : parseFloat(numDraft.value)
+  if (Number.isFinite(n) && !badLength(props.param, n)) val.value = n
+  else numDraft.value = String(val.value ?? '')
+}
 
 // valueNameSelection: intersection of available names across selected images.
 // Which field is used depends on param.field:
@@ -779,16 +795,21 @@ function onChannelUpdate(next: string[]) {
       <input
         type="range"
         class="slider"
-        :min="param.min ?? 0"
-        :max="param.max ?? 100"
-        :step="param.step ?? (param.type === 'int' ? 1 : 0.01)"
+        :min="sliderRange.min"
+        :max="sliderRange.max"
+        :step="sliderRange.step"
         :value="val as number"
         @input="val = param.type === 'int'
           ? parseInt(($event.target as HTMLInputElement).value)
           : parseFloat(($event.target as HTMLInputElement).value)"
-        v-tooltip.bottom="`${val} (range ${param.min}–${param.max})`"
+        v-tooltip.bottom="`${val} (range ${sliderRange.min}–${sliderRange.max})`"
       />
-      <span class="slider-val">{{ val }}</span>
+      <!-- a length/area: type any value, the slider range is only the usual span at this scale -->
+      <input v-if="umParam" type="number" class="cc-input-xs slider-num" min="0"
+        :step="sliderRange.step" v-model="numDraft" :aria-label="param.label"
+        v-tooltip.bottom="'Type a value outside the slider range'"
+        @change="commitNumber" />
+      <span v-else class="slider-val">{{ val }}</span>
     </div>
 
     <!-- bool → shared toggle switch. No `v-tooltip`: `param-label` above already carries `param.tip`
@@ -1322,6 +1343,7 @@ function onChannelUpdate(next: string[]) {
 }
 /* the look is the global slider base (style.css → Sliders) */
 .slider { flex: 1; }
+.slider-num { width: 5.5em; text-align: right; }
 .slider-val {
   font-size: var(--cc-fs-sm);
   font-family: var(--cc-mono);

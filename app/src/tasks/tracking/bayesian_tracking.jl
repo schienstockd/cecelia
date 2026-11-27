@@ -9,7 +9,7 @@ Base.@kwdef struct BayesianTrackingParams
     valueName::String            = VERSIONED_DEFAULT_VAL
     popsToTrack::Vector{String}  = String[]   # pop refs; empty = the whole segmentation
     trackSourceForce::Bool       = false
-    maxSearchRadius::Int         = 20
+    maxSearchRadius::Float64     = 20.0  # µm: sub-µm on super-resolution data
     maxLost::Int                 = 3
     trackBranching::Bool         = false
     minTimepoints::Int           = 5
@@ -36,7 +36,7 @@ function parse_bayesian_tracking_params(d::AbstractDict)::BayesianTrackingParams
         # bare path; "NONE"/"" drop out, so an empty list IS the whole segmentation
         popsToTrack          = unique(_str_list(d, "popsToTrack")),
         trackSourceForce     = Bool(get(d, "trackSourceForce", false)),
-        maxSearchRadius      = Int(get(d, "maxSearchRadius", 20)),
+        maxSearchRadius      = Float64(get(d, "maxSearchRadius", 20)),
         maxLost              = Int(get(d, "maxLost", 3)),
         trackBranching       = Bool(get(d, "trackBranching", false)),
         minTimepoints        = Int(get(d, "minTimepoints", 5)),

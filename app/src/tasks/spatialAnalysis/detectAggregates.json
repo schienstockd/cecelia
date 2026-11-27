@@ -40,6 +40,7 @@
     {
       "key": "clustDiameter",
       "label": "Neighbourhood (µm)",
+      "unit": "um",
       "type": "float",
       "min": 0,
       "max": 100,
@@ -93,6 +94,7 @@
         {
           "key": "excludeDistance",
           "label": "Within (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0,
           "max": 100,
@@ -130,6 +132,7 @@
           "key": "linkDistance",
           "showIf": { "linkEvents": true },
           "label": "Max step (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0,
           "max": 100,
@@ -163,6 +166,7 @@
           "key": "precededDistance",
           "showIf": { "linkEvents": true },
           "label": "Look within (µm)",
+          "unit": "um",
           "type": "float",
           "min": 0,
           "max": 100,

@@ -53,6 +53,25 @@
     @test isempty(wide)
 end
 
+@testset "a length param declares its unit" begin
+    # A µm param's slider range follows the image scale and its server check is sign-only — but only
+    # when the spec says it is a length. One labelled "(µm)" without `unit` keeps the 2P range as a
+    # hard bound, and super-resolution data cannot reach its values (docs/MODULES.md → Length params).
+    missing = String[]
+    each_spec() do f, spec
+        each_spec_param(spec_get(spec, "params")) do p, _
+            String(something(spec_get(p, "type"), "")) in ("int", "float") || return
+            label = String(something(spec_get(p, "label"), ""))
+            want  = occursin("(µm²)", label) ? "um2" : occursin("(µm)", label) ? "um" : nothing
+            got   = spec_get(p, "unit")
+            isnothing(want) && isnothing(got) && return
+            string(something(got, "")) == something(want, "?") ||
+                push!(missing, "$f/$(spec_get(p, "key")): label \"$label\", unit $(repr(got))")
+        end
+    end
+    @test isempty(missing) || (@info "length param without a matching unit" missing; false)
+end
+
 @testset "task spec tips stay short" begin
     COPY_MAX = 90
     ALLOWED = String[]
