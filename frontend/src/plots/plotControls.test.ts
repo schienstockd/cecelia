@@ -12,6 +12,9 @@ import type { PlotDataResponse } from './types'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Stub = new Proxy({}, { get: (_t, mark) => (data: unknown, opts: unknown) => ({ mark, data, opts }) }) as any
 const two = (extra: object) => ['A', 'B'].map((p, i) => ({ pop: `/${p}`, value_name: 'T', uID: '', group: '', value: 2 + i, ...extra }))
+// histogram / frequency series as the server sends them: counts (and values), no scalar `value` — a fixture
+// with one hid that the Y range read the extent from `value` and so did nothing on these charts
+const twoBinned = (extra: object) => ['A', 'B'].map(p => ({ pop: `/${p}`, value_name: 'T', uID: '', group: '', ...extra }))
 // overlapping raw values, so the swarm/jitter offset has something to move
 const dist = { q1: 1, median: 2, q3: 3, lower: 0.5, upper: 4, mean: 2, n: 5, sd: 1, sem: 0.4, ci95: 0.8,
                points: [2, 2, 2, 2], pointIds: [1, 2, 3, 4] }
@@ -24,11 +27,11 @@ const fit = [{ k: 2, run: 'k2', logLik: -10, aic: 20, bic: 25, gain: null, conve
 const [A, B] = ['a long population name that will not fit/qc', 'another long population name here/qc']
 const matrix = (matrixMode: string) => R({ chartType: 'matrix', matrixMode, series: [], xLabels: [A, B], yLabels: [A, B],
   cells: [{ x: A, y: A, value: 1 }, { x: B, y: A, value: -2 }, { x: A, y: B, value: 3 }, { x: B, y: B, value: 0.5 }] })
-const freq = (chartType: string) => R({ chartType, categories: ['x', 'y'], series: two({ values: [0.3, 0.7] }) })
+const freq = (chartType: string) => R({ chartType, categories: ['x', 'y'], series: twoBinned({ counts: [3, 7], values: [0.3, 0.7] }) })
 
 // [name, kind, response, the vis the plot is drawn with]
 const CASES: [string, PlotKind, PlotDataResponse, object?][] = [
-  ['histogram', { chartType: 'histogram' }, R({ chartType: 'histogram', binEdges: [0, 1, 2, 3], series: two({ counts: [1, 2, 3] }) })],
+  ['histogram', { chartType: 'histogram' }, R({ chartType: 'histogram', binEdges: [0, 1, 2, 3], series: twoBinned({ counts: [1, 2, 3] }) })],
   ['bar', { chartType: 'bar' }, R({ chartType: 'bar', series: two(dist) })],
   ['count', { chartType: 'count' }, R({ chartType: 'count', series: two({ n: 5 }) })],
   ['percent', { chartType: 'percent' }, R({ chartType: 'percent', series: two({ n: 5, nPositive: 2 }) })],
