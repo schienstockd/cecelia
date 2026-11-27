@@ -23,6 +23,9 @@
  * colours. Piping the real palette in would make the preview a second legend to keep in step.
  */
 
+/** Colours are any CSS colour, `var(--cc-…)` tokens included — `SceneAid` binds them as style, not as
+ *  SVG attributes, so a token resolves and a schematic on the `panel` ground follows the theme. */
+
 /** One dot in the schematic. `ringed` draws a thin outline (a mask-outline hint) alongside the
  *  filled dot. `mode: 'ring-only'` draws just the ring — for a mask-outline-only view (no points),
  *  or a pop hint before points are on. */
@@ -39,6 +42,10 @@ export interface SceneAidPoint {
 export interface SceneAidRibbon {
   points: Array<{ x: number; y: number }>
   colour: string
+  /** draw dashed — a line that is CONTEXT (a reach, a pruned edge, a neighbouring window) */
+  dashed?: boolean
+  /** 0..1; default opaque. Context lines sit back so the emphasised ones read first. */
+  opacity?: number
 }
 
 /** What sits in the corners of the frame — timestamp top-left, scale bar bottom-right, an optional

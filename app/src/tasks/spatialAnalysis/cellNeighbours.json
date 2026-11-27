@@ -46,7 +46,8 @@
         { "value": "radius",   "label": "Fixed radius" },
         { "value": "windows",  "label": "Fixed windows" }
       ],
-      "tip": "Delaunay (radius-pruned), kNN, fixed radius, or a grid of overlapping square windows"
+      "tip": "Delaunay (radius-pruned), kNN, fixed radius, or a grid of overlapping square windows",
+      "figure": "neighbourGraph"
     },
     {
       "key": "neighbourRadius",
