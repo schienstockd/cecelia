@@ -73,6 +73,51 @@ describe('pruneChannelSelections', () => {
     const vals = { mode: 'all', chans: ['gBT-uGFP'] }
     expect(pruneChannelSelections(params, vals, PANEL_A)).toEqual({ values: vals, emptied: [] })
   })
+
+  // same rule as the form (`paramApplies`): a picker the user cannot see is never refused over
+  it('skips a picker the server hid', () => {
+    const params: ParamDef[] = [{ key: 'chans', label: 'Channels', type: 'channelSelection', hidden: true }]
+    const vals = { chans: ['gBT-uGFP'] }
+    expect(pruneChannelSelections(params, vals, PANEL_A)).toEqual({ values: vals, emptied: [] })
+  })
+
+  it('skips a picker the images lack the axes for — but only when the images are known', () => {
+    const params = [{ key: 'chans', label: 'Channels', type: 'channelSelection',
+                      requires: { axes: ['T'] } }] as unknown as ParamDef[]
+    const vals = { chans: ['gBT-uGFP'] }
+    const still = { sizeT: 1, sizeZ: 1, sizeC: 3 } as unknown as CciaImage
+    expect(pruneChannelSelections(params, vals, PANEL_A, [still])).toEqual({ values: vals, emptied: [] })
+    expect(pruneChannelSelections(params, vals, PANEL_A).emptied).toEqual(['Channels'])
+  })
+
+  it('skips every picker inside a section or group that is off the form', () => {
+    const params = [
+      { key: 'mode', label: 'Mode', type: 'select' },
+      { key: 'adv', label: 'Advanced', type: 'section', showIf: { mode: 'per' }, params: [
+        { key: 'chans', label: 'Channels', type: 'channelSelection' }] },
+      { key: 'passes', label: 'Passes', type: 'group', showIf: { mode: 'per' }, params: [
+        { key: 'gch', label: 'Group channels', type: 'channelSelection' }] },
+    ] as unknown as ParamDef[]
+    const vals = { mode: 'all', adv: { chans: ['gBT-uGFP'] }, passes: { '0': { gch: ['gBT-uGFP'] } } }
+    expect(pruneChannelSelections(params, vals, PANEL_A)).toEqual({ values: vals, emptied: [] })
+    expect(pruneChannelSelections(params, { ...vals, mode: 'per' }, PANEL_A).emptied)
+      .toEqual(['Channels', 'Group channels'])
+  })
+
+  it('judges showIf in the scope the form does: form values in a section, entry over form in a group', () => {
+    const params = [
+      { key: 'mode', label: 'Mode', type: 'select' },
+      { key: 'adv', label: 'Advanced', type: 'section', params: [
+        { key: 'chans', label: 'Channels', type: 'channelSelection', showIf: { mode: 'per' } }] },
+      { key: 'passes', label: 'Passes', type: 'group', params: [
+        { key: 'kind', label: 'Kind', type: 'select' },
+        { key: 'gch', label: 'Group channels', type: 'channelSelection', showIf: { mode: 'per', kind: 'x' } }] },
+    ] as unknown as ParamDef[]
+    const vals = { mode: 'per', adv: { chans: ['gBT-uGFP'] },
+                   passes: { '0': { kind: 'x', gch: ['gBT-uGFP'] }, '1': { kind: 'y', gch: ['gBT-uGFP'] } } }
+    expect(pruneChannelSelections(params, vals, PANEL_A).emptied).toEqual(['Channels', 'Group channels'])
+    expect(pruneChannelSelections(params, { ...vals, mode: 'all' }, PANEL_A).emptied).toEqual([])
+  })
 })
 
 describe('pruneChannelSelections — channelRoles', () => {

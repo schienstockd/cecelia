@@ -214,7 +214,8 @@ const sweepParams = computed(() => sweepableParams(taskDef.value))
 // failed the run on the first image lacking it. Not written back: until the picker is edited, the form
 // keeps the full selection, so moving back to the images that have those channels finds it intact.
 const channelPrune = computed(() => pruneChannelSelections(
-  taskDef.value?.params, paramValues.value, sharedChannels(paramContext.value.images)))
+  taskDef.value?.params, paramValues.value, sharedChannels(paramContext.value.images),
+  paramContext.value.images))
 const runValues = computed(() => channelPrune.value.values)
 // A picker whose every channel is missing would be sent empty, which several tasks read as "all".
 const hiddenChannelsReason = computed(() => channelPrune.value.emptied.length

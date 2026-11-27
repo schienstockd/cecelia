@@ -817,21 +817,25 @@ export function sharedChannels(images: readonly CciaImage[] | undefined): string
   return lists[0].filter(n => lists.every(ns => ns.includes(n)))
 }
 
-function pruneEntry(params: readonly ParamDef[] | undefined, vals: ParamValues, keep: Set<string>,
-                    flatSections: boolean, emptied: string[]): ParamValues {
+// `scope` is what a param's `showIf` reads — the same scope `ParamRenderer` gives it: the form's
+// values for top-level and section params (a section's children see the form, not the section's own
+// sub-object), one entry's values over the form's inside a group (`entryContext`).
+function pruneEntry(params: readonly ParamDef[] | undefined, vals: ParamValues, scope: ParamValues,
+                    keep: Set<string>, flatSections: boolean, emptied: string[],
+                    images: CciaImage[] | undefined): ParamValues {
   let out = vals
   const set = (k: string, v: unknown) => { out = out === vals ? { ...vals } : out; out[k] = v }
   for (const p of params ?? []) {
+    // not on the form (itself, or the section/group holding it): not the user's to fix here
+    if (!paramApplies(p, scope, images)) continue
     const v = vals[p.key]
     if (p.type === 'channelSelection' && Array.isArray(v)) {
-      if (!showIfSatisfied(p.showIf, vals)) continue   // not on the form: not the user's to fix here
       const kept = (v as unknown[]).filter(n => keep.has(String(n)))
       if (kept.length === v.length) continue
       if (kept.length === 0) { if (!emptied.includes(p.label)) emptied.push(p.label) }
       else set(p.key, kept)
     } else if (p.type === 'channelRoles') {
       // `{ channel: role }` — the same rule on its keys (see utils/channelRoles.ts)
-      if (!showIfSatisfied(p.showIf, vals)) continue
       const roles = Object.entries(asRoleMap(v))
       const kept = roles.filter(([c]) => keep.has(c))
       const stored = v && typeof v === 'object' ? Object.keys(v).length : 0
@@ -840,16 +844,18 @@ function pruneEntry(params: readonly ParamDef[] | undefined, vals: ParamValues, 
     } else if (p.type === 'section') {
       // the form nests a section under its key; a group entry stores its children flat
       if (flatSections) {
-        out = pruneEntry(p.params, out, keep, true, emptied)
+        out = pruneEntry(p.params, out, scope, keep, true, emptied, images)
       } else if (v && typeof v === 'object' && !Array.isArray(v)) {
-        const next = pruneEntry(p.params, v as ParamValues, keep, true, emptied)
+        const next = pruneEntry(p.params, v as ParamValues, scope, keep, true, emptied, images)
         if (next !== v) set(p.key, next)
       }
     } else if (p.type === 'group' && v && typeof v === 'object' && !Array.isArray(v)) {
       let changed = false
       const entries: Record<string, unknown> = {}
       for (const [k, e] of Object.entries(v as Record<string, unknown>)) {
-        const next = e && typeof e === 'object' ? pruneEntry(p.params, e as ParamValues, keep, true, emptied) : e
+        const next = e && typeof e === 'object'
+          ? pruneEntry(p.params, e as ParamValues, { ...scope, ...(e as ParamValues) }, keep, true, emptied, images)
+          : e
         if (next !== e) changed = true
         entries[k] = next
       }
@@ -865,12 +871,16 @@ function pruneEntry(params: readonly ParamDef[] | undefined, vals: ParamValues, 
  * the labels of those whose every channel is missing (left uncut — see above). `values` is `vals`
  * itself when nothing changes; everything is left alone when `available` is empty (no images
  * selected, or channel names not loaded) — an unknown list is not "no channels".
+ *
+ * A picker off the form (`paramApplies` — hidden, showIf, `requires.axes` against `images`) is left
+ * alone: not the user's to fix. Without `images`, axes are unknown and do not rule a picker out.
  */
 export function pruneChannelSelections(params: readonly ParamDef[] | undefined, vals: ParamValues,
-                                       available: readonly string[]): { values: ParamValues; emptied: string[] } {
+                                       available: readonly string[], images?: CciaImage[],
+): { values: ParamValues; emptied: string[] } {
   const emptied: string[] = []
   if (!available.length) return { values: vals, emptied }
-  return { values: pruneEntry(params, vals, new Set(available), false, emptied), emptied }
+  return { values: pruneEntry(params, vals, vals, new Set(available), false, emptied, images), emptied }
 }
 
 /** What a population / measure picker reloads on, as SEPARATE watch sources. Vue compares a
