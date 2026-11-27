@@ -18,12 +18,13 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch, onActivated, onScopeDispose } from 'vue'
 import { wsClientId } from '../utils/clientId'
+import { apiFetch } from '../utils/api'
 import { useProjectMetaStore } from './projectMeta'
 
 /** Meta a caller ships with a persistKey — enough for Claude to name "the UMAP" back to the user
  *  and pick the right one when the same family has more than one panel. `route` disambiguates a
  *  panel that lives on the wrong page for the current question; `cellKeys` / `bboxScreen` are
- *  future hints, unused today. Stays JSON-serialisable — the payload goes straight to fetch(). */
+ *  future hints, unused today. Stays JSON-serialisable — the payload goes straight to the POST body. */
 export interface PlotMeta {
   family: string
   title: string
@@ -70,15 +71,11 @@ export const usePlotRegistryStore = defineStore('plotRegistry', () => {
   return { lastSent, noteSent, forget, getLast, hold, release }
 })
 
-// Fire-and-forget POST — swallows every failure. A dev restart makes the backend unreachable
+// Fire-and-forget POST — swallows every failure, quietly (it fires on every mount). A dev restart makes the backend unreachable
 // mid-mount; a registry POST that 500s must not break the panel. Same discipline as
 // `_client._maybe_pair` on the MCP side.
 function _post(path: string, body: Record<string, unknown>): void {
-  void fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).catch(() => {})
+  void apiFetch(path, { json: body, quiet: true }).catch(() => {})
 }
 
 // Structural equality on meta — the getter can return a new object each tick even when the fields

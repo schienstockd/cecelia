@@ -23,7 +23,7 @@ describe('gate move whose broadcast lands before its reply', () => {
     const push = (t: PopTree) => handlers.forEach(h => h({ imageUid: 'img', valueName: 'seg', popType: 'flow', tree: t }))
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { method?: string }) => {
       if (init?.method === 'POST') push(tree(0.2))          // `_persist_and_broadcast!`: broadcast, then reply
-      return { ok: true, json: async () => init?.method === 'POST' ? { tree: tree(0.2) } : { count: 1, pctParent: 0 } }
+      return new Response(JSON.stringify(init?.method === 'POST' ? { tree: tree(0.2) } : { count: 1, pctParent: 0 }), { status: 200 })
     }))
     setActivePinia(createPinia())
     const ws = useWsStore()

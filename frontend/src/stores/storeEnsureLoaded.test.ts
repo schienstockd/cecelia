@@ -23,7 +23,7 @@ function gatedFetch(body: unknown) {
   const gate = new Promise<void>(r => { release = r })
   const f = vi.fn(async () => {
     await gate
-    return { ok: true, json: () => Promise.resolve(body) }
+    return new Response(JSON.stringify(body), { status: 200 })
   })
   vi.stubGlobal('fetch', f)
   return { f, release }
