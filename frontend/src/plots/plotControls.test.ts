@@ -135,4 +135,13 @@ describe('trend line — Y min / Y max set the axis (blank = auto)', () => {
     expect(y({ yMin: '0.2' })[0]).toBe(0.2)
   })
   it('a range with no width falls back to auto', () => expect(y({ yMin: '1', yMax: '0.5' })).toEqual(y({})))
+
+  // the shared plot-level clip (userRangeClip), as on every other chart: on with a user range, off on auto
+  const clip = (v: object) => (buildPlotOptions(Stub, r, { ...defaultVis(), chartType: 'count', trend: true, byImage: false,
+    normalize: true, errorMetric: 'sd', nonNegative: true, plotWidth: 500, plotHeight: 300, legendHeight: 40,
+    colorOf: () => '#ff0000', ...v } as never) as { clip?: boolean }).clip
+  it('a user range clips the line to the frame; auto clips nothing', () => {
+    expect(clip({ yMax: '0.5' })).toBe(true)
+    expect(clip({})).toBeUndefined()
+  })
 })
