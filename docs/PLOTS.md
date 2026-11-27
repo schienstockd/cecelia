@@ -256,8 +256,8 @@ DATA order and never touches pixels; `gridToPx` converts those back through the 
 `popPositions` (`components/plots/PopPositionsView.vue`, an interactive view) draws every cell of the
 segmentations the picked populations live on (a co-clustered run or a multi-segmentation pick draws
 each; with nothing picked, the active one) at its centroid — µm when calibrated, y downward like the image — in the gate plot's
-density colours (dimmed once populations are shown), with each picked population's cells in its colour, one tile per selected image, at one frame (a slider)
-or all frames at once. It is the old R version's read-only gating plot of X/Y with populations on top.
+density colours (dimmed once populations are shown), with each picked population's cells in its colour, one tile per selected image, at one frame (a slider,
+with the viewer's play / pause beside it — 5 fps, looping, held while a refetch is in flight) or all frames at once. It is the old R version's read-only gating plot of X/Y with populations on top.
 Any population type: a track family (behaviour clusters, tracked cells) resolves to its member cells
 in every frame, so a behaviour cluster is coloured along its tracks and a region shows the cells it
 holds at each timepoint. One family per plot, like every plot here. A cell in several picked

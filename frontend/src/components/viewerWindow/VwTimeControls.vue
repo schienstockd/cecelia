@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import PlayPauseButton from '../PlayPauseButton.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { cacheGradient, cacheRuns, readoutWidth, type CellState } from '../../utils/volumeCache'
 
@@ -38,19 +39,11 @@ const fpsAnchor = ref<HTMLElement | null>(null)
 
 <template>
   <template v-if="pill">
-    <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="emit('togglePlay')"
-            v-tooltip.top="playing ? 'Pause' : 'Play through the timecourse'"
-            :aria-label="playing ? 'Pause' : 'Play'">
-      <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-    </button>
+    <PlayPauseButton :playing="playing" @toggle="emit('togglePlay')" />
     <span class="cc-readout cc-fs-2xs vw-tro" :style="{ minWidth: tWidth }">t {{ t }} / {{ nT - 1 }}<span class="cc-dot vw-dot" :class="busy ? 'cc-dot-warn' : 'vw-dot-off'" /></span>
   </template>
   <template v-else>
-    <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" style="grid-column: 1" @click="emit('togglePlay')"
-            v-tooltip.top="playing ? 'Pause' : 'Play through the timecourse'"
-            :aria-label="playing ? 'Pause' : 'Play'">
-      <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-    </button>
+    <PlayPauseButton style="grid-column: 1" :playing="playing" @toggle="emit('togglePlay')" />
     <button :class="['cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense', { 'cc-btn-on cc-btn-on-tint': settings.viewerLoop }]"
             style="grid-column: 2"
             @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"

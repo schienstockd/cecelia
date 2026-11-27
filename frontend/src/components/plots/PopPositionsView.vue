@@ -9,7 +9,8 @@
   module pages) or, on a Cluster / Region page, the populations its manager has switched on
   (`shownPops`). Data: `GET /api/plots/pop-positions` (`meta=1` per image for the axes, then the
   cells — both with the populations); the layer split is `plots/popPositions.ts` (tested). Drawn by the shared `GateScatterCell`,
-  read-only. Colour by: the populations over the all-cells density (default), the populations over every
+  read-only. A movie plays through its frames (`PlayPauseButton` + `usePlaybackTimer`, the viewer's).
+  Colour by: the populations over the all-cells density (default), the populations over every
   cell in plain grey (`GREY_BASE` — the picked populations are then the only colour), or a cell column —
   a Find similar lens score above all (`colourByGroups`) — shading every cell on ONE scale across the tiles (`sharedValueScale`; a lens score's
   is fixed at 0–1), so the images compare side by side.
@@ -24,6 +25,9 @@ import GateScatterCell from './GateScatterCell.vue'
 import PopFamilySelect from './PopFamilySelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import CcToggle from '../CcToggle.vue'
+import PlayPauseButton from '../PlayPauseButton.vue'
+import { usePlaybackTimer } from '../../composables/usePlaybackTimer'
+import { playbackAdvance } from '../../utils/volumeCache'
 import SearchSelect from '../SearchSelect.vue'
 import ColourBarLegend from './ColourBarLegend.vue'
 import { colourByGroups, fetchColourByColumns, NO_COLOUR_BY, type ColourByColumns } from '../../utils/viewer/colourByColumns'
@@ -170,6 +174,21 @@ const frameIdx = computed({
   set: i => (frame.value = frames.value[i] ?? null),
 })
 
+// play: steps the slider through the frames in a loop. A frame is drawn from the cells already loaded,
+// so the only wait is a refetch in flight (a population ticked mid-play) — the step holds until it lands.
+const PLAY_FPS = 5
+const playing = ref(false)
+const canPlay = () => isMovie.value && !allFrames.value
+const { stopPlay, togglePlay } = usePlaybackTimer({
+  playing, fps: () => PLAY_FPS, canPlay,
+  step: () => {
+    const s = playbackAdvance(frameIdx.value, frames.value.length, true, () => !loading.value)
+    if (s.ended) return 'ended'
+    if (!s.stalled) frameIdx.value = s.t
+  },
+})
+watch([isMovie, allFrames], () => { if (playing.value && !canPlay()) stopPlay() })
+
 const imageName = (uid: string) =>
   project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
 // each tile's layers for the shown frame — computed once per frame/population change, not per binding
@@ -213,8 +232,9 @@ const tileStyle = (e: Ext) => {
             <span class="cc-fs-xs">All frames</span>
           </span>
           <span v-if="!allFrames" class="cc-row-group ppv-frame">
+            <PlayPauseButton :playing="playing" @toggle="togglePlay" />
             <input v-model.number="frameIdx" type="range" min="0" :max="frames.length - 1" step="1"
-                   aria-label="Frame" v-tooltip.top="'Frame'" />
+                   aria-label="Frame" v-tooltip.top="'Frame'" @pointerdown="stopPlay" />
             <span class="cc-fs-xs">t {{ frame }}</span>
           </span>
         </template>
