@@ -48,6 +48,20 @@ _TRACK_COLS = ("ID", "parent", "root", "state", "generation", "t", "label_id")
 # `app/src/gating/population_manager.jl`) all agree on the string.
 WHOLE_SEG_TRACK_SOURCE = "whole_seg"
 
+# Join candidates (links + divisions) per tracklet the optimiser is handed. Successful runs on real
+# 2P data had 0.9-1.8; a 2D SIM movie at `distThresh = 10` µm had 86 links per tracklet and, with
+# branching, 5200 links + divisions, and never returned. Above the cap the run stops with a suggested
+# `distThresh` that brings it to `_HEALTHY_JOINS_PER_TRACKLET`.
+MAX_JOINS_PER_TRACKLET = 10
+_HEALTHY_JOINS_PER_TRACKLET = 2
+
+# btrack's hypothesis engine bins track ends with `HypercubeBin(const unsigned int bin_xyz, …)`
+# (src/hyperbin.cc), built from `dist_thresh`, so the threshold is truncated to whole coordinate units
+# (µm here): below 1 the bin is 0 wide and NO join is ever proposed, and 1.5 searches 1 µm bins,
+# dropping some joins between 1 and 1.5 µm (logged as a warning by `_check_join_load`). Rescaling the coordinates is no way round it: the motion
+# model's `accuracy` is a length too and btrack rejects it above 10 (src/tracker.cc).
+MIN_DIST_THRESH = 1.0
+
 
 class BayesianTrackingUtils:
     def __init__(self, params: dict, logger):
@@ -187,6 +201,11 @@ class BayesianTrackingUtils:
 
     # ── run btrack ──────────────────────────────────────────────────────────────────
     def _track(self, centroid_df: pd.DataFrame) -> pd.DataFrame:
+        if self.dist_thresh < MIN_DIST_THRESH:
+            u = "µm"
+            raise SystemExit(
+                f"[ERROR] Distance threshold {self.dist_thresh:g} {u}: btrack cannot join track "
+                f"ends below {MIN_DIST_THRESH:g} {u}. Set it to {MIN_DIST_THRESH:g} {u}.")
         objects = btrack_utils.objects_from_dict(
             {k: np.asarray(centroid_df[k].values) for k in centroid_df.columns})
 
@@ -221,6 +240,7 @@ class BayesianTrackingUtils:
             tracker.max_search_radius = self.max_search_radius
             tracker.append(objects)
             tracker.track(step_size=100)
+            self._check_join_load(tracker.tracks)
             # No time limit, on purpose. A GLPK timeout returns the tracks unmerged, so a limit
             # would make results depend on machine speed. Pass `options={}` explicitly: with no
             # options btrack falls back to its GLPK_OPTIONS = {"tm_lim": 60_000} (60 s). And
@@ -232,6 +252,42 @@ class BayesianTrackingUtils:
         track_df = pd.concat(frames, ignore_index=True) if frames else \
             pd.DataFrame(columns=_TRACK_COLS)
         return track_df.rename(columns={"ID": "track_id"})
+
+    def _check_join_load(self, tracklets):
+        """Stop before the optimiser when `distThresh`/`timeThresh` hand it more joins than it can solve.
+
+        The optimiser has no time limit (see `_track`), so an oversized join radius does not fail, it
+        never returns. Counted, not timed, so the verdict does not depend on machine speed.
+        """
+        u = "µm"
+        starts, ends = tracklet_ends(tracklets)
+        load = join_candidates(starts, ends, self.dist_thresh, self.time_thresh,
+                               self.track_branching)
+        n = max(1, len(starts))
+        per_track = load / n
+        self.log.log(f">> Optimiser: {len(starts)} tracklets, {load} join candidates "
+                     f"({per_track:.1f} per tracklet, within {self.dist_thresh:g} {u} "
+                     f"and {self.time_thresh} frames)")
+        if int(self.dist_thresh) != self.dist_thresh:
+            proposed = int(join_counts(starts, ends, self.dist_thresh, self.time_thresh).sum())
+            in_range = int(join_counts(starts, ends, self.dist_thresh, self.time_thresh,
+                                       btrack_bins=False).sum())
+            if proposed < in_range:
+                self.log.log(f">> [WARN] btrack searches whole {u}: it offers {proposed} of the "
+                             f"{in_range} joins within {self.dist_thresh:g} {u}. Use a whole "
+                             f"number for Distance threshold.")
+        if per_track <= MAX_JOINS_PER_TRACKLET:
+            return
+        fit = suggest_dist_thresh(starts, ends, self.dist_thresh, self.time_thresh,
+                                  self.track_branching)
+        hint = (f"set Distance threshold to {fit:g} {u}" if fit is not None
+                else f"even {MIN_DIST_THRESH:g} {u} is too far, lower Time threshold")
+        if self.track_branching and fit is None:
+            hint += " or turn off Track branching"
+        raise SystemExit(
+            f"[ERROR] Distance threshold {self.dist_thresh:g} {u} gives each track end "
+            f"{per_track:.0f} candidate joins (over {MAX_JOINS_PER_TRACKLET}); the optimiser "
+            f"would not finish. Objects here are closer than that: {hint}.")
 
     # ── write lineage back into obs (our AnnData convention) ────────────────────────
     #
@@ -443,6 +499,80 @@ def merge_track_lineage(props_path: str, track_df: pd.DataFrame, track_source: s
         "track_generation": cur_gen,
         "cell_id":          cur_cellid,
     }).add_categorical_obs("track_source", labels_all, src_obj).save()
+
+def tracklet_ends(tracklets):
+    """`(starts, ends)` of btrack tracklets as `(n, 4)` arrays of `t, x, y, z`, row i = tracklet i."""
+    starts = np.array([(trk.t[0], trk.x[0], trk.y[0], trk.z[0]) for trk in tracklets],
+                      dtype=np.float64).reshape(-1, 4)
+    ends = np.array([(trk.t[-1], trk.x[-1], trk.y[-1], trk.z[-1]) for trk in tracklets],
+                    dtype=np.float64).reshape(-1, 4)
+    return starts, ends
+
+
+def join_counts(starts, ends, dist_thresh, time_thresh, btrack_bins=True) -> np.ndarray:
+    """Per tracklet, how many tracklets btrack's hypothesis engine offers it as a link partner.
+
+    The rule of btrack's `HypothesisEngine::create` (src/hypothesis.cc): a tracklet starting
+    `1 <= dt <= time_thresh` frames after this one ends, within `dist_thresh` of its last position —
+    and, with `btrack_bins`, only if its start falls in a neighbouring `HypercubeBin` cell, which is
+    what loses joins at a fractional `dist_thresh` (see `MIN_DIST_THRESH`). `btrack_bins=False`
+    counts every pair in range.
+    """
+    from scipy.spatial import cKDTree
+
+    counts = np.zeros(len(ends), dtype=np.int64)
+    if len(ends) == 0:
+        return counts
+    bin_xyz = int(dist_thresh)          # btrack's `unsigned int bin_xyz`
+    binned = btrack_bins and bin_xyz != dist_thresh and bin_xyz >= 1
+    if binned:
+        # hash_index: floor((1. / bin) * x) on the float position
+        cell = lambda a: np.floor((1.0 / bin_xyz) * a[:, 1:].astype(np.float32).astype(np.float64))
+        start_cell, end_cell = cell(starts), cell(ends)
+    start_t = starts[:, 0]
+    by_frame = {t: np.where(start_t == t)[0] for t in np.unique(start_t)}
+    trees = {t: cKDTree(starts[idx, 1:]) for t, idx in by_frame.items()}
+    start_frames = np.array(sorted(trees))
+    end_t = ends[:, 0]
+    for te in np.unique(end_t):
+        rows = np.where(end_t == te)[0]
+        lo = np.searchsorted(start_frames, te + 1, side="left")
+        hi = np.searchsorted(start_frames, te + time_thresh, side="right")
+        for ts in start_frames[lo:hi]:
+            if not binned:
+                counts[rows] += trees[ts].query_ball_point(ends[rows, 1:], dist_thresh,
+                                                           return_length=True)
+                continue
+            hits = trees[ts].query_ball_point(ends[rows, 1:], dist_thresh)
+            for r, h in zip(rows, hits):
+                if h:
+                    near = np.abs(start_cell[by_frame[ts][h]] - end_cell[r]) <= 1
+                    counts[r] += int(near.all(axis=1).sum())
+    return counts
+
+
+def join_candidates(starts, ends, dist_thresh, time_thresh, branching) -> int:
+    """Links, plus with branching every pair of a tracklet's partners as a division (btrack's count)."""
+    k = join_counts(starts, ends, dist_thresh, time_thresh)
+    divisions = int((k * (k - 1) // 2).sum()) if branching else 0
+    return int(k.sum()) + divisions
+
+
+def suggest_dist_thresh(starts, ends, dist_thresh, time_thresh, branching):
+    """A `distThresh` to suggest: the largest 1-2-5 step in `[MIN_DIST_THRESH, dist_thresh)` with a
+    healthy load, else `MIN_DIST_THRESH` if it passes the cap, else None (no distance is enough)."""
+    n = max(1, len(starts))
+    exp = int(np.floor(np.log10(dist_thresh)))
+    steps = sorted({m * 10.0 ** e for e in range(0, exp + 1) for m in (1, 2, 5)
+                    if MIN_DIST_THRESH <= m * 10.0 ** e < dist_thresh}, reverse=True)
+    load = {d: join_candidates(starts, ends, d, time_thresh, branching) / n for d in steps}
+    for d in steps:
+        if load[d] <= _HEALTHY_JOINS_PER_TRACKLET:
+            return float(f"{d:.4g}")
+    if steps and load[MIN_DIST_THRESH] <= MAX_JOINS_PER_TRACKLET:
+        return MIN_DIST_THRESH
+    return None
+
 
 def is_stale_track_measure(col: str) -> bool:
     """A cell-obs column computed along the tracks, so wrong once they change: every `live.cell.*` /
