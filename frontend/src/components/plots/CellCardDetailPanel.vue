@@ -17,6 +17,7 @@ import { openViewerWindow } from '../../utils/viewerWindow'
 import { useProjectStore } from '../../stores/project'
 import { useViewerStore } from '../../stores/viewer'
 import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
+import { showTracksDeps } from '../../utils/viewerAppDeps'
 import type { Card } from './cardsPanel'
 
 const props = defineProps<{
@@ -58,7 +59,7 @@ async function showInViewer() {
   // once the popup registers (the popup's mount reads the highlight from localStorage, but the
   // camera-fit path here needs `viewerStore.viewState` to be populated by the popup's first tick).
   if (project.openImageUid === uid) {
-    await showTracksInViewer(props.projectUid, uid, vn, [tid], 'cell-cards')
+    await showTracksInViewer(showTracksDeps(), props.projectUid, uid, vn, [tid], 'cell-cards')
   }
 }
 

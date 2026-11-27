@@ -7,7 +7,8 @@ land at identical dimensions and cannot go out of step.
 
 `stitch_movies` composes several finished recordings into one frame (side-by-side version
 comparison — docs/todo/MOVIE_COMPARE_PLAN.md); it needs no viewer, and it must encode exactly like
-the recordings it is made of.
+the recordings it is made of. `prepend_title_to_movie` puts a title card in front of a finished
+recording. Both draw their text through `title_card` (which only draws, and never imports this module).
 """
 import contextlib
 import os
@@ -204,7 +205,7 @@ def stitch_movies(paths, out_path, *, fps, labels=None, layout="row",
     **Staged**: frames go to a ``.tmp.mp4`` sibling and are promoted onto ``out_path`` only once the
     last one is written, so a cancel or a crash never replaces a good movie with a file that has no
     moov atom. Same scheme (and the same reason for keeping the ``.mp4`` extension on the temp) as
-    every other recorder + ``title_card.prepend_title_to_movie``.
+    every other recorder + ``prepend_title_to_movie``.
     """
     import imageio.v2 as imageio   # local: keeps the import off any path that only needs the helpers
     import numpy as np
@@ -301,3 +302,40 @@ def stitch_movies(paths, out_path, *, fps, labels=None, layout="row",
                 pass
     os.replace(staging, out_path)                    # promote: whole file or none
     return written
+
+
+def prepend_title_to_movie(movie_path, content, *, duration_sec=3.0):
+    """Prepend the rendered title card (`title_card.render_card_frame`) to an existing .mp4, rewriting
+    it in place. Reads the movie's fps + frame size (so the card matches exactly), writes card frames then the movie's frames to a
+    temp file, and atomically replaces the original. Returns the number of card frames prepended.
+    Re-encodes the clip once (the source frames are read back and re-written)."""
+    import imageio.v2 as imageio   # local import: only the prepend step needs it, keeps render_* light
+
+    movie_path = str(movie_path)
+    with imageio.get_reader(movie_path) as r:
+        meta = r.get_meta_data()
+        fps = float(meta.get("fps") or 15)
+        frame0 = r.get_data(0)
+    height, width = int(frame0.shape[0]), int(frame0.shape[1])
+
+    from cecelia.utils import title_card   # local: PIL is only needed when a card is drawn
+    card = title_card.render_card_frame(content, width, height)
+    n = title_card.title_frame_count(fps, duration_sec)
+
+    # The temp deliberately KEEPS the `.mp4` extension — imageio infers the writer format from it, so
+    # the sibling-suffix scheme `atomic_io` uses (`x.mp4.tmp.ab12`) can't be used here. That means a
+    # leftover from a killed run WOULD match a naive `*.mp4` directory listing, so `/api/movies`
+    # filters `.tmp.` names out. See cecelia/utils/atomic_io.py for the general rule.
+    tmp = movie_path + ".tmp.mp4"
+    # The SHARED writer (`movie_writer`) — the same one the recorders use, because this file is
+    # the card concatenated onto a recording and the two halves must encode identically. Its
+    # macro_block_size=1 keeps the card + source frames at their exact (even) dimensions — no resize, so
+    # the appended source frames always match the writer's frame size.
+    with movie_writer(tmp, fps) as out, \
+            imageio.get_reader(movie_path) as r2:
+        for _ in range(n):
+            out.append_data(card)
+        for frame in r2:
+            out.append_data(frame)
+    os.replace(tmp, movie_path)
+    return n

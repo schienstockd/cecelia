@@ -18,10 +18,10 @@ flowchart LR
   components_viewerWindow -->|13| utils__flat_["utils (flat)"]
   components_viewerWindow -->|10| components__flat_["components (flat)"]
   components_viewerWindow -->|6| composables["composables"]
-  utils_viewer -->|6| stores["stores"]
   components_viewerWindow -->|3| plots["plots"]
   components_viewerWindow -->|3| stores["stores"]
   components_viewerWindow -->|2| lib__flat_["lib (flat)"]
+  utils_viewer -->|2| stores["stores"]
   components_viewerWindow -->|1| components__other_["components (other)"]
   utils_viewer -->|1| lib__flat_["lib (flat)"]
   utils_viewer -->|1| plots["plots"]
@@ -48,4 +48,4 @@ Each store the viewer reaches into — the coupling a self-contained viewer woul
 |---|---|
 | components/viewerWindow | `observer`, `settings`, `viewer` |
 | lib/webgpu | — |
-| utils/viewer | `linkedSelection`, `log`, `project`, `projectMeta`, `settings`, `viewer` |
+| utils/viewer | `log`, `viewer` |

@@ -25,7 +25,7 @@ flowchart LR
   plots["plots<br/><small>51 files · 8.7k lines</small>"]
   stores["stores<br/><small>36 files · 7.9k lines</small>"]
   tasks["tasks<br/><small>18 files · 9.4k lines</small>"]
-  utils__flat_["utils (flat)<br/><small>295 files · 35.7k lines</small>"]
+  utils__flat_["utils (flat)<br/><small>296 files · 35.8k lines</small>"]
   utils_viewer["utils/viewer<br/><small>23 files · 2.8k lines</small>"]
   components__flat_ -->|225| utils__flat_
   modules -->|169| utils__flat_
@@ -39,10 +39,10 @@ flowchart LR
   components__flat_ -->|66| lib__flat_
   components_canvas -->|66| utils__flat_
   components__flat_ -->|60| composables
+  components_plots -->|57| utils__flat_
   composables -->|57| stores
-  components_plots -->|56| utils__flat_
   components_canvas -->|52| plots
-  tasks -->|51| utils__flat_
+  tasks -->|52| utils__flat_
   components_plots -->|50| composables
   modules -->|48| plots
   modules -->|39| components_canvas
@@ -50,8 +50,8 @@ flowchart LR
   components_canvas -->|31| stores
   app_root -->|30| modules
   utils_viewer -->|29| utils__flat_
+  components__other_ -->|27| utils__flat_
   components_viewerWindow -->|27| components__flat_
-  components__other_ -->|26| utils__flat_
   components_canvas -->|26| composables
   lib_webgpu -->|26| utils__flat_
   components__other_ -->|23| stores
@@ -65,10 +65,10 @@ flowchart LR
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **app root** | · | 17 | 2 |  |  |  |  | 4 | 2 | 13 |  |  | 30 |  | 16 |  | 2 | 1 |
 | **components (flat)** |  | · | 2 |  | 5 |  |  | 60 |  | 66 | 11 |  |  | 11 | 141 | 2 | 225 | 2 |
-| **components (other)** |  | 17 | · |  |  |  |  | 12 |  | 8 |  |  |  |  | 23 |  | 26 | 3 |
+| **components (other)** |  | 17 | · |  |  |  |  | 12 |  | 8 |  |  |  |  | 23 |  | 27 | 3 |
 | **components/canvas** |  | 37 | 1 | · |  | 16 |  | 26 |  | 3 |  |  | 2 | 52 | 31 |  | 66 | 1 |
 | **components/lightPath** |  |  |  |  | · |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| **components/plots** |  | 21 |  | 1 |  | · |  | 50 |  | 4 |  |  |  | 98 | 23 |  | 56 | 3 |
+| **components/plots** |  | 21 |  | 1 |  | · |  | 50 |  | 4 |  |  |  | 98 | 23 |  | 57 | 3 |
 | **components/viewerWindow** |  | 27 | 2 |  |  |  | · | 6 |  | 2 |  |  |  | 3 | 11 |  | 17 | 7 |
 | **composables** |  |  |  |  |  |  |  | · |  | 3 |  |  |  | 7 | 57 |  | 76 | 7 |
 | **directives** |  |  |  |  |  |  |  |  | · |  |  |  |  |  |  |  | 3 |  |
@@ -78,15 +78,15 @@ flowchart LR
 | **modules** |  | 128 | 1 | 39 |  | 11 | 14 | 68 |  | 15 |  | 3 | · | 48 | 104 | 19 | 169 | 23 |
 | **plots** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | · |  |  | 14 | 1 |
 | **stores** | 1 |  |  |  |  |  |  | 4 |  | 11 | 4 |  |  | 2 | · |  | 82 | 5 |
-| **tasks** |  | 20 | 1 |  |  |  |  | 6 |  | 7 |  |  |  |  | 20 | · | 51 | 1 |
-| **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 10 | 8 | · | 1 |
-| **utils/viewer** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | 1 | 11 |  | 29 | · |
+| **tasks** |  | 20 | 1 |  |  |  |  | 6 |  | 7 |  |  |  |  | 20 | · | 52 | 1 |
+| **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 14 | 8 | · | 1 |
+| **utils/viewer** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | 1 | 5 |  | 29 | · |
 
 </details>
 
 ## Where the backend is called
 
-Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` or an `EventSource`: **108** of 836. HTTP calls go through `utils/api.ts` (status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.
+Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` or an `EventSource`: **108** of 837. HTTP calls go through `utils/api.ts` (status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.
 
 | Group | Files |
 |---|---|

@@ -183,7 +183,7 @@ viewer's palette.
 rail can kill it. A cancelled or failed run leaves nothing at `out_path`.
 
 `title_card` is a dict of the shape the frontend produces — prepended to the mp4 by
-`title_card.prepend_title_to_movie`. `nothing` = no card.
+`movie_io.prepend_title_to_movie`. `nothing` = no card.
 """
 function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            ts::Union{Nothing,AbstractVector{<:Integer}} = nothing,

@@ -54,7 +54,7 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
                          or, the size and width, in IMAGE pixels when ``overlaySizeUnit`` is
                          ``image`` (the viewer's unit: they then scale with the camera, as in the
                          viewer). The border is always output pixels.
-    ``titleCard``      : optional; prepended after the render (``title_card.prepend_title_to_movie``)
+    ``titleCard``      : optional; prepended after the render (``movie_io.prepend_title_to_movie``)
     ``overlays``       : optional per-frame ``[{timestamp?, timestampPx? | timestampFrac?, scaleBar?}]``
                          — drawn onto the encoded frame; the sizes (and ``scaleBar.fontPx`` /
                          ``fontFrac``) are the viewer's text, in px or a fraction of the frame height
@@ -523,9 +523,9 @@ def run(params):
     # the compare grid's stitcher; one PIL font stack for every text glyph on a movie frame.
     card = params.get('titleCard')
     if isinstance(card, dict) and card.get('enabled', True):
-        from cecelia.utils import title_card
+        from cecelia.utils.movie_io import prepend_title_to_movie
         duration = float(card.get('durationSec', 3.0))
-        k = title_card.prepend_title_to_movie(out_path, card, duration_sec=duration)
+        k = prepend_title_to_movie(out_path, card, duration_sec=duration)
         log.log(f'[INFO] prepended {k} title-card frame(s)')
 
 

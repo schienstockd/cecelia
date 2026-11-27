@@ -33,7 +33,7 @@ describe('drawSpecOf — the viewer’s live read (DRAW_SPEC_PLAN D2)', () => {
     settings.setLabelVisibility('img1', { cpSAM: false, flowTom: true })
     settings.setPopVisible('set1', 'clust', true)
     settings.setPointSize('set1', 11)
-    const spec = drawSpecOf(src())
+    const spec = drawSpecOf(src(), settings)
     expect(spec.maskValueName).toBe('flowTom')
     expect(spec.popVisible.clust).toBe(true)
     expect(spec.popVisible.flow).toBe(false)
@@ -42,7 +42,7 @@ describe('drawSpecOf — the viewer’s live read (DRAW_SPEC_PLAN D2)', () => {
 
   it('a field tracks only the settings it reads: a global style change does not recompute a pop type', () => {
     const settings = useSettingsStore()
-    const spec = drawSpecOf(src())
+    const spec = drawSpecOf(src(), settings)
     let runs = 0
     const flow = computed(() => { runs++; return spec.popVisible.flow })
     expect(flow.value).toBe(false)
@@ -64,13 +64,13 @@ describe('readDrawSpec — a recording’s snapshot (DRAW_SPEC_PLAN D3)', () => 
     const viewer = useViewerStore()
     viewer.setOpenImage({ projectUid: 'p', imageUid: 'img1', valueName: 'raw', zarrPath: '', taskDir: '',
                           labelNames: ['onDisk'], trackNames: ['onDisk'] })
-    expect(readDrawSpec(img, 'set1', true).maskValueName).toBe('onDisk')
-    expect(readDrawSpec(img, 'set1', false).maskValueName).toBe('cpSAM')
+    expect(readDrawSpec(img, 'set1', true, useSettingsStore()).maskValueName).toBe('onDisk')
+    expect(readDrawSpec(img, 'set1', false, useSettingsStore()).maskValueName).toBe('cpSAM')
   })
 
   it('is plain data — the pop types are values, not getters', () => {
     useSettingsStore().setPopVisible('set1', 'flow', true)
-    const spec = readDrawSpec(img, 'set1', false)
+    const spec = readDrawSpec(img, 'set1', false, useSettingsStore())
     expect(Object.getOwnPropertyDescriptor(spec.popVisible, 'flow')?.get).toBeUndefined()
     expect(JSON.parse(JSON.stringify(spec.popVisible)).flow).toBe(true)
     expect(Object.getOwnPropertyDescriptor(spec, 'pointSize')?.get).toBeUndefined()

@@ -33,9 +33,9 @@ def run(params: dict):
     # rendered at the composed movie's exact resolution — one card, one PIL stack, one place.
     card = params.get('titleCard')
     if isinstance(card, dict) and card.get('enabled', True):
-        from cecelia.utils import title_card
+        from cecelia.utils.movie_io import prepend_title_to_movie
         duration = float(card.get('durationSec', 3.0))
-        k = title_card.prepend_title_to_movie(params['outPath'], card, duration_sec=duration)
+        k = prepend_title_to_movie(params['outPath'], card, duration_sec=duration)
         log.log(f'[INFO] prepended {k} title-card frame(s)')
 
 
