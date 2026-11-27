@@ -2,6 +2,7 @@ import { RECORD_WHAT_DEFAULT, ROI_MAX_DEFAULT, ROI_OUTPUT_DEFAULT, ROI_PAD_FRAME
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch, type Ref } from 'vue'
 import { TITLE_CARD_DEFAULT, RENDER_QUALITY_DEFAULT, type TitleCardCfg, type BatchMovieCfg, type RenderQuality } from '../utils/batchMovie'
+import { MOVIE_RESOLUTION_DEFAULT, type MovieResolution } from '../utils/movieSize'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
@@ -678,6 +679,8 @@ export const useSettingsStore = defineStore('settings', () => {
     // `compareSegmentations` is the same idea for the segmentation masks. The two together give the
     // layout with nothing to store: versions across, masks down (see `compareShape`).
     movie?: { fps?: number; sizeX?: number | null; sizeY?: number | null; suffix?: string | null
+              // what blank sizes record at: the canvas, or native pixels (`utils/movieSize.ts`)
+              resolution?: MovieResolution
               titleCard?: TitleCardCfg; compareVersions?: string[]; compareSegmentations?: string[]
               labelContour?: number; zSlice?: number | null
               // Which stretch of the timelapse to record, as FRAME INDICES — `tEnd` null/absent = the
@@ -756,6 +759,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // timelapse-recording params (per set); defaults match the backend (fps 15, size = canvas)
   const getMovieConfig = (setUid: string): {
     fps: number; sizeX: number | null; sizeY: number | null; suffix: string | null; titleCard: TitleCardCfg
+    resolution: MovieResolution
     compareVersions: string[]; compareSegmentations: string[]; labelContour: number
     zSlice: number | null
     renderQuality: RenderQuality
@@ -776,6 +780,8 @@ export const useSettingsStore = defineStore('settings', () => {
     sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
     sizeY: _setPrefs.value[setUid]?.movie?.sizeY ?? null,
     suffix: _setPrefs.value[setUid]?.movie?.suffix ?? null,
+    // the canvas size, what every movie recorded at before the control existed
+    resolution: _setPrefs.value[setUid]?.movie?.resolution ?? MOVIE_RESOLUTION_DEFAULT,
     titleCard: _setPrefs.value[setUid]?.movie?.titleCard ?? { ...TITLE_CARD_DEFAULT },
     // side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md); [] = record the active version
     compareVersions: _setPrefs.value[setUid]?.movie?.compareVersions ?? [],
@@ -817,6 +823,7 @@ export const useSettingsStore = defineStore('settings', () => {
   })
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
+                                   resolution?: MovieResolution
                                    suffix?: string | null; titleCard?: TitleCardCfg
                                    compareVersions?: string[]; compareSegmentations?: string[]
                                    labelContour?: number; zSlice?: number | null

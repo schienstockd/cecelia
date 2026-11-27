@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { MAX_MOVIE_AXIS, movieAxisPlaceholder, movieSizeParams, parseMovieAxis } from './movieSize'
+import { MAX_MOVIE_AXIS, movieAxisPlaceholder, movieSizeParams, parseMovieAxis,
+         movieSizeMode, movieSizePick } from './movieSize'
 
 describe('parseMovieAxis', () => {
   it('reads a positive integer', () => {
@@ -40,5 +41,27 @@ describe('movieSizeParams', () => {
     expect(movieSizeParams(1920, null)).toEqual({})
     expect(movieSizeParams(null, 1080)).toEqual({})
     expect(movieSizeParams(null, null)).toEqual({})
+  })
+})
+
+describe('res: screen / full / custom', () => {
+  it('asks for native pixels only when the sizes are blank', () => {
+    expect(movieSizeParams(null, null, 'full')).toEqual({ resolution: 'full' })
+    // typed sizes are what the user asked for — they win over the resolution
+    expect(movieSizeParams(512, 512, 'full')).toEqual({ sizeX: 512, sizeY: 512 })
+    // screen is the backend's default, so the request is the one it always was
+    expect(movieSizeParams(null, null, 'screen')).toEqual({})
+  })
+
+  it('shows typed sizes as custom, so a stored size is never hidden behind a resolution', () => {
+    expect(movieSizeMode(512, 512, 'full')).toBe('custom')
+    expect(movieSizeMode(null, null, 'full')).toBe('full')
+    expect(movieSizeMode(null, null, undefined)).toBe('screen')
+  })
+
+  it('a resolution clears the sizes; custom starts at the canvas', () => {
+    expect(movieSizePick('full', 1620, 1089)).toEqual({ sizeX: null, sizeY: null, resolution: 'full' })
+    expect(movieSizePick('custom', 1620, 1089)).toEqual({ sizeX: 1620, sizeY: 1089 })
+    expect(movieSizePick('custom', null, null)).toEqual({ sizeX: 1024, sizeY: 1024 })
   })
 })

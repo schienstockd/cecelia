@@ -78,6 +78,16 @@ function _max_px_from_view_state(vs::Union{Nothing,AbstractDict})
     max(Int(round(Float64(cw))), Int(round(Float64(ch))))
 end
 
+# A recording's long-side cap (`max_px`) for a viewer record: the typed size wins; blank sizes take the
+# movie options' `resolution` — `:screen` the viewer's canvas long side (`_max_px_from_view_state`),
+# `:full` one output pixel per image pixel of the visible region, up to `MOVIE_MAX_AXIS`.
+function _record_max_px(size_x, size_y, view_state; resolution::Symbol = :screen)
+    m = _max_px_from_size(size_x, size_y)
+    m > 0 && return m
+    resolution === :full && return MOVIE_MAX_AXIS
+    _max_px_from_view_state(view_state)
+end
+
 # JSON3 hands back Symbol keys; the movie_config/batch config path handles either — same `_to_str_dict`
 # gotcha the rest of the code lives with. Two accessors so callers can be terse.
 _cfg_get(cfg, k, default) =
@@ -483,6 +493,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             # `view_state` (what is on screen) instead of the autosaved viewer props,
                             # which lag the live view whenever autosave is off.
                             match_viewer::Bool = false,
+                            # blank sizes: `:screen` the canvas, `:full` native (`_record_max_px`)
+                            resolution::Symbol = :screen,
                             movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
@@ -508,10 +520,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    max_px = _max_px_from_size(size_x, size_y)
-    # Blank size fields → fall back to the viewer's canvas long side, so the mp4 caps at the size the
-    # viewer showed rather than at the native crop's pixel count. See `_max_px_from_view_state`.
-    max_px == 0 && (max_px = _max_px_from_view_state(view_state))
+    # blank size fields → the canvas long side, or native pixels at `resolution = :full`
+    max_px = _record_max_px(size_x, size_y, view_state; resolution)
     # Viewer crop: pull the visible rectangle out of the snapshot and pass it to the encoder as
     # `crop`. Native H/W come from the store, not from the snapshot's canvas — `crop_from_view_state`
     # clamps against these so a stale snapshot can't index off the edge of the image. `nothing` here
@@ -919,15 +929,16 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                               show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
                               pixel_size_um::Union{Nothing,Real} = nothing,
                               time_step_min::Union{Nothing,Real} = nothing,
-                              view_state::Union{Nothing,AbstractDict} = nothing)
+                              view_state::Union{Nothing,AbstractDict} = nothing,
+                              resolution::Symbol = :screen)
     rows       = _wrap_grid(rows, String(layout))
     row_layout = layout == "grid" ? "row" : String(layout)
     n_rows     = length(rows)
     cells      = sum(length(r.columns) for r in rows)
     cells > 0 || error("compare grid has no cells")
-    max_px     = _max_px_from_size(size_x, size_y)
-    # Same "blank → viewer canvas" fallback as the single-record path. See `_max_px_from_view_state`.
-    max_px == 0 && (max_px = _max_px_from_view_state(view_state))
+    # Same blank-size rule as the single-record path (`_record_max_px`); a batch has no view state,
+    # so blank there is native
+    max_px     = _record_max_px(size_x, size_y, view_state; resolution)
     per_pass   = _t_sweep_frames(img, t_start, t_end)
     total_units = cells + (n_rows > 1 ? n_rows : 0) + (n_rows > 1 ? 1 : 0)
     # A one-cell row is its own strip — no compose slot. Mirror `_record_grid!`'s counter.
@@ -1073,6 +1084,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                   # `_resolve_grid_cell`). 3D snapshots return `nothing`, leaving
                                   # the cell at whole-image aspect.
                                   view_state::Union{Nothing,AbstractDict} = nothing,
+                                  resolution::Symbol = :screen,
                                   movie_config::Union{Nothing,MovieRecordConfig} = nothing)
     fun = "movie:record"
     img, ierr = _gating_image(project_uid, image_uid)
@@ -1102,7 +1114,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                        show_scale_bar = show_scale_bar,
                                        pixel_size_um  = pixel_size_um,
                                        time_step_min  = time_step_min,
-                                       view_state = view_state)
+                                       view_state = view_state, resolution = resolution)
         frames = Int(result.frames)
         if result.cancelled
             status = "cancelled"

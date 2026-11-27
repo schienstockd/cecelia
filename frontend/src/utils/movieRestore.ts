@@ -23,6 +23,7 @@ import { TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from './bat
 import { COMPARE_LAYOUTS, type CompareLayout } from './movieCompare'
 import { SKELETON_BY_TYPE } from './viewerOverlays'
 import { getJson } from './api'
+import { MOVIE_RESOLUTIONS, type MovieResolution } from './movieSize'
 
 /** A registry entry as `GET /api/movies/meta` returns it (api/src/movies_api.jl). */
 export interface MovieRegistryEntry {
@@ -56,6 +57,7 @@ export interface MovieOutputCfg {
   fps?: number
   sizeX?: number | null
   sizeY?: number | null
+  resolution?: MovieResolution
   suffix?: string | null
   titleCard?: TitleCardCfg
   showTimestamp?: boolean
@@ -107,6 +109,7 @@ function outputOf(c: Record<string, unknown>): MovieOutputCfg {
   put(out, 'fps', num(c.fps))
   put(out, 'sizeX', c.sizeX === null ? null : num(c.sizeX))
   put(out, 'sizeY', c.sizeY === null ? null : num(c.sizeY))
+  put(out, 'resolution', MOVIE_RESOLUTIONS.find(r => r === c.resolution))
   put(out, 'suffix', typeof c.suffix === 'string' ? c.suffix : undefined)
   put(out, 'titleCard', titleCardOf(c.titleCard))
   put(out, 'showTimestamp', typeof c.showTimestamp === 'boolean' ? c.showTimestamp : undefined)

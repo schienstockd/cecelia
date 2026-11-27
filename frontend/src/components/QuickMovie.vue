@@ -27,7 +27,7 @@ import { roiRecordSelection, roiRecordBlock, roiFigureSpec, roiPadFrames, ROI_OU
          type RecordWhat, type RoiOutput } from '../utils/roiMovie'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
-import { movieSizeParams } from '../utils/movieSize'
+import { movieSizeParams, MOVIE_RESOLUTION_DEFAULT, type MovieResolution } from '../utils/movieSize'
 import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT, resolveFrameRange,
          type ViewStateLike, type RenderQuality } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -132,6 +132,10 @@ const movieSizeX = computed<number | null>({
 const movieSizeY = computed<number | null>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).sizeY : null,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { sizeY: v }) } })
+// What blank sizes record at in 2D: the canvas, or every image pixel of the view (`res` in the options)
+const movieResolution = computed<MovieResolution>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).resolution : MOVIE_RESOLUTION_DEFAULT,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { resolution: v }) } })
 // Filename addition. A movie is named after the IMAGE, so recording the AF-corrected version and then
 // the raw import would overwrite the first — hence a suffix, prefilled with the version SHOWN in the
 // viewer (`null` = never touched → use that default; `''` = the user cleared it, which must stick).
@@ -493,7 +497,8 @@ async function recordTimelapse() {
       ...(snapshot ? { viewState: hexViewState(snapshot) } : {}),
       // one version, the one on screen → its live contrast too, not the autosaved props
       liveSpecs: shape.cells <= 1 && versions.length === 1 && versions[0] === viewerStore.openImage?.valueName,
-      ...movieSizeParams(movieSizeX.value, movieSizeY.value),
+      // the `res` row is hidden in 3D, so a 3D compare's projection keeps the canvas rule
+      ...movieSizeParams(movieSizeX.value, movieSizeY.value, show3D.value ? null : movieResolution.value),
     })
   } catch (e) {
     log.error(`Record timelapse failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'viewer' })
@@ -554,7 +559,7 @@ async function recordViewerMatch(uid: string, projectUid: string) {
         show3D: false, zSlice: look.zSlice ?? null, zRange: look.zRange ?? null,
         tStart: movieTStart.value, tEnd: movieTEnd.value,
         viewState: hexViewState(snapshot),
-        ...movieSizeParams(movieSizeX.value, movieSizeY.value) })
+        ...movieSizeParams(movieSizeX.value, movieSizeY.value, movieResolution.value) })
     }
   } catch (e) {
     log.error(`Record failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'viewer' })
@@ -595,6 +600,7 @@ async function recordViewerMatch(uid: string, projectUid: string) {
           <MovieOptionsButton class="opt-btn" :inline="inlineOptions">
             <div class="mob-head cc-eyebrow cc-fs-2xs">Output</div>
             <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
+                                 :resolution="recordingRois ? null : movieResolution" @update:resolution="movieResolution = $event"
                                  v-model:suffix="movieSuffix" v-model:numbered="numberIfTaken" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                                  :size-z="matchViewer ? 1 : openedImage?.sizeZ" v-model:show3D="show3D"
