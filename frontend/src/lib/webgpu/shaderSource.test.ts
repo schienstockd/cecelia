@@ -137,6 +137,20 @@ describe('the shaders the renderers compile', () => {
     })
   }
 
+  // The pick outline (correction cockpit, plot brushing, the viewer's own pick selection) is ONE
+  // snippet in every label pass — the tiled 2D view used to have none, so picked cells went unmarked.
+  const picked = { MIP_WGSL: SHADER_CONSTANTS.MIP_PICK_BINDING, TILE_WGSL: SHADER_CONSTANTS.TILE_PICK_BINDING,
+                   BRICK_WGSL: SHADER_CONSTANTS.BRICK_PICK_BINDING }
+  const pickedCode: Record<string, string> = { MIP_WGSL, TILE_WGSL, BRICK_WGSL }
+  for (const [k, binding] of Object.entries(picked)) {
+    it(`${k} outlines picked cells with the one shared pick snippet`, () => {
+      const code = pickedCode[k]
+      expect(code).toContain(expandWgsl('pick.wgsl', { PICK_BINDING: binding }))
+      expect(code).toMatch(/labPickEdge\(\w+, \w+, pw\)/)
+      expect(code).toMatch(/labInPick\(\w+\)\) \{ acc = vec3\(1\.0, 1\.0, 1\.0\); \}/)
+    })
+  }
+
   it('TILE_WGSL colours its mask with the one shared labColour / labShown', () => {
     expect(TILE_WGSL).toContain(expandWgsl('label_colour.wgsl'))
     expect(TILE_WGSL.match(/fn labColour\(/g)).toHaveLength(1)

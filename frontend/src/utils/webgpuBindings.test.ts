@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { bindingDecls, functions, bindingStages, layoutVisibility, visibilityGaps } from './webgpuBindings'
 import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL } from '../lib/webgpu/mipShader'
+import { TILE_WGSL } from '../lib/webgpu/tileShader'
 
 const RENDERER = import.meta.glob('/src/lib/webgpu/volumeRenderer.ts',
+  { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+const TILE_RENDERER = import.meta.glob('/src/lib/webgpu/tileRenderer.ts',
   { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
 describe('bindingDecls', () => {
@@ -82,5 +85,12 @@ describe('visibilityGaps', () => {
     expect(ts).toBeTruthy()
     expect(ts).toContain('createBindGroupLayout')
     expect(visibilityGaps([MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL], ts)).toEqual([])
+  })
+  // The tile pass's own layout — the pick outline's storage buffer has to be in it, or the 2D tiled
+  // view cannot create its pipeline.
+  it('the tile shader and the tile layout agree', () => {
+    const ts = Object.values(TILE_RENDERER)[0]
+    expect(ts).toBeTruthy()
+    expect(visibilityGaps([TILE_WGSL], ts)).toEqual([])
   })
 })
