@@ -19,7 +19,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/cleanupImages/smooth_run.py` | `app/src/tasks/cleanupImages/smooth.jl:190` | `bilateralColor`, `bilateralPolish`, `bilateralReach`, `channels`, `farnebackMaxShiftPx`, `imOutputPath`, `imPath`, `qcOutPath`, `restoreGain`, `spatialMethod`, `spatialSigma`, `temporalFrames` +1 |
 | `tasks/cleanupImages/stack_align_run.py` | `app/src/tasks/cleanupImages/stack_align.jl:153` | `alignChannel`, `imAlignedPath`, `imPath`, `maxShiftPx`, `minConfidence`, `qcOutPath`, `referenceMode` |
 | `tasks/clustPops/cluster_run.py` | `app/src/tasks/clustPops/cluster.jl:160` | `createUmap`, `featureCols`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold`, `qcOutPath`, `randomState`, `resolution` +4 |
-| `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:144` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling`, `qcOutPath` +4 |
+| `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:157` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `diversityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling` +5 |
 | `tasks/clustTracks/cluster_run.py` | `app/src/tasks/clustTracks/cluster.jl:190` | `X`, `axesOutPath`, `createUmap`, `featureCols`, `labels`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold` +10 |
 | `tasks/editImages/bin_run.py` | `app/src/tasks/editImages/bin.jl:114` | `factorX`, `factorY`, `imOutPath`, `imPath`, `op` |
 | `tasks/editImages/cropImage_run.py` | `app/src/tasks/editImages/cropImage.jl:115` | `imOutPath`, `imPath`, `t0`, `t1`, `x0`, `x1`, `y0`, `y1`, `z0`, `z1` |
@@ -78,7 +78,7 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | Area | Routes | Julia side | Vue | MCP | Python | preview | No caller |
 |---|---|---|---|---|---|---|---|
 | `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  |  |
-| `/api/gating` | 27 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 16 | 2 | 1 |  |  |
+| `/api/gating` | 28 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 18 | 2 | 1 |  |  |
 | `/api/images` | 24 | `api/src/image_geometry.jl`, `api/src/routes/image.jl` +4 | 18 | 2 |  |  |  |
 | `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  |  |
 | `/api/notebooks` | 17 | `api/src/notebooks_api.jl` | 4 | 1 |  |  |  |
@@ -227,7 +227,7 @@ Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
 | `mip_points.wgsl` | `frontend/src/lib/webgpu/shaders/mip_points.wgsl` | Python: `python/cecelia/utils/wgpu_host.py`; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts` |
 | `mip_segments.wgsl` | `frontend/src/lib/webgpu/shaders/mip_segments.wgsl` | Python: `python/cecelia/utils/wgpu_host.py`; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts` |
 | `overlay_quads.wgsl` | `frontend/src/lib/webgpu/shaders/overlay_quads.wgsl` | Julia: `api/src/overlay_author.jl`, `api/src/shader_constants.jl`; Python: `python/cecelia/writers/render_animation_run.py`; TS/Vue: `frontend/src/lib/webgpu/brickShader.ts`, `frontend/src/lib/webgpu/overlayPasses.ts` +3 |
-| `palettes.json` | `frontend/src/plots/palettes.json` | Julia: `api/src/gate_plot_render.jl`, `api/src/movie_render.jl` +3; TS/Vue: `frontend/src/components/AcquisitionLightPath.vue`, `frontend/src/components/LightPathSourceGlyph.vue` +5 |
+| `palettes.json` | `frontend/src/plots/palettes.json` | Julia: `api/src/gate_plot_render.jl`, `api/src/movie_render.jl` +3; TS/Vue: `frontend/src/components/AcquisitionLightPath.vue`, `frontend/src/components/LightPathSourceGlyph.vue` +6 |
 | `popTypeRegistry.json` | `frontend/src/plots/popTypeRegistry.json` | Julia: `app/src/gating/popmanager/registry.jl`; TS/Vue: `frontend/src/plots/popTypeRegistry.ts` |
 | `tools.json` | `mcp/cecelia_mcp/tools.json` | Python: `mcp/cecelia_mcp/autonomous_server.py`, `mcp/cecelia_mcp/server.py` +2; TS/Vue: `frontend/src/lib/claudeTools.ts`, `frontend/src/lib/guides/mapData.ts` |
 | `track_measures.json` | `app/src/plotDefinitions/track_measures.json` | Julia: `app/src/tasks/task_registry.jl`; TS/Vue: `frontend/src/lib/guides/taskGuides.ts` |
@@ -243,5 +243,5 @@ Files per language that name each kind of project file (a reference, not necessa
 | ccid.json (image / set record) | 42 | 16 | 17 |
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |
-| gating JSON | 28 |  | 5 |
+| gating JSON | 28 |  | 4 |
 | run log | 40 | 5 | 23 |

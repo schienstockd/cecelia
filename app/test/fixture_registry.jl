@@ -112,7 +112,7 @@ end
 # ── fact checks: re-derive each `checked` property from the files ─────────────────────────────
 
 # Axis name → (size, scale) of an OME-ZARR store's level 0, through the canonical NGFF readers
-# (app/src/tasks/importImages/omezarr/reader.jl): flat or bf2raw-wrapped, zarr v2 or v3.
+# (app/src/model/zarr_store.jl): flat or bf2raw-wrapped, zarr v2 or v3.
 function _store_axes(store::AbstractString)
     g = Cecelia.series_base(store)
     ms = Cecelia.ngff_multiscales(g)

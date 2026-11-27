@@ -6,7 +6,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 76 |
+| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 69 |
 | Layers | [The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store](#viewer-store) | 4 |
 | Layers | [A frontend file calls the backend with a bare `fetch(`, not through `utils/api.ts`](#fetch-direct) | 15 |
 | Tangles | [Python modules that import each other](#py-cycle) | 1 |
@@ -63,14 +63,12 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`hpc_task_cpus`** — defined in hpc (tier 7), called from tasks (tier 6)
 - **`img_project_dir`** — defined in model (tier 2), called from config (tier 1)
 - **`img_project_uid`** — defined in model (tier 2), called from config (tier 1)
-- **`import_source_fingerprint`** — defined in tasks (tier 6), called from qc+checks (tier 4)
 - **`is_bookkeeping_param`** — defined in scheduler+chains (tier 7), called from qc+checks (tier 4)
 - **`is_gating_pop_type`** — defined in gating (tier 4), called from run records (tier 2)
 - **`is_track_grained`** — defined in gating (tier 4), called from cell data (tier 3)
 - **`json_native`** — defined in model (tier 2), called from config (tier 1)
 - **`list_tasks`** — defined in scheduler+chains (tier 7), called from task framework (tier 5)
 - **`load_roi_set`** — defined in tracking+spatial (tier 4), called from model (tier 2)
-- **`ngff_multiscales`** — defined in tasks (tier 6), called from qc+checks (tier 4)
 - **`plugin_roots`** — defined in task framework (tier 5), called from python bridge (tier 3)
 - **`pool_status`** — defined in scheduler+chains (tier 7), called from tasks (tier 6)
 - **`pop_gate_hashes`** — defined in gating (tier 4), called from run records (tier 2)
@@ -81,11 +79,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`resolve_pop_type`** — defined in gating (tier 4), called from run records (tier 2)
 - **`roi_review_labels`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`save_pop_tree!`** — defined in gating (tier 4), called from model (tier 2)
-- **`series_base`** — defined in tasks (tier 6), called from qc+checks (tier 4)
-- **`store_axis_sizes`** — defined in tasks (tier 6), called from task framework (tier 5)
 - **`store_debris_summary`** — defined in jobs (export, import, maintenance) (tier 7), called from model (tier 2)
-- **`store_rev`** — defined in tasks (tier 6), called from task framework (tier 5)
-- **`store_written_at`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`task_source_stamp`** — defined in task framework (tier 5), called from run records (tier 2)
 - **`task_writes_into_key`** — defined in task framework (tier 5), called from run records (tier 2)
 - **`track_displacement`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
@@ -94,7 +88,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`track_straightness`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`with_pop_tree_lock`** — defined in gating (tier 4), called from model (tier 2)
 - **`write_qc`** — defined in qc+checks (tier 4), called from cell data (tier 3)
-- **`zarr_array_meta`** — defined in tasks (tier 6), called from qc+checks (tier 4)
 
 <a id="viewer-store"></a>
 ### The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store

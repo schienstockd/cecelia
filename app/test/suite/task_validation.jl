@@ -86,6 +86,8 @@ end
     #   * `importImages/omezarr.jl` (aggregator) and every `importImages/omezarr/*.jl` sub-file
     #     collectively define the metadata reader/writer tier — those are the files allowed to read
     #     the raw `.zattrs` / `.zarray` / `zarr.json` files.
+    #   * `model/zarr_store.jl` — the structural readers underneath them (`series_base`, `ngff_attrs`,
+    #     `zarr_array_meta`, `store_rev`), in the model tier because QC and the task framework call them.
     #   * `image_geometry.jl` defines `open_level`, so it is the one file allowed to call `zopen`.
 
     # ".zattrs", ".zarray", "zarr.json" as a code literal (a path join into a store) — but not the
@@ -97,6 +99,7 @@ end
     # Path fragment (portable on Windows via joinpath). Any file under the omezarr/ family owns
     # the raw-JSON reads; the aggregator's own basename is the sentinel for the parent file itself.
     omezarr_family = joinpath("importImages", "omezarr")
+    zarr_store     = joinpath("model", "zarr_store.jl")
     allowed_open   = Set(["image_geometry.jl"])
 
     literal_hits = String[]
@@ -111,7 +114,7 @@ end
             rel  = in_omezarr_family ? joinpath(omezarr_family, f) : f
             for (i, ln) in enumerate(eachline(path))
                 startswith(strip(ln), "#") && continue          # comments don't count
-                if occursin(literal_re, ln) && !in_omezarr_family
+                if occursin(literal_re, ln) && !in_omezarr_family && !endswith(path, zarr_store)
                     push!(literal_hits, "$rel:$i  $(strip(ln))")
                 end
                 if occursin(open_re, ln) && !(rel in allowed_open)
@@ -122,7 +125,7 @@ end
     end
 
     isempty(literal_hits) || error(
-        "bare `.zattrs` / `.zarray` / `zarr.json` read outside `importImages/omezarr.jl`:\n  " *
+        "bare `.zattrs` / `.zarray` / `zarr.json` read outside `importImages/omezarr/` and `model/zarr_store.jl`:\n  " *
         join(literal_hits, "\n  ") *
         "\nRoute through `ngff_attrs` / `ngff_multiscales` / `zarr_array_meta` / `ngff_version` — " *
         "reading `.zattrs` directly made every v3 store answer EMPTY once already " *
@@ -140,6 +143,7 @@ end
     # The scan must actually reach the sanctioned owners; a wrong root would let a real offender
     # slip through with an empty offender list.
     saw_literal_owner = false
+    saw_store_owner   = false
     saw_open_owner    = false
     for root in (_app_src, _api_src),
         (dir, _, files) in walkdir(root), f in files
@@ -147,10 +151,13 @@ end
         path = joinpath(dir, f)
         occursin(omezarr_family, path) &&
             occursin(literal_re, read(path, String)) && (saw_literal_owner = true)
+        endswith(path, zarr_store) &&
+            occursin(literal_re, read(path, String)) && (saw_store_owner = true)
         f == "image_geometry.jl" &&
             occursin(open_re, read(path, String)) && (saw_open_owner = true)
     end
     @test saw_literal_owner
+    @test saw_store_owner
     @test saw_open_owner
 end
 

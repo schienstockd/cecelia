@@ -102,22 +102,6 @@ function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
     nothing
 end
 
-"""
-Directory whose `.zattrs` carries the NGFF `multiscales` — the bioformats2raw series wrapper
-(`zarr/0`) or, for a flat `create_multiscales` store, `zarr` itself. Julia mirror of Python's
-`zarr_utils.series_base`; the ONE place on this side that decides the layout, so a reader or a
-writer can't quietly understand only one of the two (docs/ARCHITECTURE.md → **OME-ZARR dual-format**).
-
-Detection is STRUCTURAL — does `0/.zattrs` actually carry a `multiscales` attr — not the path
-suffix, because both layouts have a `0/` child: a group in the series layout, the level-0 ARRAY
-(whose `.zattrs` is `{}`) in the flat one.
-"""
-function series_base(zarr_path::AbstractString)::String
-    series = joinpath(zarr_path, "0")
-    ms = ngff_multiscales(series)
-    (isnothing(ms) || isempty(ms)) || return series
-    String(zarr_path)
-end
 
 """
 Which subdir of a bf2raw output actually carries the multiscales, when the caller can't assume it is
@@ -155,79 +139,6 @@ function bf2raw_series_subdir(zarr_out::AbstractString; prefer::Union{Int,Nothin
 end
 
 """
-NGFF attributes of a zarr GROUP directory, for **either** zarr format. `nothing` when the directory
-carries no readable group metadata.
-
-This is the Julia half of the v2-vs-v3 question, and it lives next to `series_base` on purpose: one
-resolver per question per language (docs/ARCHITECTURE.md → **OME-ZARR dual-format**). Do NOT add a parallel set
-of v3 readers — route through here.
-
-Name matches the Python twin (`zarr_utils.ngff_attrs`) on purpose — the cross-language contract on
-this question is by name.
-
-* zarr v2 / NGFF 0.4 — `.zattrs`, attributes at the **top level**
-* zarr v3 / NGFF 0.5 — `zarr.json` → `attributes`, everything nested one level down under **`ome`**
-
-The *content* is identical in both (same axes, datasets, coordinateTransformations), which is why
-unwrapping is the whole difference. Python gets this cheaper because `zarr-python`'s `Group.attrs`
-already hides the file-level half (its `ngff_attrs` takes an `attrs` object); Julia reads the JSON
-itself, so it handles both halves here and takes a directory path.
-"""
-function ngff_attrs(group_dir::AbstractString)
-    zattrs = joinpath(group_dir, ".zattrs")
-    if isfile(zattrs)
-        try
-            return JSON3.read(read(zattrs, String))
-        catch
-            return nothing
-        end
-    end
-    zjson = joinpath(group_dir, "zarr.json")
-    isfile(zjson) || return nothing
-    try
-        attrs = get(JSON3.read(read(zjson, String)), :attributes, nothing)
-        isnothing(attrs) && return nothing
-        inner = get(attrs, :ome, nothing)      # NGFF 0.5 nests under `ome`; 0.4-in-v3 would not
-        isnothing(inner) ? attrs : inner
-    catch
-        nothing
-    end
-end
-
-"""
-`multiscales` list of a zarr group directory, or `nothing` — version-agnostic (see `ngff_attrs`).
-"""
-function ngff_multiscales(group_dir::AbstractString)
-    attrs = ngff_attrs(group_dir)
-    isnothing(attrs) && return nothing
-    ms = get(attrs, :multiscales, nothing)
-    (isnothing(ms) || isempty(ms)) ? nothing : ms
-end
-
-"""
-OME-NGFF spec version a store declares (e.g. `"0.4"`, `"0.5"`), or `nothing` when it declares none.
-
-Not the same question as the ZARR format, and the two are not interchangeable even though they move
-together in practice: the zarr format is how the bytes and metadata files are laid out, the NGFF
-version is which image-metadata spec those attributes follow. Reported side by side in the image
-metadata modal so "what is this store?" is answerable without opening a terminal.
-
-0.5 carries it on the `ome` group attribute (which `ngff_attrs` has already unwrapped by the
-time we see it); 0.4 and earlier carry it per-multiscales-entry.
-"""
-function ngff_version(zarr_path::AbstractString)
-    base  = series_base(zarr_path)
-    attrs = ngff_attrs(base)
-    isnothing(attrs) && return nothing
-    v = get(attrs, :version, nothing)                     # NGFF 0.5 (on the `ome` attribute)
-    isnothing(v) || return string(v)
-    ms = get(attrs, :multiscales, nothing)                # NGFF 0.4 and earlier (per entry)
-    (isnothing(ms) || isempty(ms)) && return nothing
-    mv = get(first(ms), :version, nothing)
-    isnothing(mv) ? nothing : string(mv)
-end
-
-"""
 The metadata files that make `dir` a zarr GROUP, in either format: `.zgroup` (+ `.zattrs`) for v2,
 `zarr.json` for v3. Empty when `dir` is not a group. Paths only, nothing is parsed — for a caller that
 has to copy a group's own metadata alongside one of its children.
@@ -235,32 +146,6 @@ has to copy a group's own metadata alongside one of its children.
 function zarr_group_meta_files(dir::AbstractString)::Vector{String}
     isfile(joinpath(dir, ".zgroup")) || isfile(joinpath(dir, "zarr.json")) || return String[]
     filter(isfile, [joinpath(dir, f) for f in (".zgroup", ".zattrs", "zarr.json")])
-end
-
-"""
-Metadata of a zarr ARRAY directory (`shape`, `chunks`, dtype/codecs), for either format — `.zarray`
-(v2) or `zarr.json` (v3). `nothing` when unreadable. Both carry `shape`, so a caller that only needs
-the extent can treat them alike; anything format-specific must branch explicitly.
-"""
-function zarr_array_meta(array_dir::AbstractString)
-    zarray = joinpath(array_dir, ".zarray")
-    if isfile(zarray)
-        try
-            return JSON3.read(read(zarray, String))   # a `.zarray` IS an array — nothing to discriminate
-        catch
-            return nothing
-        end
-    end
-    # v3 puts groups AND arrays in the same filename, so here the node type has to be checked —
-    # otherwise a group's `zarr.json` would be handed back as if it described an array.
-    zjson = joinpath(array_dir, "zarr.json")
-    isfile(zjson) || return nothing
-    try
-        m = JSON3.read(read(zjson, String))
-        string(get(m, :node_type, "")) == "array" ? m : nothing
-    catch
-        nothing
-    end
 end
 
 """
@@ -368,20 +253,4 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
     end
 
     result
-end
-
-
-"""Level-0 extent of ONE store by lower-case NGFF axis name (only the axes it has; a label store has no
-`"c"`), either layout and zarr format; empty when unreadable. Unlike `read_ome_metadata` it has X/Y: it
-describes the store passed (`img_filepath(img, vn)` / `img_labels_path(img, vn)`), not the image."""
-function store_axis_sizes(zarr_path::AbstractString)::Dict{String,Int}
-    base = series_base(zarr_path); ms = ngff_multiscales(base)
-    isnothing(ms) && return Dict{String,Int}()
-    axes = [lowercase(string(get(ax, :name, ""))) for ax in get(first(ms), :axes, [])]
-    ds   = get(first(ms), :datasets, [])
-    lvl  = isempty(ds) ? "0" : string(get(first(ds), :path, "0"))
-    path_inside(base, joinpath(base, lvl)) || (lvl = "0")   # the attrs are the file author's text
-    meta = zarr_array_meta(joinpath(base, lvl))
-    shape = isnothing(meta) ? Int[] : collect(Int, get(meta, :shape, []))
-    length(shape) == length(axes) ? Dict(zip(axes, shape)) : Dict{String,Int}()
 end
