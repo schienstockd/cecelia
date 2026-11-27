@@ -809,7 +809,12 @@ function api_gating_pop_tree(req::HTTP.Request)
                         canUndo = _can_undo(proj, image_uid, vn, pt),
                         canRedo = _can_redo(proj, image_uid, vn, pt),
                         authoredLabelsVersion = m.authored_labels_version,
-                        currentLatestLabelsVersion = current_latest))
+                        currentLatestLabelsVersion = current_latest,
+                        # the pops that made this segmentation's tracks: deleting one warns that
+                        # its tracks stop drawing as ribbons (`pop_track_sources`). Flow pops only —
+                        # tracking stamps a flow pop's uid. Cached on the cell table's stamp.
+                        trackSources = pt == "flow" ?
+                            (try pop_track_sources(img, vn) catch; String[] end) : String[]))
 end
 
 # ── GET /api/gating/stats?...&pop=/cd4 ────────────────────────────────────────

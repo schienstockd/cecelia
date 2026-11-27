@@ -238,5 +238,9 @@ end
         @test Set(keys(got)) == Set([gone, "neverX"])
         @test got[gone].path == "/gone" && got[gone].cells == n_of(0)
         @test got["neverX"].path === nothing && got["neverX"].cells == n_of(4)
+        # the population manager's delete warning: every pop uid that authored tracks, gone or not —
+        # never whole-seg or a legacy unmarked row, which no one pop owns
+        @test pop_track_sources(img, "B") == sort([gone, kept, "neverX"])
+        @test pop_track_sources(img, "no-such-seg") == String[]
     end
 end
