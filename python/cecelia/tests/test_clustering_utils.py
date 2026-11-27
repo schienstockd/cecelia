@@ -83,6 +83,20 @@ class TestSplitBackExtraObs(unittest.TestCase):
         self.assertAlmostEqual(float(row1["spatial.comp.Bqc.default"]), 0.8, places=5)
         self.assertAlmostEqual(float(row1["spatial.comp.Tqc.default"]), 0.2, places=5)
 
+        # re-run under the same name with another basis: the previous run's own columns that this
+        # write does not rewrite go; a column the run never owned stays, whatever its name
+        LabelPropsView(paths["B"]).add_obs(pd.DataFrame({"label": [1, 2],
+                                                         "spatial.comp.Bqc.t2.default": [1., 2.]})).save()
+        owned = ["spatial.comp.Bqc.default", "spatial.comp.Tqc.default", "spatial.comp.effective_types.default"]
+        segs2 = [dict(s, ownedCols=owned) for s in segments]
+        comp2 = {"spatial.comp.Mqc.default": X[:, 0], "spatial.comp.Tqc.default": X[:, 1]}
+        split_back_and_write(adata, segs2, "default", col_prefix="regions", extra_obs=comp2)
+        cols = set(LabelPropsView(paths["B"]).as_df().columns)
+        self.assertNotIn("spatial.comp.Bqc.default", cols)
+        self.assertIn("spatial.comp.Tqc.default", cols)
+        self.assertIn("spatial.comp.Mqc.default", cols)
+        self.assertIn("spatial.comp.Bqc.t2.default", cols)
+
 
 if __name__ == '__main__':
     unittest.main()
