@@ -5,7 +5,8 @@ import {
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType, popRefList, segmentationKey,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
-  paramAppliesToImages, resolveParamTip, findParamByKey, clampParamsToSpec } from './paramValues'
+  paramAppliesToImages, paramApplies, resolveParamTip, findParamByKey, clampParamsToSpec } from './paramValues'
+import cellNeighbours from '../../../app/src/tasks/spatialAnalysis/cellNeighbours.json'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 
@@ -1005,5 +1006,55 @@ describe('popRefList — a multi pop picker reads a value saved by the single pi
   it('prefixes a bare path with the form\'s segmentation', () => {
     expect(popRefList('/qc/OTI', 'Tcells')).toEqual(['Tcells/qc/OTI'])
     expect(popRefList('Bcells/qc', 'Tcells')).toEqual(['Bcells/qc'])
+  })
+})
+
+// A section whose every child is ruled out must not render as an empty collapsible — the neighbour
+// graph's "Advanced" holds only `perTimepoint`, which Fixed windows rules out.
+describe('paramApplies — empty sections', () => {
+  const advanced = (cellNeighbours as unknown as TaskDef).params.find(p => p.key === 'advanced')!
+
+  it('hides the neighbour graph Advanced section under Fixed windows', () => {
+    expect(advanced.type).toBe('section')
+    expect(paramApplies(advanced, { neighbourMethod: 'windows' }, undefined)).toBe(false)
+  })
+
+  it('shows it for Delaunay, where its child applies', () => {
+    expect(paramApplies(advanced, { neighbourMethod: 'delaunay' }, undefined)).toBe(true)
+  })
+
+  const leaf = (key: string, extra: Partial<ParamDef> = {}): ParamDef =>
+    ({ key, label: key, type: 'int', default: 0, ...extra }) as ParamDef
+  const section = (key: string, params: ParamDef[], extra: Partial<ParamDef> = {}): ParamDef =>
+    ({ key, label: key, type: 'section', params, ...extra }) as ParamDef
+
+  it('recurses: a section holding only an empty nested section is empty', () => {
+    const outer = section('outer', [section('inner', [leaf('a', { showIf: { mode: 'x' } })])])
+    expect(paramApplies(outer, { mode: 'y' }, undefined)).toBe(false)
+    expect(paramApplies(outer, { mode: 'x' }, undefined)).toBe(true)
+  })
+
+  it('counts every way a child can be ruled out — hidden, showIf, requires.axes', () => {
+    const s = section('s', [
+      leaf('h', { hidden: true }),
+      leaf('t', { requires: { axes: ['T'] } } as Partial<ParamDef>),
+    ])
+    expect(paramApplies(s, {}, [staticImg])).toBe(false)
+    expect(paramApplies(s, {}, [timelapseImg])).toBe(true)
+  })
+
+  it('a section of unconditional children always applies; its own showIf still counts', () => {
+    expect(paramApplies(section('s', [leaf('a')]), {}, undefined)).toBe(true)
+    expect(paramApplies(section('s', [leaf('a')], { showIf: { mode: 'x' } }), { mode: 'y' }, undefined))
+      .toBe(false)
+  })
+
+  it('an empty section is not required-checked: missingRequired agrees', () => {
+    const def = { task: 't', fun_name: 'f.t', label: 'T', category: 'c', env: [], params: [
+      { key: 'mode', label: 'm', type: 'select', default: 'y' },
+      section('s', [leaf('a', { showIf: { mode: 'x' }, required: true } as Partial<ParamDef>)]),
+    ] } as unknown as TaskDef
+    expect(missingRequired(def, { mode: 'y' })).toEqual([])
+    expect(missingRequired(def, { mode: 'x' })).toEqual(['a is required'])
   })
 })
