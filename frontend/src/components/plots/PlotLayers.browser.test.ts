@@ -54,3 +54,46 @@ describe('PlotLayers resize', () => {
     expect(canvas.width).toBe(Math.round(312 * dpr))
   })
 })
+
+// Population positions' "Populations on grey": every cell in the themed dim ink, not the blue-heat
+// density ramp, so the population overlays are the only colour — on screen AND in the export.
+describe('PlotLayers grey base', () => {
+  // the painted pixels' worst channel spread (max - min of r, g, b): ~0 for a grey, large for the ramp
+  function spread(c: HTMLCanvasElement): { painted: number; spread: number } {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
+    let painted = 0, worst = 0
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3]! < 200) continue                       // skip blank and anti-aliased edges
+      painted++
+      worst = Math.max(worst, Math.max(d[i]!, d[i + 1]!, d[i + 2]!) - Math.min(d[i]!, d[i + 1]!, d[i + 2]!))
+    }
+    return { painted, spread: worst }
+  }
+  function mountBase(baseGrey: boolean) {
+    let layers: { exportCanvas: (s: number) => Promise<HTMLCanvasElement | null> } | null = null
+    const host = mountInto({
+      render: () => h('div', { style: 'position:relative;width:200px;height:200px;--cc-text-dim:#888888' }, [
+        h(PlotLayers, { ref: (r: unknown) => { layers = r as typeof layers }, viewExtents: ext, renderMode: 'points',
+                        basePoints: cloud(3000), popLayers: noPops, showPops: false, viewTick: 0, baseGrey }),
+      ]),
+    })
+    return { canvas: host.querySelector('canvas')!, exp: () => layers!.exportCanvas(2) }
+  }
+
+  it('paints every base dot grey, on screen and in the export', async () => {
+    const { canvas, exp } = mountBase(true)
+    await frames()
+    const live = spread(canvas)
+    expect(live.painted).toBeGreaterThan(100)
+    expect(live.spread).toBeLessThan(8)
+    const out = spread((await exp())!)
+    expect(out.painted).toBeGreaterThan(100)
+    expect(out.spread).toBeLessThan(8)
+  })
+
+  it('without it the base keeps its density colours', async () => {
+    const { canvas } = mountBase(false)
+    await frames()
+    expect(spread(canvas).spread).toBeGreaterThan(40)
+  })
+})
