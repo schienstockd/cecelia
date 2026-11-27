@@ -10,6 +10,7 @@
 -->
 <script setup lang="ts">
 import CcToggle from '../../components/CcToggle.vue'
+import { FOLLOW_TIP } from '../../plots/followRule'
 
 defineProps<{
   kind: string                 // the pending gate's kind
@@ -22,7 +23,8 @@ defineProps<{
   addTip?: string              // Add's tooltip (a split: the region names it creates)
 }>()
 const name = defineModel<string>({ default: '' })
-const rule = defineModel<boolean>('rule', { default: false })     // a bisector: follow the density valley
+const rule = defineModel<boolean>('rule', { default: false })     // a bisector: follow the density valley ·
+                                                                  // a rectangle / polygon: follow its cloud
 const emit = defineEmits<{ add: []; cancel: [] }>()
 </script>
 
@@ -36,6 +38,8 @@ const emit = defineEmits<{ add: []; cancel: [] }>()
              :class="{ 'name-invalid': invalid }" @keyup.enter="emit('add')" />
       <CcToggle v-if="kind === 'bisector'" v-model="rule" label="valley"
                 v-tooltip.top="'Cut at the density valley, found per image'" />
+      <CcToggle v-else-if="kind === 'rectangle' || kind === 'polygon'" v-model="rule" label="follow"
+                v-tooltip.top="FOLLOW_TIP" />
       <button class="cc-btn cc-btn-primary" :disabled="addDisabled" @click="emit('add')"
               v-tooltip.top="addTip ?? ''">Add</button>
       <button class="cc-btn cc-btn-ghost cc-btn-icon" aria-label="Cancel" v-tooltip.top="'Cancel'"

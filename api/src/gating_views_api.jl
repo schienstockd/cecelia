@@ -31,22 +31,33 @@ function api_gating_plot_image(req::HTTP.Request)
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT)
+    r = _gate_plot_picture(img, vn, q, x, y, pop,
+                           (m, pt, xt, yt, raw) -> _child_gate_outlines(m, pop, x, y, xt, yt; parent_raw = raw))
+    r isa Tuple && return r
+    200, JSON3.write(r)
+end
+
+# The gate plot of `pop` on this image as a PNG + the numbers that go with it, or an error response
+# (a Tuple). `gates_for(tree, pop_type, xt, yt, parent_raw)` → the outlines to draw (`_gate_outline` dicts
+# with `path` and `colour`). Shared by plot-image (the pop's own child gates) and rule-preview (one gate
+# from another image, where it would land on this one). `map_hook` edits the loaded map first (the
+# preview swaps in the map a copy would write).
+function _gate_plot_picture(img, vn, q, x, y, pop, gates_for; map_hook = nothing)
     pt = read_pop_type(img, vn, pop, "flow")     # cell gates — or `live` for a derived `_tracked` set
     pin = _labels_version_pin(q)                 # the session labels pin, as the browser plot honours it
-    m = _live_map(img, vn, pt; labels_version = pin)
+    m = _live_map(img, vn, pt; labels_version = pin, map_hook)
     (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     xt, yt = _auto_axes(q, img, vn, "flow", x, y, xt, yt; labels_version = pin)   # unparameterised → the channel's own, as on the GUI plot
     rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt; labels_version = pin)
     isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y); labels_version = pin))
-    xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt; labels_version = pin)
+    xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt; labels_version = pin, map_hook)
     # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
     # down the tree keeps the scale; grown to the child gates' near edges, as the browser does
     rx = _finite_extrema(invert_column(xt, rxv)); ry = _finite_extrema(invert_column(yt, ryv))
     xext = (apply_transform(xt, 0.0), apply_transform(xt, float(rx[2])))
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
-    gates = _child_gate_outlines(m, pop, x, y, xt, yt;
-                                 parent_raw = _plot_xy_raw(img, vn, pt, x, y, pop; labels_version = pin))
+    gates = gates_for(m, pt, xt, yt, _plot_xy_raw(img, vn, pt, x, y, pop; labels_version = pin, map_hook))
     gx, gy = _gate_edges(gates)
     # ticks label the data range on an unpadded side, as plotmeta does (`_display_extent`)
     tick_range(t, (lo, hi), r, grew) = (grew[1] ? invert_transform(t, lo) : 0.0, grew[2] ? invert_transform(t, hi) : float(r[2]))
@@ -58,11 +69,65 @@ function api_gating_plot_image(req::HTTP.Request)
     png = render_gate_plot_png(xv, yv, xext, yext,
                                _axis_ticks(xt, xtr[1], xtr[2]), _axis_ticks(yt, ytr[1], ytr[2]),
                                gates; xtitle = xtitle, ytitle = ytitle)
-    200, JSON3.write((;
-        png = base64encode(png), valueName = vn, pop = pop, n = count(isfinite, xv),
-        x = (; channel = x, title = xtitle, transform = transform_spec(xt), extent = [xext[1], xext[2]]),
-        y = (; channel = y, title = ytitle, transform = transform_spec(yt), extent = [yext[1], yext[2]]),
-        gates = gates))
+    (; png = base64encode(png), valueName = vn, pop = pop, n = count(isfinite, xv),
+       x = (; channel = x, title = xtitle, transform = transform_spec(xt), extent = [xext[1], xext[2]]),
+       y = (; channel = y, title = ytitle, transform = transform_spec(yt), extent = [yext[1], yext[2]]),
+       gates = gates)
+end
+
+# ── GET /api/gating/rule-preview ────────────────────────────────────────────────
+# ?projectUid&imageUid&valueName&path&x&y&targets=uid,uid…[&xt…&yt… as plotmeta]
+# → { images: [{ uid, png, n, rule_ok, gates } | { uid, error }] }
+# Where the rule gate at `path` on the source image would land on each target image IF the gating were
+# copied there: the map a copy would write (`plan_gating_copy` — the source's whole tree, its columns
+# pointed at the target's channels of the same name) is evaluated on the target's cells, and the gate is
+# drawn alone on its parent population's plot, on the target's columns for the plot's channels. An image
+# the copy would skip says why. Nothing is written.
+function api_gating_rule_preview(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    puid = get(q, "projectUid", "")
+    src, err = _gating_image(puid, get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(src, get(q, "valueName", ""))
+    path = get(q, "path", ""); x = get(q, "x", ""); y = get(q, "y", "")
+    (isempty(path) || isempty(x) || isempty(y)) && return _gerr(400, "path, x and y required")
+    # the pictures are cell plots (`_gate_plot_picture`): a track gate's rule runs on per-track rows
+    is_track_grained(get(q, "popType", "flow")) && return _gerr(400, "Check images works on cell gating only")
+    pt = Cecelia._stored_pop_type(read_pop_type(src, vn, path, "flow"))   # the map the gate is stored in
+    sm = load_pop_tree(src; value_name = vn, pop_type = pt)
+    has_pop(sm, path) || return _pop_not_found(sm, path)
+    sm.pops[path].gate === nothing && return _gerr(400, "$path has no gate")
+    parent = pop_parent(path)
+    needed = Cecelia._needed_columns(sm); src_names = channel_names(src; value_name = vn)
+    tq = filter(kv -> kv[1] != "labelsVersion", q)    # a labels pin is the source image's, not a target's
+    targets = filter(!isempty, split(get(q, "targets", ""), ','))
+    images = map(targets) do uid
+        img, e = _gating_image(puid, String(uid))
+        e === nothing || return (; uid, error = "Image not found")
+        plan = plan_gating_copy(sm, img; value_name = vn, needed, src_names)   # the source: itself, unmoved
+        plan.skip === nothing || return (; uid, error = "A copy skips this image: $(plan.skip)")
+        tm = plan.tree
+        col = Dict{String,String}(r.from => r.to for r in plan.remapped)
+        tx, ty = get(col, x, x), get(col, y, y)
+        p = tm.pops[path]
+        # the copy's map in place of the one on disk: populations, order and position-gate unit are the
+        # source's; the pixel size stays this image's (it belongs to the image, not the gates)
+        hook = m -> (t = deepcopy(tm); m.pops = t.pops; m.order = t.order; m.uid_index = t.uid_index;
+                     m.spatial_unit = t.spatial_unit; m)
+        r = try
+            _gate_plot_picture(img, vn, tq, tx, ty, parent, (m, pt, xt, yt, raw) -> begin
+                o = _gate_outline(p.gate, tx, ty, xt, yt; parent_raw = raw)
+                o === nothing ? Dict{String,Any}[] : [merge(o, Dict{String,Any}("path" => path, "colour" => p.colour))]
+            end; map_hook = hook)
+        catch ex
+            @warn "rule preview failed" uid exception = (ex, catch_backtrace())
+            return (; uid, error = "Could not draw this image")
+        end
+        r isa Tuple && return (; uid, error = String(JSON3.read(r[2]).error))
+        g = isempty(r.gates) ? nothing : r.gates[1]
+        (; uid, png = r.png, n = r.n, rule_ok = g === nothing ? nothing : get(g, "rule_ok", nothing), gates = r.gates)
+    end
+    200, JSON3.write((; images))
 end
 
 # What to say when a requested axis is not a cell-table column: which one, where it lives instead (a

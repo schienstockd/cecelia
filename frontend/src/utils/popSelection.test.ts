@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { actionEnabled, actionTargets, deleteCount, moveTargetsFor, selectionRoots, sharedParent,
-         MULTI_ACTIONS } from './popSelection'
+import { actionEnabled, actionTargets, deleteArmedTip, deleteCount, deletedTrackPops, moveTargetsFor,
+         selectionRoots, sharedParent, MULTI_ACTIONS } from './popSelection'
 
 // qc ─ C          A ─ A1          B          (viewer pick, transient)
 const pops = [
@@ -65,5 +65,31 @@ describe('actionEnabled', () => {
     expect(actionEnabled('deleteBelow', 3)).toBe(false)
     expect(actionEnabled('delete', 3)).toBe(true)
     expect(actionEnabled('rename', 1)).toBe(true)
+  })
+})
+
+describe('deletedTrackPops / deleteArmedTip', () => {
+  // A made tracks, and so did A1 under it; B did not; a uid no listed pop has is ignored
+  const tp = [
+    { path: '/A', parent: 'root', uid: 'uA', name: 'A' }, { path: '/A/A1', parent: '/A', uid: 'uA1', name: 'A1' },
+    { path: '/B', parent: 'root', uid: 'uB', name: 'B' },
+    { path: '/_pick', parent: 'root', uid: 'uP', name: 'pick', transient: true },
+  ]
+  const src = ['uA', 'uA1', 'uP', 'gone']
+  const paths = (ps: { path: string }[]) => ps.map(p => p.path)
+  it('reaches every track-making pop in each deleted subtree, never a transient one', () => {
+    expect(paths(deletedTrackPops(tp, ['/A'], src))).toEqual(['/A', '/A/A1'])
+    expect(paths(deletedTrackPops(tp, ['/A/A1', '/B'], src))).toEqual(['/A/A1'])
+    expect(deletedTrackPops(tp, ['/B', '/_pick'], src)).toEqual([])
+  })
+  it('"below" leaves the row itself out; no track sources → nothing', () => {
+    expect(paths(deletedTrackPops(tp, ['/A'], src, true))).toEqual(['/A/A1'])
+    expect(deletedTrackPops(tp, ['/A'], [])).toEqual([])
+  })
+  it('says whose tracks stop drawing — its own, one other, or how many', () => {
+    expect(deleteArmedTip([])).toBe('Click again to delete')
+    expect(deleteArmedTip([tp[0]], '/A')).toBe('Click again — its tracks stop drawing as ribbons')
+    expect(deleteArmedTip([tp[1]], '/A')).toBe("Click again — A1's tracks stop drawing as ribbons")
+    expect(deleteArmedTip([tp[0], tp[1]], '/A')).toBe("Click again — 2 populations' tracks stop drawing")
   })
 })

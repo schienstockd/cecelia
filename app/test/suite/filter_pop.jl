@@ -19,6 +19,23 @@
     @test Cecelia._comp_col(Cecelia.DIVERSITY_NAME, "s") == "spatial.comp.effective_types.s"   # the runner test writes this name
 end
 
+@testset "region run owns its recorded columns (re-run drops the old basis')" begin
+    mktempdir() do d
+        props = joinpath(d, "T.h5ad")
+        fixed = ["spatial.comp.other.x", "spatial.comp.cells_per_window.x", "spatial.comp.effective_types.x"]
+        @test Cecelia._region_owned_cols(props, "x") === nothing          # no record of the run
+        Cecelia.put_props_sidecar_entry!(Cecelia._clustfeatures_path(props), "x",   # legacy family-less key
+            Dict{String,Any}("features" => ["CD4"], "partOf" => ["u1"]))
+        @test Cecelia._region_owned_cols(props, "x") === nothing          # a cell clustering's, not this run's
+        Cecelia._write_clust_features!(props, "x", ["spatial.comp.B.x", "spatial.comp.other.x"], ["u1"];
+                                       family = "regions")
+        # a dotted sibling run and a cell clustering of the same name are not this run's
+        Cecelia._write_clust_features!(props, "t2.x", ["spatial.comp.B.t2.x"], ["u1"]; family = "regions")
+        Cecelia._write_clust_features!(props, "x", ["CD4"], ["u1"]; family = "clusters")
+        @test Cecelia._region_owned_cols(props, "x") == vcat(["spatial.comp.B.x"], fixed)
+    end
+end
+
 @testset "compound filter populations (Decision 15 — AND-ed conditions)" begin
     # a user-defined filter pop combining two obs conditions in ONE pop: CD4>0.5 AND speed>5
     m = PopulationTree(pop_type="flow", value_name="B")
