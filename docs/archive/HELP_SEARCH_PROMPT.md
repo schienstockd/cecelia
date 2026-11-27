@@ -1,7 +1,7 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
 > time. It is not a description of how the code works now, and not instructions to re-run. Current
 > design lives in [`docs/todo/HELP_SEARCH_PLAN.md`](../todo/HELP_SEARCH_PLAN.md), written from
-> this banner (H1 built 2026-11-27: guides in the jump search), and in [`docs/todo/GUIDE_SYSTEM_PLAN.md`](../todo/GUIDE_SYSTEM_PLAN.md),
+> this banner (H1 + H2 built 2026-11-27: guides in the jump search, an Ask Kiwi row on a miss), and in [`docs/todo/GUIDE_SYSTEM_PLAN.md`](../todo/GUIDE_SYSTEM_PLAN.md),
 > [`docs/todo/GUI_LAYOUT_PLAN.md`](../todo/GUI_LAYOUT_PLAN.md) (M8) and
 > [`docs/todo/CONTEXTUAL_HINTS_PLAN.md`](../todo/CONTEXTUAL_HINTS_PLAN.md).
 >

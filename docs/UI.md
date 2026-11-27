@@ -1377,7 +1377,7 @@ One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six he
 **Learn** (Guides, Feature maturity, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
 the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
 `.cc-actions-menu`. The rest of the header: the project crumb on the left, then, right-aligned, the **jump search** (`JumpSearch.vue`, Ctrl K:
-pages, guides, task functions, images), the viewer chip, the lab-log button, **Ask Kiwi** and the avatar
+pages, guides, task functions, images; nothing found → an "Ask Kiwi" row), the viewer chip, the lab-log button, **Ask Kiwi** and the avatar
 menu (`components/ProfileMenu.vue`: switch profile, Preferences, Restart backend (dev), Log out, Quit).
 Launchers sit right of the spacer, never after the crumb: a long project name must not move them.
 The version and the connection sit at the right end of the console bar; the connection shows only when

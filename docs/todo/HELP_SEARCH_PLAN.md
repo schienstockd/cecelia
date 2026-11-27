@@ -1,6 +1,6 @@
 # Help search — find a guide from the jump search
 
-**Status:** **H1 built** (2026-11-27). H2 not built. The plan was reviewed 2026-11-27 by a fresh agent
+**Status:** **H1 and H2 built** (2026-11-27). The rest is parked (*Not built* below). The plan was reviewed 2026-11-27 by a fresh agent
 against the code, and H1 and H2 below include its fixes. Brief:
 [`docs/archive/HELP_SEARCH_PROMPT.md`](../archive/HELP_SEARCH_PROMPT.md). Read its banner first: most of
 what the brief asks for already exists in the guide system.

@@ -3,7 +3,8 @@
   or image…", Ctrl K / ⌘ K from anywhere. A page opens it; a guide starts it, so "capture movie" shows
   the controls (docs/todo/HELP_SEARCH_PLAN.md); a task function opens its page with the
   function picked (the same `cc-fn:<module>` pre-selection TaskRunner's "When to use" links use); an
-  image switches to its set and opens it in the viewer. Matching + ranking: utils/jumpSearch.ts.
+  image switches to its set and opens it in the viewer. Nothing found → one "Ask Kiwi" row that puts the
+  text in Kiwi's question box, unsent (H2; with a project open and AI on). Matching + ranking: utils/jumpSearch.ts.
 -->
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
@@ -23,6 +24,7 @@ import { useGuideStore } from '../stores/guide'
 import { useObserverStore } from '../stores/observer'
 import { guidesByGroup } from '../lib/guides'
 import { guideGroupsFor } from '../utils/aiSwitch'
+import { useKiwiStore } from '../stores/kiwi'
 import { moveHighlight } from '../utils/suggestInput'
 
 const router = useRouter()
@@ -32,6 +34,7 @@ const taskDefs = useTaskDefsStore()
 const customModules = useCustomModulesStore()
 const guide = useGuideStore()
 const observer = useObserverStore()
+const kiwi = useKiwiStore()
 
 const query = ref('')
 const open = ref(false)
@@ -57,8 +60,19 @@ watch(query, q => { open.value = !!q.trim() })
 
 const KIND_ICON: Record<JumpHit['kind'], string> = { page: 'pi-arrow-right', guide: 'pi-compass', function: 'pi-cog', image: 'pi-image' }
 
+// nothing matched: offer the question to Kiwi (no model call until the user sends it there)
+const canAsk = computed(() => !hits.value.length && projectMeta.hasProject && observer.ai.enabled)
+function close() {
+  query.value = ''
+  open.value = false
+  input.value?.blur()
+}
+function askKiwi() {
+  if (kiwi.askText(query.value)) close()
+}
+
 function go(h: JumpHit | undefined) {
-  if (!h) return
+  if (!h) { if (canAsk.value) askKiwi(); return }
   if (h.kind === 'page' && h.route) void router.push(h.route)
   else if (h.kind === 'guide' && h.guideId) guide.start(h.guideId)
   else if (h.kind === 'function' && h.fn) {
@@ -68,9 +82,7 @@ function go(h: JumpHit | undefined) {
     project.activeSetUid = h.image.setUid
     openViewerWindow({ projectUid: projectMeta.current?.uid ?? '', imageUid: h.image.uid })
   }
-  query.value = ''
-  open.value = false
-  input.value?.blur()
+  close()
 }
 
 function onKey(e: KeyboardEvent) {
@@ -79,7 +91,7 @@ function onKey(e: KeyboardEvent) {
   else if (e.key === 'ArrowUp') { e.preventDefault(); active.value = moveHighlight(active.value, -1, hits.value.length) }
   else if (e.key === 'Enter') { e.preventDefault(); go(hits.value[active.value]) }
   // Esc is consumed here, so the maximised canvas's lowest-priority Esc does not also fire
-  else if (e.key === 'Escape') { e.preventDefault(); query.value = ''; open.value = false; input.value?.blur() }
+  else if (e.key === 'Escape') { e.preventDefault(); close() }
 }
 
 function onGlobalKey(e: KeyboardEvent) {
@@ -109,7 +121,11 @@ useWindowListener('keydown', onGlobalKey)
         <span class="jump-label">{{ h.label }}</span>
         <span class="jump-sub cc-muted cc-fs-xs">{{ h.sub }}</span>
       </button>
-      <div v-if="!hits.length" class="cc-actions-head">Nothing matches</div>
+      <button v-if="canAsk" class="cc-actions-item jump-on" role="option" aria-selected="true" @click="askKiwi()">
+        <i class="pi pi-comments" />
+        <span class="jump-label">Ask Kiwi: “{{ query.trim() }}”</span>
+      </button>
+      <div v-else-if="!hits.length" class="cc-actions-head">Nothing matches</div>
     </div>
   </TeleportPopover>
 </template>
