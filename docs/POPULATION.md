@@ -1027,10 +1027,25 @@ position follows.
   the shape's own width / height: the stored position stands, the outline carries `rule_ok: false` and is
   drawn dashed. A gate jumping to a neighbouring cloud would be worse than one that stayed put.
 
-On the plot: a double-click inside a selected rectangle / polygon switches it between staying put and
-following (`plots/followRule.ts`); off, it stays where the rule last moved it. Hovering its body writes
-what it does beside the cursor (`followTip`). Plotmeta resolves it on the displayed parent's (x, y)
-values, swapped when the gate's axes are (`_child_gate_outlines`).
+On the plot: the naming bar of a new rectangle / polygon has a **follow** switch, and a selected one shows
+the same switch in the panel's population row (GateOverlay reports its selection, `select`; the switch is
+marked `data-keeps-gate-selection` so pressing it keeps the gate selected) — or a double-click inside it
+switches it (`plots/followRule.ts`);
+off, it stays where the rule last moved it. Hovering its body writes what it does beside the cursor
+(`followTip`). Plotmeta resolves it on the displayed parent's (x, y) values, swapped when the gate's axes
+are (`_gate_outline`), from one density pass (`resolve_with_flags`), and sends `rule_peak` — the peak it
+found, in display coordinates (`project_point`) — which the selected gate marks with a cross: on the image
+it was saved on that is its anchor, so a cross on the wrong cloud says it locked onto a neighbour.
+
+**Check images** (beside the switch, once the gate follows) shows where it lands on every image of the set before it
+is copied there (`modules/gate/RulePreviewDialog.vue` → `GET /api/gating/rule-preview`). Each image
+evaluates the map the copy would write (`plan_gating_copy`, which `copy_gating!` writes): the source's
+whole tree, anchor included, its columns pointed at that image's channels of the same name — so the gate
+lands on the cells the source's parent gates select there, not on whatever that image has now. It is
+drawn alone on the image's gate-plot picture, dashed where it found no cloud, the peak crossed where it
+did; an image the copy would skip (no segmentation, channels that don't match, an uncalibrated image for
+a µm position gate) says why. Nothing is written. Cell gating only — its pictures are cell plots, and a track gate's rule runs on per-track rows. The picture is `plot-image`'s (`_gate_plot_picture`), which also dashes a missed rule and crosses
+a peak (white over dark, so it reads on the dense core), so the agent's `gate_plot` shows the same.
 
 ## Undo / redo
 

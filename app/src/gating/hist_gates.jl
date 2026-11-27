@@ -184,6 +184,8 @@ resolve_gate(g::Gate, xraw, yraw) = g
 resolve_gate(g::HistGate, xraw::AbstractVector, yraw) = resolve_gate(g, xraw)
 rule_flags(g::Gate, xraw, yraw) = Dict{String,Any}()
 rule_flags(g::HistGate, xraw::AbstractVector, yraw) = rule_flags(g, xraw)
+# both at once, for a display (a follow rule computes its density once — follow_rule.jl)
+resolve_with_flags(g::Gate, xraw, yraw) = (resolve_gate(g, xraw, yraw), rule_flags(g, xraw, yraw))
 
 const VALLEY_GRID = 512        # density evaluation points, at least (more when the span needs them)
 const VALLEY_GRID_MAX = 1 << 16

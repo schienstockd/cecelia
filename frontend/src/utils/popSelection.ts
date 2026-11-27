@@ -23,7 +23,7 @@ export const SINGLE_ONLY_TIP = 'One population at a time'
 
 export const actionEnabled = (action: PopAction, count: number) => count <= 1 || MULTI_ACTIONS.has(action)
 
-interface PopLike { path: string; parent: string; transient?: boolean }
+interface PopLike { path: string; parent: string; transient?: boolean; uid?: string }
 
 /** `paths` minus every path whose ancestor is also in it — what a bulk action acts on directly. */
 export function selectionRoots(paths: readonly string[]): string[] {
@@ -66,4 +66,29 @@ export function sharedParent(pops: readonly PopLike[], selected: readonly string
 export function deleteCount(pops: readonly PopLike[], selected: readonly string[]): number {
   const roots = selectionRoots(selected)
   return pops.filter(p => !p.transient && roots.some(r => isInSubtree(p.path, r))).length
+}
+
+/**
+ * The populations deleting `selected` (each with everything below it) takes that made tracks — their
+ * uid is a `track_source` (`trackSources`, from `pop_track_sources`). The tracks stay in the cell
+ * table, but no population draws them as ribbons until the next tracking run, so the armed delete says
+ * so. `below` = only what sits under each selected row ("Delete N below it").
+ */
+export function deletedTrackPops<P extends PopLike>(pops: readonly P[], selected: readonly string[],
+                                                    trackSources: readonly string[], below = false): P[] {
+  if (!trackSources.length) return []
+  const src = new Set(trackSources)
+  const roots = selectionRoots(selected)
+  return pops.filter(p => !p.transient && !!p.uid && src.has(p.uid) &&
+    roots.some(r => isInSubtree(p.path, r) && !(below && p.path === r)))
+}
+
+/** The armed delete's hover: what clicking again does — and that tracks stop drawing, when they do.
+ *  `menuPath` = the row the menu is on: its own tracks read "its tracks". */
+export function deleteArmedTip(trackPops: readonly { name: string; path: string }[], menuPath?: string): string {
+  if (!trackPops.length) return 'Click again to delete'
+  if (trackPops.length === 1 && trackPops[0].path === menuPath) return 'Click again — its tracks stop drawing as ribbons'
+  return trackPops.length === 1
+    ? `Click again — ${trackPops[0].name}'s tracks stop drawing as ribbons`
+    : `Click again — ${trackPops.length} populations' tracks stop drawing`
 }

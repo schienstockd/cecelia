@@ -153,12 +153,17 @@ _track_motility_cols(img, vn) = (p = img_track_props_path(img, vn);
 # handed to the package as a `map_hook`. `nothing` on a track-grained pop_type (the pick never applies
 # there, see `_inject_pick_pop!`), which keeps those reads cacheable.
 _pick_hook(img, pop_type) = is_track_grained(pop_type) ? nothing : (m -> _inject_pick_pop!(m, img))
+# a caller's hook first, then the pick selection's
+function _with_pick_hook(img, pop_type, hook)
+    pick = _pick_hook(img, pop_type)
+    hook === nothing ? pick : pick === nothing ? hook : (m -> (hook(m); pick(m)))
+end
 
 # load + recompute a map (membership ready) — `computed_pop_tree` plus the pick selection.
 # `labels_version` is the P3b session pin (`nothing` = follow `_latest`).
-_live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing) =
+_live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing, map_hook=nothing) =
     computed_pop_tree(img; value_name = vn, pop_type = pop_type, labels_version = labels_version,
-                     map_hook = _pick_hook(img, pop_type))
+                     map_hook = _with_pick_hook(img, pop_type, map_hook))
 
 # The pop_type a read route evaluates `pop` under: the package's `read_pop_type` over the request's
 # `popType` (absent = discover from the path). So a derived `_tracked` set — what tracking makes and
@@ -266,8 +271,8 @@ _axis_unit(img, vn, pop_type, col)::String =
         SPATIAL_UNIT_PX : "µm")
 
 # x/y in the gates' unit — the point cloud, the whole-dataset extents that drive the ticks, density.
-_plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version=nothing) =
-    _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], pop; labels_version = labels_version))
+_plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version=nothing, map_hook=nothing) =
+    _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], pop; labels_version, map_hook))
 
 # x/y are all-or-nothing: ONE of them missing means there is nothing to plot, and returning a full
 # vector beside an empty one would index past the end of the short one (a 500) in every consumer.
@@ -279,15 +284,18 @@ _xy_pair(v) = (isempty(v[1]) || isempty(v[2])) ? (Float64[], Float64[]) : (v[1],
 # added here. An image with no cell table yet (not segmented, or a segmentation still running while
 # the gate plot polls) reads as every column empty — the same answer as a column the table lacks —
 # rather than letting `label_props` throw a 500 on every plot request.
-function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing)
+# `map_hook` edits the loaded map before the pick selection is added (the rule preview swaps in the map a
+# copy would write).
+function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing,
+                        map_hook=nothing)
     _has_label_props(img) || return [Float64[] for _ in cols]
     pop_plot_cols(img, pop_type, pop, cols; value_name = vn, labels_version = labels_version,
-                  map_hook = _pick_hook(img, pop_type))
+                  map_hook = _with_pick_hook(img, pop_type, map_hook))
 end
 
 # transformed Float32 vectors for plotdata/plotmeta
-function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
-    xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version = labels_version)
+function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing, map_hook=nothing)
+    xv, yv = _plot_xy_raw(img, vn, pop_type, x, y, pop; labels_version, map_hook)
     Float32.(transform_column(xt, xv)), Float32.(transform_column(yt, yv))
 end
 
@@ -811,7 +819,12 @@ function api_gating_pop_tree(req::HTTP.Request)
                         canUndo = _can_undo(proj, image_uid, vn, pt),
                         canRedo = _can_redo(proj, image_uid, vn, pt),
                         authoredLabelsVersion = m.authored_labels_version,
-                        currentLatestLabelsVersion = current_latest))
+                        currentLatestLabelsVersion = current_latest,
+                        # the pops that made this segmentation's tracks: deleting one warns that
+                        # its tracks stop drawing as ribbons (`pop_track_sources`). Flow pops only —
+                        # tracking stamps a flow pop's uid. Cached on the cell table's stamp.
+                        trackSources = pt == "flow" ?
+                            (try pop_track_sources(img, vn) catch; String[] end) : String[]))
 end
 
 # ── GET /api/gating/stats?...&pop=/cd4 ────────────────────────────────────────
@@ -991,7 +1004,8 @@ end
 # `parent_raw` = the displayed population's RAW values on the plot's (x, y) channels, when the caller has
 # them: a rule gate (a valley-following bisector or range end, a cloud-following shape) is shown where its
 # rule puts it on those cells — the same cells `recompute!` resolves it on — and says whether each rule
-# found its valley / cloud (`rule_flags`). A gate drawn with the axes swapped reads them swapped.
+# found its valley / cloud (`rule_flags`), and a following shape where its peak is (`rule_peak`, display
+# coordinates). A gate drawn with the axes swapped reads them swapped.
 function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw = nothing, valley = Cecelia.valley_cut)
     gates = Dict{String,Any}[]
     # one transformed parent column per rule transform and one valley search per window, across the
@@ -1001,28 +1015,44 @@ function _child_gate_outlines(m::PopulationTree, pop, x, y, xt, yt; parent_raw =
     for cpath in direct_children(m, pop)
         p = m.pops[cpath]
         p.gate === nothing && continue
-        g, flags = p.gate, nothing
-        if Cecelia.needs_parent_data(g) && parent_raw !== nothing
-            px, py = parent_raw
-            gxy = (g.x_channel, g.y_channel) == (x, y) ? (px, py) :
-                  (g.x_channel, g.y_channel) == (y, x) ? (py, px) : nothing
-            if gxy !== nothing && g isa Cecelia.HistGate
-                key = (String(g.x_channel), transform_key(g.x_transform))
-                v = get!(() -> transform_column(g.x_transform, gxy[1]), vcols, key)
-                memo(v, lo, hi; adjust) = get!(() -> valley(v, lo, hi; adjust), searches, (key..., lo, hi, adjust))
-                g, flags = Cecelia.resolve_rules(g, v; valley = memo)
-            elseif gxy !== nothing
-                flags = Cecelia.rule_flags(g, gxy...)
-                g = Cecelia.resolve_gate(g, gxy...)
-            end
+        g = p.gate
+        gxy = parent_raw === nothing || !Cecelia.needs_parent_data(g) ? nothing :
+              (g.x_channel, g.y_channel) == (x, y) ? parent_raw :
+              (g.x_channel, g.y_channel) == (y, x) ? reverse(parent_raw) : nothing
+        pj = if gxy !== nothing && g isa Cecelia.HistGate
+            key = (String(g.x_channel), transform_key(g.x_transform))
+            v = get!(() -> transform_column(g.x_transform, gxy[1]), vcols, key)
+            memo(v, lo, hi; adjust) = get!(() -> valley(v, lo, hi; adjust), searches, (key..., lo, hi, adjust))
+            rg, flags = Cecelia.resolve_rules(g, v; valley = memo)
+            o = project_gate(rg, x, y, xt, yt)
+            o === nothing ? nothing : merge!(o, flags)
+        else
+            _gate_outline(g, x, y, xt, yt; parent_raw)        # a following shape: one density, its peak
         end
-        pj = project_gate(g, x, y, xt, yt)
         pj === nothing && continue
-        flags === nothing || merge!(pj, flags)
         pj["path"] = cpath; pj["colour"] = p.colour
         push!(gates, pj)
     end
     gates
+end
+
+# One gate's outline on this (x, y) plot, resolved on `parent_raw` (see above); `nothing` off these axes.
+function _gate_outline(g::Gate, x, y, xt, yt; parent_raw = nothing)
+    flags = nothing
+    if Cecelia.needs_parent_data(g) && parent_raw !== nothing
+        px, py = parent_raw
+        gxy = (g.x_channel, g.y_channel) == (x, y) ? (px, py) :
+              (g.x_channel, g.y_channel) == (y, x) ? (py, px) : nothing
+        gxy === nothing || ((g, flags) = Cecelia.resolve_with_flags(g, gxy...))
+        if flags !== nothing && haskey(flags, "rule_peak")   # gate coordinates → the plot's
+            pk = project_point(g, x, y, xt, yt, flags["rule_peak"])
+            pk === nothing ? delete!(flags, "rule_peak") : (flags["rule_peak"] = pk)
+        end
+    end
+    pj = project_gate(g, x, y, xt, yt)
+    pj === nothing && return nothing
+    flags === nothing || merge!(pj, flags)
+    pj
 end
 
 # ── GET /api/gating/plotmeta ──────────────────────────────────────────────────

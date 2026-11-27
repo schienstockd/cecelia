@@ -91,10 +91,16 @@ end
 # What one clustering run owns on one table: `(obs columns, obsm keys)` to drop. Pure, so the
 # ownership rules are unit-tested without writing embeddings. `shared` = the OTHER family (cell
 # clusters ↔ regions) has this suffix on the same cell table, so the `X_umap.{suffix}` stays.
-function _clust_run_keys(family, table, s, cols, shared::Bool)
+# `owned` = a region run's columns from its record (`_region_owned_cols`); run and population names may
+# both hold dots, so the record says which `spatial.comp.*` columns are this run's, not the name.
+function _clust_run_keys(family, table, s, cols, shared::Bool; owned = nothing)
     drops = ["$family.$s"]
-    # region composition columns `spatial.comp.{pop}.{suffix}` belong to the region run
-    family == "regions" && append!(drops, [c for c in cols if startswith(c, "spatial.comp.") && endswith(c, ".$s")])
+    if family == "regions"
+        append!(drops, owned === nothing ?
+            # a run with no record (written before records existed): fall back to the name
+            [c for c in cols if startswith(c, "spatial.comp.") && endswith(c, ".$s")] :
+            [c for c in cols if c in owned])
+    end
     embeds = shared ? String[] : ["X_umap.$s"]
     # a track cluster run's behaviour axes: path position + diffusion embedding (never shared)
     if family == "clusters" && table === :track
@@ -112,7 +118,8 @@ function _clust_delete!(img, run, family, table, fun; on_log = _ -> nothing)
         isfile(p) || continue
         cols   = _run_obs_cols(p)
         shared = "$other.$s" in cols
-        drops, embeds = _clust_run_keys(family, table, s, cols, shared)
+        owned  = family == "regions" ? _region_owned_cols(p, s) : nothing
+        drops, embeds = _clust_run_keys(family, table, s, cols, shared; owned = owned)
         on_log("[INFO] $(run.label): dropping $(join(drops, ", ")) from $(basename(p))")
         label_props(p) |> drop_obs(drops) |> drop_obsm(embeds) |> save!
         # the legacy family-less sidecar key matches every family — only take it when nothing else uses it
