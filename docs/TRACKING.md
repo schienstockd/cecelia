@@ -846,6 +846,15 @@ Phase 3 shipped 2026-08-20.
   by default; the draw spec's `dimUntracked` lists the segmentations it applies to, and a recording
   dims the same dots (`_overlay_parts`, `api/src/overlay_author.jl`). Each ribbon row reads
   `tracked / gated` cells (`trackedLabelCount`). `docs/todo/TRACK_SUBPOP_GATING_PLAN.md` Decision 9.
+- **Ribbons by sub-population.** Two Tracks colour modes for a flow population with sub-populations:
+  *sub-population* paints each hop in its arriving cell's sub-population colour (the raw flicker; a
+  cell in two takes the first, in none the `trackMixed` grey), *dominant sub-population* paints a
+  whole track in its class colour (`track_classes`, docs/POPULATION.md → *Track class*; grey =
+  mixed). The viewer reads `GET /api/gating/track-classes` per drawn ribbon and maps it onto rows
+  (`stepRgbFor`, `utils/viewer/trackClass.ts`); a recording reads the same server functions
+  (`_step_colours`, `api/src/overlay_author.jl`). Under each ribbon row the mode shows the level picker
+  (only when deeper sub-populations exist) and, for the dominant mode, the threshold and `% mixed`;
+  both are stored on the population (`trackClass`), so a movie and the plots follow them.
 - **Tail fade.** A ribbon fades by age, as napari and Imaris draw tracks: the hop arriving at the
   frame on screen is solid, older hops fade to a floor (`TAIL_ALPHA_FLOOR`) over the tail length,
   so a tail shows which way the cell went. One rule for the viewer and every movie:

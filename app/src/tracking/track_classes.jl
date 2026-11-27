@@ -155,3 +155,33 @@ function track_class_summary(r)
     total = nrow(r.table)
     (; counts, mixed, total, mixed_pct = total == 0 ? NaN : 100 * mixed / total)
 end
+
+"""
+    track_step_children(img; value_name, parent, level = nothing) -> (; children, step)
+
+Each tracked cell of `parent`'s sub-populations, keyed `(track_id, frame)` → the index (into
+`children`) of the first sub-population holding it — the per-step ("sub-population") ribbon colour.
+A step whose cell is in none is absent; a step two sub-populations share (overlapping gates, or two
+cells of one track in one frame) takes the first in `children` order.
+"""
+function track_step_children(img::CciaImage; value_name::Union{AbstractString,Nothing} = nothing,
+                             parent::AbstractString, level::Union{Integer,Nothing} = nothing)
+    vn = resolve_value_name(img, value_name)
+    m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+    par = is_root(parent) ? ROOT : String(parent)
+    (par == ROOT || has_pop(m, par)) || error("track_step_children: population not found: $parent")
+    lv = something(level, track_class_settings(par == ROOT ? nothing : m.pops[par]).level)
+    kids = track_class_children(m, par; level = lv)
+    step = Dict{Tuple{Int,Int},Int}()
+    (isempty(kids) || !is_tracked(img; value_name = vn)) && return (; children = kids, step)
+    df = pop_df(img, "flow", kids; value_name = vn, pop_cols = ["track_id", "centroid_t"], unique_labels = false)
+    nrow(df) == 0 && return (; children = kids, step)
+    order = Dict(k => j for (j, k) in enumerate(kids))
+    for i in 1:nrow(df)
+        t = df.track_id[i]; f = df.centroid_t[i]
+        (t isa Real && isfinite(t) && t > 0 && f isa Real && isfinite(f)) || continue
+        key = (Int(t), Int(round(f))); j = order[df.pop[i]]
+        step[key] = min(get(step, key, j), j)
+    end
+    (; children = kids, step)
+end

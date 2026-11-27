@@ -746,7 +746,7 @@ export function buildTrackBuffer(
  *  because a JSON import comes in as `string[]`; the parity test in `palettes.test.ts` asserts the
  *  array matches the union so a JSON edit that adds/removes/renames a mode still fails a test
  *  rather than silently mismatching the type. */
-export type TrackColorMode = 'track' | 'speed' | 'solid' | 'pop' | 'cell'
+export type TrackColorMode = 'track' | 'speed' | 'solid' | 'pop' | 'cell' | 'subpop' | 'class'
 export const TRACK_COLOR_MODES: readonly TrackColorMode[] =
   palettesJson.trackColorModes as readonly TrackColorMode[]
 
@@ -781,6 +781,9 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  *   state, a cluster, a measure), so a ribbon changes colour where the cell's state changes. Same scale as the points (`scale`, the
  *   pooled one), so a ribbon and its dot agree. A source with no colour-by values (per-vn tracks,
  *   track clusters, or no Colour by picked) falls back to its `'pop'` colour.
+ * - `'subpop'` / `'class'`: the source's `stepRgb(row, track id)` — its population's sub-population per
+ *   step, or the track's class (`utils/viewer/trackClass.ts` → `stepRgbFor`); a source without one
+ *   falls back to its `'pop'` colour.
  *
  * IDs are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in payload A's track
  * 1 never links to a cell in payload B's track 1 — a naive concat would draw a phantom segment.
@@ -791,6 +794,7 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
 export function buildMultiTrackBuffer(
   payloads: readonly {
     vn: string; payload: OverlayPayload; colour?: string; popColour?: string
+    stepRgb?: ((row: number, track: number) => [number, number, number]) | null
   }[],
   meta: ViewerMeta | null, palette: readonly string[], mode: TrackColorMode = 'track',
   /** `'cell'` only: the points' colour-by scale and categorical palette, so ribbons match the dots */
@@ -881,6 +885,10 @@ export function buildMultiTrackBuffer(
     const f = byValue[b.source]
     return f ? f(b.row) : popRgb(b.source)
   }
+  const stepRgb = (b: Row): [number, number, number] => {
+    const f = payloads[b.source]?.stepRgb
+    return f ? f(b.row, b.raw) : popRgb(b.source)
+  }
   const speedRgb = (speedSq: number): [number, number, number] => {
     if (!speedRange || speedSpan <= 0) return [0.9, 0.9, 0.9]
     const s = Math.sqrt(speedSq)
@@ -896,6 +904,7 @@ export function buildMultiTrackBuffer(
               : mode === 'solid' ? solidRgb(s.source)
               : mode === 'pop' ? popRgb(s.source)
               : mode === 'cell' ? cellRgb(b)
+              : mode === 'subpop' || mode === 'class' ? stepRgb(b)
               : trackRgb(a.raw)
     const o = n * SEG_STRIDE
     data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
@@ -931,6 +940,7 @@ export function buildMultiTrackBuffer(
     // ('cell' is one colour only for a source with no colour-by values — it draws its pop colour)
     drawn: mode === 'solid' ? (p.colour ?? (palette.length ? palette[i % palette.length] : WHITE))
          : mode === 'pop' || (mode === 'cell' && !byValue[i])
+           || ((mode === 'subpop' || mode === 'class') && !p.stepRgb)
            ? (p.popColour ?? (palette.length ? palette[i % palette.length] : WHITE))
          : null,
   })).filter(s => s.count > 0)
