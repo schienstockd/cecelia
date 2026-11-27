@@ -43,11 +43,10 @@ import SelectionTable, { type SelectionColumn } from '../../components/Selection
 import FlowModelDetails from './FlowModelDetails.vue'
 import DenoiseModelDetails from './DenoiseModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { useVaultScope } from '../../composables/useVaultModel'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { errorMessage, getJson, postJson, tryApi } from '../../utils/api'
 import { useProjectStore } from '../../stores/project'
-import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useAppControlStore } from '../../stores/appControl'
 import { useSettingsStore } from '../../stores/settings'
 import {
   vaultInScope, vaultMatchesQuery, vaultUserLabel, vaultProjectLabel, vaultOriginGroup,
@@ -136,17 +135,11 @@ function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)}
 
 // ── Scope + search ───────────────────────────────────────────────────────────
 const settings    = useSettingsStore()
-const projectMeta = useProjectMetaStore()
-const appControl  = useAppControlStore()
+const vaultScope  = useVaultScope()
 const query       = ref('')   // transient, like the Task Manager's
 
-const shown = computed(() => {
-  const scope = {
-    profile: appControl.activeProfileName, projectUid: projectMeta.current?.uid,
-    otherUsers: settings.vaultOtherUsers, otherProjects: settings.vaultOtherProjects,
-  }
-  return models.value.filter(m => vaultInScope(m, scope) && vaultMatchesQuery(m, query.value))
-})
+const shown = computed(() =>
+  models.value.filter(m => vaultInScope(m, vaultScope.value) && vaultMatchesQuery(m, query.value)))
 const hiddenCount = computed(() => models.value.length - shown.value.length)
 
 const COLUMNS = computed<SelectionColumn[]>(() => [

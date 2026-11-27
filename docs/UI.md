@@ -2572,6 +2572,11 @@ preference, not two). Options with no vault row (`None`, a model this chain will
 headings. Hiding is a view only: validation still accepts every option, and the selected model stays
 listed even out of scope. Rule + tests: `vaultPickerLayout` in `utils/vaultScope.ts`.
 
+A training task's **model name** box (`valueNameInput` over a vault — `flowModels`, `denoiseModels`)
+is `VaultNameInput`: the same scope and View button on its suggestions. Only suggestions narrow — the
+vault is global, so a name an out-of-scope model holds is still accented as existing (`existingOptions`
+on `SuggestInput`). Rule + tests: `vaultNamesInScope`.
+
 The **Analysis board** has no such toggle: its rail is always shown and swaps by the active slot's
 `rail` (`docs/ANALYSIS.md` → *The rail*).
 

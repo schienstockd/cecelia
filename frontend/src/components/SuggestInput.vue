@@ -43,6 +43,7 @@ const props = defineProps<{
   separator?: string           // set for a multi-value field, e.g. "," for tags
   inputClass?: string          // the caller's own input styling; each surface has its own
   markExisting?: boolean       // accent the field when the value names something that EXISTS
+  existingOptions?: string[]   // what `markExisting` checks, when more exists than is offered (a scoped vault)
 }>()
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
@@ -72,7 +73,7 @@ const matches = computed(() =>
     : showAll.value ? available.value : filterSuggestions(available.value, query.value))
 /** Whether what is typed names something that EXISTS — the reuse vs create distinction. */
 const existing = computed(() =>
-  props.markExisting === true && isExistingOption(allOptions.value, query.value))
+  props.markExisting === true && isExistingOption(props.existingOptions ?? allOptions.value, query.value))
 
 // The popover is positioned from the input's rect but sized by its content, so a one-word suggestion
 // under a wide field looks detached. Match the input's width instead.
