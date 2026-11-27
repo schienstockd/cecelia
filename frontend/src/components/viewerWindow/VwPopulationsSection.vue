@@ -150,7 +150,7 @@ const popLabels = computed(() => props.layers.map(l => {
         <div class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
           <input
-            type="range" class="vw-grow" :min="2" :max="24" :step="1"
+            type="range" class="vw-grow" :min="1" :max="30" :step="1"
             :value="pointSize" @input="emit('update:pointSize', Number(($event.target as HTMLInputElement).value)); emit('redraw')"
             v-tooltip.bottom="'Marker size in image pixels — scales with zoom'"
           >

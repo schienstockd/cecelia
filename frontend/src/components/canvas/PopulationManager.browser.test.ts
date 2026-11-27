@@ -13,16 +13,16 @@ const node = (name: string, children: PopNode[] = []): PopNode =>
   ({ name, colour: '#888', show: true, uid: name, children,
      gate: { kind: 'rectangle', x_channel: 'a', y_channel: 'b', x_min: 0, x_max: 1, y_min: 0, y_max: 1 } as never })
 
-function mount() {
+function mount(popType = 'flow') {
   let g!: GatingStore
   const picked: string[] = []
   const host = mountInto(defineComponent({
     setup() {
-      g = provideGatingStore('flow')
-      g.tree = { value_name: 'default', pop_type: 'flow',
+      g = provideGatingStore(popType as never)
+      g.tree = { value_name: 'default', pop_type: popType,
                  populations: [node('qc'), node('A', [node('A1')]), node('B'), node('C')] }
       return () => h(PopulationManager, { selected: '', highlighted: [], scope: 'global', lineWidth: 1,
-        gateLabels: true, axisFromZero: true, docked: true, 'onUpdate:selected': (p: string) => picked.push(p) })
+        gateLabels: true, axisFromZero: true, docked: true, popType, 'onUpdate:selected': (p: string) => picked.push(p) })
     },
   }))
   const movePops = vi.fn(async () => true), deletePops = vi.fn(async () => true)
@@ -104,4 +104,29 @@ describe('PopulationManager multi-selection', () => {
     expect(deletePop).toHaveBeenCalledWith('/C')
     expect(deletePops).not.toHaveBeenCalled()
   })
+})
+
+// Viewer controls live in the viewer (its Populations section sets the same per-set point size); the
+// picker's Options are the PLOT's. A "viewer" point-size slider here was a napari-era leftover.
+describe('PopulationManager options carry no viewer controls', () => {
+  const optionLabels = async (host: HTMLElement) => {
+    const toggle = [...host.querySelectorAll<HTMLElement>('.cs-toggle')].find(t => /Options/.test(t.textContent ?? ''))
+    if (!toggle) return null
+    toggle.click(); await frames()
+    return [...host.querySelectorAll<HTMLElement>('.pm-opt-label, .pm-opt-head')].map(e => e.textContent?.trim())
+  }
+  it('gating: the plot options only — no viewer point size', async () => {
+    const { host } = mount('flow'); await frames()
+    const labels = await optionLabels(host)
+    expect(labels).toContain('Dot size')
+    expect(labels).not.toContain('Point size')
+    expect(labels).not.toContain('viewer')
+  })
+  for (const popType of ['clust', 'region']) {
+    it(`${popType} clustering: no Options section at all (nothing plot-side to set)`, async () => {
+      const { host } = mount(popType); await frames()
+      expect(await optionLabels(host)).toBeNull()
+      expect(host.textContent).not.toContain('Point size')
+    })
+  }
 })
