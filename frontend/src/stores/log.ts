@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { profileStorage } from '../utils/profileStorage'
+import { getJson, tryApi } from '../utils/api'
 import { ref, computed } from 'vue'
 import {
   DEFAULT_GROUPS, gapBefore, logGroup, restoreGroups, storeGroups,
@@ -124,12 +125,13 @@ export const useLogStore = defineStore('log', () => {
     if (repairing) return
     repairing = true
     try {
-      const res = await fetch(`/api/logs/recent?since=${since}`)
-      if (!res.ok) return
-      const body = await res.json() as {
+      // quiet: a failed backfill must not log into the log it is filling
+      const r = await tryApi(getJson<{
         ringId?: string
         logs: { seq?: number; level?: string; message?: string; detail?: string; source?: string; ts?: string }[]
-      }
+      }>('/api/logs/recent', { query: { since }, quiet: true }))
+      if (!r.ok || !r.data) return
+      const body = r.data
       // A different ring means a restarted backend: its seq numbers overlap ours but mean nothing in
       // common, so the cursor and the de-dup set both have to be abandoned rather than trusted. The
       // entries themselves stay — they are history, and the restart is the interesting part of it.

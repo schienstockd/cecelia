@@ -25,7 +25,7 @@ flowchart LR
   runner["runner<br/><small>5 files · 1.4k lines</small>"]
   cell_data["cell data<br/><small>4 files · 2.4k lines</small>"]
   gating["gating<br/><small>23 files · 6.3k lines</small>"]
-  tracking_spatial["tracking+spatial<br/><small>15 files · 4.5k lines</small>"]
+  tracking_spatial["tracking+spatial<br/><small>15 files · 4.6k lines</small>"]
   qc_checks["qc+checks<br/><small>8 files · 4.9k lines</small>"]
   plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
   ai_lab_log["ai+lab log<br/><small>21 files · 5.2k lines</small>"]
@@ -55,6 +55,7 @@ flowchart LR
   scheduler_chains -->|15| model
   ai_lab_log -->|14| config
   scheduler_chains -->|14| config
+  tracking_spatial -->|14| gating
 ```
 
 ## API server → package (`api/src` → `app/src`)
@@ -79,7 +80,7 @@ flowchart LR
     runner["runner<br/><small>5 files · 1.4k lines</small>"]
     cell_data["cell data<br/><small>4 files · 2.4k lines</small>"]
     gating["gating<br/><small>23 files · 6.3k lines</small>"]
-    tracking_spatial["tracking+spatial<br/><small>15 files · 4.5k lines</small>"]
+    tracking_spatial["tracking+spatial<br/><small>15 files · 4.6k lines</small>"]
     qc_checks["qc+checks<br/><small>8 files · 4.9k lines</small>"]
     plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
     hpc["hpc<br/><small>9 files · 2.5k lines</small>"]
@@ -94,8 +95,8 @@ flowchart LR
   api__routes -->|30| qc_checks
   api__rendering -->|29| model
   api__routes -->|29| scheduler_chains
+  api__routes -->|28| tracking_spatial
   api__routes -->|27| task_framework
-  api__routes -->|26| tracking_spatial
   api__server_ws -->|25| config
   api__server_ws -->|20| runner
   api__rendering -->|19| gating
@@ -150,7 +151,7 @@ Both directions present (any n). In one module these are legal, but each pair is
 | cell data ↔ gating | 2: `gating_path`, `is_track_grained` | 16: `_split_channel_column`, `as_df`, `axis_of`, `canonical_channel_columns`, … |
 | cell data ↔ tracking+spatial | 2: `corrections_dir`, `roi_suffixes_on` | 20: `_agg_suffix`, `_channel_label`, `_var_measure_set`, `as_df`, … |
 | cell data ↔ qc+checks | 2: `qc_finding`, `write_qc` | 2: `centroid_columns`, `label_props` |
-| gating ↔ tracking+spatial | 5: `is_tracked`, `track_aggregate_base`, `track_aggregate_measures`, `track_name_sets`, … | 11: `_clustfeatures_entry`, `_clustfeatures_features`, `_clustfeatures_part_of`, `_coerce_filter_fun`, … |
+| gating ↔ tracking+spatial | 7: `_track_class_mask`, `is_tracked`, `track_aggregate_base`, `track_aggregate_measures`, … | 14: `_clustfeatures_entry`, `_clustfeatures_features`, `_clustfeatures_part_of`, `_coerce_filter_fun`, … |
 | gating ↔ qc+checks | 6: `_cohort_outliers`, `cohort_value_names`, `qc_finding`, `qc_path`, … | 12: `_gate_canon`, `_split_pop_ref`, `gate_shape_spec`, `gating_qc!`, … |
 | tracking+spatial ↔ plots+boards | 3: `_catkey`, `_finite`, `_ordered_cats` | 7: `_is_categorical_col`, `_is_var_measure`, `approach_cell_col`, `approach_track_col`, … |
 | qc+checks ↔ ai+lab log | 1: `append_lab_log!` | 8: `_read_qc_file`, `all_qc_docs`, `cohort_qc_summary_lines`, `qc_fun_dir`, … |
@@ -186,8 +187,8 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **runner** | 4 | 1 | 13 |  | 18 | 2 |  | · |  |  |  |  |  |  |  | 1 | 6 |  |
 | **python bridge** |  |  | 7 | 2 |  | 1 |  |  | · |  |  |  |  |  | 1 |  |  |  |
 | **cell data** | 20 |  | 7 | 10 | 1 | 1 |  |  | 2 | · | 2 | 2 | 2 |  |  |  |  |  |
-| **gating** | 18 |  | 12 | 4 |  |  |  |  |  | 16 | · | 5 | 6 |  |  |  |  |  |
-| **tracking+spatial** | 16 |  | 1 |  |  |  | 8 |  |  | 20 | 11 | · | 1 | 3 |  |  |  |  |
+| **gating** | 18 |  | 12 | 4 |  |  |  |  |  | 16 | · | 7 | 6 |  |  |  |  |  |
+| **tracking+spatial** | 16 |  | 1 |  |  |  | 8 |  |  | 20 | 14 | · | 1 | 3 |  |  |  |  |
 | **qc+checks** | 17 |  | 5 | 4 | 3 | 4 | 4 |  |  | 2 | 12 |  | · |  |  | 1 |  |  |
 | **plots+boards** | 39 |  | 7 | 4 | 2 | 5 | 8 |  | 2 | 10 | 31 | 7 | 7 | · |  | 5 |  |  |
 | **hpc** | 2 | 1 | 12 | 1 | 4 | 1 | 1 |  | 3 |  |  |  |  |  | · |  |  |  |
@@ -197,7 +198,7 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **api: server+ws** | 8 | 7 | 25 | 2 | 12 | 2 |  | 20 |  |  |  |  |  |  |  | 3 | 6 |  |
 | **api: rendering** | 29 | 4 | 15 |  | 3 |  | 5 |  | 1 | 10 | 19 | 12 |  |  |  |  |  |  |
 | **api: claude+kiwi** | 7 | 5 | 17 | 5 |  | 3 |  |  |  | 4 | 5 | 1 |  | 5 |  | 47 |  |  |
-| **api: routes** | 79 | 12 | 57 | 4 | 29 | 27 | 10 | 5 | 3 | 13 | 126 | 26 | 30 | 31 | 15 | 31 | 1 |  |
+| **api: routes** | 79 | 12 | 57 | 4 | 29 | 27 | 10 | 5 | 3 | 13 | 126 | 28 | 30 | 31 | 15 | 31 | 1 |  |
 
 </details>
 

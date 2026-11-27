@@ -2,6 +2,9 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import { computed, ref } from 'vue'
 import { useSettingsStore } from './settings'
 import type { ViewProfile } from '../utils/viewProfiles'
+import { getJson, postJson, refusalMessage } from '../utils/api'
+
+const _refusal = (e: unknown) => refusalMessage(e, 'Could not reach the server.')
 
 // View profiles — a curated sidebar (docs/todo/VIEW_PROFILES_PLAN.md).
 //
@@ -45,8 +48,7 @@ export const useViewProfilesStore = defineStore('viewProfiles', () => {
     loading.value = true
     const p = (async () => {
       try {
-        const res = await fetch('/api/profiles')
-        if (res.ok) apply(await res.json())
+        apply(await getJson<Parameters<typeof apply>[0]>('/api/profiles'))
       } catch { /* ignore — leave last-known state; a missing profile just means the full menu */ }
       finally { loadedOnce = true }
     })()
@@ -74,36 +76,25 @@ export const useViewProfilesStore = defineStore('viewProfiles', () => {
     Promise<{ profile?: ViewProfile; error?: string }> {
     saving.value = true
     try {
-      const res = await fetch('/api/profiles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label, items, ...(id ? { id } : {}) }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) return { error: data?.error || 'Could not save the profile.' }
+      const data = await postJson<{ profile?: ViewProfile } | null>('/api/profiles/save',
+        { label, items, ...(id ? { id } : {}) })
       await refresh()
-      return { profile: data.profile as ViewProfile }
-    } catch {
-      return { error: 'Could not reach the server.' }
+      return { profile: data?.profile }
+    } catch (e) {
+      return { error: _refusal(e) }
     } finally { saving.value = false }
   }
 
   async function remove(id: string): Promise<{ ok: boolean; error?: string }> {
     saving.value = true
     try {
-      const res = await fetch('/api/profiles/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) return { ok: false, error: data?.error || 'Could not delete the profile.' }
+      await postJson('/api/profiles/delete', { id })
       // Deleting the active profile falls back to All rather than leaving a dangling selection.
       if (settings.viewProfile === id) settings.viewProfile = ALL_PROFILE_ID
       await refresh()
       return { ok: true }
-    } catch {
-      return { ok: false, error: 'Could not reach the server.' }
+    } catch (e) {
+      return { ok: false, error: _refusal(e) }
     } finally { saving.value = false }
   }
 

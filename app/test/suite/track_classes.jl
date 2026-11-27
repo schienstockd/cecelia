@@ -102,9 +102,81 @@ end
             @test !isempty(want) && st.step == want
             @test isempty(track_step_children(img; value_name = vn, parent = "/all/big").step)   # no sub-populations
             @test_throws ErrorException track_step_children(img; value_name = vn, parent = "/nope")
+
+            # a stored "mostly <child>" pop holds the parent's cells of exactly the tracks `track_classes`
+            # calls that child
+            m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+            add_pop!(m, "mostly big"; parent = "/all", track_class_of = "/all/big")
+            save_pop_tree!(m, img)
+            r = track_classes(img; value_name = vn, parent = "/all", threshold = 0.9)   # the stored 0.9
+            big = Set(r.table.track_id[r.table.class .== "/all/big"])
+            want_cells = Set(l for (l, t) in zip(Cecelia.as_df(Cecelia.select_cols(Cecelia.label_props(img; value_name = vn), ["track_id"])).label, frames.track_id)
+                             if t isa Real && isfinite(t) && Int(t) in big)
+            got = Set(pop_df(img, "flow", ["$vn/all/mostly big"]).label)
+            @test got == want_cells
+            # its own tracks are exactly those
+            @test nrow(r.table) == nrow(track_classes(img; value_name = vn, parent = "/all").table)   # not a sub-population
         finally
             old === nothing ? delete!(Cecelia.cecelia_conf()["dirs"], "projects") :
                               (Cecelia.cecelia_conf()["dirs"]["projects"] = old)
         end
     end
+end
+
+# "mostly <child>" (Decision 7): a stored pop under the tracked parent whose cells are the parent's cells
+# whose TRACK is classed as that child. Expected memberships worked out by hand from the definition.
+@testset "mostly <child> — membership from the track class" begin
+    #            track 1: v = 1 1 1 9  → A 3/4 → A          track 2: v = 1 9 → tie → mixed
+    #            track 3: v = 9 9 9    → B 3/3 → B          label 10: untracked, v = 1
+    df = DataFrame(label = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                   v = [1.0, 1, 1, 9, 1, 9, 9, 9, 9, 1],
+                   track_id = [1.0, 1, 1, 1, 2, 2, 3, 3, 3, NaN])
+    m = PopulationTree(pop_type = "flow", value_name = "x")
+    add_pop!(m, "P"; gate = RectangleGate("v", "v", -1e9, 1e9, -1e9, 1e9))
+    add_pop!(m, "A"; parent = "/P", gate = RectangleGate("v", "v", -1e9, 5, -1e9, 1e9))
+    add_pop!(m, "B"; parent = "/P", gate = RectangleGate("v", "v", 5, 1e9, -1e9, 1e9))
+    # added BEFORE the children it reads: the evaluation order must still put them first
+    m2 = deepcopy(m)
+    add_pop!(m, "mostly A"; parent = "/P", track_class_of = "/P/A")
+    add_pop!(m, "mostly B"; parent = "/P", track_class_of = "/P/B")
+    recompute!(m, _ -> df)
+    @test cells_in_pop(m, "/P/mostly A") == [1, 2, 3, 4]       # every cell of track 1, the flicker too
+    @test cells_in_pop(m, "/P/mostly B") == [7, 8, 9]
+    # the mostly pops are not sub-populations of P
+    @test Cecelia.track_class_children(m, "/P") == ["/P/A", "/P/B"]
+    # a stricter threshold: track 1 (0.75) drops out of mostly A
+    m.pops["/P"].track_class = Dict{String,Any}("threshold" => 0.8)
+    recompute!(m, _ -> df)
+    @test isempty(cells_in_pop(m, "/P/mostly A")) && cells_in_pop(m, "/P/mostly B") == [7, 8, 9]
+    # the threshold is part of what the map digest hashes, so a cached read re-evaluates
+    m.pops["/P"].track_class = nothing
+    d1 = Cecelia._map_digest(m)
+    m.pops["/P"].track_class = Dict{String,Any}("threshold" => 0.8)
+    @test Cecelia._map_digest(m) != d1
+    # a rename of the child rewrites the reference; the file round-trips it
+    m.pops["/P"].track_class = nothing
+    rename_pop!(m, "/P/A", "Alo")
+    @test m.pops["/P/mostly A"].track_class_of == "/P/Alo"
+    m3 = Cecelia.from_tree(JSON3.read(JSON3.write(Cecelia.to_tree(m)), Dict{String,Any}))
+    recompute!(m3, _ -> df)
+    @test cells_in_pop(m3, "/P/mostly A") == [1, 2, 3, 4]
+    # deleting the child is refused like a boolean term's: the mostly pop names it
+    @test boolean_dependents(m, ["/P/Alo"]) == ["/P/mostly A" => ["/P/Alo"]]
+    @test isempty(boolean_dependents(m, ["/P/Alo", "/P/mostly A"]))
+    # a level change on the parent does not empty pops made at another level: with A split in two and
+    # the parent at level 2, mostly A still classes among level 1 (A 3/4 on track 1)
+    add_pop!(m, "lo"; parent = "/P/Alo", gate = RectangleGate("v", "v", -1e9, 5, -1e9, 1e9))
+    add_pop!(m, "x"; parent = "/P/Alo", gate = RectangleGate("v", "v", 100, 200, -1e9, 1e9))
+    m.pops["/P"].track_class = Dict{String,Any}("level" => 2)
+    recompute!(m, _ -> df)
+    @test cells_in_pop(m, "/P/mostly A") == [1, 2, 3, 4]
+    # …and a pop made at level 2 classes among level 2 (track 1: lo 3/4 → lo)
+    add_pop!(m, "mostly lo"; parent = "/P", track_class_of = "/P/Alo/lo")
+    m.pops["/P"].track_class = nothing                        # back to level 1: mostly lo keeps level 2
+    recompute!(m, _ -> df)
+    @test cells_in_pop(m, "/P/mostly lo") == [1, 2, 3, 4] && cells_in_pop(m, "/P/mostly A") == [1, 2, 3, 4]
+    # a reference that is gone → no members, a warning, never a crash
+    add_pop!(m2, "mostly Z"; parent = "/P", track_class_of = "/P/Z")
+    @test_logs (:warn,) match_mode = :any recompute!(m2, _ -> df)
+    @test isempty(cells_in_pop(m2, "/P/mostly Z"))
 end

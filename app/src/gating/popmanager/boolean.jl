@@ -61,6 +61,13 @@ function _pop_deps(m::PopulationTree, path::AbstractString)::Vector{String}
     is_root(p.parent) || push!(deps, p.parent)
     p.boolean_pops === nothing || append!(deps, p.boolean_pops)
     p.boolean_not  === nothing || append!(deps, p.boolean_not)
+    # a "mostly <child>" pop needs every sub-population its parent's tracks are classed among — at
+    # whichever level it reads (`_class_level_for`), so every level's
+    if p.track_class_of !== nothing
+        for l in 1:track_class_max_level(m, p.parent)
+            append!(deps, track_class_children(m, p.parent; level = l))
+        end
+    end
     deps
 end
 
@@ -80,16 +87,18 @@ function boolean_cycle(m::PopulationTree, path::AbstractString, refs)::Bool
     false
 end
 
-"""Populations OUTSIDE `targets` whose boolean definition references something inside it — i.e. what
-would be left dangling by deleting `targets`. Returns `dependent path => referenced paths`."""
+"""Populations OUTSIDE `targets` whose definition references something inside it by path — a boolean's
+terms, a "mostly <child>" pop's child (`track_class_of`) — i.e. what would be left dangling by deleting
+`targets`. Returns `dependent path => referenced paths`."""
 function boolean_dependents(m::PopulationTree, targets)::Vector{Pair{String,Vector{String}}}
     tset = Set(String[String(t) for t in targets])
     out = Pair{String,Vector{String}}[]
     for path in m.order
         path in tset && continue
         pop = m.pops[path]
-        pop.boolean_op === nothing && continue
-        refs = [something(pop.boolean_pops, String[]); something(pop.boolean_not, String[])]
+        pop.boolean_op === nothing && pop.track_class_of === nothing && continue
+        refs = [something(pop.boolean_pops, String[]); something(pop.boolean_not, String[]);
+                pop.track_class_of === nothing ? String[] : [pop.track_class_of]]
         hit = [r for r in refs if r in tset]
         isempty(hit) || push!(out, path => hit)
     end
@@ -117,7 +126,7 @@ whole map down.
 """
 function topo_order(m::PopulationTree)::Vector{String}
     base = sort(m.order; by = p -> count(==('/'), p), alg = MergeSort)
-    any(m.pops[p].boolean_op !== nothing for p in base) || return base
+    any(m.pops[p].boolean_op !== nothing || m.pops[p].track_class_of !== nothing for p in base) || return base
     done = Set{String}()
     out = String[]
     remaining = base

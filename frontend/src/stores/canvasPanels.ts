@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import type { CanvasItem } from '../composables/useCanvasPanels'
 import { debouncedSave } from '../utils/debouncedSave'
+import { postJson } from '../utils/api'
 
 // Persisted canvas state, keyed per canvas (e.g. `summary:behaviourAnalysis`, `gate:flow`). Lives in
 // a store rather than the component so the open plots SURVIVE navigating away from and back to a
@@ -98,10 +99,8 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
       if (_lastSaved[obj] !== s) { changed[obj] = d; _lastSaved[obj] = s }
     }
     if (Object.keys(changed).length === 0) return   // nothing actually changed → no request
-    await fetch('/api/projects/canvases', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, objects: changed }),
-    }).catch(() => {})
+    await postJson('/api/projects/canvases', { projectUid: uid, objects: changed })
+      .catch(() => { /* autosave is best-effort; the client logged the failure */ })
   }, { wait: 400 })
 
   // Restore from disk. Merges module-page keys (never clobbers the board or in-session non-module keys),

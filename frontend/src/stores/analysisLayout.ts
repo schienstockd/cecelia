@@ -6,6 +6,7 @@ import { relBoardKey, rekeyBoards } from '../utils/boardKeys'
 import { boardsPayload, tabGroupOf, shouldReloadBoards, type BoardsDoc } from '../utils/boardDoc'
 import { shortId } from '../utils/id'
 import { debouncedSave } from '../utils/debouncedSave'
+import { ApiError, getJson, postJson, tryApi } from '../utils/api'
 import type { ParamsSnapshot } from '../utils/boardProvenance'
 
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
@@ -119,9 +120,8 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   // as stale, and another client's `boards:changed`.
   async function reloadBoards(uid: string) {
     const groupKey = `analysis:${uid}`
-    const res = await fetch(`/api/projects/boards?projectUid=${encodeURIComponent(uid)}`).catch(() => null)
-    if (!res?.ok) return false
-    const body = await res.json().catch(() => null) as { boards?: BoardsDoc } | null
+    const r = await tryApi(getJson<{ boards?: BoardsDoc } | null>('/api/projects/boards', { query: { projectUid: uid } }))
+    const body = r.ok ? r.data : null
     if (!body?.boards) return false
     useAnalysisTabsStore().load(groupKey, tabGroupOf(body.boards) as never)
     load(groupKey, body.boards.layouts as never)
@@ -142,12 +142,13 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
     const s = JSON.stringify(boards)
     if (_boardLastSaved[uid] === s) return   // nothing changed → no request
     _boardLastSaved[uid] = s
-    const res = await fetch('/api/projects/boards', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, boards, version: versionOf(uid), clientId: _clientId }),
-    }).catch(() => null)
-    if (!res) return
-    if (res.status === 409) {
+    let saved: { version?: number } | null
+    try {
+      // quiet on 409: a stale version is resolved below (reload + its own warning)
+      saved = await postJson<{ version?: number } | null>('/api/projects/boards',
+        { projectUid: uid, boards, version: versionOf(uid), clientId: _clientId }, { quiet: [409] })
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 409)) return   // logged by the client; autosave is best-effort
       // Another client (or tab) wrote since we loaded. Take THEIR document rather than overwrite
       // it — this whole file is one blob, so "retry with our copy" would just move the clobber one
       // step later and lose their boards instead of ours. The debounced edit that lost the race is
@@ -160,10 +161,7 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
       }
       return
     }
-    if (res.ok) {
-      const body = await res.json().catch(() => null) as { version?: number } | null
-      if (typeof body?.version === 'number') setVersion(uid, body.version)
-    }
+    if (typeof saved?.version === 'number') setVersion(uid, saved.version)
   }, { wait: 800 })
   // A VIEW-ONLY session (the headless board render, modules/BoardRenderView.vue) shows boards without
   // owning them: panels settle their own state on first render (a resolved segmentation, a default

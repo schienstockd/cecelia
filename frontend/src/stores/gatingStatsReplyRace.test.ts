@@ -24,12 +24,12 @@ describe('fetchStats on the edit reply', () => {
         const b = JSON.parse(init!.body!) as { path: string; gate: { x_min: number } }
         gates[b.path] = b.gate.x_min
         const t = tree(gates['/A'], gates['/B'])
-        return Promise.resolve({ ok: true, json: async () => ({ tree: t }) })
+        return Promise.resolve(new Response(JSON.stringify({ tree: t }), { status: 200 }))
       }
       const pop = decodeURIComponent(/pop=([^&]+)/.exec(url)![1])
       // answered when released, with the count AS SAVED NOW (the edit landed before the request)
       const count = gates[pop] * 100
-      return new Promise(res => pending.push(() => res({ ok: true, json: async () => ({ count, pctParent: 0 }) })))
+      return new Promise(res => pending.push(() => res(new Response(JSON.stringify({ count, pctParent: 0 }), { status: 200 }))))
     }))
     setActivePinia(createPinia())
     const ws = useWsStore()

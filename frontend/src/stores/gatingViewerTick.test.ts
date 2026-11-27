@@ -21,8 +21,8 @@ async function setup() {
   vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null,
                                   setItem: (k: string, v: string) => { store.set(k, v) }, removeItem: (k: string) => { store.delete(k) } })
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} })
-  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { method?: string }) => ({
-    ok: true, json: async () => init?.method === 'POST' ? { tree: reply } : { count: 1, pctParent: 0 } })))
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { method?: string }) =>
+    new Response(JSON.stringify(init?.method === 'POST' ? { tree: reply } : { count: 1, pctParent: 0 }), { status: 200 })))
   setActivePinia(createPinia())
   const ws = useWsStore()
   vi.spyOn(ws, 'on').mockImplementation(() => {}); vi.spyOn(ws, 'off').mockImplementation(() => {})

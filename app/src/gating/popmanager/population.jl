@@ -67,6 +67,10 @@ mutable struct Population
     # `threshold`, `level` — `track_class_settings`, app/src/tracking/track_classes.jl). `nothing` =
     # the defaults; stored here so a change re-stamps the map like any gate edit.
     track_class::Union{Dict{String,Any},Nothing}
+    # A "mostly <child>" population (`trackClassOf`): the parent's cells whose TRACK's class is this
+    # sub-population (`track_classes`) — its path, rewritten on a rename like a boolean term. Evaluated
+    # by `recompute!` (`_track_class_mask`, app/src/tracking/track_classes.jl). `nothing` otherwise.
+    track_class_of::Union{String,Nothing}
 end
 
 # ── PopulationTree (a tree for one value_name) ────────────────────────────────────

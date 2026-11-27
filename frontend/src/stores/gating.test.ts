@@ -18,7 +18,7 @@ describe('per-canvas gating store', () => {
     // no DOM in this suite (frontend/CLAUDE.md): the log store listens on window, the store's fetches
     // are irrelevant here (stats) — stub both to inert
     vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} })
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({}), { status: 500 })))
     setActivePinia(createPinia())
     const ws = useWsStore()
     pushHandlers = []

@@ -79,7 +79,7 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | Area | Routes | Julia side | Vue | MCP | Python | preview | No caller |
 |---|---|---|---|---|---|---|---|
 | `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  |  |
-| `/api/gating` | 29 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 19 | 2 | 1 |  |  |
+| `/api/gating` | 30 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 19 | 2 | 1 |  |  |
 | `/api/images` | 24 | `api/src/image_geometry.jl`, `api/src/routes/image.jl` +4 | 18 | 2 |  |  |  |
 | `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  |  |
 | `/api/notebooks` | 17 | `api/src/notebooks_api.jl` | 4 | 1 |  |  |  |

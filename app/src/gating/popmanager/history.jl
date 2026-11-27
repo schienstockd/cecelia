@@ -58,6 +58,7 @@ function _pop_own_defn(p::Population)::Dict{String,Any}
     p.boolean_op === nothing || (d["boolean"] = boolean_spec(p))
     p.is_track && (d["is_track"] = true)
     p.explicit_labels === nothing || (d["labels"] = sort(p.explicit_labels))
+    p.track_class_of === nothing || (d["trackClassOf"] = p.track_class_of)
     d
 end
 

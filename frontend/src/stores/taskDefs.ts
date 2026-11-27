@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import type { TaskDef } from '../tasks/types'
+import { getJson } from '../utils/api'
 
 // A session-long label/identity index of the task definitions — fetched ONCE, never refetched.
 // It deliberately holds no `params`: their `optionsFrom` options (flow-model vault, cellpose
@@ -29,9 +30,7 @@ export const useTaskDefsStore = defineStore('taskDefs', () => {
     if (byFn.value.size > 0) return
     loading ??= (async () => {
       try {
-        const res = await fetch('/api/tasks/definitions')
-        if (!res.ok) return
-        byFn.value = summarizeTaskDefs(await res.json() as Record<string, TaskDef[]>)
+        byFn.value = summarizeTaskDefs(await getJson<Record<string, TaskDef[]>>('/api/tasks/definitions'))
       } catch { /* ignore — caller falls back to fn name */ }
       finally { loading = null }
     })()

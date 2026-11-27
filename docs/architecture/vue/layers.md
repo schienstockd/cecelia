@@ -33,9 +33,9 @@ flowchart LR
   modules -->|128| components__flat_
   modules -->|104| stores
   components_plots -->|98| plots
+  stores -->|82| utils__flat_
   composables -->|76| utils__flat_
   modules -->|68| composables
-  stores -->|67| utils__flat_
   components__flat_ -->|66| lib__flat_
   components_canvas -->|66| utils__flat_
   components__flat_ -->|60| composables
@@ -77,7 +77,7 @@ flowchart LR
 | **lib/webgpu** |  |  |  |  |  |  |  |  |  |  |  | · |  |  |  |  | 26 |  |
 | **modules** |  | 128 | 1 | 39 |  | 11 | 14 | 68 |  | 15 |  | 3 | · | 48 | 104 | 19 | 169 | 23 |
 | **plots** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | · |  |  | 14 | 1 |
-| **stores** | 1 |  |  |  |  |  |  | 4 |  | 11 | 4 |  |  | 2 | · |  | 67 | 5 |
+| **stores** | 1 |  |  |  |  |  |  | 4 |  | 11 | 4 |  |  | 2 | · |  | 82 | 5 |
 | **tasks** |  | 20 | 1 |  |  |  |  | 6 |  | 7 |  |  |  |  | 20 | · | 51 | 1 |
 | **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 10 | 8 | · | 1 |
 | **utils/viewer** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | 1 | 11 |  | 29 | · |
@@ -86,14 +86,14 @@ flowchart LR
 
 ## Where the backend is called
 
-Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` or an `EventSource`: **111** of 836. HTTP calls go through `utils/api.ts` (status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.
+Files that call the backend (a bare `fetch(` or a `utils/api.ts` shape), open a `WebSocket` or an `EventSource`: **108** of 836. HTTP calls go through `utils/api.ts` (status checked, failures logged); a bare `fetch(` is a call not moved onto it yet.
 
 | Group | Files |
 |---|---|
 | utils (flat) | 25 |
 | components (flat) | 20 |
 | modules | 15 |
-| stores | 15 |
+| stores | 12 |
 | components/plots | 11 |
 | composables | 10 |
 | components/canvas | 4 |
