@@ -12,7 +12,7 @@
 // Pure (no Vue) so the grouping, the sketch fallback and the search are unit-tested.
 
 import { isPlotSketchKind, type PlotSketchKind } from './plotSketchArt'
-import { matchesQuery } from '../utils/textQuery'
+import { matchesWords } from '../utils/textQuery'
 
 export const PLOT_CATEGORIES = [
   { id: 'compare',  label: 'Compare groups',        blurb: 'A measure per population, image or treatment' },
@@ -82,15 +82,12 @@ const SYNONYMS: Record<string, string[]> = {
 }
 
 /**
- * Does `o` match the search `query`? The house search rule (`utils/textQuery.ts` → `matchesQuery`:
- * every word, case-insensitive, over label + question), applied per word so a word can also be met by
- * one of its synonyms, and filler words ("mean", "between") never hide a match — "mean velocity
- * between treatments" finds Track measures.
+ * Does `o` match the search `query`? The house per-word rule (`utils/textQuery.ts` → `matchesWords`)
+ * over label + question: a word can also be met by one of its synonyms, and filler words ("mean",
+ * "between") never hide a match — "mean velocity between treatments" finds Track measures.
  */
 export function matchesPlotQuery(o: PlotOption, query: string): boolean {
-  const fields = [o.label, o.answers]
-  return query.toLowerCase().split(/\s+/).filter(Boolean).every(w =>
-    STOP_WORDS.has(w) || [w, ...(SYNONYMS[w] ?? [])].some(t => matchesQuery(fields, t)))
+  return matchesWords([o.label, o.answers], query, { stop: STOP_WORDS, synonyms: SYNONYMS, onlyFiller: 'all' })
 }
 const STOP_WORDS = new Set(['mean', 'median', 'average', 'plot', 'graph', 'chart', 'between', 'the', 'of',
   'per', 'by', 'and', 'a', 'in', 'vs', 'compare', 'comparison', 'treatments', 'treatment', 'groups'])

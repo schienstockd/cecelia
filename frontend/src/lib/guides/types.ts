@@ -161,6 +161,9 @@ export interface GuideDef {
   // ('Data' | 'Populations' | 'Explore' | 'Analysis' | 'Pipeline').
   group: string
   summary: string             // one line in the picker
+  // Words a user would type for this that are not in the title ("capture", "video" for Record a
+  // movie). The header jump search matches title + keywords (utils/jumpSearch.ts), not the summary.
+  keywords?: string[]
   icon: string                // an icon class, e.g. 'pi-th-large'
   prereqs: Prereq[]
   steps: GuideStep[]

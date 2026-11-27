@@ -1133,6 +1133,8 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
 
 The in-app answer to "can you send me a screencast": **Help ▾ → Guides** in the header opens
 `GuidesDialog.vue` (on the active set's next step, `GuideNextStep.vue`; every guide behind "Browse all guides"), and starting a guide puts a bubble beside the real control, on the user's own data.
+The header's jump search also starts one: "capture movie" finds *Record a movie* through its title and
+`keywords` (`GuideDef.keywords` — words a user would type that the title lacks; `utils/jumpSearch.ts`).
 Design + locked decisions: `docs/todo/GUIDE_SYSTEM_PLAN.md`.
 
 **The one rule: a guide POINTS AND OBSERVES.** It never clicks, selects, navigates or runs anything.
@@ -1375,7 +1377,7 @@ One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six he
 **Learn** (Guides, Feature maturity, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
 the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
 `.cc-actions-menu`. The rest of the header: the project crumb on the left, then, right-aligned, the **jump search** (`JumpSearch.vue`, Ctrl K:
-pages, task functions, images), the viewer chip, the lab-log button, **Ask Kiwi** and the avatar
+pages, guides, task functions, images), the viewer chip, the lab-log button, **Ask Kiwi** and the avatar
 menu (`components/ProfileMenu.vue`: switch profile, Preferences, Restart backend (dev), Log out, Quit).
 Launchers sit right of the spacer, never after the crumb: a long project name must not move them.
 The version and the connection sit at the right end of the console bar; the connection shows only when
