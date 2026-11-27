@@ -277,7 +277,7 @@ lists only its own families. Data: `GET /api/plots/pop-positions` (`app/src/plot
 → `pop_positions`; population membership through `pop_index_by_label`, shared with the UMAP's
 colour-by-population). Layers: `plots/popPositions.ts` (tested). Drawn by `GateScatterCell`, read-only.
 
-**Colour** (panel state `colourBy`): *Populations* (the default, above), or a cell column — the lens
+**Colour** (panel state `colourBy`): *Populations on density* (the default, above), *Populations on grey* (`GREY_BASE`: every cell in the themed dim ink — `PlotLayers` `baseGrey` — so the populations are the only colour; dimmed and exported like the density), or a cell column — the lens
 scores first, by name (`colourByGroups`), then every other measure. Every cell is then shaded on the
 house ramp with one colour bar above the grid (`ColourBarLegend`, the montage's rule — never on a tile), and populations are not drawn. The rail's **Legend** switch shows or hides the key / bar. **One scale over all
 tiles** (`sharedValueScale`: the span of the tiles' ranges), so the images compare side by side; a lens

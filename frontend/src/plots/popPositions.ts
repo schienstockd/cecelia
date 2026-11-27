@@ -43,6 +43,16 @@ export function positionPops(input: {
   return raw.map((p, i) => ({ ...p, colour: p.colour || fallback[i]! }))
 }
 
+/**
+ * The Colour picker's "every cell in plain grey" pick (panel state `colourBy`): the populations over a
+ * flat neutral backdrop instead of the all-cells density heatmap, so the picked populations stand out.
+ * Not a column, so it is never sent as one (`colourColumn`). The `:` cannot start a cell column.
+ */
+export const GREY_BASE = ':grey'
+
+/** The cell column to colour by on the wire: '' for both population colourings (density or grey). */
+export const colourColumn = (colourBy: string): string => (colourBy === GREY_BASE ? '' : colourBy)
+
 /** The distinct frames in one image's data, ascending. */
 export function framesIn(buf: Float32Array): number[] {
   const s = new Set<number>()
