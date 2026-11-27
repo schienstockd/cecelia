@@ -20,7 +20,10 @@ import { endpointsFor, type VaultKind } from '../utils/modelVaultKinds'
 import { getJson } from '../utils/api'
 import type { FlowManifest } from '../utils/flowManifest'
 import type { DenoiseManifest } from '../utils/denoiseManifest'
-import type { VaultOrigin } from '../utils/vaultScope'
+import type { VaultOrigin, VaultScope } from '../utils/vaultScope'
+import { useSettingsStore } from '../stores/settings'
+import { useProjectMetaStore } from '../stores/projectMeta'
+import { useAppControlStore } from '../stores/appControl'
 
 // Row shape as returned by both vault endpoints (a superset — kind decides which manifest applies).
 interface VaultRow extends VaultOrigin {
@@ -205,6 +208,19 @@ export function useVaultRows(kind: Ref<VaultKind | undefined> | (() => VaultKind
     _fetchKind(kind)
   }
   return { rowFor: (v: string): VaultOrigin | undefined => rows.value.get(v), ensure }
+}
+
+/** Whose models a vault list shows right now: the active profile, the open project, and the View
+ *  toggles (`settings.vaultOther*`) — the ONE scope the manager and every task-form picker read
+ *  (`utils/vaultScope.ts`). */
+export function useVaultScope() {
+  const settings    = useSettingsStore()
+  const projectMeta = useProjectMetaStore()
+  const appControl  = useAppControlStore()
+  return computed<VaultScope>(() => ({
+    profile: appControl.activeProfileName, projectUid: projectMeta.current?.uid,
+    otherUsers: settings.vaultOtherUsers, otherProjects: settings.vaultOtherProjects,
+  }))
 }
 
 /** Clear the module cache — for tests. Production callers should use `refresh()`. */

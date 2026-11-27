@@ -43,6 +43,7 @@ import { paramFigure } from './paramFigures'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 import VaultModelSelect from '../components/VaultModelSelect.vue'
+import VaultNameInput from '../components/VaultNameInput.vue'
 import { vaultKindForSource } from '../utils/modelVaultKinds'
 import { getJson } from '../utils/api'
 
@@ -110,7 +111,8 @@ const projectImageOptions = computed(() => props.param.type !== 'imageSelection'
 // setSelection — a set of the open project; '' = the image's own set
 const projectSetOptions = computed(() => props.param.type !== 'setSelection' ? [] :
   projectStore.sets.map(s => ({ uid: s.uid, label: s.name })))
-// a select listing a model vault gets origin headings + the vault's View toggles (VaultModelSelect)
+// a select listing a model vault gets origin headings + the vault's View toggles (VaultModelSelect);
+// a name box over one gets the same scope + toggles on its suggestions (VaultNameInput)
 const vaultKind = computed(() => vaultKindForSource(props.param.optionsFrom))
 
 // section (collapsible box) state
@@ -824,6 +826,15 @@ function onChannelUpdate(next: string[]) {
          namespace offered as you type. `valueNameSelection` (a strict <select>) is the INPUT-side
          twin: correct where the name must already exist, wrong here because you could never name a
          new one. -->
+    <VaultNameInput v-else-if="param.type === 'valueNameInput' && vaultKind"
+      :kind="vaultKind"
+      :model-value="(val as string) ?? ''"
+      :options="availableValueNames"
+      :placeholder="param.placeholder"
+      :tip="shownTip"
+      @update:model-value="val = $event"
+      @change="emit('commit', param.key, ($event.target as HTMLInputElement).value)"
+    />
     <SuggestInput v-else-if="param.type === 'valueNameInput'"
       :model-value="(val as string) ?? ''"
       :options="availableValueNames"
