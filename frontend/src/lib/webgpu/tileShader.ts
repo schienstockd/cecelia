@@ -4,7 +4,7 @@
 // The WGSL and the reasoning behind it (why a 3D atlas, why `textureLoad`, the coordinate model)
 // live in `shaders/tile.wgsl`; this module only expands it.
 
-import { expandWgsl, uniformLayout } from './shaderSource'
+import { expandWgsl, SHADER_CONSTANTS, uniformLayout } from './shaderSource'
 
 /** The per-frame uniform block (`uniforms.json` → "tile"). */
 export const TILE_LAYOUT = uniformLayout('tile')
@@ -14,6 +14,10 @@ export const TILE_LAYOUT = uniformLayout('tile')
 export const TILE_UNIFORM_BYTES = TILE_LAYOUT.bytes
 
 export const TILE_WGSL = expandWgsl('tile.wgsl')
+
+/** Storage-buffer binding of the pick highlight on the tile pass (`constants.json`) — the same
+ *  buffer shape as the volume renderers' (`utils/viewerLabels.ts` → Pick highlight). */
+export const TILE_PICK_BINDING = SHADER_CONSTANTS.TILE_PICK_BINDING
 
 /** Population points over the tiles (`shaders/tile_points.wgsl`). */
 export const TILE_POINTS_WGSL = expandWgsl('tile_points.wgsl')

@@ -1863,6 +1863,17 @@ const busy = computed(() => loadingT.value.length > 0 || waitingFor.value >= 0)
 const cells = computed(() => stripCells(
   nT.value, new Set(resident.value), new Set(loadingT.value), shownT.value))
 
+/** The pick outline both renderers draw (volume and tiles): an explicit `pickHighlight` on this image,
+ *  else the viewer's own pick selection when the drawn mask is the picked one, else none. */
+function applyPickSet(r: { setPickSet(labels: readonly number[], focusId?: number, contourPx?: number): void }) {
+  const hlPick = viewerStore.pickHighlight
+  const pickMatches = !!hlPick && hlPick.imageUid === imageUid
+  const ownPick = pickMatches ? [] : pickOutlineLabels(pickSelection.value, labelName.value)
+  if (pickMatches)         r.setPickSet(hlPick!.labels, hlPick!.focusId, 2)
+  else if (ownPick.length) r.setPickSet(ownPick, 0, 2)
+  else                     r.setPickSet([], 0, 0)
+}
+
 // One paint per frame however fast the pointer or a slider fires, and no paint for a box that did not
 // change — the canonical helper for exactly this (`usePlotResize`), not a second hand-rolled
 // ResizeObserver. `redraw()` is the camera/contrast/timepoint path (the box is identical but the frame
@@ -1905,13 +1916,7 @@ const frame = usePlotResize(canvas, () => {
   // the cockpit's picker choice fight the viewer's ticked-visible segmentation.
   // Contour thickness is fixed at 2 px here; the shader's `labPickContourPx()` returns 0 when the
   // buffer is empty, which short-circuits the composite branch.
-  const hlPick = viewerStore.pickHighlight
-  const pickMatches = !!hlPick && hlPick.imageUid === imageUid
-  // Otherwise the viewer's own pick selection, outlined on the drawn mask when it is the picked one.
-  const ownPick = pickMatches ? [] : pickOutlineLabels(pickSelection.value, labelName.value)
-  if (pickMatches)    r.setPickSet(hlPick!.labels, hlPick!.focusId, 2)
-  else if (ownPick.length) r.setPickSet(ownPick, 0, 2)
-  else                r.setPickSet([], 0, 0)
+  applyPickSet(r)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
   // Draw-time recording is gated on Debug being open (or `?bench=1` for the full-session
@@ -3493,6 +3498,7 @@ function drawTiles() {
   tr.setLabelSource(tileMaskSource.value)
   tr.setLabelStyle(tileMaskSource.value ? spec.labelOpacity : 0, spec.labelContour)
   tr.setLabelTable(maskTable.value)
+  applyPickSet(tr)   // the same pick outline as the volume view
   // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
   // pointer input. Same trigger for both dimensions of size change.
   if (resized) scheduleTilePump()
