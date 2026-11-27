@@ -98,6 +98,31 @@ end
     @test Cecelia._detect_motion_dims([Cecelia.Track(1, Float64.(0:11), P2)]).dims == 2
 end
 
+# The run form asks before tracking has run: the segmentation's axes answer, not a "3D" fallback
+@testset "detect_motion_dims before tracking" begin
+    a2 = Cecelia._motion_dims_from_axes(["centroid_y", "centroid_x"], false)
+    @test a2.dims == 2 && !a2.z_used && a2.confidence == "high"          # 2D seg: 2D, tracked or not
+    @test Cecelia._motion_dims_from_axes(["centroid_y", "centroid_x"], true).dims == 2
+    a3 = Cecelia._motion_dims_from_axes(["centroid_z", "centroid_y", "centroid_x"], false)
+    @test a3.dims == 3 && a3.confidence == "low" && occursin("no tracks", a3.reason)
+    @test Cecelia._motion_dims_from_axes(["centroid_z", "centroid_y", "centroid_x"], true) === nothing
+
+    # end to end on an untracked 3D table: answers instead of erroring on the missing track_id
+    fx3 = fixture_for(:cells, Symbol("3d"))
+    p3 = joinpath(mktempdir(), "seg.h5ad"); cp(fixture_table(fx3), p3)
+    d3 = Cecelia.detect_motion_dims(p3, [1.0, 1.0, 1.0], 1.0)
+    @test d3.dims == 3 && d3.confidence == "low" && occursin("no tracks", d3.reason)
+
+    # the reported case — a 2D movie, untracked — on real data once a fixture exists
+    fx2 = fixture_for(:cells, :movie, Symbol("2d"); need = "cells-2d-movie")
+    if fx2 === nothing
+        @test_skip "untracked 2D movie (test-data/NEEDS.toml → cells-2d-movie)"
+    else
+        p2 = joinpath(mktempdir(), "seg.h5ad"); cp(fixture_table(fx2), p2)
+        @test Cecelia.detect_motion_dims(p2, [1.0, 1.0, 1.0], 1.0).dims == 2
+    end
+end
+
 # the cached form: one slot per h5ad, recomputed when the file or the calibration it was scaled with
 # changes — a z step of 1 vs 20 µm is a different answer from the same file
 @testset "detect_motion_dims cache stamp" begin
