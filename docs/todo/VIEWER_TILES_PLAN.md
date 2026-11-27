@@ -156,6 +156,11 @@ key + a cross-time distance penalty in the eviction ranker, and drops the gate.
 4. **Prefetch is current-t only in MVP.** No cross-t halo. Reason: the atlas is capacity-bound
    (≈ 30 slots on the whole-slide shape) and multiplying by a t-halo of 2 would leave no room
    for the spatial halo. If scrubbing feels bad, add cross-t after measuring.
+   **Playback is the exception (shipped):** while playing, the pump reads the next frames' VISIBLE
+   tiles ahead (`tilePrefetchKeys`, as many frames as fit beside the current one —
+   `tilePrefetchDepth`, cap 4) and playback waits for a whole frame (`tileFrameReady`), like the flat
+   renderer. Advancing regardless aborted every frame before it landed once a 2576² movie went
+   through tiles on a 2048-limit GPU, so nothing was cached and every loop reloaded.
 5. **`useTiles` gate drops `nT ≤ 1`.** New gate: `mode === 'plane' && needsTiling`.
 6. **The timepoint slider schedules the tile pump in tile mode.** `gotoT` currently calls
    `schedulePump` (the timepoint pump) unconditionally. In tile mode, it schedules the tile
@@ -185,10 +190,8 @@ key + a cross-time distance penalty in the eviction ranker, and drops the gate.
 
 **What does NOT ship**
 
-- Cross-t prefetch window. Ship only if scrubbing feels bad after Phase F lands.
-- Autoplay through tile mode. Scrub first; play later — a play tick simply advances `t` and
-  the same tile pump handles the rest, but the fetch-vs-frame-rate discipline needs
-  measurement first.
+- Cross-t prefetch window while SCRUBBING. Ship only if scrubbing feels bad after Phase F lands.
+  (Playback has one — decision 4.)
 - Reference-frame caching (freeze one t as background under the current). Would need atlas
   slots reserved outside the ranker's control — not for this phase.
 

@@ -17,7 +17,7 @@ export interface VwPlaybackDeps {
   waitingFor: Ref<number>
   t: Ref<number>
   nT: () => number
-  /** tile mode (a whole-slide plane): advance at the requested rate regardless of residency */
+  /** tile mode (a plane too big or too wide for one texture): wait for `tileFrameReady` */
   useTiles: () => boolean
   /** brick renderer: advance every tick; flat renderer: wait for a complete frame */
   bricksEnabled: () => boolean
@@ -27,6 +27,10 @@ export interface VwPlaybackDeps {
   gotoT: (t: number) => void
   schedulePump: (t: number) => void
   frameComplete: (t: number) => boolean
+  /** tile mode: every visible tile of frame `t` resident */
+  tileFrameReady: (t: number) => boolean
+  /** tile mode: fill the atlas for the current frame and playback's read-ahead */
+  scheduleTilePump: () => void
   redraw: () => void
   playbackHint: (nT: number) => PlaybackHint | null
 }
@@ -43,27 +47,26 @@ export function useVwPlayback(d: VwPlaybackDeps) {
     // fetches for those neighbour t's every tick with no benefit — ("doesn't
     // stop loading"). Idle prefetch is just the current t; the next `gotoT` will replace this.
     d.renderer()?.setPrefetchTimepoints?.([d.t.value])
+    // Tile mode: the read-ahead leaves the keep set with `playing`; re-pumping aborts its fetches.
+    if (d.useTiles()) d.scheduleTilePump()
   }
 
   function tick() {
     playTimer = setTimeout(() => {
       if (!d.playing.value) return
       if (d.useTiles()) {
-        // Tile-mode playback: advance at the requested fps regardless of tile residency. The tile
-        // pump chases behind `gotoT` — the loading chip appears while a fresh-t frame's tiles arrive
-        // and clears the moment they do. Fetch-vs-frame-rate discipline (volume mode's residency
-        // probe + wait-for-cached-frame path) needs measurement on real timelapses before it lands
-        // here — see `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision "autoplay does NOT ship".
-        const n = d.nT()
-        if (n <= 0) { stopPlay(); return }
-        const next = d.t.value + 1
-        if (next >= n) {
-          if (!d.loop()) { stopPlay(); return }
-          d.waitingFor.value = -1
-          d.gotoT(0)
+        // Tile mode waits for a whole frame, like the flat renderer: advancing regardless aborted each
+        // frame's tiles before they landed whenever a fetch outlasted a tick, so nothing was ever
+        // cached. The tile pump reads ahead of the playhead while playing (`tilePrefetchKeys`), and its
+        // window wraps at a loop end, so the frame waited on is always being fetched.
+        const step = playbackAdvance(d.t.value, d.nT(), d.loop(), d.tileFrameReady)
+        if (step.ended) { stopPlay(); return }
+        if (step.stalled) {
+          d.waitingFor.value = step.next
+          d.scheduleTilePump()
         } else {
           d.waitingFor.value = -1
-          d.gotoT(next)
+          d.gotoT(step.t)
         }
         tick()
         return
