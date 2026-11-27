@@ -1,8 +1,9 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch } from 'vue'
 import { useLogStore } from './log'
+import { getJson, tryApi } from '../utils/api'
 import { useTaskStore } from './tasks'
-import { useProjectStore } from './project'
+import { useProjectStore, type CciaImage } from './project'
 import { frameTargetsOpenProject, newImageUidsOf, frameImageUidsOf } from '../utils/taskScope'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
@@ -67,10 +68,10 @@ export const useWsStore = defineStore('ws', () => {
   // A refused upgrade looks like any failed socket, so ask a plain route: 401 means the backend is up
   // and this browser is not signed in. Keeps reconnecting — signing in from another tab then just works.
   async function detectSignedOut() {
-    try {
-      const r = await fetch('/api/diagnostics')
-      if (r.status === 401 && status.value !== 'connected') status.value = 'signedOut'
-    } catch { /* backend down — 'disconnected' already says so */ }
+    // quiet: a probe during reconnect — 401 is the answer it looks for, and "backend down" is
+    // already what 'disconnected' says
+    const r = await tryApi(getJson('/api/diagnostics', { quiet: true }))
+    if (!r.ok && r.status === 401 && status.value !== 'connected') status.value = 'signedOut'
   }
 
   function connect() {
@@ -701,10 +702,9 @@ export const useWsStore = defineStore('ws', () => {
             const newImageSetName = meta.setName as string | undefined
             if (newImageSetName) useProjectStore().ensureSet(newImageSetUid, newImageSetName)
             for (const uid of newImageUids)
-              fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${uid}`)
-                .then(r => (r.ok ? r.json() : null))
+              getJson<{ image?: CciaImage } | null>('/api/images/meta', { query: { projectUid, imageUid: uid } })
                 .then(d => { if (d?.image) useProjectStore().addImagesFromApi(newImageSetUid, [d.image]) })
-                .catch(() => {})
+                .catch(() => { /* the client logged it; the row appears on the next project load */ })
           }
         }
 
@@ -756,13 +756,13 @@ export const useWsStore = defineStore('ws', () => {
         const projectUid = String((data.projectUid as string | undefined) ?? '')
           || useProjectMetaStore().current?.uid || ''
         if (projectUid) {
-          fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${imageUid}`)
-            .then(r => (r.ok ? r.json() : null))
+          getJson<{ image?: { qc?: CciaImage['qc']; runLog?: CciaImage['runLog'] } } | null>('/api/images/meta',
+            { query: { projectUid, imageUid } })
             .then(d => {
               if (d?.image?.qc !== undefined) useProjectStore().updateImageMeta(imageUid, { qc: d.image.qc })
               if (d?.image?.runLog !== undefined) useProjectStore().updateImageMeta(imageUid, { runLog: d.image.runLog })
             })
-            .catch(() => {})
+            .catch(() => { /* the client logged it; the badge catches up on the next load */ })
         }
       }
     }

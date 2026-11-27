@@ -21,7 +21,7 @@ describe('fetchStats after two quick edits', () => {
     vi.stubGlobal('fetch', vi.fn((url: string) => {
       const pop = decodeURIComponent(/pop=([^&]+)/.exec(url)![1])
       const count = server[pop] * 100
-      return new Promise(res => pending.push(() => res({ ok: true, json: async () => ({ count, pctParent: 0 }) })))
+      return new Promise(res => pending.push(() => res(new Response(JSON.stringify({ count, pctParent: 0 }), { status: 200 }))))
     }))
     setActivePinia(createPinia())
     const ws = useWsStore(); const handlers: any[] = []
