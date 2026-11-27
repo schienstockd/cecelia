@@ -341,4 +341,30 @@ end
         got = _cluster_map_values(img, vn, path, String(chans[1]), size(raw, 1))
         @test isequal(got, Float32.(raw[!, col]))
     end
+    # a track run's population share (`popfrac:<path>`) is in no table: computed per track, in the track
+    # table's obs order (#2557 — the UMAP read it through label_props and warned "unknown columns")
+    fx = fixture_for(:cells, :movie, :tracked)
+    if fx === nothing
+        @test_skip "tracked movie fixture (missing)"
+    else
+        td = mktempdir(); cp(fx.project, joinpath(td, basename(fx.project)))
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = td
+            img, err = _gating_image(basename(fx.project), fx.uid); vn = fx.value_name
+            m = Cecelia.load_pop_tree(img; value_name = vn, pop_type = "flow")
+            Cecelia.add_pop!(m, "big"; gate = Cecelia.RectangleGate("area", "area", 50.0, 1e12, -1e12, 1e12))
+            Cecelia.save_pop_tree!(m, img)
+            tpath = Cecelia.img_track_props_path(img, vn)
+            labels = (label_props(tpath) |> v -> select_cols(v, String[]) |> as_df).label
+            fr = Cecelia.track_pop_fractions(img; value_name = vn, pop = "/big")
+            got = _cluster_map_values(img, vn, tpath, "popfrac:/big", length(labels); labels = labels)
+            @test length(got) == length(labels) && any(isfinite, got)
+            @test all(i -> isequal(got[i], Float32(get(fr, Int(labels[i]), NaN))), eachindex(labels))
+            # an image without the population → all NaN, never an error
+            @test all(isnan, _cluster_map_values(img, vn, tpath, "popfrac:/nope", length(labels); labels = labels))
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
 end

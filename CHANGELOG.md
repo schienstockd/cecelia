@@ -102,6 +102,7 @@ And these change what you see:
 
 ### Fixed
 
+- **Population shares on track clusters**: the cluster heatmap now shows the share rows a track run clustered on, and the UMAP can be coloured by them (#2557).
 - **Channels are matched by name** when copying gates, clustering, heatmaps and HMM states; images lacking a channel are skipped with a reason (#1901, #2285).
 - **Detect aggregates** creates its population again (#2067).
 - **Tracking remembers settings per segmentation** (#1977).

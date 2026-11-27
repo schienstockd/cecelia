@@ -147,12 +147,7 @@ function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::Ab
         if !(pop_cols === nothing || isempty(pop_cols))
             keep = intersect(unique(vcat("label", "track_id", "num_cells", String.(pop_cols))), names(ttab))
             select!(ttab, keep)
-            # a track's share of cells in a population (`popfrac:<path>`, Cluster tracks' features) —
-            # NaN on an image without that population
-            for tok in String.(pop_cols)
-                is_pop_fraction(tok) || continue
-                ttab[!, tok] = something(track_pop_fraction_column(img, vn, tok, ttab.label), fill(NaN, nrow(ttab)))
-            end
+            add_pop_fraction_cols!(ttab, img, vn, pop_cols)   # `popfrac:<path>` shares (Cluster tracks)
         end
 
         # cell-level gate membership (Julia is the evaluator), then cell label → track_id
@@ -278,7 +273,9 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
         isempty(tp) && return DataFrame(label=Int[])
         isempty(cols) && return tp
         keep = intersect(unique(vcat("label", String.(cols))), names(tp))
-        select(tp, keep)
+        # `popfrac:<path>` shares (a track run's "Populations" features) are in no table — add them,
+        # or the cluster heatmap of a `trackclust` run silently drops those rows
+        add_pop_fraction_cols!(select(tp, keep), img, vn, cols)
     end
     # Gate evaluation needs the aggregates the GATES name, which need not be among the caller's
     # output columns (a gate on `area.mean` while plotting motility). Reuse the output table when it
