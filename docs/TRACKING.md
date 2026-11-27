@@ -196,6 +196,11 @@ un-gated run. Four rules turn that marker into the guarantees the viewer + batch
    button or a re-track.
    Deleting a gate that a tracking run used, then copying the strategy across the set, orphans those
    tracks on every image the copy reaches.
+   The population manager warns on the way in: the pop-tree payload carries `trackSources`
+   (`pop_track_sources`, the pop UIDs that authored tracks), and the armed delete of one — or of a
+   branch holding one — reads "Click again — its tracks stop drawing as ribbons". A warning, not a
+   block (the delete is undoable and the tracks still draw under the segmentation's own button), unlike
+   a combination's term, which refuses the delete.
 
 The `WHOLE_SEG_TRACK_SOURCE = "whole_seg"` sentinel is a single named constant in both languages
 (`app/src/gating/population_manager.jl` and `python/cecelia/utils/tracking_utils.py`) so the writer,

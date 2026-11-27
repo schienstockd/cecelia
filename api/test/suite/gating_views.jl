@@ -36,6 +36,27 @@ using Base64, PNGFiles
     @test d[1] == d[2] ≈ 1.0 && 0 < d[3] < 1 && d[4] == 0 && d[5] == 0
 end
 
+@testset "API: gate plot raster — a missed rule's outline is dashed" begin
+    # 5 on, 4 off along a 20-px line then on around a corner: dashes at 0–5, 9–14, 18–20 + 0–3 of the next
+    d = _dashed([(0.0, 0.0, 20.0, 0.0), (20.0, 0.0, 20.0, 10.0)], 5, 4)
+    want = [(0.0, 0.0, 5.0, 0.0), (9.0, 0.0, 14.0, 0.0), (18.0, 0.0, 20.0, 0.0),
+            (20.0, 0.0, 20.0, 3.0), (20.0, 7.0, 20.0, 10.0)]
+    @test length(d) == length(want) && all(collect(a) ≈ collect(b) for (a, b) in zip(d, want))
+    # drawn: a dashed gate leaves gaps in its stroke where a solid one has none
+    g = Dict{String,Any}("kind" => "rectangle", "x_min" => 0.2, "x_max" => 0.8, "y_min" => 0.2, "y_max" => 0.8,
+                         "path" => "/r", "colour" => "#ff0000")
+    red(img) = count(p -> p.r > 0.8 && p.g < 0.3, img)
+    solid = render_gate_plot(Float64[], Float64[], (0.0, 1.0), (0.0, 1.0), [], [], [g])
+    dashed = render_gate_plot(Float64[], Float64[], (0.0, 1.0), (0.0, 1.0), [], [], [merge(g, Dict("rule_ok" => false))])
+    @test 0.4 * red(solid) < red(dashed) < 0.75 * red(solid)
+    # a range: only the end whose rule missed is dashed (left end at 0.2, right at 0.8 of the plot width)
+    rg = Dict{String,Any}("kind" => "range", "lo" => 0.2, "hi" => 0.8, "path" => "/", "colour" => "#ff0000",
+                          "lo_rule_ok" => false, "hi_rule_ok" => true)
+    im = render_gate_plot(Float64[], Float64[], (0.0, 1.0), (0.0, 1.0), [], [], [rg])
+    W = size(im, 2); left, right = im[:, 1:W ÷ 2], im[:, W ÷ 2 + 1:end]
+    @test 0.4 * red(right) < red(left) < 0.75 * red(right)
+end
+
 @testset "API: gate plot raster — gate names dodge each other (port of placeChips)" begin
     overlaps(a, b) = abs(a.x - b.x) < (a.w + b.w) / 2 && abs(a.y - b.y) < (a.h + b.h) / 2
     inside(c, W, H) = c.x - c.w / 2 >= 0 && c.x + c.w / 2 <= W && c.y - c.h / 2 >= 0 && c.y + c.h / 2 <= H

@@ -84,6 +84,20 @@ function _region_qc_flag(qc_path::AbstractString, key::AbstractString)::Bool
     end
 end
 
+# The columns region run `suffix` owns on one table, from its record: the composition columns it lists,
+# plus the run's fixed-name columns (other / cells per window / effective types), which a run may or may
+# not write. `nothing` when the table has no record of the run (the callers then fall back to the name). Only `spatial.comp.*` names count, so a
+# legacy family-less record (which may be a cell clustering's) never names a measure column.
+function _region_owned_cols(props_path::AbstractString, suffix::AbstractString)
+    rec = _clustfeatures_entry(props_path, suffix; family = "regions")
+    rec === nothing && return nothing
+    comp = filter(c -> startswith(c, "spatial.comp."), String[string(c) for c in get(rec, "features", String[])])
+    # a region run records ≥2 composition columns; none = a legacy cell clustering's record, not this run's
+    isempty(comp) && return nothing
+    fixed = [_comp_col(n, suffix) for n in (OTHER_BASIS_NAME, WINDOW_DENSITY_NAME, DIVERSITY_NAME)]
+    unique(vcat(comp, fixed))
+end
+
 function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -134,6 +148,12 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     diversity_col = _comp_col(DIVERSITY_NAME, p.valueNameSuffix)
     density_col = _comp_col(WINDOW_DENSITY_NAME, p.valueNameSuffix)
     # the run's own columns share the namer with the basis — a population named like one would overwrite it
+    # what this run wrote last time, from its record: a re-run with another basis drops those it does not
+    # rewrite (by the record, not by name — population and run names may both hold dots)
+    for seg in segments
+        seg["ownedCols"] = something(_region_owned_cols(seg["propsPath"], p.valueNameSuffix),
+                                     [other_col, density_col, diversity_col])
+    end
     reserved = filter(c -> c in comp_cols, [diversity_col, density_col, (p.includeOther ? [other_col] : String[])...])
     isempty(reserved) ||
         (on_log("[ERROR] clustRegions: a basis population is named like the run's own column " *

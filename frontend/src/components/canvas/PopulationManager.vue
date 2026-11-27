@@ -53,7 +53,7 @@ import { SEVERITY } from '../../lib/severity'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
 import { allSelected, fileManagerPick } from '../../utils/tableSelection'
-import { actionEnabled, actionTargets, deleteCount, moveTargetsFor, selectionRoots, sharedParent,
+import { actionEnabled, actionTargets, deleteArmedTip, deleteCount, deletedTrackPops, moveTargetsFor, selectionRoots, sharedParent,
          SINGLE_ONLY_TIP, type PopAction } from '../../utils/popSelection'
 import { contextAncestors, refinedBy, runLabel, type ClusterRun } from '../../utils/clusterRefine'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -599,6 +599,13 @@ const onlyTip   = (a: PopAction) => can(a) ? '' : SINGLE_ONLY_TIP
 // over the WHOLE map, not the listed rows: in cluster mode a pop's child can be on another measure
 // (not listed), and the server's cascade takes it all the same — the label must count it
 const deleteTotal = computed(() => deleteCount(g.flat, menuPaths.value))
+// The pops a delete takes that made tracks: the tracks stay in the cell table, but nothing draws them
+// as ribbons until the next tracking run, so the armed click says so (a warning on the click you
+// already make — a delete is undoable, so it never blocks the way a combination's term does).
+const deleteTrackTip = computed(() => deleteArmedTip(
+  deletedTrackPops(g.flat, menuPaths.value, g.trackSources), actionsPath.value ?? undefined))
+const deleteBelowTrackTip = computed(() => deleteArmedTip(
+  actionsPath.value ? deletedTrackPops(g.flat, [actionsPath.value], g.trackSources, true) : []))
 function deleteMenuPops() {
   const paths = selectionRoots(menuPaths.value)
   if (paths.length === 1) g.deletePop(paths[0])
@@ -976,7 +983,7 @@ function addMenuPopsToKiwi() {
                            v-slot="{ armed, press }">
               <button class="cc-actions-item danger" :class="{ armed }" :aria-disabled="!can('deleteBelow')"
                       @click.stop="can('deleteBelow') && press()"
-                      v-tooltip.right="onlyTip('deleteBelow') || (armed ? 'Click again to delete' : '')">
+                      v-tooltip.right="onlyTip('deleteBelow') || (armed ? deleteBelowTrackTip : '')">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
                 Delete {{ childCount(actionsPop) }} below it
               </button>
@@ -985,7 +992,7 @@ function addMenuPopsToKiwi() {
                            @confirm="runAction(deleteMenuPops)"
                            v-slot="{ armed, press }">
               <button class="cc-actions-item danger" :class="{ armed }" @click.stop="press"
-                      v-tooltip.right="armed ? 'Click again to delete' : ''">
+                      v-tooltip.right="armed ? deleteTrackTip : ''">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
                 <template v-if="bulk">{{ deleteTotal > menuPaths.length
                   ? `Delete ${menuPaths.length} and ${deleteTotal - menuPaths.length} below` : `Delete ${menuPaths.length} populations` }}</template>

@@ -303,7 +303,10 @@ def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str
     Requirements:
       • `adata.obs` carries `uID`, `valueName`, `label` (label matching each target file's index).
       • `adata.obs['clusters']` holds the scanpy categorical string codes ("0".."N").
-      • each `segments` entry is a dict with `uID`, `valueName`, `propsPath` (the h5ad to write).
+      • each `segments` entry is a dict with `uID`, `valueName`, `propsPath` (the h5ad to write), and
+        optionally `ownedCols`: the columns the run owns from its previous write (the caller reads them
+        from the run's record). Any of them this write does not rewrite is dropped, so re-running under
+        the same name with other inputs leaves no previous column looking current.
 
     Writes integer-code `clusters.{suffix}` obs (the new stack auto-detects integer obs as a
     categorical code set; a `clusters.*` name-rule pins it categorical above the level cap — see
@@ -347,7 +350,9 @@ def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str
         if extra_obs:
             for cname, arr in extra_obs.items():
                 obs_cols[cname] = np.asarray(arr)[mask]
-        view = LabelPropsView(seg["propsPath"]).add_obs(pd.DataFrame(obs_cols))
+        view = LabelPropsView(seg["propsPath"])
+        stale = [c for c in seg.get("ownedCols", []) if c not in obs_cols]
+        view = view.drop_obs(stale).add_obs(pd.DataFrame(obs_cols))
         if has_umap:
             view = view.add_obsm(umap_key, sub_labels, adata.obsm["X_umap"][mask])
         for key, mat in (extra_obsm or {}).items():

@@ -19,7 +19,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/cleanupImages/smooth_run.py` | `app/src/tasks/cleanupImages/smooth.jl:191` | `bilateralColor`, `bilateralPolish`, `bilateralReach`, `channels`, `farnebackMaxShiftPx`, `imOutputPath`, `imPath`, `qcOutPath`, `restoreGain`, `spatialMethod`, `spatialSigma`, `temporalFrames` +1 |
 | `tasks/cleanupImages/stack_align_run.py` | `app/src/tasks/cleanupImages/stack_align.jl:154` | `alignChannel`, `imAlignedPath`, `imPath`, `maxShiftPx`, `minConfidence`, `qcOutPath`, `referenceMode` |
 | `tasks/clustPops/cluster_run.py` | `app/src/tasks/clustPops/cluster.jl:161` | `createUmap`, `featureCols`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold`, `qcOutPath`, `randomState`, `resolution` +4 |
-| `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:158` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `diversityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling` +5 |
+| `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:178` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `diversityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling` +5 |
 | `tasks/clustTracks/cluster_run.py` | `app/src/tasks/clustTracks/cluster.jl:191` | `X`, `axesOutPath`, `createUmap`, `featureCols`, `labels`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold` +10 |
 | `tasks/editImages/bin_run.py` | `app/src/tasks/editImages/bin.jl:115` | `factorX`, `factorY`, `imOutPath`, `imPath`, `op` |
 | `tasks/editImages/cropImage_run.py` | `app/src/tasks/editImages/cropImage.jl:116` | `imOutPath`, `imPath`, `t0`, `t1`, `x0`, `x1`, `y0`, `y1`, `z0`, `z1` |
@@ -32,11 +32,12 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/editImages/zProject_run.py` | `app/src/tasks/editImages/zProject.jl:94` | `imOutPath`, `imPath`, `op` |
 | `tasks/exportImages/ome_tiff_run.py` | `app/src/tasks/exportImages/ome_tiff.jl:174` | `calibration`, `channelNames`, `channels`, `imPath`, `outPath`, `qcOutPath`, `timepoint`, `zMip` |
 | `tasks/importImages/fetch_immunemap_run.py` | `app/src/tasks/importImages/immunemapFetch.jl:54` | `destPath`, `md5`, `resultPath`, `sizeBytes`, `spacingXYZ`, `videoUid` |
+| `tasks/importImages/ims_rebuild_attrs_run.py` | `app/src/tasks/importImages/omezarr/bf2raw_run.jl:47` | `imPath` |
 | `tasks/importImages/migrate_legacy_run.py` | `app/src/tasks/importImages/migrateLegacy.jl:121` | `metaDir`, `mode`, `resultPath`, `rscript`, `sourceProjectDir`, `sourceUid`, `zeroDir` |
 | `tasks/importImages/peek_pyramid_run.py` | `api/src/routes/image.jl:152` | `chunk`, `paths`, `resultPath`, `showinfBin`, `stillTarget` |
 | `tasks/importImages/probe_series_run.py` | `api/src/routes/image.jl:102` | `imPath`, `maxPx`, `resultPath` |
 | `tasks/importImages/read_acquisition_settings_run.py` | `app/src/tasks/importImages/omezarr/acquisition.jl:47` | `imPath`, `resultPath`, `series` |
-| `tasks/importImages/read_imagej_physical_size_run.py` | `app/src/tasks/importImages/omezarr/task.jl:229` | `imPath`, `resultPath` |
+| `tasks/importImages/read_imagej_physical_size_run.py` | `app/src/tasks/importImages/omezarr/task.jl:222` | `imPath`, `resultPath` |
 | `tasks/importImages/read_ims_time_interval_run.py` | `app/src/tasks/importImages/omezarr/source_timing.jl:89` | `imPath`, `resultPath` |
 | `tasks/importImages/saturation_run.py` | `app/src/tasks/importImages/omezarr/saturation.jl:23` | `imPath`, `notPhotonCounting`, `photonsUntestable`, `resultPath` |
 | `tasks/importImages/scan_immunemap_run.py` | `api/src/routes/immunemap.jl:21` | `experiment`, `resultPath` |
@@ -60,7 +61,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/spatialAnalysis/roi_discovery_run.py` | `app/src/tasks/spatialAnalysis/roiDiscovery.jl:114` | `groupBy`, `imPath`, `labels`, `labelsPath`, `maxRois`, `mergeGap`, `minObjects`, `propsPath`, `qcOutPath`, `rankBy`, `readCols`, `reviewLabels` +4 |
 | `tasks/spatialAnalysis/spatial_pattern_run.py` | `app/src/tasks/spatialAnalysis/spatialPattern.jl:110` | `graphPath`, `graphSuffix`, `nPermutations`, `nRadii`, `outPath`, `propsPaths`, `qcOutPath`, `rMax`, `randomState`, `targets` |
 | `tasks/tracking/bayesian_tracking_run.py` | `app/src/tasks/tracking/bayesian_tracking_steps.jl:24` | — |
-| `tasks/tracking/delete_track_source_run.py` | `app/src/analysis_runs.jl:225` | `propsPath`, `trackSource` |
+| `tasks/tracking/delete_track_source_run.py` | `app/src/analysis_runs.jl:232` | `propsPath`, `trackSource` |
 | `tasks/tracking/track_props_run.py` | `app/src/tasks/tracking/track_measures.jl:315` | — |
 | `utils/model_weights.py` | `api/src/system_api.jl:186` | `models` |
 | `utils/store_sweep.py` | `app/src/maintenance.jl:57` | `apply`, `resultPath`, `root` |
@@ -78,7 +79,7 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | Area | Routes | Julia side | Vue | MCP | Python | preview | No caller |
 |---|---|---|---|---|---|---|---|
 | `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  |  |
-| `/api/gating` | 28 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 18 | 2 | 1 |  |  |
+| `/api/gating` | 29 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 19 | 2 | 1 |  |  |
 | `/api/images` | 24 | `api/src/image_geometry.jl`, `api/src/routes/image.jl` +4 | 18 | 2 |  |  |  |
 | `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  |  |
 | `/api/notebooks` | 17 | `api/src/notebooks_api.jl` | 4 | 1 |  |  |  |

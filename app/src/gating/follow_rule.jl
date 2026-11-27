@@ -126,16 +126,20 @@ end
 
 """How far `g` moves on these RAW parent values: (dx, dy) in its transformed coordinates, or `nothing`
 — no rule, not anchored yet, or a miss (see the header)."""
-function follow_shift(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector)
+follow_shift(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector) = _follow_fit(g, xraw, yraw)[1]
+
+# (shift, mode) on these RAW parent values — both `nothing` on a miss; the mode is the peak the shape
+# moved to, in its transformed coordinates (on the image it was saved on, its anchor)
+function _follow_fit(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector)
     r = g.rule
-    (r === nothing || r.anchor === nothing) && return nothing
+    (r === nothing || r.anchor === nothing) && return (nothing, nothing)
     m = follow_mode(apply_transform(g.x_transform, xraw), apply_transform(g.y_transform, yraw), r.anchor;
                     adjust = r.adjust)
-    m === nothing && return nothing
+    m === nothing && return (nothing, nothing)
     dx, dy = m[1] - r.anchor[1], m[2] - r.anchor[2]
     w, h = template_size(g)
-    (abs(dx) <= FOLLOW_MAX_SHIFT * w && abs(dy) <= FOLLOW_MAX_SHIFT * h) || return nothing
-    (dx, dy)
+    (abs(dx) <= FOLLOW_MAX_SHIFT * w && abs(dy) <= FOLLOW_MAX_SHIFT * h) || return (nothing, nothing)
+    ((dx, dy), m)
 end
 
 """`g` with its rule anchored on these RAW parent values: the mode climbed to from the shape's centre. With
@@ -161,8 +165,16 @@ function resolve_gate(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector)
     s = follow_shift(g, xraw, yraw)
     s === nothing ? g : translated(g, s...)
 end
-rule_flags(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector) =
-    g.rule === nothing ? Dict{String,Any}() : Dict{String,Any}("rule_ok" => follow_shift(g, xraw, yraw) !== nothing)
+rule_flags(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector) = resolve_with_flags(g, xraw, yraw)[2]
+
+"""`resolve_gate` and `rule_flags` from one density: the flags add `rule_peak`, the peak the shape
+moved to (gate coordinates; `project_point` puts it on a plot), when it found its cloud."""
+function resolve_with_flags(g::FollowGate, xraw::AbstractVector, yraw::AbstractVector)
+    g.rule === nothing && return (g, Dict{String,Any}())
+    s, m = _follow_fit(g, xraw, yraw)
+    s === nothing && return (g, Dict{String,Any}("rule_ok" => false))
+    (translated(g, s...), Dict{String,Any}("rule_ok" => true, "rule_peak" => [m[1], m[2]]))
+end
 
 # ── spec, display (the `rule_spec` / `rule_from_spec` / `_rule_disp` family — hist_gates.jl) ────────────
 function rule_spec(r::FollowRule)

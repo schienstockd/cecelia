@@ -52,6 +52,7 @@ export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
   group: string
   icon: string
   summary: string
+  keywords?: string[]              // GuideDef.keywords: what the jump search also answers to
   navLabel: string                 // the sidebar entry's wording, so the bubble can name it
   prereqs?: Prereq[]
   intro?: string                   // one sentence on what this function is FOR
@@ -209,6 +210,7 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
     group: o.group,
     icon: o.icon,
     summary: o.summary,
+    keywords: o.keywords,
     prereqs: o.prereqs ?? [PREREQ.projectOpen, PREREQ.imageImported],
     steps: [
       {

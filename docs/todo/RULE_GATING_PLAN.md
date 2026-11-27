@@ -1,6 +1,6 @@
 # Rule gating — gates that find their position on each image
 
-Status: planning (2026-11-24) · P1 built (valley bisector, #2469); P2 built (valley range ends, #2482); P4 built (2D follow the mode, `rule-gating-mode`); P3, P5 open
+Status: planning (2026-11-24) · P1 built (valley bisector, #2469); P2 built (valley range ends, #2482); P4 built (2D follow the mode, `rule-gating-mode`; switch, peak + Check images, `follow-preview`); P3, P5 open
 
 ## Goal
 
@@ -74,7 +74,10 @@ microcluster medians; here it fits on the parent's sorted values (or quantile bi
 - **P3 — elbow rule** for bisectors (TACIT step 3 on sorted values). Validated on synthetic rare-positive
   mixtures (expected cut from the generating distributions) and on xxHqjQ markers where `valley` declines.
 - **P4 — 2D follow** (built, `rule-gating-mode`): option A for polygon and rectangle. Scaling to the cloud's
-  spread (A's optional part) not built.
+  spread (A's optional part) not built. Follow-up (`follow-preview`): a visible **follow** switch (naming bar +
+  selected gate), the peak it locked onto marked with a cross, and **Check images** — one gate's landing on
+  every image of the set as pictures, before a copy (`GET /api/gating/rule-preview`): a first, per-gate
+  slice of P5, for follow gates only.
 - **P5 — across-image review**: for every rule gate, where it landed on each image of the set, `rule_ok`,
   and the cell count — one table, sorted by "most different from the set". The reviewer's first stop after
   a copy.

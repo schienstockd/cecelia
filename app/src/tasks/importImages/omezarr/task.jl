@@ -161,37 +161,30 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Workers: $(isempty(worker_flags) ? "auto (bioformats2raw default: 4)" : worker_flags[1])")
     on_log("[INFO] JVM heap: $(heap_gib > 0 ? "-Xmx$(heap_gib)g" : "auto (JVM default)")")
 
-    cmd = `$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $worker_flags $series_flags $eff_src $zarr_out`
-    if !isempty(java_env)
-        cmd = addenv(cmd, java_env)
+    bf2raw_cmd(src) = let c = `$bf2raw --resolutions $pyramid_levels $compression $chunk_flags $fmt_flags $worker_flags $series_flags $src $zarr_out`
+        isempty(java_env) ? c : addenv(c, java_env)
     end
-    out_pipe = Pipe()
-    proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
-    close(out_pipe.in)
-    on_process(proc)
-
     # progress denominator: the full staged set when staged (the OIR main file alone understates the
     # data held in its `_000nn` companions), else the source file size
     src_size = stage_local ? _dir_bytes(stage_dir) : filesize(src_path)
-    monitor  = @async begin
-        while process_running(proc)
-            if isdir(zarr_out) && src_size > 0
-                # `frac`, not `p`: a closure assigning `p` would rebind the params struct above
-                frac = min(_dir_bytes(zarr_out) / src_size, 0.98)
-                on_progress(round(Int, frac * 100), 100)
-            end
-            sleep(2)
+    ok, out_lines = _run_bf2raw(bf2raw_cmd(eff_src), zarr_out, src_size;
+                                on_log = on_log, on_progress = on_progress, on_process = on_process)
+
+    # An Imaris file whose attribute heap netcdf-java cannot walk: rebuild it in a local working copy
+    # and convert once more (`bf2raw_run.jl`). The user's source is never written.
+    if !ok && _ims_heap_failure(src_path, out_lines)
+        work = _ims_heap_workcopy(src_path, stage_local ? eff_src : nothing, stage_dir, task_run_dir(img._dir);
+                                  on_log = on_log, on_progress = on_progress, on_process = on_process)
+        stage_local = stage_local || isdir(stage_dir)   # the working copy is staging debris too
+        if !isnothing(work)
+            rm(zarr_out; recursive = true, force = true)   # bioformats2raw refuses an existing output
+            ok, _ = _run_bf2raw(bf2raw_cmd(work), zarr_out, filesize(work);
+                                on_log = on_log, on_progress = on_progress, on_process = on_process)
         end
     end
 
-    for line in eachline(out_pipe); on_log(line); end
-    wait(proc)
-    wait(monitor)
-
     # bioformats2raw is done reading the source — drop the local stage copy now (on success OR failure)
     stage_local && rm(stage_dir; recursive = true, force = true)
-
-    ok = proc.exitcode == 0 && proc.termsignal == 0
     ok || return nothing
 
     on_log("[INFO] Conversion complete.")
