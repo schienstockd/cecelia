@@ -19,7 +19,7 @@
 #
 #   Scheduler task (CciaTask + `run_task`/`_run_task`, tasks/scheduler.jl) — IMAGE/SET-scoped analysis
 #     work. Gets: resource-pool concurrency limits, a queue + worker threads, per-image logfiles,
-#     chainability + resume, mandatory QC. Registered in task_registry.jl with a fun_name + JSON spec.
+#     chainability + resume, mandatory QC. Registered with a fun_name + JSON spec (register_builtin_task!).
 #     Write one when the work operates on image(s) and should participate in pools/chains/QC.
 #
 #   Background job (this file: `track_job!`/`cancel_job!`, spawned with `Threads.@spawn` in a WS

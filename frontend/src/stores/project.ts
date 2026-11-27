@@ -4,7 +4,7 @@ import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useSettingsStore } from './settings'
-import { prunedImageVersion } from '../utils/staleImageVersion'
+import { imageVersionsChanged, prunedImageVersion } from '../utils/staleImageVersion'
 import type { CropSource } from '../utils/cropSource'
 import type { AcquisitionSettings, AcquisitionMissing } from '../utils/acquisitionSettings'
 import type { CleanupFactsChannel } from '../utils/acquisitionLightPath'
@@ -297,8 +297,10 @@ export const useProjectStore = defineStore('project', () => {
       // rename. Compared, not just present: `refreshImageMeta` re-sends the same list on every task.
       const renamed = patch.channelNames !== undefined
         && JSON.stringify(patch.channelNames) !== JSON.stringify(img.channelNames ?? [])
+      // ... and on a version added, removed or made active — its version picker lists them.
+      const versions = imageVersionsChanged(img, patch)
       Object.assign(img, patch)
-      if (renamed) publishViewerImageMeta(imageUid)
+      if (renamed || versions) publishViewerImageMeta(imageUid)
       // A version can vanish under the stored pick (re-import, storage reclaim, a headless
       // importImages.remove). Re-point it at the active version so an open pop-out switches too.
       if (patch.filepaths !== undefined) {

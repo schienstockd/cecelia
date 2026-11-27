@@ -21,6 +21,7 @@
 using DataFrames: nrow, groupby, DataFrame
 
 struct ClustPops <: CciaTask end
+register_builtin_task!("clustPops.cluster", ClustPops(); spec = joinpath(@__DIR__, "cluster.json"))
 
 # The runner params a run records with its features (what the Refine form copies; CLUSTER_REFINE_PLAN).
 const _CLUST_RUN_PARAM_KEYS = ("resolution", "normaliseAxis", "normaliseToMedian", "maxFraction",

@@ -53,7 +53,7 @@ Functions taking each object as their first argument, by area — where the code
 | qc+checks | 4 | 32 | 18 |
 | gating |  | 2 | 50 |
 | plots+boards | 11 |  | 27 |
-| tracking+spatial |  |  | 23 |
+| tracking+spatial |  |  | 26 |
 | scheduler+chains | 18 |  | 4 |
 | run records |  |  | 19 |
 | tasks |  |  | 15 |

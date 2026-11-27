@@ -394,6 +394,7 @@ include(joinpath(@__DIR__, "suite", "pop_positions.jl"))   # the population posi
 # suite.jl are still in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
 include(joinpath(@__DIR__, "suite", "track_classes.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_pop_share_missing.jl"))
 
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 include(joinpath(@__DIR__, "suite", "import_bf2raw_run.jl"))

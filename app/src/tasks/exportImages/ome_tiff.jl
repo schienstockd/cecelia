@@ -1,4 +1,5 @@
 struct ExportOmeTiff <: CciaTask end
+register_builtin_task!("exportImages.ome_tiff", ExportOmeTiff(); spec = joinpath(@__DIR__, "ome_tiff.json"))
 
 # Typed shape of what `_run_task(::ExportOmeTiff, …)` reads from `params`. `channels` stays a bag
 # (channel NAMES, resolved via `channel_indices` inside the handler); `timepoint` is a Float64

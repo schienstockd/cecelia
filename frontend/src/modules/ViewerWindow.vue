@@ -64,6 +64,7 @@ import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/web
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
   tileGridDims, tileMaskSourceId, retryWhenMaskMoved, channelRuns, splitChannelSlab, planeNeedsTiling,
+  tilePrefetchDepth, tilePlaybackTimepoints,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -2945,6 +2946,10 @@ function gotoT(tp: number) {
  *  a paint of resident bytes; anything more is a bet on the user's next gesture. */
 const HALO_RINGS = 1
 
+/** Frames tile-mode playback reads ahead of the playhead, before `tilePrefetchDepth` clamps it to the
+ *  atlas — the brick path's playback depth. Scrubbing reads none ahead (VIEWER_TILES_PLAN Phase F). */
+const TILE_PLAYBACK_AHEAD = 4
+
 /**
  * Aborts for tile fetches in flight, keyed by tile-key string. A zoom/pan mid-fetch cancels tiles the
  * new viewport has no use for. Separate from `aborts` so the timepoint path is untouched.
@@ -3005,20 +3010,55 @@ function tileChannels(): number[] {
 const tileSourceId = () => `${imageUid}/${valueName.value}/${cacheClearRev.value}`
 
 function evictionKeepSet(): Set<string> {
-  return new Set(viewportTileKeys().map(tileKeyStr))
+  return new Set([...viewportTileKeys(), ...tilePrefetchKeys()].map(tileKeyStr))
 }
 
-/** Every tile the current viewport wants (visible + halo) at the current level, t and plane. */
-function viewportTileKeys(): TileKey[] {
+/** Every tile the current viewport wants at the current level and plane — at `tp` (the playhead by
+ *  default), visible + `halo` rings. */
+function viewportTileKeys(tp = t.value, halo = HALO_RINGS): TileKey[] {
   const tr = tileRenderer.value, m = meta.value
   if (!tr || !m) return []
   const level = slabLevel.value
   const lvl = levelMeta(m, level)
   const vp = computeViewportL0()
   if (!lvl || !vp) return []
-  const tp = t.value
   const zp = zPlane.value
-  return tilesInHalo(vp, level, lvl, HALO_RINGS).map(([tx, ty]) => ({ t: tp, z: zp, level, tx, ty }))
+  return tilesInHalo(vp, level, lvl, halo).map(([tx, ty]) => ({ t: tp, z: zp, level, tx, ty }))
+}
+
+/**
+ * Playback's read-ahead in tile mode: the VISIBLE tiles of the next frames, as many frames as fit in the
+ * atlas beside the current one (`tilePrefetchDepth`). Without it each frame was fetched only once the
+ * playhead reached it and aborted when it moved on, so nothing was ever cached and every frame of every
+ * loop loaded anew. In the keep set too, so neither an eviction nor `scheduleTilePump` drops them. Empty
+ * while scrubbing — the current frame only, as before.
+ */
+function tilePrefetchKeys(): TileKey[] {
+  const m = meta.value
+  if (!playing.value || !m) return []
+  const visible = viewportTileKeys(t.value, 0)
+  return tilePlaybackTimepoints(t.value, m.nT, tileReadAheadDepth(), settings.viewerLoop)
+    .flatMap(u => visible.map(k => ({ ...k, t: u })))
+}
+
+/** Frames playback can read ahead right now — 0 when the atlas holds no more than the current frame. */
+function tileReadAheadDepth(): number {
+  const tr = tileRenderer.value
+  if (!tr) return 0
+  return tilePrefetchDepth(tr.slotCapacity(), viewportTileKeys().length,
+                           viewportTileKeys(t.value, 0).length, TILE_PLAYBACK_AHEAD)
+}
+
+/** Whether frame `tp` can be shown whole: every visible tile resident with all shown channels, and its
+ *  mask when one is on (or the mask failed for good) — tile-mode playback waits for this, as the flat
+ *  path waits for `frameComplete`. Always true when nothing can be read ahead: no fetch would ever bring
+ *  the next frame in early, so playback steps on and each frame loads as it is reached. */
+function tileFrameReady(tp: number): boolean {
+  const tr = tileRenderer.value
+  if (!tr || tileReadAheadDepth() === 0) return true
+  const src = tileMaskSource.value
+  return viewportTileKeys(tp, 0).every(k => tileComplete(tr, k)
+    && (!tr.needsLabel(k) || tileLabelFailed.has(`${src}@${tileKeyStr(k)}`)))
 }
 
 /** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
@@ -3206,11 +3246,13 @@ async function fetchTileLabelOnce(key: TileKey): Promise<boolean> {
   }
 }
 
-/** Resident current-viewport tiles whose mask layer is not the mask on screen. */
+/** Resident tiles of the current viewport and of playback's read-ahead whose mask layer is not the
+ *  mask on screen — the read-ahead too, or a mask ticked on mid-movie never reaches the frames playback
+ *  waits on (`tileFrameReady`). */
 function tilesNeedingLabels(): TileKey[] {
   const tr = tileRenderer.value
   if (!tr || !tileMaskSource.value) return []
-  return viewportTileKeys().filter(key =>
+  return [...viewportTileKeys(), ...tilePrefetchKeys()].filter(key =>
     tr.needsLabel(key) && !tileLabelFailed.has(`${tileMaskSource.value}@${tileKeyStr(key)}`))
 }
 
@@ -3385,7 +3427,7 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
   const labelJobs = labelWant.map(async key => {
     if (isCurrent() && await fetchTileLabel(key)) frame.redraw()
   })
-  await Promise.allSettled([...labelJobs, ...want.map(async key => {
+  const fetchOne = async (key: TileKey) => {
     if (!isCurrent()) return
     if (tileComplete(tr, key)) { tr.touchTile(key); return }
     const ok = await fetchTile(key)
@@ -3404,7 +3446,15 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
     // agree, the tile is fresh for what the user is looking at (Phase F, decision 6).
     if (key.t === t.value && shownT.value !== key.t) shownT.value = key.t
     frame.redraw()
-  })])
+  }
+  await Promise.allSettled([...labelJobs, ...want.map(fetchOne)])
+  // Then playback's read-ahead, a frame at a time in playing order, so the next frame lands first and
+  // the current frame's tiles never queue behind later ones (`tilePrefetchKeys`).
+  const ahead = tilePrefetchKeys()
+  for (const u of [...new Set(ahead.map(k => k.t))]) {
+    if (!isCurrent()) return
+    await Promise.allSettled(ahead.filter(k => k.t === u).map(fetchOne))
+  }
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 
 /**
@@ -3518,6 +3568,7 @@ const { stopPlay, togglePlay } = useVwPlayback({
   loop: () => settings.viewerLoop,
   fps: () => settings.viewerFps,
   gotoT, schedulePump, frameComplete,
+  tileFrameReady, scheduleTilePump,
   redraw: () => frame.redraw(),
   playbackHint,
 })
@@ -6498,16 +6549,18 @@ async function onViewerRequest(data: Record<string, unknown>) {
 onMounted(() => {
   ws.on('viewer:landscape-request', onLandscapeRequest)
   ws.on('viewer:request', onViewerRequest)
-  // Channel renamed elsewhere (image table, metadata panel) while we're open: refetch meta and take
-  // only the names — contrast / LUT / visibility are the user's live view and stay as they are.
+  // Channel renamed elsewhere (image table, metadata panel), or a version added / removed / made
+  // active (a cleanup task, a delete, a reclaim) while we're open: refetch meta and take only the
+  // names and the version list — contrast / LUT / visibility are the user's live view and stay.
   stopImageMetaWatch = onViewerImageMeta(async (ev) => {
     if (ev.imageUid !== imageUid || !meta.value) return
     try {
       const m = await getJson<ViewerMeta>(metaUrl({ projectUid, imageUid, valueName: valueName.value }), { quiet: true })   // quiet: logged below
       const chs = meta.value?.channels ?? []
       for (let i = 0; i < Math.min(chs.length, m.channels.length); i++) chs[i].name = m.channels[i].name
+      if (meta.value) { meta.value.valueNames = m.valueNames; meta.value.activeValueName = m.activeValueName }
     } catch (e) {
-      vlog('warn', 'Channel-name refresh failed: ' + (e instanceof Error ? e.message : String(e)))
+      vlog('warn', 'Image-meta refresh failed: ' + (e instanceof Error ? e.message : String(e)))
     }
   })
   window.addEventListener('storage', onOverlaysTick)

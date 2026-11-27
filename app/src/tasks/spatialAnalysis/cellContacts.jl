@@ -21,6 +21,7 @@ using DataFrames: nrow, DataFrame, groupby
 using NearestNeighbors: KDTree, knn
 
 struct CellContacts <: CciaTask end
+register_builtin_task!("spatialAnalysis.cellContacts", CellContacts(); spec = joinpath(@__DIR__, "cellContacts.json"))
 
 Base.@kwdef struct CellContactsParams
     popsA::Vector{String}      = String[]

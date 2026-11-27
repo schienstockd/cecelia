@@ -31,6 +31,7 @@
 using DataFrames: nrow, groupby
 
 struct CellNeighbours <: CciaTask end
+register_builtin_task!("spatialAnalysis.cellNeighbours", CellNeighbours(); spec = joinpath(@__DIR__, "cellNeighbours.json"))
 
 Base.@kwdef struct CellNeighboursParams
     neighbourMethod::String = "delaunay"

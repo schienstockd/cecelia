@@ -27,6 +27,7 @@
 using DataFrames: nrow, groupby, names
 
 struct ClustTracks <: CciaTask end
+register_builtin_task!("clustTracks.cluster", ClustTracks(); spec = joinpath(@__DIR__, "cluster.json"))
 
 # Typed shape of what `_run_task(::ClustTracks, …)` reads from `params`. Same clustering-engine
 # shape as `ClustPops`, plus track-specific `minTracklength`.
@@ -83,7 +84,8 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     # intensity bases by channel NAME (a legacy raw pick named against the first segment): each image
     # aggregates its own column and the matrix pools `CD4.mean`, one marker per column whatever the
     # channel order — docs/todo/CHANNEL_NAMES_PLAN.md
-    ch = pooled_channel_columns(imgs, p.popsToCluster, p.clusterMeasures)
+    popfrac = filter(is_pop_fraction, p.clusterMeasures)     # "Populations": a track's share in a pop
+    ch = pooled_channel_columns(imgs, p.popsToCluster, filter(!is_pop_fraction, p.clusterMeasures))
     isempty(ch.problems) ||
         (on_log("[ERROR] clustTracks: channels don't match across images — $(join(ch.problems, "; "))"); return nothing)
     p = parse_clust_tracks_params(merge(params, Dict{String,Any}("clusterMeasures" => only(ch.cols))))
@@ -133,6 +135,9 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
                                          if track_aggregate_base(c, mot_set; cell_cols=sel_bases) == f])
         end
     end
+    gaps = add_track_pop_fractions!(df, imgs, popfrac)       # a missing pop would read as 0 %: refuse
+    isempty(gaps) || (on_log("[ERROR] clustTracks: population shares — $(join(gaps, "; "))"); return nothing)
+    append!(present_cols, popfrac)
     present_cols = unique(present_cols)
     isempty(present_cols) &&
         (on_log("[ERROR] clustTracks: none of the requested features produced track columns (check the selection)"); return nothing)
@@ -196,7 +201,7 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     at = string(Dates.now())                  # one stamp for the whole run
     for seg in segments
         _write_clust_features!(seg["propsPath"], p.valueNameSuffix, present_cols, uids;
-                               behaviour_axes = axes, at = at)
+                               behaviour_axes = axes, at = at, labels = pop_fraction_labels(popfrac))
     end
     # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = p.valueNameSuffix, on_log = on_log)

@@ -26,6 +26,7 @@
 using DataFrames: DataFrame, nrow, eachrow
 
 struct NeighbourStats <: CciaTask end
+register_builtin_task!("spatialAnalysis.neighbourStats", NeighbourStats(); spec = joinpath(@__DIR__, "neighbourStats.json"))
 
 Base.@kwdef struct NeighbourStatsParams
     basisPops::Vector{String}   = String[]

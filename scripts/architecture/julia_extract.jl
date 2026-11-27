@@ -8,7 +8,8 @@
 #                   plus the Project/Set/Image data model from the structs' own fields.
 #   areas.md      — which area of the code calls into which. The backend is one module, so the edges
 #                   come from name references: a call `foo(` in a file of area A to a function whose
-#                   methods are defined in area B is an A → B edge. Areas: julia_areas.toml.
+#                   methods are defined in area B is an A → B edge. Comments and the text of strings
+#                   don't count; a `$(…)` interpolation does (`strip_comments`). Areas: julia_areas.toml.
 #
 # Introspection (subtypes, methods, fieldnames) is exact for what it sees. The name-reference graph
 # is static and approximate: a local variable that shadows a package function and is called would
@@ -93,10 +94,108 @@ type_file(T) = (ms = methods(T); isempty(ms) ? nothing : rel(first(ms).file))
 
 # ── area graph from name references ───────────────────────────────────────────
 
+"""
+    strip_comments(src) -> String
+
+The code of `src` with only what can name a function or type left: comments (`#`, nestable `#= =#`)
+and triple-quoted strings (docstrings) removed, and ordinary `"…"` strings reduced to `""` followed by
+their `\$(…)` / `\$name` interpolations — those are code, so a call inside one still counts, but a
+name in the string's text does not (`"Denoise before segmenting"` is not a reference to `Denoise`).
+Prefixed literals (`r"…"`, `raw"…"`) don't interpolate and are dropped whole; char literals are
+skipped so `'"'` cannot open a string. Newlines are kept.
+"""
 function strip_comments(src::String)
-    src = replace(src, r"#=.*?=#"s => "")
-    src = replace(src, r"\"\"\".*?\"\"\""s => "\"\"")
-    join((replace(l, r"(^|\s)#.*$" => "") for l in split(src, '\n')), '\n')
+    s = collect(src)
+    out = IOBuffer()
+    scan_code!(out, s, 1, false)
+    String(take!(out))
+end
+
+isident(c::Char) = isletter(c) || isdigit(c) || c == '_'
+
+# Copy code from s[i] on into `out`; inside an interpolation (`interp`) stop after the `)` that closes
+# it. Returns the index after the last character consumed.
+function scan_code!(out, s, i, interp)
+    depth = 0
+    n = length(s)
+    while i <= n
+        c = s[i]
+        if c == '#'
+            if i < n && s[i+1] == '='                     # block comment, nests
+                d = 1; i += 2
+                while i <= n && d > 0
+                    if s[i] == '#' && i < n && s[i+1] == '='
+                        d += 1; i += 2
+                    elseif s[i] == '=' && i < n && s[i+1] == '#'
+                        d -= 1; i += 2
+                    else
+                        s[i] == '\n' && write(out, '\n'); i += 1
+                    end
+                end
+            else                                           # line comment
+                while i <= n && s[i] != '\n'; i += 1; end
+            end
+        elseif c == '"'
+            prefixed = i > 1 && isident(s[i-1])
+            if i + 2 <= n && s[i+1] == '"' && s[i+2] == '"'   # triple-quoted: dropped whole
+                i += 3
+                while i <= n && !(s[i] == '"' && i + 2 <= n && s[i+1] == '"' && s[i+2] == '"')
+                    s[i] == '\\' && (i += 1)
+                    i <= n && s[i] == '\n' && write(out, '\n')
+                    i += 1
+                end
+                i += 3
+                write(out, "\"\"")
+            else
+                i = scan_string!(out, s, i + 1, !prefixed)
+            end
+        elseif c == '\'' && !(i > 1 && (isident(s[i-1]) || s[i-1] in (')', ']', '}', '\'', '.')))
+            # char literal (an apostrophe after a value is the adjoint operator)
+            j = i + 1
+            j <= n && s[j] == '\\' && (j += 1)
+            j += 1
+            while j <= n && s[j] != '\'' && s[j] != '\n'; j += 1; end
+            i = j + 1
+        else
+            if interp
+                c == '(' && (depth += 1)
+                if c == ')'
+                    depth == 0 && return i + 1
+                    depth -= 1
+                end
+            end
+            write(out, c); i += 1
+        end
+    end
+    i
+end
+
+# A `"…"` string from s[i] (just past the opening quote): writes `""` plus, when it interpolates, each
+# `$(…)` as `(…)` and each `$name` as `name`. Returns the index after the closing quote.
+function scan_string!(out, s, i, interpolates)
+    n = length(s)
+    write(out, "\"\"")
+    while i <= n
+        c = s[i]
+        if c == '\\'
+            i += 2
+        elseif c == '"'
+            return i + 1
+        elseif interpolates && c == '$' && i < n && s[i+1] == '('
+            write(out, " (")
+            i = scan_code!(out, s, i + 2, true)
+            write(out, ") ")
+        elseif interpolates && c == '$' && i < n && (isletter(s[i+1]) || s[i+1] == '_')
+            j = i + 1
+            while j <= n && (isletter(s[j]) || isdigit(s[j]) || s[j] == '_'); j += 1; end
+            write(out, ' ', String(s[i+1:j-1]), ' ')
+            i = j
+        else
+            c == '\n' && write(out, '\n')
+            i += 1
+        end
+    end
+    i
 end
 
 function area_graph()

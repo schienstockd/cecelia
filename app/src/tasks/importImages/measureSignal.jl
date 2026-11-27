@@ -5,6 +5,7 @@
 # Refresh metadata runs the same `ensure_saturation_meta!` inline. No drift: estimating it is the drift
 # correction task's job, not a side effect of this button.
 struct MeasureSignal <: CciaTask end
+register_builtin_task!("importImages.measureSignal", MeasureSignal(); spec = joinpath(@__DIR__, "measureSignal.json"))
 
 # No settings: it always probes the `default` store (an acquisition property, see ensure_saturation_meta!)
 Base.@kwdef struct MeasureSignalParams end

@@ -1,4 +1,5 @@
 struct TrainFlowModel <: CciaTask end
+register_builtin_task!("opticalFlow.train", TrainFlowModel(); spec = joinpath(@__DIR__, "train.json"))
 
 # Typed shape of what `_run_task(::TrainFlowModel, …)` reads from `params`. `trainChannels` stays
 # a bag here (resolved via `channel_indices` inside the handler using the set's shared channel

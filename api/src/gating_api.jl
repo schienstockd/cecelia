@@ -705,6 +705,8 @@ function api_gating_channels(req::HTTP.Request)
             channelNames = display === nothing ? String[] : display,  # relabel intensity aggregates
             channelNamesPerVn = chansPerVn,                       # multi-VN advisor input (empty in single-VN mode)
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
+            # cluster-tracks features: each track's share of cells in a flow pop (`popfrac:<path>`)
+            popFractions = Cecelia.track_pop_fraction_options(img, scope_vn),
             clusterSuffixes = tsfx,
             clusterFeatures = _clust_features(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
             clusterMembers  = tmem,         # uIDs clustered together (partOf) that still carry the run

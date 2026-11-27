@@ -6,7 +6,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 76 |
+| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 74 |
 
 ## Layers
 
@@ -15,11 +15,8 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 `julia-upward` · to close: move it down to the lowest tier that calls it (or a shared lower area), or — if the order is wrong — change `[layers]` in `scripts/architecture/julia_areas.toml`. Most callers first: one move closes every listed call.
 
-- **56 `CciaTask` subtypes** — defined in tasks (tier 6), named from task framework (tier 5) — a list of every subtype; deriving it (`subtypes`, self-registration) closes it
 - **`_history_leaves`** — defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)
 - **`active_profile_name`** — defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7), task framework (tier 5)
-- **`Track`** — defined in tasks (tier 6), called from gating (tier 4), qc+checks (tier 4), tracking+spatial (tier 4)
-- **`Denoise`** — defined in tasks (tier 6), called from qc+checks (tier 4), task framework (tier 5)
 - **`_composite_step_names`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
 - **`_history_output`** — defined in scheduler+chains (tier 7), called from qc+checks (tier 4), run records (tier 2)
 - **`_task_from_fun_name`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
@@ -28,6 +25,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`roi_suffixes_on`** — defined in tracking+spatial (tier 4), called from cell data (tier 3), model (tier 2)
 - **`task_params_name`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
 - **`TaskRequest`** — defined in runner (tier 8), called from scheduler+chains (tier 7)
+- **`Track`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`_catkey`** — defined in plots+boards (tier 8), called from tracking+spatial (tier 4)
 - **`_clustfeatures_entry`** — defined in gating (tier 4), called from model (tier 2)
 - **`_clustfeatures_part_of`** — defined in gating (tier 4), called from model (tier 2)

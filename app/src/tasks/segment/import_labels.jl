@@ -1,4 +1,5 @@
 struct ImportLabels <: CciaTask end
+register_builtin_task!("segment.importLabels", ImportLabels(); spec = joinpath(@__DIR__, "import_labels.json"))
 
 # Import a label image made outside Cecelia (OME-Zarr or TIFF) onto an existing image, as a label set
 # no different from one a segmenter wrote: `labels/{vn}.zarr` (+ `{vn}_nuc.zarr`), uint32, shaped like

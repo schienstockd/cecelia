@@ -14,6 +14,7 @@
 using DataFrames: nrow, DataFrame, groupby
 
 struct ProximityProfile <: CciaTask end
+register_builtin_task!("spatialAnalysis.proximityProfile", ProximityProfile(); spec = joinpath(@__DIR__, "proximityProfile.json"))
 
 Base.@kwdef struct ProximityProfileParams
     structurePops::Vector{String} = String[]

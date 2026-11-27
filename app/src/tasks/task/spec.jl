@@ -488,15 +488,13 @@ function _spec_output_value_name(task::CciaTask, default::String)::String
     isnothing(v) ? default : string(v)
 end
 
-# Subclasses define their spec path by implementing this or we use naming convention.
-# Default: look for <category>/<task>.json next to the .jl file.
-# Built-in tasks override this with a specific method (task_registry.jl); the default resolves a
-# user drop-in task's spec through the runtime registry below (keyed by concrete type, matching how
-# _task_spec caches by `string(typeof(task))`).
+# A task's spec path, from the registry it registered in (task/registry.jl): a built-in by concrete
+# type (`register_builtin_task!`), else a user drop-in task by type name (`register_task!`, matching how
+# _task_spec caches by `string(typeof(task))`). `CompositeTask` has its own method (composite.jl).
 function _spec_path(task::CciaTask)::Union{String, Nothing}
+    p = get(_BUILTIN_SPEC_PATHS, typeof(task), nothing)
+    p === nothing || return p
     lock(_CUSTOM_TASK_LOCK) do
         get(_CUSTOM_SPEC_PATHS, string(typeof(task)), nothing)
     end
 end
-
-# Concrete _spec_path overloads and _FUN_NAME_MAP live in task_registry.jl,

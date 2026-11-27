@@ -12,6 +12,7 @@
 # signature carries; pixel geometry never does.
 
 struct LensQuery <: CciaTask end
+register_builtin_task!("clustRegions.lensQuery", LensQuery(); spec = joinpath(@__DIR__, "lensQuery.json"))
 
 Base.@kwdef struct LensQueryParams
     valueName::String    = "default"

@@ -1,4 +1,5 @@
 struct DtypeConvert <: CciaTask end
+register_builtin_task!("editImages.dtype", DtypeConvert(); spec = joinpath(@__DIR__, "dtype.json"))
 
 task_output_effect(::DtypeConvert) = "new-version"
 

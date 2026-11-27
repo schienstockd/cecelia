@@ -58,7 +58,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
-import { liveGroups, queueAfterTarget, queueAfterTemplate, type LiveGroup } from '../utils/queueAfter'
+import { liveGroups, queueAfterLabel, queueAfterTarget, queueAfterTemplate, type LiveGroup } from '../utils/queueAfter'
 import { taskParamsName, namesParamsRecord, taskReads } from '../utils/taskOutput'
 import { staleReadNote } from '../lib/staleOutputs'
 import { useStaleOutputsStore } from '../stores/staleOutputs'
@@ -1208,7 +1208,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
           v-tooltip.left="queueAfterLive ? `Run on the selected images once ${queueAfterLive.label} finishes`
                                          : 'Select the running task to wait for'">
           <i class="pi pi-forward" />
-          Queue after<template v-if="queueAfterGroups.length === 1"> {{ queueAfterGroups[0]!.label }}</template>
+          {{ queueAfterLabel(queueAfterGroups) }}
         </button>
         <select v-if="queueAfterGroups.length > 1" class="queue-after-pick cc-fs-xs"
           :value="queueAfterLive?.funName ?? ''" @change="queueAfterPick = ($event.target as HTMLSelectElement).value"

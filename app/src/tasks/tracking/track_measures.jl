@@ -12,6 +12,7 @@ using Statistics: mean, cov, cor, std
 using DataFrames: DataFrame
 
 struct TrackMeasures <: CciaTask end
+register_builtin_task!("tracking.track_measures", TrackMeasures(); spec = joinpath(@__DIR__, "track_measures.json"))
 
 # Typed shape of what `_run_task(::TrackMeasures, …)` reads from `params`. `dims` is lower-cased at
 # parse so the handler's `"auto" | "2d" | "3d"` switch reads one shape.

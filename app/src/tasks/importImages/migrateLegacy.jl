@@ -6,6 +6,7 @@
 # docs/todo/LEGACY_MIGRATION_PLAN.md and python/cecelia/utils/legacy_migrate.py.
 
 struct MigrateLegacy <: CciaTask end
+register_builtin_task!("importImages.migrateLegacy", MigrateLegacy(); spec = joinpath(@__DIR__, "migrateLegacy.json"))
 
 # Typed shape of what `_run_task(::MigrateLegacy, …)` reads from `params`. Each field also has a
 # fall-through to `img.meta` (recorded at register time); handled in the handler after parse.
