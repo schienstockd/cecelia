@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
+import { getJson } from '../utils/api'
 
 // User drop-in custom modules (see docs/CUSTOM_MODULES.md). Mirrors the backend
 // /api/tasks/custom-modules payload: the load report + the categories present among the user's
@@ -91,12 +92,11 @@ export const useCustomModulesStore = defineStore('customModules', () => {
   // mid-load, so an awaiting caller reads `modules`/`registry` after they are set, not before.
   let pending: Promise<void> | null = null
 
-  function load(url: string, init?: RequestInit): Promise<void> {
+  function load(url: string, method: 'GET' | 'POST' = 'GET'): Promise<void> {
     loading.value = true
     const p = (async () => {
       try {
-        const res = await fetch(url, init)
-        if (res.ok) apply(await res.json())
+        apply(await getJson<Parameters<typeof apply>[0]>(url, { method }))
       } catch { /* ignore — leave last-known state */ }
       finally { loadedOnce = true }
     })()
@@ -117,7 +117,7 @@ export const useCustomModulesStore = defineStore('customModules', () => {
 
   // Rescan the config dir for NEWLY dropped .jl (edits to loaded modules still need a restart).
   function reload(): Promise<void> {
-    return load('/api/tasks/custom-modules/reload', { method: 'POST' })
+    return load('/api/tasks/custom-modules/reload', 'POST')
   }
 
   // `apply` is exported because /api/plugins/{install,remove} return the SAME payload as the

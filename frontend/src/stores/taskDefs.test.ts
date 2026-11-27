@@ -25,7 +25,7 @@ describe('taskDefs store holds no params', () => {
   })
 
   it('a caller reading param options or defaults from the once-fetched store gets nothing', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => defs })))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(defs), { status: 200 })))
     const s = useTaskDefsStore()
     await s.ensureLoaded()
     expect(s.labelFor('segment.cellpose')).toBe('Cellpose')

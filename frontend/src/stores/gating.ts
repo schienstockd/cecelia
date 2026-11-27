@@ -1,6 +1,7 @@
 import { ref, computed, watch, reactive, provide, inject, onActivated, onScopeDispose,
          type InjectionKey, type Reactive } from 'vue'
 import { useLogStore } from './log'
+import { errorMessage, getJson, postJson } from '../utils/api'
 import { useWsStore } from './ws'
 import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
@@ -73,6 +74,7 @@ export interface PopNode {
   membership_sig?: string          // explicit-label pops (viewer selection): hash of label set
   createdBy?: unknown              // `author_stamp()` — present on a gate Claude proposed (utils/authorStamp)
   updatedBy?: unknown              // who last edited a proposal — a person's edit makes it theirs
+  trackClassOf?: string            // "mostly <child>": the parent's cells whose track is classed as this child
   runAt?: string                   // cluster pops: the run its clusters were picked on (`clusterPopStale`)
   children: PopNode[]
 }
@@ -88,6 +90,7 @@ export interface FlatPop {
   createdBy?: unknown    // who drew it, when Claude did (`claudeProposal`)
   updatedBy?: unknown    // who last edited it, on a proposal
   runAt?: string         // cluster pops: the run its clusters were picked on
+  trackClassOf?: string  // "mostly <child>": that child's path (utils/trackedChild.ts)
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -97,7 +100,7 @@ function flatten(tree: PopTree): FlatPop[] {
       const path = popPath(parent, n.name)
       out.push({ path, name: n.name, uid: n.uid ?? '', parent, colour: n.colour, show: n.show,
                  depth, gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean,
-                 createdBy: n.createdBy, updatedBy: n.updatedBy, runAt: n.runAt })
+                 createdBy: n.createdBy, updatedBy: n.updatedBy, runAt: n.runAt, trackClassOf: n.trackClassOf })
       walk(n.children ?? [], path, depth + 1)
     }
   }
@@ -250,18 +253,14 @@ export function createGatingStore(initialPopType: string) {
     // has usually set the new tree already and a diff against it finds nothing.
     const before = tree.value.populations ?? []
     try {
-      const res = await fetch(path, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // quiet: every failure here is logged below under `gating`, with the server's text
+      const data = (await postJson<{ tree?: PopTree; missingColumns?: Record<string, string[]>
+          canUndo?: boolean; canRedo?: boolean } | null>(path,
         // `labelsVersion`: the reply's `missingColumns` answers in this session's pinned frame
-        body: JSON.stringify({ projectUid: projectUid(), imageUid: imageUid.value,
-                               valueName: valueName.value, popType: popType.value,
-                               ...(labelsVersionPin.value ? { labelsVersion: labelsVersionPin.value } : {}),
-                               ...body }),
-      })
-      const data = await res.json().catch(() => ({})) as
-        { tree?: PopTree; missingColumns?: Record<string, string[]>; error?: string
-          canUndo?: boolean; canRedo?: boolean }
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+        { projectUid: projectUid(), imageUid: imageUid.value,
+          valueName: valueName.value, popType: popType.value,
+          ...(labelsVersionPin.value ? { labelsVersion: labelsVersionPin.value } : {}),
+          ...body }, { quiet: true })) ?? {}
       // set-wide: replay the SAME mutation to the other clustered images (cluster pops only). The
       // body is image-independent (filter on clusters.{suffix}), so paths stay in sync. Await these
       // BEFORE applying the tree, so anything that reloads off the tree (e.g. the set-pooled heatmap)
@@ -269,15 +268,11 @@ export function createGatingStore(initialPopType: string) {
       // A refusal there (e.g. 409 `cluster_taken` on an image whose populations differ) is reported, not
       // swallowed: the run's images would otherwise disagree without a word.
       if (mirrorUids.value.length) await Promise.all(mirrorUids.value.map(uid =>
-        fetch(path, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: projectUid(), imageUid: uid,
-                                 valueName: valueName.value, popType: popType.value, ...body }),
-        }).then(async r => {
-          if (r.ok) return
-          const e = await r.json().catch(() => ({})) as { error?: string }
-          log.error(`Gating (image ${uid}): ${e.error ?? `HTTP ${r.status}`}`, { source: 'gating' })
-        }).catch(() => undefined)))
+        postJson(path, { projectUid: projectUid(), imageUid: uid,
+                         valueName: valueName.value, popType: popType.value, ...body }, { quiet: true })
+          .then(() => undefined, e => {
+            log.error(`Gating (image ${uid}): ${errorMessage(e)}`, { source: 'gating' })
+          })))
       if (data.tree) setTree(data.tree, data.missingColumns)
       const pops = data.tree?.populations ?? []
       const changed = data.tree
@@ -291,7 +286,7 @@ export function createGatingStore(initialPopType: string) {
       _pingViewerAfterApply(writeScope(changed))
       return true
     } catch (e) {
-      log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Gating: ${errorMessage(e)}`, { source: 'gating' })
       return false
     }
   }
@@ -312,11 +307,11 @@ export function createGatingStore(initialPopType: string) {
   async function fetchChannels() {
     if (!imageUid.value) return
     try {
-      const res = await fetch(`/api/gating/channels?${_params()}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const d = await res.json() as { columns: string[]; channels?: string[]; channelNames?: string[]
+      // quiet: the failure is logged below under `gating`
+      const d = await getJson<{ columns: string[]; channels?: string[]; channelNames?: string[]
         valueNames: string[]; valueName?: string; cellMeasures?: string[]; trackAggregates?: string[]
-        obsColumns?: string[]; spatialColumns?: string[]; temporalColumns?: string[] }
+        obsColumns?: string[]; spatialColumns?: string[]; temporalColumns?: string[] }>(
+        `/api/gating/channels?${_params()}`, { quiet: true })
       columns.value = d.columns ?? []
       obsColumns.value = d.obsColumns ?? []
       spatialColumns.value = d.spatialColumns ?? []
@@ -336,19 +331,19 @@ export function createGatingStore(initialPopType: string) {
       else if (valueNames.value.length && !valueNames.value.includes(valueName.value))
         valueName.value = valueNames.value[0]
     } catch (e) {
-      log.error(`Gating channels: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Gating channels: ${errorMessage(e)}`, { source: 'gating' })
     }
   }
 
   async function fetchPopTree() {
     if (!imageUid.value) return
     try {
-      const res = await fetch(`/api/gating/pop-tree?${_params()}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean;
+      // quiet: the failure is logged below under `gating`
+      const d = await getJson<{ tree: PopTree; canUndo?: boolean; canRedo?: boolean;
         missingColumns?: Record<string, string[]>
         authoredLabelsVersion?: string | null; currentLatestLabelsVersion?: string | null
-        trackSources?: string[] }
+        trackSources?: string[] }>(
+        `/api/gating/pop-tree?${_params()}`, { quiet: true })
       setTree(d.tree, d.missingColumns, true)
       _setHistory(d)
       // P3b: capture the breadcrumb pair. `undefined` (a pre-P3b backend) reads the same as `null`
@@ -357,7 +352,7 @@ export function createGatingStore(initialPopType: string) {
       currentLatestLabelsVersion.value = d.currentLatestLabelsVersion ?? null
       trackSources.value = d.trackSources ?? []
     } catch (e) {
-      log.error(`Gating population tree: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Gating population tree: ${errorMessage(e)}`, { source: 'gating' })
     }
   }
 
@@ -385,9 +380,9 @@ export function createGatingStore(initialPopType: string) {
     const got: Record<string, { count: number; pctParent: number }> = {}
     await Promise.all(want.map(async path => {
       try {
-        const res = await fetch(`/api/gating/stats?${_params()}&pop=${encodeURIComponent(path)}`)
-        if (!res.ok) return
-        const s = await res.json() as { count: number; pctParent: number }
+        // quiet: one request per pop, so a backend restart would log a line per population
+        const s = await getJson<{ count: number; pctParent: number }>(
+          `/api/gating/stats?${_params()}`, { query: { pop: path }, quiet: true })
         got[path] = { count: s.count, pctParent: s.pctParent }
       } catch { /* ignore individual failures */ }
     }))
@@ -416,6 +411,8 @@ export function createGatingStore(initialPopType: string) {
   // all or none; each child takes the colour given with its parent
   const addFilterPopUnder = (name: string, under: { parent: string; colour: string }[], conditions: FilterCondition[]) =>
     _post('/api/gating/pop/add', { name, under, filter: newFilter(conditions) })
+  // "mostly <child>" under `parent`, one per sub-population still without one — one request, one undo
+  const addTrackClassPops = (parent: string) => _post('/api/gating/pop/add-track-classes', { parent })
   // rewrite a filter pop's conditions (edit) — mirror onto single fields as add does.
   const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
     _post('/api/gating/pop/update', { path,
@@ -580,18 +577,12 @@ export function createGatingStore(initialPopType: string) {
   async function clearSelection(): Promise<boolean> {
     if (!imageUid.value) return false
     try {
-      const res = await fetch('/api/viewer/pick-clear', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: projectUid(), imageUid: imageUid.value,
-                               valueName: valueName.value, popType: popType.value }),
-      })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(d.error ?? `HTTP ${res.status}`)
-      }
+      // quiet: the failure is logged below under `gating`
+      await postJson('/api/viewer/pick-clear', { projectUid: projectUid(), imageUid: imageUid.value,
+        valueName: valueName.value, popType: popType.value }, { quiet: true })
       return true
     } catch (e) {
-      log.error(`Clear selection: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+      log.error(`Clear selection: ${errorMessage(e)}`, { source: 'gating' })
       return false
     }
   }
@@ -602,7 +593,7 @@ export function createGatingStore(initialPopType: string) {
     cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopTree, fetchStats,
-    addPop, addClusterPop, addFilterPop, addFilterPopUnder, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
+    addPop, addClusterPop, addFilterPop, addFilterPopUnder, addTrackClassPops, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, addSplit, deletePop, deletePopChildren, movePop, movePops, deletePops,
     renamePop, updatePop, setPopsShown, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,

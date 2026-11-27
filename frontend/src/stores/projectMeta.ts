@@ -10,6 +10,11 @@ import { tabGroupOf, type BoardsDoc } from '../utils/boardDoc'
 import { publishOpenProject } from '../lib/openProjectChannel'
 import { profileStorage } from '../utils/profileStorage'
 import { importLastDirKey } from '../utils/fsPath'
+import { ApiError, errorMessage, getJson, postJson } from '../utils/api'
+
+// Every call below logs its own failure under `project` with the server's text, so the client's own
+// rail line is turned off (`quiet`) rather than logging each failure twice.
+const QUIET = { quiet: true } as const
 
 export interface ProjectRecord {
   uid: string
@@ -48,13 +53,11 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
 
   async function fetchRecent() {
     try {
-      const res = await fetch('/api/projects')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json() as { projects: ProjectRecord[]; projectsDir: string }
+      const data = await getJson<{ projects: ProjectRecord[]; projectsDir: string }>('/api/projects', QUIET)
       recent.value = data.projects ?? []
       projectsDir.value = data.projectsDir ?? ''
     } catch (e) {
-      log.error(`Failed to load project list: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      log.error(`Failed to load project list: ${errorMessage(e)}`, { source: 'project' })
     }
   }
 
@@ -62,17 +65,12 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     loading.value = true
     let newUid = ''
     try {
-      const res = await fetch('/api/projects/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, shared: !!opts.shared }),
-      })
-      const body = await res.json().catch(() => ({})) as { project?: ProjectRecord; error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-      newUid = body.project!.uid
+      const body = await postJson<{ project: ProjectRecord }>('/api/projects/create',
+        { name, shared: !!opts.shared }, QUIET)
+      newUid = body.project.uid
       log.info(`Created project "${name}".`, { source: 'project' })
     } catch (e) {
-      log.error(`Failed to create project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      log.error(`Failed to create project: ${errorMessage(e)}`, { source: 'project' })
       return false
     } finally {
       loading.value = false
@@ -121,24 +119,18 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   async function openProject(uid: string): Promise<boolean> {
     loading.value = true
     try {
-      const res = await fetch('/api/projects/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid }),
-      })
-      const body = await res.json().catch(() => ({})) as Partial<OpenPayload> & { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-      hydrate(body as OpenPayload)
+      const body = await postJson<OpenPayload>('/api/projects/load', { uid }, QUIET)
+      hydrate(body)
       await fetchRecent()
       const nSets   = body.sets?.length ?? 0
       const nImages = body.sets?.reduce((n, s) => n + s.images.length, 0) ?? 0
       log.info(
-        `Opened "${body.project!.name}" — ${nSets} set${nSets !== 1 ? 's' : ''}, ${nImages} image${nImages !== 1 ? 's' : ''}.`,
+        `Opened "${body.project.name}" — ${nSets} set${nSets !== 1 ? 's' : ''}, ${nImages} image${nImages !== 1 ? 's' : ''}.`,
         { source: 'project' }
       )
       return true
     } catch (e) {
-      log.error(`Failed to open project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      log.error(`Failed to open project: ${errorMessage(e)}`, { source: 'project' })
       return false
     } finally {
       loading.value = false
@@ -156,19 +148,15 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   async function peekProject(uid: string): Promise<boolean> {
     loading.value = true
     try {
-      const q = `projectUid=${encodeURIComponent(uid)}`
-      const get = async <T>(url: string): Promise<T> => {
-        const r = await fetch(url)
-        if (!r.ok) throw new Error(`${url.split('?')[0]}: HTTP ${r.status}`)
-        return await r.json() as T
-      }
+      const q = { projectUid: uid }
       const [list, listing, boards] = await Promise.all([
-        get<{ projects?: ProjectRecord[] }>('/api/projects'),
-        get<{ name: string; sets: { uid: string; name: string }[]; images: { uid: string; setUid: string }[] }>(`/api/images?${q}`),
-        get<{ boards?: Partial<BoardsDoc> | null }>(`/api/projects/boards?${q}`),
+        getJson<{ projects?: ProjectRecord[] }>('/api/projects', QUIET),
+        getJson<{ name: string; sets: { uid: string; name: string }[]; images: { uid: string; setUid: string }[] }>(
+          '/api/images', { query: q, ...QUIET }),
+        getJson<{ boards?: Partial<BoardsDoc> | null }>('/api/projects/boards', { query: q, ...QUIET }),
       ])
       const metas = await Promise.all(listing.images.map(im =>
-        get<{ image: CciaSet['images'][number] }>(`/api/images/meta?${q}&imageUid=${encodeURIComponent(im.uid)}`)))
+        getJson<{ image: CciaSet['images'][number] }>('/api/images/meta', { query: { ...q, imageUid: im.uid }, ...QUIET })))
       const sets: CciaSet[] = listing.sets.map(s => ({ uid: s.uid, name: s.name,
         images: metas.map(m => m.image).filter((_, k) => listing.images[k].setUid === s.uid) }) as CciaSet)
       const project = list.projects?.find(p => p.uid === uid) ??
@@ -176,7 +164,8 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       hydrate({ project, sets, boards: boards.boards ?? null })
       return true
     } catch (e) {
-      log.error(`Failed to open project for viewing: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      const what = e instanceof ApiError ? `${e.route}: ${e.message}` : errorMessage(e)
+      log.error(`Failed to open project for viewing: ${what}`, { source: 'project' })
       return false
     } finally {
       loading.value = false
@@ -193,18 +182,12 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     const trimmed = name.trim()
     if (!trimmed) return false
     try {
-      const res = await fetch('/api/projects/rename', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: current.value.uid, name: trimmed }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      await postJson('/api/projects/rename', { uid: current.value.uid, name: trimmed }, QUIET)
       current.value = { ...current.value, name: trimmed }
       log.info(`Project renamed to "${trimmed}".`, { source: 'project' })
       return true
     } catch (e) {
-      log.error(`Failed to rename project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      log.error(`Failed to rename project: ${errorMessage(e)}`, { source: 'project' })
       return false
     }
   }
@@ -221,19 +204,13 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   // of projects_dir). Guarded by the caller against deleting the currently-open project. Irreversible.
   async function deleteProject(uid: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/projects/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      await postJson('/api/projects/delete', { uid }, QUIET)
       profileStorage.removeItem(importLastDirKey(uid))
       await fetchRecent()
       log.info('Project deleted.', { source: 'project' })
       return true
     } catch (e) {
-      log.error(`Failed to delete project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      log.error(`Failed to delete project: ${errorMessage(e)}`, { source: 'project' })
       return false
     }
   }
@@ -253,19 +230,14 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   }
   async function _writeOwners(uid: string, url: string): Promise<boolean> {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid }),
-      })
-      const body = await res.json().catch(() => ({})) as { ok?: boolean; owners?: string[]; error?: string }
-      if (!res.ok || !body.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const body = await postJson<{ ok?: boolean; owners?: string[]; error?: string } | null>(url, { uid }, QUIET)
+      if (!body?.ok) throw new Error(body?.error ?? 'the server did not confirm the change')
       const owners = body.owners ?? []
       recent.value = recent.value.map(p => p.uid === uid ? { ...p, owners } : p)
       if (current.value?.uid === uid) current.value = { ...current.value, owners }
       return true
     } catch (e) {
-      log.error(`Ownership update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      log.error(`Ownership update failed: ${errorMessage(e)}`, { source: 'project' })
       return false
     }
   }

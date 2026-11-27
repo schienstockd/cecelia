@@ -9,6 +9,7 @@ import { ref, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
 import { debouncedLatest } from '../utils/debouncedLatest'
+import { getJson } from '../utils/api'
 import { staleByImage, type Lineage, type StaleOutput } from '../lib/staleOutputs'
 
 export const useStaleOutputsStore = defineStore('staleOutputs', () => {
@@ -18,9 +19,8 @@ export const useStaleOutputsStore = defineStore('staleOutputs', () => {
 
   const sink = debouncedLatest<string>(async (uid, isCurrent) => {
     if (!uid) { byImage.value = {}; return }
-    const res = await fetch(`/api/analysis/lineage?projectUid=${encodeURIComponent(uid)}`)
-    if (!res.ok || !isCurrent()) return
-    const lin = await res.json() as Lineage
+    const lin = await getJson<Lineage>('/api/analysis/lineage', { query: { projectUid: uid } })
+    if (!isCurrent()) return
     if (isCurrent() && projectMeta.current?.uid === uid) byImage.value = staleByImage(lin)
   }, { wait: 1500, onError: () => { /* advisory: a failed lookup shows nothing, as before */ } })
 

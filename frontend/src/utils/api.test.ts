@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { ApiError, BACKEND_CALL, apiFetch, getBuffer, getJson, postJson, tryApi, withQuery } from './api'
+import { ApiError, BACKEND_CALL, apiFetch, getBuffer, getJson, postJson, refusalMessage, tryApi, withQuery } from './api'
 
 // The real log store needs `window` (its cross-window channel); the client only calls `warn`.
 const logged: { message: string; source?: string }[] = []
@@ -119,5 +119,13 @@ describe('api client', () => {
       .toBe('/api/a?x=1&t=a&t=b&s=a+b')
     expect(withQuery('/api/a?p=1', { q: 2 })).toBe('/api/a?p=1&q=2')
     expect(withQuery('/api/a', {})).toBe('/api/a')
+  })
+})
+
+describe('refusalMessage', () => {
+  it("shows the server's text when it answered, the fallback when nothing answered", () => {
+    expect(refusalMessage(new ApiError('/api/x', 409, 'profile name taken'), 'unreachable')).toBe('profile name taken')
+    expect(refusalMessage(new ApiError('/api/x', 0, 'no reply from the backend (TypeError)'), 'unreachable')).toBe('unreachable')
+    expect(refusalMessage(new TypeError('Failed to fetch'), 'unreachable')).toBe('unreachable')
   })
 })

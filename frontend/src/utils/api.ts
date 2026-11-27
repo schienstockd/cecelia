@@ -82,6 +82,12 @@ export function errorMessage(e: unknown): string {
   return String(e)
 }
 
+/** The server's refusal text, or `fallback` when the request never got an answer (status 0, or not
+ *  an `ApiError` at all) — for a message line that says "it said no" apart from "it wasn't there". */
+export function refusalMessage(e: unknown, fallback: string): string {
+  return e instanceof ApiError && e.status > 0 ? e.message : fallback
+}
+
 export function withQuery(path: string, query?: Query): string {
   if (!query) return path
   const q = new URLSearchParams()

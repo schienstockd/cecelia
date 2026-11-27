@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { canAddTrackedChild, isTrackedRule, IS_TRACKED, TRACKED_CHILD_NAME } from './trackedChild'
+import { canAddTrackedChild, canAddMostlyPops, classChildren, isTrackedRule, IS_TRACKED, TRACKED_CHILD_NAME } from './trackedChild'
+import type { FlatPop } from '../stores/gating'
 
 const rule = { ...IS_TRACKED, default_all: false }
 const frags = { path: '/qc/frags', parent: '/qc', name: 'frags' }
@@ -36,5 +37,28 @@ describe('canAddTrackedChild', () => {
     // a grandchild with the rule does not count: it is another population's tracked cells
     const deeper = { ...viaRule, path: '/qc/frags/x/followed', parent: '/qc/frags/x' }
     expect(canAddTrackedChild(frags, [frags, deeper], OBS, 'flow')).toBe(true)
+  })
+})
+
+describe('canAddMostlyPops — "mostly <child>" per sub-population', () => {
+  const pop = (path: string, extra: Partial<FlatPop> = {}) =>
+    ({ path, parent: path.slice(0, path.lastIndexOf('/')) || 'root', name: path.split('/').pop()!, ...extra }) as FlatPop
+  const P = pop('/P')
+  const A = pop('/P/A'), B = pop('/P/B')
+  const tracked = pop('/P/tracked', { filter: { measure: 'track_id', fun: 'gt', values: 0 } as FlatPop['filter'] })
+  it('offered on a tracked flow pop with sub-populations', () => {
+    expect(canAddMostlyPops(P, [P, A, B], ['track_id'], 'flow')).toBe(true)
+    expect(classChildren(P, [P, A, B, tracked]).map(c => c.path)).toEqual(['/P/A', '/P/B'])
+  })
+  it('not without sub-populations, tracks, or on another pop type', () => {
+    expect(canAddMostlyPops(P, [P, tracked], ['track_id'], 'flow')).toBe(false)
+    expect(canAddMostlyPops(P, [P, A], [], 'flow')).toBe(false)
+    expect(canAddMostlyPops(P, [P, A], ['track_id'], 'clust')).toBe(false)
+  })
+  it('not once every sub-population has one, and the mostly pops are not sub-populations', () => {
+    const mA = pop('/P/mostly A', { trackClassOf: '/P/A' }), mB = pop('/P/mostly B', { trackClassOf: '/P/B' })
+    expect(canAddMostlyPops(P, [P, A, B, mA], ['track_id'], 'flow')).toBe(true)
+    expect(canAddMostlyPops(P, [P, A, B, mA, mB], ['track_id'], 'flow')).toBe(false)
+    expect(classChildren(P, [P, A, B, mA, mB]).map(c => c.path)).toEqual(['/P/A', '/P/B'])
   })
 })

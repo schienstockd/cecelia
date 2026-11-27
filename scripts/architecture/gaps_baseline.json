@@ -7,7 +7,7 @@
  "shared-file-unguarded": 0,
  "julia-upward": 76,
  "viewer-store": 0,
- "fetch-direct": 15,
+ "fetch-direct": 0,
  "py-cycle": 0,
  "store-cycle": 0
 }

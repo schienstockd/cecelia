@@ -16,7 +16,7 @@ const _MR_CLUSTER_NOUN = Dict("clust" => "Cell clusters", "trackclust" => "Track
 # One population across the scope's images
 mutable struct _MrPop
     pop_type::String; value_name::String; path::String; name::String; parent::String
-    kind::Symbol                                # :gate, :filter, :boolean, :cluster, :other
+    kind::Symbol                                # :gate, :filter, :boolean, :trackclass, :cluster, :other
     detail::Dict{String,Int}                    # what defines it, as text → images it reads so
     images::Int
     stamps::Vector{Any}; edited::Bool
@@ -32,6 +32,8 @@ _mr_axes(x, y) = endswith(x, " intensity") && endswith(y, " intensity") ? "$(x[1
 function _mr_pop_detail(p, chans, names::Dict{String,String})::Tuple{Symbol,String}
     pt = string(p.pop_type)
     name_of(path) = get(names, string(path), methods_pop_phrase(string(path)))
+    tco = hasproperty(p, :track_class_of) ? p.track_class_of : nothing      # a "mostly <child>" pop
+    tco === nothing || return :trackclass, "the cells of tracks mostly in $(name_of(tco))"
     if p.gate !== nothing
         g = gate_spec(p.gate)
         return :gate, _mr_axes(_mr_axis(g["x_channel"], chans), _mr_axis(g["y_channel"], chans))
@@ -103,6 +105,7 @@ function _mr_pop_kind(e::_MrPop)::Tuple{String,String}
     track = e.pop_type == "track"
     e.kind == :gate    && return (track ? "track gate" : "cell gate", "gate drawn")
     e.kind == :boolean && return ("combination", "defined")
+    e.kind == :trackclass && return ("track-class population", "defined")
     e.kind == :filter  && return ("filter", "defined")
     e.kind == :cluster && return (e.pop_type == "trackclust" ? "track-cluster population" :
                                   e.pop_type == "region" ? "region population" : "cell-cluster population",
@@ -136,7 +139,7 @@ function _mr_populations(pops::Vector{_MrPop}, n::Int)
         es = by_set[vn]
         name_of = Dict(e.path => e.name for e in es)
         # the gating tree, parents first; siblings gated the same way read as one clause
-        gated = [e for e in es if e.kind in (:gate, :boolean, :filter)]
+        gated = [e for e in es if e.kind in (:gate, :boolean, :trackclass, :filter)]
         clauses = String[]
         done = Set{String}()
         for e in sort(gated; by = e -> (count(==('/'), e.path), e.path))
@@ -147,7 +150,7 @@ function _mr_populations(pops::Vector{_MrPop}, n::Int)
             foreach(s -> push!(done, s.path), sibs)
             who = _mr_join([s.name for s in sibs])
             within = is_root(e.parent) ? "" : " within $(get(name_of, e.parent, methods_pop_phrase(e.parent)))"
-            push!(clauses, e.kind == :boolean ? "$who = $d$(_mr_partial(e, n))" :
+            push!(clauses, e.kind in (:boolean, :trackclass) ? "$who = $d$(_mr_partial(e, n))" :
                            "$who$within on $d$(_mr_partial(e, n))")
         end
         prefix = multi ? "In the $vn segmentation, cells" : "Cells"

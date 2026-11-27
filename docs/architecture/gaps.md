@@ -7,7 +7,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 | Section | Kind | Count |
 |---|---|---|
 | Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 76 |
-| Layers | [A frontend file calls the backend with a bare `fetch(`, not through `utils/api.ts`](#fetch-direct) | 15 |
 
 ## Layers
 
@@ -92,24 +91,3 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`with_pop_tree_lock`** — defined in gating (tier 4), called from model (tier 2)
 - **`write_qc`** — defined in qc+checks (tier 4), called from cell data (tier 3)
 - **`zarr_array_meta`** — defined in tasks (tier 6), called from qc+checks (tier 4)
-
-<a id="fetch-direct"></a>
-### A frontend file calls the backend with a bare `fetch(`, not through `utils/api.ts`
-
-`fetch-direct` · to close: use `getJson` / `postJson` / `getBuffer` / `tryApi` from `utils/api.ts` — keep the call site's behaviour, pass `quiet` for statuses it handles. A non-backend URL (`blob:`, external) says so with `// ARCH-EXEMPT: <reason>` on its line.
-
-- **`stores/analysisLayout.ts`** — 2 bare `fetch(` calls · `frontend/src/stores/analysisLayout.ts:122`, `frontend/src/stores/analysisLayout.ts:145`
-- **`stores/animation.ts`** — 1 bare `fetch(` call · `frontend/src/stores/animation.ts:44`
-- **`stores/appControl.ts`** — 6 bare `fetch(` calls · `frontend/src/stores/appControl.ts:80`, `frontend/src/stores/appControl.ts:89`, `frontend/src/stores/appControl.ts:97`, `frontend/src/stores/appControl.ts:218` +2
-- **`stores/canvasPanels.ts`** — 1 bare `fetch(` call · `frontend/src/stores/canvasPanels.ts:101`
-- **`stores/customModules.ts`** — 1 bare `fetch(` call · `frontend/src/stores/customModules.ts:98`
-- **`stores/gating.ts`** — 6 bare `fetch(` calls · `frontend/src/stores/gating.ts:253`, `frontend/src/stores/gating.ts:272`, `frontend/src/stores/gating.ts:315`, `frontend/src/stores/gating.ts:346` +2
-- **`stores/labCapture.ts`** — 1 bare `fetch(` call · `frontend/src/stores/labCapture.ts:33`
-- **`stores/log.ts`** — 1 bare `fetch(` call · `frontend/src/stores/log.ts:127`
-- **`stores/plotRegistry.ts`** — 1 bare `fetch(` call · `frontend/src/stores/plotRegistry.ts:77`
-- **`stores/project.ts`** — 2 bare `fetch(` calls · `frontend/src/stores/project.ts:318`, `frontend/src/stores/project.ts:331`
-- **`stores/projectMeta.ts`** — 7 bare `fetch(` calls · `frontend/src/stores/projectMeta.ts:51`, `frontend/src/stores/projectMeta.ts:65`, `frontend/src/stores/projectMeta.ts:124`, `frontend/src/stores/projectMeta.ts:161` +3
-- **`stores/staleOutputs.ts`** — 1 bare `fetch(` call · `frontend/src/stores/staleOutputs.ts:21`
-- **`stores/taskDefs.ts`** — 1 bare `fetch(` call · `frontend/src/stores/taskDefs.ts:32`
-- **`stores/viewProfiles.ts`** — 3 bare `fetch(` calls · `frontend/src/stores/viewProfiles.ts:48`, `frontend/src/stores/viewProfiles.ts:77`, `frontend/src/stores/viewProfiles.ts:94`
-- **`stores/ws.ts`** — 3 bare `fetch(` calls · `frontend/src/stores/ws.ts:71`, `frontend/src/stores/ws.ts:704`, `frontend/src/stores/ws.ts:759`

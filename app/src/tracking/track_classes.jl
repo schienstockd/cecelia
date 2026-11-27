@@ -50,8 +50,10 @@ function _is_tracked_child(p)
         length(vcat(p.filter_values)) == 1 && Float64(only(vcat(p.filter_values))) == spec.filter_values
 end
 
+# the parent's `tracked` child and its own "mostly <child>" pops are not sub-populations
 _class_kids(m::PopulationTree, path) =
-    [c for c in direct_children(m, path) if !m.pops[c].transient && !_is_tracked_child(m.pops[c])]
+    [c for c in direct_children(m, path)
+     if !m.pops[c].transient && !_is_tracked_child(m.pops[c]) && m.pops[c].track_class_of === nothing]
 
 """
     track_class_children(m, parent; level = 1) -> Vector{String}
@@ -185,3 +187,53 @@ function track_step_children(img::CciaImage; value_name::Union{AbstractString,No
     end
     (; children = kids, step)
 end
+
+"""
+    _track_class_mask(m, p, memb, df, path, cache) -> BitVector
+
+A "mostly <child>" population's own cells (`recompute!` ∩ its parent): every cell whose track's class
+among the parent's sub-populations is `p.track_class_of` — `track_class_table` over the evaluated
+sub-populations (`memb`) and the table's `track_id`, with the parent's stored threshold, at the level
+that child sits on (`_class_level_for`). The classes are worked out once per parent and level per
+evaluation (`cache`). No `track_id` column, or a
+sub-population that is gone, is no members and a warning, as a missing gate column or boolean term.
+"""
+function _track_class_mask(m::PopulationTree, p, memb::Dict{String,BitVector}, df, path::AbstractString,
+                           cache::Dict{String,Dict{String,Set{Int}}})::BitVector
+    n = nrow(df)
+    "track_id" in names(df) || return _missing_col_mask(n, path, "track_id")
+    want = String(p.track_class_of)
+    has_pop(m, want) || return _missing_ref_mask(n, path, want)
+    tid = df.track_id
+    is_tr(t) = t isa Real && isfinite(t) && t > 0
+    s = track_class_settings(get(m.pops, p.parent, nothing))
+    lv = _class_level_for(m, p.parent, want, s.level)
+    lv === nothing && return _missing_ref_mask(n, path, want)        # no longer one of the parent's sub-populations
+    classes = get!(cache, "$(p.parent)@$lv") do
+        kids = track_class_children(m, p.parent; level = lv)
+        rows = [i for i in 1:n if is_tr(tid[i])]
+        ids = Int[Int(tid[i]) for i in rows]
+        pm = get(memb, p.parent, trues(n))
+        in_par = Set(ids[k] for (k, i) in enumerate(rows) if pm[i])     # the parent's tracks: any cell
+        keep = rows[[t in in_par for t in ids]]
+        members = [haskey(memb, k) ? memb[k][keep] : falses(length(keep)) for k in kids]
+        tab = track_class_table(Int[Int(tid[i]) for i in keep], members, kids; threshold = s.threshold)
+        Dict(c => Set(tab.track_id[tab.class .== c]) for c in kids)
+    end
+    tracks = classes[want]
+    BitVector(is_tr(t) && Int(t) in tracks for t in tid)
+end
+
+# The level a "mostly <child>" pop reads: the parent's stored level when `child` is a sub-population
+# there, else the first level that has it — so changing the ribbon's level does not empty the pops made
+# at another one. `nothing` when no level has it (moved out from under the parent).
+function _class_level_for(m::PopulationTree, parent::AbstractString, child::AbstractString, stored::Integer)
+    child in track_class_children(m, parent; level = stored) && return stored
+    for l in 1:track_class_max_level(m, parent)
+        child in track_class_children(m, parent; level = l) && return l
+    end
+    nothing
+end
+
+"""Name of the "mostly <child>" population for sub-population `child`."""
+track_class_pop_name(child::AbstractString) = "mostly " * pop_name(child)

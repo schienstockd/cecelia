@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useTaskCompletionWatch } from '../composables/useTaskCompletionWatch'
 import { useSettingsStore } from './settings'
 import { useProjectMetaStore } from './projectMeta'
+import { postJson } from '../utils/api'
 import { worstDigestLevel, firstActionableLine, newFlagLines } from '../lib/labDigest'
 
 // Cecelia's automatic activity summaries. `capture_context!` (backend) upserts the rolling DAILY
@@ -30,13 +31,8 @@ export const useLabCaptureStore = defineStore('labCapture', () => {
     const uid = projectUid()
     if (!uid) return null
     try {
-      const r = await fetch('/api/lablog/capture', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: uid }),
-      })
-      if (!r.ok) return null
-      const body = await r.json()
-      if (body.captured) {
+      const body = await postJson<{ captured: boolean; block?: string }>('/api/lablog/capture', { projectUid: uid })
+      if (body?.captured) {
         captureTick.value++
         const block = body.block ?? ''
         const fresh = newFlagLines(lastBlock.value, block).join('\n')   // only newly-appeared ⚠️/❌
