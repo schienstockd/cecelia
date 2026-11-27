@@ -292,12 +292,21 @@ export interface PointLayer {
   hidden?: ReadonlySet<string>
   /** dim the dots of cells with no track ("Tracked only", `UNTRACKED_DIM`) */
   dimUntracked?: boolean
+  /** The viewer's pick selection as it applies to this layer (`pickLayerSelection`): absent = no
+   *  selection, every dot as usual; a set = dim every dot whose label is NOT in it (`PICK_DIM`). */
+  selected?: ReadonlySet<number>
 }
 
 /** How much of its colour an untracked cell's dot keeps under "Tracked only" — dimmed, not hidden, so
  *  a gated cell the tracker missed stays visible. The movie dims by the same factor
  *  (`UNTRACKED_DIM`, api/src/overlay_author.jl). docs/todo/TRACK_SUBPOP_GATING_PLAN.md (Decision 9). */
 export const UNTRACKED_DIM = 0.35
+
+/** How much of its colour a dot OUTSIDE the viewer's pick selection keeps while one is active — the
+ *  linked-brushing convention (select in one view, dim the rest), so the picked cells stand out in
+ *  their own colour. Dimmer than `UNTRACKED_DIM`: the two stack, and a selection is the louder ask.
+ *  Viewer-only: the movie never sees a transient selection. */
+export const PICK_DIM = 0.25
 
 /** A payload row's cell is in a track (the overlays route sends -1 for none). */
 export const isTrackedRow = (track: readonly number[] | undefined, r: number): boolean =>
@@ -339,7 +348,7 @@ export function buildPointBufferLayers(
   const cols = new Float32Array(cap * 3)
   let k = 0
   for (let li = 0; li < layers.length; li++) {
-    const { payload, hidden, dimUntracked } = layers[li]
+    const { payload, hidden, dimUntracked, selected } = layers[li]
     const { label, x, y, track } = payload.cells
     const dim = !!dimUntracked && !!track && track.length > 0
     if (!label || !x || !y || label.length === 0) continue
@@ -359,7 +368,8 @@ export function buildPointBufferLayers(
         // Colour-by wins over the population colour when it is on, which is what makes it useful: the
         // populations are still what SELECTS the cells, the column is what shades them.
         const rgb = byValue ? byValue(r) : popRgb
-        const f = dim && !isTrackedRow(track, r) ? UNTRACKED_DIM : 1
+        const f = (dim && !isTrackedRow(track, r) ? UNTRACKED_DIM : 1) *
+                  (selected && !selected.has(l) ? PICK_DIM : 1)
         cols[k * 3] = rgb[0] * f; cols[k * 3 + 1] = rgb[1] * f; cols[k * 3 + 2] = rgb[2] * f
         k++
       }
