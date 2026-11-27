@@ -7,6 +7,7 @@
 
 import { channelLabel } from './channelNames'
 import { isIntensityColumn } from './measureGroups'
+import { popDisplayLabels } from './popName'
 
 /** The aggregate a newly picked cell measure starts on: robust to a frame or two of flicker. */
 export const TRACK_AGG_DEFAULT = 'median'
@@ -66,4 +67,19 @@ export function trackAxisColumn(base: string, agg: string | null, cellBases: rea
   const a = agg && aggregates.includes(agg) ? agg
     : aggregates.includes(TRACK_AGG_DEFAULT) ? TRACK_AGG_DEFAULT : aggregates[0]
   return `${base}.${a}`
+}
+
+/** A Cluster tracks feature token for a flow population: the share of a track's cells in it
+ *  (`popfrac:<path>`, `track_pop_fractions` in app/src/tracking/track_classes.jl). */
+export const POP_FRACTION_PREFIX = 'popfrac:'
+
+/** The "Populations" chip group for Cluster tracks: one chip per population token the server offers
+ *  (`popFractions` from `/api/gating/channels`), labelled as pops listed together are
+ *  (`popDisplayLabels` — the name, its parents only where two share it). Empty → no group. */
+export function popFractionGroup(tokens: readonly string[] | undefined): { title: string; opts: { label: string; value: string }[] }[] {
+  const toks = (tokens ?? []).filter(t => t.startsWith(POP_FRACTION_PREFIX))
+  const path = (t: string) => t.slice(POP_FRACTION_PREFIX.length)
+  const labels = popDisplayLabels(toks.map(path))
+  const opts = toks.map(t => ({ label: labels.get(path(t)) ?? path(t), value: t }))
+  return opts.length ? [{ title: 'Populations', opts }] : []
 }
