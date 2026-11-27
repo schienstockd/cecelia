@@ -55,11 +55,19 @@ def _attr(group, key):
     return str(v)
 
 
-def summarise_gaps(gaps, tol=UNIFORM_TOL):
+def summarise_gaps(gaps, tol=UNIFORM_TOL, resolution=0.0):
     """`(interval, uniform, spread)` for a list of consecutive gaps in seconds.
 
     `interval` is the median, `spread` the largest fractional deviation from it. A caller must only
     record the interval when `uniform` — see `UNIFORM_TOL`.
+
+    `resolution` is how finely the stamps behind the gaps were recorded, in seconds (0 = exact). Imaris
+    writes whole-second `TimePointN` stamps for some sources (a Zeiss Elyra SIM file), so a steady
+    5.1 s series reads back as gaps of 5 and 6 — 20% apart, which the per-gap `tol` calls irregular.
+    For rounded stamps a series is also uniform when the stamps fit one steady interval once the
+    rounding is undone (`_rounded_uniform`); the interval is then the MEAN gap — span over count, where
+    the rounding cancels — not the rounded median. The allowance only ever adds: a series the per-gap
+    rule accepts stays accepted. Anything it cannot tell from a rate change gets no interval.
     """
     if not gaps:
         return None, False, None
@@ -69,7 +77,33 @@ def summarise_gaps(gaps, tol=UNIFORM_TOL):
     if median <= 0:
         return None, False, None
     spread = max(abs(g - median) for g in gaps) / median
+    if resolution > 0:
+        mean = sum(gaps) / n
+        return mean, spread <= tol or _rounded_uniform(gaps, mean, tol, resolution), spread
     return median, spread <= tol, spread
+
+
+def _rounded_uniform(gaps, interval, tol, resolution):
+    """Whether stamps rounded to `resolution` could come from a steady series: every true gap within
+    `tol / 2` of `interval`, the times before rounding unknown but each inside its stamp's band.
+
+    Each true time lies somewhere in its stamp's rounding band `[stamp, stamp + resolution]`. Walking the
+    series, the range a true time can take is the previous range plus one allowed gap, cut to the band;
+    an empty range means no such series exists — a pause, or a rate change. A steady 5.1 s series
+    rounded to the second alternates gaps of 5 and 6 and never empties it.
+
+    The allowed gap is `interval ± tol/2`, not `± tol`: `interval` is the MEAN, which sits inside a rate
+    change, and a full `± tol` around it would pass a 30 s series that slows to 32 s (spread 6.7% from
+    its median) only because its stamps are rounded.
+    """
+    lo_step, hi_step = interval * (1 - tol / 2), interval * (1 + tol / 2)
+    lo, hi, at = 0.0, float(resolution), 0.0
+    for g in gaps:
+        at += g
+        lo, hi = max(lo + lo_step, at), min(hi + hi_step, at + resolution)
+        if lo > hi:
+            return False
+    return True
 
 
 def _from_dataset_times(f):
@@ -85,11 +119,12 @@ def _from_dataset_times(f):
     if 'Birth' not in names:
         return None
     births = [float(row['Birth']) / _NS_PER_S for row in ds[...]]
-    return [births[i + 1] - births[i] for i in range(len(births) - 1)]
+    return [births[i + 1] - births[i] for i in range(len(births) - 1)], 0.0
 
 
 def _from_timepoint_stamps(f):
-    """`DataSetInfo/TimeInfo/TimePointN` — wall-clock stamps, one per timepoint (1-based)."""
+    """`DataSetInfo/TimeInfo/TimePointN` — wall-clock stamps, one per timepoint (1-based), as
+    `(gaps, resolution)`: `resolution` is 1 s when no stamp carries fractional seconds."""
     ti = f.get('DataSetInfo/TimeInfo')
     if ti is None:
         return None
@@ -98,11 +133,14 @@ def _from_timepoint_stamps(f):
     if len(idx) < 2:
         return None
     stamps = []
+    whole_seconds = True
     for i in idx:
         raw = _attr(ti, f'TimePoint{i}')
         # `%f` takes at most six fractional digits; Imaris writes nine for a file converted from a
         # Zeiss .lsm (`12:20:54.742000000`). Nanoseconds are far below any frame interval.
         raw = re.sub(r'(\.\d{6})\d+$', r'\1', raw.strip()) if isinstance(raw, str) else raw
+        if isinstance(raw, str) and '.' in raw:
+            whole_seconds = False
         for fmt in _TIMESTAMP_FORMATS:
             try:
                 stamps.append(datetime.strptime(raw.strip(), fmt))
@@ -111,7 +149,8 @@ def _from_timepoint_stamps(f):
                 continue
         else:
             return None                      # one unparseable stamp invalidates the series
-    return [(stamps[i + 1] - stamps[i]).total_seconds() for i in range(len(stamps) - 1)]
+    gaps = [(stamps[i + 1] - stamps[i]).total_seconds() for i in range(len(stamps) - 1)]
+    return gaps, (1.0 if whole_seconds else 0.0)
 
 
 # The NOMINAL interval a vendor's software was set to, in seconds, by the group Imaris copies it into:
@@ -143,7 +182,7 @@ def time_increment(path, tol=UNIFORM_TOL):
     boundary. Sources in order:
 
       1. `DataSetTimes/Time` `Birth` (nanoseconds) — numeric and exact
-      2. `DataSetInfo/TimeInfo/TimePointN` wall-clock stamps — millisecond resolution
+      2. `DataSetInfo/TimeInfo/TimePointN` wall-clock stamps — millisecond or whole-second resolution
       3. `DataSetInfo/OIR Dataset Size/Time Step` (Olympus) or `LSM Dataset Size/Time Interval [s]`
          (Zeiss) — NOMINAL
 
@@ -158,12 +197,12 @@ def time_increment(path, tol=UNIFORM_TOL):
             for name, fn in (('DataSetTimes/Time', _from_dataset_times),
                              ('DataSetInfo/TimeInfo', _from_timepoint_stamps)):
                 try:
-                    gaps = fn(f)
+                    gaps, resolution = fn(f) or (None, 0.0)
                 except (KeyError, TypeError, ValueError):
                     continue
                 if not gaps:
                     continue
-                interval, uniform, spread = summarise_gaps(gaps, tol=tol)
+                interval, uniform, spread = summarise_gaps(gaps, tol=tol, resolution=resolution)
                 if interval is None:
                     continue
                 if not uniform:

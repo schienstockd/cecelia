@@ -68,6 +68,34 @@ class SummariseGapsTest(unittest.TestCase):
         self.assertFalse(uniform)
         self.assertGreater(spread, 1.0)
 
+    def test_whole_second_rounding_is_not_irregular(self):
+        # A steady ~5.1 s series stamped to the whole second (a Zeiss Elyra SIM file via Imaris) reads
+        # back as 5 s and 6 s gaps: 20% apart, but only rounding, so within one resolution.
+        gaps = [5.0, 5.0, 6.0, 5.0, 5.0, 6.0, 5.0, 5.0, 5.0, 6.0]
+        self.assertFalse(ims_meta.summarise_gaps(gaps)[1])
+        interval, uniform, _ = ims_meta.summarise_gaps(gaps, resolution=1.0)
+        self.assertTrue(uniform)
+        self.assertAlmostEqual(interval, 5.3)          # the mean — the rounding cancels over the span
+
+    def test_whole_second_rounding_still_catches_a_pause(self):
+        _, uniform, _ = ims_meta.summarise_gaps([5.0, 6.0, 5.0, 60.0, 5.0], resolution=1.0)
+        self.assertFalse(uniform)
+
+    def test_whole_second_rounding_still_catches_a_rate_change(self):
+        # 5 s then 7 s: no steady ~6 s series rounds to that, so it is a rate change, not rounding.
+        self.assertFalse(ims_meta.summarise_gaps([5.0] * 4 + [7.0] * 4, resolution=1.0)[1])
+        self.assertTrue(ims_meta.summarise_gaps([5.0, 6.0] * 4, resolution=1.0)[1])
+
+    def test_whole_second_rounding_still_catches_a_fast_start(self):
+        # The opening of the Elyra file: three fast frames before the steady ~5.1 s. Not rounding.
+        steady = [6.0, 5.0, 5.0, 6.0, 5.0, 5.0, 6.0, 5.0, 5.0, 6.0, 5.0, 5.0, 5.0, 6.0, 5.0, 5.0, 5.0]
+        self.assertTrue(ims_meta.summarise_gaps(steady, resolution=1.0)[1])
+        self.assertFalse(ims_meta.summarise_gaps([2.0, 3.0, 2.0] + steady, resolution=1.0)[1])
+
+    def test_spread_is_the_largest_deviation_over_the_median(self):
+        # 6 against a median of 5: one fifth.
+        self.assertAlmostEqual(ims_meta.summarise_gaps([5.0, 5.0, 6.0])[2], 0.2)
+
     def test_empty_and_degenerate_input(self):
         self.assertEqual(ims_meta.summarise_gaps([]), (None, False, None))
         self.assertEqual(ims_meta.summarise_gaps([0.0, 0.0]), (None, False, None))
@@ -95,6 +123,11 @@ class TimeIncrementTest(unittest.TestCase):
         self.assertEqual(r['source'], 'DataSetTimes/Time')
         self.assertEqual(r['frames'], 4)
 
+    def test_dataset_times_are_exact_so_get_no_rounding_allowance(self):
+        # Nanosecond births of 5/6 s gaps are a real irregularity, not rounding.
+        _ims(self._p(), births_s=[0, 5, 11, 16, 22])
+        self.assertNotIn('TimeIncrement', ims_meta.time_increment(self._p()))
+
     def test_falls_back_to_timepoint_stamps(self):
         _ims(self._p(), stamps=['2026-07-29 14:00:00.000', '2026-07-29 14:00:30.000',
                                 '2026-07-29 14:01:00.000'], oir_step='99.0')
@@ -106,6 +139,21 @@ class TimeIncrementTest(unittest.TestCase):
         _ims(self._p(), stamps=['2026-07-29 14:00:00', '2026-07-29 14:00:30',
                                 '2026-07-29 14:01:00'])
         self.assertEqual(ims_meta.time_increment(self._p())['TimeIncrement'], 30.0)
+
+    def test_whole_second_stamps_with_rounded_gaps_yield_the_mean_interval(self):
+        # Gaps of 5 and 6 s from stamps with no fractional part: rounding, not an irregular series.
+        secs = [0, 5, 10, 16, 21, 26, 32, 37, 42, 47, 53]
+        _ims(self._p(), stamps=[f'2025-09-29 01:{8 + (58 + s) // 60:02d}:{(58 + s) % 60:02d}'
+                                for s in secs])
+        r = ims_meta.time_increment(self._p())
+        self.assertAlmostEqual(r['TimeIncrement'], 5.3)
+        self.assertEqual(r['source'], 'DataSetInfo/TimeInfo')
+
+    def test_millisecond_stamps_keep_the_strict_tolerance(self):
+        # The same 5/6 s gaps stamped to the millisecond ARE irregular: the allowance is for rounding.
+        _ims(self._p(), stamps=['2026-07-29 14:00:00.000', '2026-07-29 14:00:05.000',
+                                '2026-07-29 14:00:11.000', '2026-07-29 14:00:16.000'])
+        self.assertNotIn('TimeIncrement', ims_meta.time_increment(self._p()))
 
     def test_nanosecond_stamps_parse(self):
         # Imaris 7.7 writes nine fractional digits for a file converted from a Zeiss .lsm — the first
