@@ -788,9 +788,35 @@ class CommitMsgHookTest(unittest.TestCase):
                 return self.hook.main(["--commit-msg", self._msg_file("test: move the repro\n")])
 
         self.assertEqual(run({old: "a = 1\n", new: f"{marker}\n@test f()\n"}), 0)
-        self.assertEqual(run({old: f"a = 2\n@test f()   {marker}\n", new: f"{marker}\n@test f()\n"}), 1)
+        # left behind AND edited (an edit that keeps every assertion line is not held at all)
+        self.assertEqual(run({old: f"a = 1\n@test f() == 2   {marker}\n", new: f"{marker}\n@test f()\n"}), 1)
         self.assertEqual(run({old: "a = 1\n", new: "\n" * 8 + f"@test f()   {marker}\n"}), 1)
         self.assertEqual(run({old: "a = 1\n"}), 1)
+
+    def test_an_edit_that_keeps_every_assertion_needs_no_tag(self):
+        # A repro whose fake backend had to change shape (a real `Response` instead of `{ok, json}`)
+        # still expects the same thing; changing, adding or dropping an assertion is still an edit.
+        path = "frontend/src/stores/raceRepro.test.ts"
+        head = ("// RESULT-" "REVIEW: result-0000cccc\n"
+                "const reply = () => ({ ok: true, json: async () => ({ count: 1 }) })\n"
+                "it('keeps the newest count', async () => {\n"
+                "  expect(store.counts['/A']).toEqual({ count: 100 })\n"
+                "  expect(stale)\n    .toBe(false)\n})\n")
+
+        def run(staged: str) -> int:
+            with mock.patch.object(self.hook, "_staged_changed_files", return_value=[path]), \
+                    mock.patch.object(self.hook, "_head_text", return_value=head), \
+                    mock.patch.object(self.hook, "_staged_text", return_value=staged):
+                return self.hook.main(["--commit-msg", self._msg_file("test: real Response in the stub\n")])
+
+        stub_only = head.replace("({ ok: true, json: async () => ({ count: 1 }) })",
+                                 "new Response(JSON.stringify({ count: 1 }), { status: 200 })")
+        self.assertEqual(run(stub_only), 0)
+        self.assertEqual(run(stub_only.replace("{ count: 100 }", "{ count: 1 }")), 1)
+        self.assertEqual(run(stub_only.replace("    .toBe(false)", "    .toBe(true)")), 1)
+        self.assertEqual(run(stub_only + "  expect(other).toBe(1)\n"), 1)
+        self.assertEqual(run(stub_only.replace("RESULT-" "REVIEW: result-0000cccc", "")), 1)
+        self.assertEqual(run(""), 1)   # deleted
 
     def test_a_file_without_the_marker_is_not_held(self):
         with mock.patch.object(self.hook, "_staged_changed_files", return_value=["a.py"]), \
