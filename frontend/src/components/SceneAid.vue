@@ -31,11 +31,22 @@ const props = withDefaults(defineProps<{
   strokeW?: number
   /** Show the frame border. Turned OFF when the producer supplies its own container. */
   bordered?: boolean
+  /**
+   * What the frame sits on. `media` (default) is the black image ground — a movie preview is a
+   * picture of an image. `panel` is the surrounding panel's own background, for a schematic that is
+   * a DIAGRAM rather than a preview (the neighbour-graph figure): drawn in theme tokens, it follows
+   * light/dark like the rest of the form instead of being a black square in a light panel.
+   */
+  ground?: 'media' | 'panel'
+  /** the SVG's accessible name */
+  label?: string
 }>(), {
   size: 200,
   pointR: 1.5,
   strokeW: 0.8,
   bordered: true,
+  ground: 'media',
+  label: 'Preview of the overlay',
 })
 
 /** The viewBox is always 0..100 — so a producer can hand normalised 0..1 coords and this scales
@@ -55,23 +66,26 @@ function polyPoints(pts: Array<{ x: number; y: number }>): string {
 <template>
   <div class="scene-aid">
     <div v-if="render.corners.showTitleChip" class="sa-chip cc-fs-3xs">TITLE CARD</div>
-    <div class="sa-frame" :class="{ 'is-bordered': bordered }" :style="frameStyle">
+    <div class="sa-frame" :class="{ 'is-bordered': bordered, 'is-panel': ground === 'panel' }"
+      :style="frameStyle">
       <svg width="100%" height="100%" :viewBox="`0 0 ${VB} ${VB}`" preserveAspectRatio="xMidYMid meet"
-           role="img" aria-label="Preview of the overlay">
-        <!-- Ribbons FIRST, so a point sits ON its own ribbon rather than under it. -->
+           role="img" :aria-label="label">
+        <!-- Ribbons FIRST, so a point sits ON its own ribbon rather than under it. Colour as STYLE,
+             not the `stroke` attribute: a `var(--cc-…)` token resolves in a style declaration. -->
         <polyline v-for="(rib, i) in render.ribbons" :key="`rib-${i}`"
           :points="polyPoints(rib.points)"
-          :stroke="rib.colour" :stroke-width="strokeW"
+          :style="{ stroke: rib.colour, opacity: rib.opacity ?? 1 }" :stroke-width="strokeW"
+          :stroke-dasharray="rib.dashed ? `${strokeW * 2.5} ${strokeW * 2}` : undefined"
           fill="none" stroke-linejoin="round" stroke-linecap="round" />
         <!-- Points. `ringed` gets a thin outline in the point's own colour — the mask-outline hint
              from the producer, which the movie draws as a labels contour around the same cell.
              `mode: 'ring-only'` skips the filled centre for a mask-only view (no dots requested). -->
         <template v-for="(pt, i) in render.points" :key="`pt-${i}`">
           <circle v-if="pt.ringed || pt.mode === 'ring-only'" :cx="pt.x * VB" :cy="pt.y * VB"
-            :r="pointR * 1.9" :stroke="pt.colour" :stroke-width="strokeW * 0.5"
+            :r="pointR * 1.9" :style="{ stroke: pt.colour }" :stroke-width="strokeW * 0.5"
             fill="none" :opacity="pt.mode === 'ring-only' ? 0.75 : 0.55" />
           <circle v-if="pt.mode !== 'ring-only'" :cx="pt.x * VB" :cy="pt.y * VB"
-            :r="pointR" :fill="pt.colour" />
+            :r="pointR" :style="{ fill: pt.colour }" />
         </template>
       </svg>
       <span v-if="render.corners.showTimestamp" class="sa-ts cc-fs-3xs">
@@ -102,6 +116,7 @@ function polyPoints(pts: Array<{ x: number; y: number }>): string {
 }
 .sa-frame { position: relative; background: var(--cc-media-bg); border-radius: var(--cc-radius-sm); overflow: hidden; }
 .sa-frame.is-bordered { border: 1px solid var(--cc-border); }
+.sa-frame.is-panel { background: transparent; }
 .sa-frame > svg { display: block; }
 /* Corner overlays sit on top of the SVG in tabular numerals so a tiny reference stays legible on
    top of a black frame, without a second glyph to read (which is what the movie shows too). */

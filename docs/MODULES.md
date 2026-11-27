@@ -1280,7 +1280,9 @@ the order chips.
 name's entry in `tasks/paramFigures.ts`. For a choice whose options differ in what they DO rather than
 in any number on the form, where `vis` has nothing to draw — smoothing's `temporalStat` is three words
 sharing the same window, the same sigma and the same channels, and what separates them is only visible
-as a spot moving through a window (a `grid` row with frames; see `VisRole`). The builder is handed the
+as a spot moving through a window (a `grid` row with frames; see `VisRole`) — or, when the options
+differ in geometry, a `scene` row of dots and lines (`neighbourGraph`: which cells Delaunay, kNN,
+radius and fixed windows link). The builder is handed the
 selected images and the CURRENT form values, so the figure redraws as the form changes and can size
 its own cost row to the user's movie. Named in the spec for the same reason `vis` is a role: a picture
 keyed off `temporalStat` inside `ParamRenderer` is a second description of the form, and the next task

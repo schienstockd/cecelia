@@ -29,6 +29,10 @@
  * drift apart within seconds, and a comparison of two methods at two different timepoints is a
  * comparison of nothing.
  *
+ * `scene` is the vector sibling of `grid`: a dots-and-lines schematic per column (`SceneAid`), for a
+ * choice that differs in geometry — which cells a neighbour graph links — where a raster would blur a
+ * one-pixel edge into noise.
+ *
  * A `text` row (which model, matched as what, on which channels) gets no shape either — the value IS
  * the content, and it comes first, because it is what you check before any number. An empty channel
  * list reads `none` rather than blank: it resolves to channel 0 downstream and segments something
@@ -49,6 +53,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { type VisColumns, type VisFrame, MAX_R } from '../tasks/paramVis'
 import InlineNote from './InlineNote.vue'
+import SceneAid from './SceneAid.vue'
 import type { Severity } from '../lib/severity'
 
 /**
@@ -90,6 +95,10 @@ const SZ = MAX_R * 2 + 2
 
 /** The `grid` band, in CSS px — see the header on why this one row is not 16px like the rest. */
 const GRID_SZ = 48
+
+/** The `scene` band. Wider than a grid: a schematic of a dozen dots and their edges needs the room for
+ *  a one-pixel line to read as joining two dots rather than as noise between them. */
+const SCENE_SZ = 76
 
 const heading = (i: number) => props.headings?.[i] ?? String(i + 1)
 
@@ -190,6 +199,19 @@ function cellSize(f: VisFrame): number {
           </div>
         </template>
 
+        <!-- A `scene` row: a dots-and-lines schematic per column, drawn by `SceneAid` (the canonical
+             dots + lines vocabulary) on the panel's own ground so it follows the theme. Same band
+             shape as `grid`, caption underneath. -->
+        <template v-else-if="row.role === 'scene'">
+          <div v-for="(cell, i) in row.cells"
+            :key="`${row.key}-${i}`" class="vis-cell vis-cell-grid cc-fs-2xs"
+            :class="{ 'is-last': ri === vis.rows.length - 1 }">
+            <SceneAid v-if="cell.scene" :render="cell.scene" :size="SCENE_SZ" :point-r="3.2"
+              :stroke-w="1.6" ground="panel" :label="`${heading(i)}${cell.text ? `: ${cell.text}` : ''}`" />
+            <span v-if="cell.text" class="vis-num vis-scene-cap">{{ cell.text }}</span>
+          </div>
+        </template>
+
         <div v-else v-for="(cell, i) in row.cells" :key="`${row.key}-${i}`" class="vis-cell cc-fs-2xs"
           :class="{ 'is-last': ri === vis.rows.length - 1 }">
           <!-- The shape INLINE with its number, so a row is one line of text tall. A `fraction` has
@@ -272,6 +294,8 @@ function cellSize(f: VisFrame): number {
   padding: 0.3rem 0;
 }
 .vis-grid-svg { flex: 0 0 auto; }
+/* A scene caption is a phrase, not a number — centred under its picture, wrapping if it must. */
+.vis-scene-cap { text-align: center; }
 /* The chip: match the button micro size but drop the eyebrow-ish tracking. Kept narrow because the
    grid cell owns ~90px in the drift figure's 4-column layout. */
 .vis-cell-cta {
