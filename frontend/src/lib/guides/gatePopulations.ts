@@ -16,6 +16,7 @@ export const gatePopulationsGuide: GuideDef = {
   group: 'Populations',
   icon: 'pi-chart-scatter',
   summary: 'Draw gates on two measures at a time to carve your cells into named populations.',
+  keywords: ['gating', 'gate', 'threshold'],
   prereqs: [PREREQ.projectOpen, PREREQ.segmented],
 
   steps: [

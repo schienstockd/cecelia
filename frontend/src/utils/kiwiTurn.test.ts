@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { taskPageLabel, refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
+import { appendPrompt, taskPageLabel, refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
          turnMeta, searchRefs, viewerRefFor, kindLabel, claimText, plainError, attachmentRows, claimRows,
          TASK_PAGES, taskLanding, mentionTargets, turnHeading, type KiwiTurn } from './kiwiTurn'
 
@@ -302,4 +302,13 @@ describe('taskPageLabel', () => {
     expect(taskPageLabel('myLabTools')).toEqual({ label: 'My Lab Tools', order: Number.MAX_SAFE_INTEGER })
     expect(taskPageLabel('myImages').label).toBe('My Images')   // the sidebar keeps "Images"
   })
+})
+
+// The jump search's "Ask Kiwi" row hands its text over; a question the user typed and has not sent
+// must survive that.
+describe('appendPrompt', () => {
+  it('fills an empty box', () => expect(appendPrompt('', ' capture movie ')).toBe('capture movie'))
+  it('adds after an unsent question instead of replacing it', () =>
+    expect(appendPrompt('Why is t5 dim?  ', 'export video')).toBe('Why is t5 dim?\nexport video'))
+  it('leaves the box alone for blank text', () => expect(appendPrompt('draft', '   ')).toBe('draft'))
 })

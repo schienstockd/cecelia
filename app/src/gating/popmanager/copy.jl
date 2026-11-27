@@ -25,6 +25,33 @@ has_gating(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)
     !isempty(load_pop_tree(img; value_name = value_name, pop_type = String(pop_type), backfill_save = false).order)
 
 """
+    plan_gating_copy(m, timg; value_name, needed = _needed_columns(m), src_names) -> (; tree, remapped, skip)
+
+What copying the source map `m` onto `timg` would write, without writing it: `tree` — `m` with its
+gate/filter columns pointed at `timg`'s columns for the same channel names (`m` itself when nothing
+moves), `remapped` — those moves, or `skip` — why the copy would leave this image out (no such label
+set, a µm position gate on an uncalibrated image, a channel it cannot match). `copy_gating!` writes
+`tree`; the rule preview (`GET /api/gating/rule-preview`) evaluates it, so both decide the same way.
+"""
+function plan_gating_copy(m::PopulationTree, timg::CciaImage; value_name::AbstractString,
+                          needed = _needed_columns(m), src_names)
+    vn = String(value_name)
+    none = @NamedTuple{from::String, to::String, channel::String}[]
+    skip(why) = (; tree = nothing, remapped = none, skip = why)
+    img_has_value_name(timg, vn) || return skip("no segmentation '$vn'")
+    # A µm POSITION gate needs the target's own pixel size; without one the coordinates would
+    # silently be read as pixels (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7).
+    (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&
+        return skip("no physical pixel size — set it to copy a position gate")
+    # Gate columns are named by channel index: point them at the target's column for the same
+    # channel name, so a target with another channel order still gates the same marker.
+    mt = match_channel_columns(needed, src_names, channel_names(timg; value_name = vn))
+    isempty(mt.problems) || return skip("channels don't match — " * describe_channel_problems(mt.problems))
+    tree = isempty(mt.remapped) ? m : rename_pop_columns(m, Dict(r.from => r.to for r in mt.remapped))
+    (; tree, remapped = mt.remapped, skip = nothing)
+end
+
+"""
     copy_gating!(src, targets; value_name, pop_type, replace = true, on_copied = (img, m) -> nothing)
         -> (; copied, skipped, warnings, remapped)
 
@@ -66,16 +93,9 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
             tuid == src.uid && continue
             img_has_value_name(timg, vn) || (skipped[tuid] = "no segmentation '$vn'"; continue)
             (!replace && has_gating(timg, vn, pt)) && (skipped[tuid] = "already gated"; continue)
-            # A µm POSITION gate needs the target's own pixel size; without one the coordinates would
-            # silently be read as pixels (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7).
-            (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&
-                (skipped[tuid] = "no physical pixel size — set it to copy a position gate"; continue)
-            # Gate columns are named by channel index: point them at the target's column for the same
-            # channel name, so a target with another channel order still gates the same marker.
-            mt = match_channel_columns(needed, src_names, channel_names(timg; value_name = vn))
-            isempty(mt.problems) ||
-                (skipped[tuid] = "channels don't match — " * describe_channel_problems(mt.problems); continue)
-            tm = isempty(mt.remapped) ? m : rename_pop_columns(m, Dict(r.from => r.to for r in mt.remapped))
+            plan = plan_gating_copy(m, timg; value_name = vn, needed, src_names)
+            plan.skip === nothing || (skipped[tuid] = plan.skip; continue)
+            tm, mt = plan.tree, plan
             try
                 save_pop_tree!(tm, timg)
                 on_copied(timg, tm)

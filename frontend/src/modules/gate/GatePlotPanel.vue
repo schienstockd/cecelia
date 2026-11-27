@@ -24,6 +24,9 @@ import { axisQ, outlineToGate, type SrvGate } from '../../plots/montage'
 import { isSplitGate, sliceRegions, quadrantRegions } from '../../plots/splitGeometry'
 import { histogramView, bisectorRegions, defaultRuleWindow, HIST_AXIS } from '../../plots/histGeometry'
 import GateNameBar from './GateNameBar.vue'
+import { canFollow, follows, toggleFollow, FOLLOW_TIP } from '../../plots/followRule'
+import CcToggle from '../../components/CcToggle.vue'
+import RulePreviewDialog from './RulePreviewDialog.vue'
 import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
@@ -375,8 +378,8 @@ function onDraw(geom: Partial<GateSpec>) {
 // A split gate (slice / quadrant) adds one population per region: a slice's from the typed name
 // (`name+`, `name-`), a quadrant's from the two axis labels. plots/splitGeometry.ts names them.
 const pendingSplit = computed(() => isSplitGate(pending.value) || pending.value?.kind === 'bisector')
-// a new bisector: follow the parent's density valley instead of a fixed cut (a one-off choice made with
-// its name, like the name; double-click its cut later to switch)
+// a new bisector: follow the parent's density valley instead of a fixed cut; a new rectangle / polygon:
+// follow its cloud per image (a choice made with its name; switched later on the selected gate)
 const pendingRule = ref(false)
 const splitRegions = computed(() => {
   const p = pending.value
@@ -411,6 +414,7 @@ async function confirmGate() {
       const [lo, hi] = defaultRuleWindow(gate.cut!, viewExtents.value)
       gate.rule = { kind: 'valley', lo, hi }
     }
+    if (canFollow(gate) && pendingRule.value) gate.rule = { kind: 'follow' }
     ok = pendingSplit.value
       ? await g.addSplit(gate, parent.value,
           splitRegions.value.map((r, i) => ({ ...r, colour: palette[(n + i) % palette.length] })))
@@ -438,6 +442,22 @@ const toolIcon = (kind?: string) => [...drawModes(false), ...drawModes(true)].fi
 async function onEdit(e: { path: string; gate: GateSpec }) {
   await g.setGate(e.path, e.gate)
 }
+// the gate selected on the plot (GateOverlay `select`): a rectangle / polygon gets its follow switch in the
+// population row, and once it follows, "Check images" — where it lands on the set's other images
+// (RulePreviewDialog). Both are marked `data-keeps-gate-selection`, so pressing them keeps it selected.
+const selectedGate = ref<string | null>(null)
+const followCtl = computed(() => {
+  // not while a draw tool is armed: the selection outlives a tool switch, and a new shape's naming bar
+  // has its own follow switch
+  const e = selectedGate.value && mode.value === 'off' && !pending.value
+    ? currentGates.value.find(c => c.path === selectedGate.value) : undefined
+  return e && canFollow(e.gate) ? { path: e.path, on: follows(e.gate) } : null
+})
+async function setFollow(on: boolean) {
+  const e = followCtl.value && currentGates.value.find(c => c.path === followCtl.value!.path)
+  if (e && on !== follows(e.gate)) await g.setGate(e.path, toggleFollow(JSON.parse(JSON.stringify(e.gate))))
+}
+const previewPath = ref<string | null>(null)
 
 // export the plot — GateScatterCell owns the image composite (PNG = canvas pixels + overlays; SVG =
 // true-vector dots/gates/axes, docs/PLOTS.md); CSV = the shown per-event channel values + population
@@ -624,10 +644,18 @@ watch(() => props.reloadToken, fetchPlot)
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="zOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(zOverride, '')" /></label>
-        <label class="ax-row cc-muted"><span class="ax-lbl">population</span>
-          <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
+        <!-- a div, not a label: the follow switch is a label of its own -->
+        <div class="ax-row cc-muted"><span class="ax-lbl">population</span>
+          <select class="ax-chan" v-model="parent" aria-label="population" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
-          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-gesture-line">hold <kbd>Shift</kbd> to adjust gates</span></label>
+          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-gesture-line">hold <kbd>Shift</kbd> to adjust gates</span>
+          <template v-else-if="followCtl">
+            <CcToggle data-keeps-gate-selection data-guide="gate.follow" :model-value="followCtl.on" label="follow"
+                      v-tooltip.bottom="FOLLOW_TIP" @update:model-value="setFollow" />
+            <button v-if="followCtl.on && g.popType === 'flow'" data-keeps-gate-selection class="cc-btn cc-btn-ghost"
+                    v-tooltip.bottom="'Where it lands on the other images'"
+                    @click="previewPath = followCtl.path">Check images</button>
+          </template></div>
       </div>
     </template>
     <!-- utility actions (export) in the footer, like the summary / cluster panels -->
@@ -655,7 +683,7 @@ watch(() => props.reloadToken, fetchPlot)
                      :view-tick="viewTick" :loading="loading"
                      :plot-id="props.persistKey"
                      :pending-gate="pending"
-                     @draw="onDraw" @edit="onEdit" @cancel="onCancel">
+                     @draw="onDraw" @edit="onEdit" @cancel="onCancel" @select="selectedGate = $event">
       <!-- untracked segmentation on a track plot: nothing to show, point the user at tracking -->
       <div v-if="notTracked" class="gate-empty cc-empty-inline cc-card">
         <i class="pi pi-share-alt" />
@@ -671,6 +699,12 @@ watch(() => props.reloadToken, fetchPlot)
                    :add-tip="pendingSplit && splitRegions.length ? splitRegions.map(r => r.name).join(' · ') : ''"
                    @add="confirmGate" @cancel="pending = null" />
     </GateScatterCell>
+    <!-- teleported: the canvas may scale its panels, and a transformed ancestor traps a fixed modal -->
+    <Teleport to="body">
+      <RulePreviewDialog v-if="previewPath && g.imageUid" :set-uid="g.viewerSetUid()" :source-uid="g.imageUid"
+                         :project-uid="g.projectUid()" :value-name="g.valueName ?? ''" :path="previewPath"
+                         :plot-query="metaQ" @close="previewPath = null" />
+    </Teleport>
   </CanvasPanel>
 </template>
 

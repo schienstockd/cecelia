@@ -26,12 +26,22 @@ const _FOLLOW_POLY = [(1.2, 1.0), (2.8, 1.2), (3.0, 3.0), (1.0, 2.8)]   # drawn 
     @test s !== nothing && abs(s[1] - 1.0) < 0.15 && abs(s[2] - 0.5) < 0.15
     r = Cecelia.resolve_gate(g, x2, y2)
     @test r.vertices == [(x + s[1], y + s[2]) for (x, y) in g.vertices]
-    @test Cecelia.rule_flags(g, x2, y2) == Dict("rule_ok" => true)
+    # the flags name the peak it moved to: that image's cloud centre, to a grid step — the same density
+    # as `resolve_gate`, so the shape and its peak agree
+    f = Cecelia.rule_flags(g, x2, y2)
+    @test f["rule_ok"] === true && all(abs.(f["rule_peak"] .- (3.0, 2.5)) .< 0.1)
+    rg, rf = Cecelia.resolve_with_flags(g, x2, y2)
+    @test rg.vertices == r.vertices && rf == f
+    @test f["rule_peak"] ≈ collect(g.rule.anchor .+ s)
     # its cloud is gone: the nearest one is further than the shape's own size → it stays put, flagged
     xb, yb = _cloud(rng, 6.0, 6.0, 1000)
     @test Cecelia.follow_shift(g, xb, yb) === nothing
     @test Cecelia.resolve_gate(g, xb, yb).vertices == g.vertices
     @test Cecelia.rule_flags(g, xb, yb) == Dict("rule_ok" => false)
+    # moved further than the shape is wide, along ONE axis only, is a miss too: (2.6, 0) for a shape 2.0
+    # wide (x 1.0–3.0); a broad cloud, so the climb from the anchor does reach its mode
+    x3, y3 = _cloud(rng, 4.6, 2.0, 3000; sd = 1.0)
+    @test Cecelia.follow_shift(g, x3, y3) === nothing
     # too few cells: no density
     @test Cecelia.follow_shift(g, x2[1:5], y2[1:5]) === nothing
     # a rectangle anchors from its middle and moves the same way
@@ -66,6 +76,16 @@ end
     c = cells_in_pop(m2, "/left/cloud")
     # the template holds ~all of a cloud centred in it; moved with the cloud, it still does
     @test length(c) > 0.95 * 2000 && all(<(5.0), x2[c])
+end
+
+@testset "project_point: a gate-coordinate point onto a plot, either axis order and transform" begin
+    lg = LogTransform()
+    g = RectangleGate("a", "b", 0.0, 1.0, 0.0, 1.0)            # linear on its own axes
+    @test project_point(g, "a", "b", LinearTransform(), LinearTransform(), (2.0, 3.0)) == [2.0, 3.0]
+    @test project_point(g, "b", "a", LinearTransform(), LinearTransform(), (2.0, 3.0)) == [3.0, 2.0]
+    # shown under log10 on x: raw 100 sits at 2
+    @test project_point(g, "a", "b", lg, LinearTransform(), (100.0, 3.0)) ≈ [2.0, 3.0]
+    @test project_point(g, "a", "c", LinearTransform(), LinearTransform(), (2.0, 3.0)) === nothing
 end
 
 @testset "follow rule: spec, projection, and what a rectangle / polygon's rule may be" begin

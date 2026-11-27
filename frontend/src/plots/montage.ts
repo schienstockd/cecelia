@@ -73,12 +73,13 @@ export function effSpec(used: string | undefined, requested: TransformSpec, repo
 // orientation. Transposed for the mirror tile like points/extents.
 export type SrvGate = { path: string; colour: string } & Pick<GateSpec,
   'kind' | 'x_min' | 'x_max' | 'y_min' | 'y_max' | 'vertices' | 'side' | 'centre' | 'arms' | 'quadrant' | 'group' |
-  'lo' | 'hi' | 'cut' | 'rule' | 'rule_ok' | 'lo_rule' | 'hi_rule' | 'lo_rule_ok' | 'hi_rule_ok'>
+  'lo' | 'hi' | 'cut' | 'rule' | 'rule_ok' | 'rule_peak' | 'lo_rule' | 'hi_rule' | 'lo_rule_ok' | 'hi_rule_ok'>
 export function transposeGate(g: SrvGate): SrvGate {
   if (isSplitGate(g)) return transposeSplit(g)
+  const peak = g.rule_peak ? { rule_peak: [g.rule_peak[1], g.rule_peak[0]] as [number, number] } : {}
   return g.kind === 'rectangle'
-    ? { ...g, x_min: g.y_min, x_max: g.y_max, y_min: g.x_min, y_max: g.x_max }
-    : { ...g, vertices: (g.vertices ?? []).map(([x, y]) => [y, x] as [number, number]) }
+    ? { ...g, ...peak, x_min: g.y_min, x_max: g.y_max, y_min: g.x_min, y_max: g.x_max }
+    : { ...g, ...peak, vertices: (g.vertices ?? []).map(([x, y]) => [y, x] as [number, number]) }
 }
 // A server outline → an editable gate on these axes: its geometry as projected, plus the plot's channels
 // and the transforms it is displayed in (a drag-edit is re-stored in that space).

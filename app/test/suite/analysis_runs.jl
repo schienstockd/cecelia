@@ -37,6 +37,10 @@ end
     @test Cecelia._clust_run_keys("clusters", :cell, "mv", cols, true) == (["clusters.mv"], String[])
     @test Cecelia._clust_run_keys("regions", :cell, "mv", cols, false) ==
           (["regions.mv", "spatial.comp.B.mv"], ["X_umap.mv"])
+    # with a record, a region run drops exactly its recorded columns: not a dotted sibling run's
+    cols2 = ["regions.mv", "regions.t2.mv", "spatial.comp.B.mv", "spatial.comp.B.t2.mv"]
+    @test Cecelia._clust_run_keys("regions", :cell, "mv", cols2, false; owned = ["spatial.comp.B.mv"]) ==
+          (["regions.mv", "spatial.comp.B.mv"], ["X_umap.mv"])
     # a track run from before behaviour axes: no path column to drop, absent embedding is harmless
     @test Cecelia._clust_run_keys("clusters", :track, "old", ["clusters.old"], false) ==
           (["clusters.old"], ["X_umap.old", "X_diffmap.old"])

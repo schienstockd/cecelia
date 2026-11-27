@@ -181,18 +181,31 @@ end
 # this is purely for rendering the outline aligned with the displayed points.
 function project_gate(g::Gate, xcol::AbstractString, ycol::AbstractString,
                       xt::AxisTransform, yt::AxisTransform)
+    d = _disp_map(g, xcol, ycol, xt, yt)
+    d === nothing ? nothing : _projected(g, d...)
+end
+
+"""A point in `g`'s own coordinates (its x/y channels, its transforms) on the plot of (`xcol`, `ycol`)
+under (`xt`, `yt`) — e.g. a follow rule's peak; `nothing` when the gate is not on these axes."""
+function project_point(g::Gate, xcol::AbstractString, ycol::AbstractString,
+                       xt::AxisTransform, yt::AxisTransform, p)
+    d = _disp_map(g, xcol, ycol, xt, yt)
+    d === nothing ? nothing : collect(d[1](p[1], p[2]))
+end
+
+# (to_disp, swap): a stored point (on the gate's own x/y axes) → the plot's (x,y) display coordinates
+function _disp_map(g::Gate, xcol, ycol, xt::AxisTransform, yt::AxisTransform)
     gx, gy = g.x_channel, g.y_channel
     direct = (gx == xcol && gy == ycol)
     swap   = (gx == ycol && gy == xcol)
     (direct || swap) || return nothing
-    # a stored point (on the gate's own x/y axes) → the plot's (x,y) display coordinates
     to_disp(vgx, vgy) = begin
         rgx = invert_transform(g.x_transform, vgx)          # raw value on the gate's x-channel
         rgy = invert_transform(g.y_transform, vgy)          # raw value on the gate's y-channel
         swap ? (apply_transform(xt, rgy), apply_transform(yt, rgx)) :   # gate x ↦ plot Y, gate y ↦ plot X
                (apply_transform(xt, rgx), apply_transform(yt, rgy))
     end
-    _projected(g, to_disp, swap)
+    (to_disp, swap)
 end
 
 function _projected(g::RectangleGate, to_disp, swap)

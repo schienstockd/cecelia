@@ -3,7 +3,7 @@
 > **Generated** by `scripts/architecture/python_extract.py` — do not edit; run `pixi run arch-diagrams`.
 
 
-`cecelia.utils` is 61 modules, 22.4k lines. Which ones carry the weight, and how they lean on each other.
+`cecelia.utils` is 61 modules, 22.5k lines. Which ones carry the weight, and how they lean on each other.
 
 ## The 20 most-imported modules
 
@@ -11,7 +11,7 @@ Box: module and how many repo files import it. Arrow `a → b`: a imports b. Onl
 
 ```mermaid
 flowchart TB
-  script_utils["script_utils<br/><small>imported by 63</small>"]
+  script_utils["script_utils<br/><small>imported by 64</small>"]
   atomic_io["atomic_io<br/><small>imported by 56</small>"]
   zarr_utils["zarr_utils<br/><small>imported by 41</small>"]
   ome_xml_utils["ome_xml_utils<br/><small>imported by 34</small>"]
@@ -69,8 +69,8 @@ None.
 
 | Name | Module | Imported by |
 |---|---|---|
-| `script_params` | `cecelia.utils.script_utils` | 58 |
-| `get_logfile_utils` | `cecelia.utils.script_utils` | 55 |
+| `script_params` | `cecelia.utils.script_utils` | 59 |
+| `get_logfile_utils` | `cecelia.utils.script_utils` | 56 |
 | `write_json_atomic` | `cecelia.utils.atomic_io` | 48 |
 | `read_axes` | `cecelia.utils.zarr_utils` | 33 |
 | `open_as_zarr` | `cecelia.utils.zarr_utils` | 32 |
@@ -78,7 +78,7 @@ None.
 | `parse_meta` | `cecelia.utils.ome_xml_utils` | 28 |
 | `staged_store` | `cecelia.utils.zarr_utils` | 21 |
 | `open_multiscales_for_writing` | `cecelia.utils.zarr_utils` | 20 |
-| `get_param` | `cecelia.utils.script_utils` | 17 |
+| `get_param` | `cecelia.utils.script_utils` | 18 |
 | `save_meta_in_zarr` | `cecelia.utils.ome_xml_utils` | 15 |
 | `write_calibration` | `cecelia.utils.zarr_utils` | 15 |
 | `write_multiscale_pyramid` | `cecelia.utils.zarr_utils` | 15 |

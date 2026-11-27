@@ -21,10 +21,10 @@ flowchart LR
   run_records["run records<br/><small>3 files · 0.9k lines</small>"]
   scheduler_chains["scheduler+chains<br/><small>21 files · 5.3k lines</small>"]
   task_framework["task framework<br/><small>12 files · 3.9k lines</small>"]
-  tasks["tasks<br/><small>81 files · 12.7k lines</small>"]
+  tasks["tasks<br/><small>82 files · 12.8k lines</small>"]
   runner["runner<br/><small>5 files · 1.4k lines</small>"]
   cell_data["cell data<br/><small>4 files · 2.4k lines</small>"]
-  gating["gating<br/><small>23 files · 6.2k lines</small>"]
+  gating["gating<br/><small>23 files · 6.3k lines</small>"]
   tracking_spatial["tracking+spatial<br/><small>15 files · 4.5k lines</small>"]
   qc_checks["qc+checks<br/><small>8 files · 4.9k lines</small>"]
   plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
@@ -68,7 +68,7 @@ flowchart LR
     api__server_ws["api: server+ws<br/><small>6 files · 3.1k lines</small>"]
     api__rendering["api: rendering<br/><small>16 files · 9.5k lines</small>"]
     api__claude_kiwi["api: claude+kiwi<br/><small>10 files · 4.1k lines</small>"]
-    api__routes["api: routes<br/><small>45 files · 17.3k lines</small>"]
+    api__routes["api: routes<br/><small>45 files · 17.4k lines</small>"]
   end
   subgraph PKG["app/src — Cecelia.jl"]
     model["model<br/><small>8 files · 3.6k lines</small>"]
@@ -76,17 +76,17 @@ flowchart LR
     config["config<br/><small>16 files · 3.7k lines</small>"]
     scheduler_chains["scheduler+chains<br/><small>21 files · 5.3k lines</small>"]
     task_framework["task framework<br/><small>12 files · 3.9k lines</small>"]
-    tasks["tasks<br/><small>81 files · 12.7k lines</small>"]
+    tasks["tasks<br/><small>82 files · 12.8k lines</small>"]
     runner["runner<br/><small>5 files · 1.4k lines</small>"]
     cell_data["cell data<br/><small>4 files · 2.4k lines</small>"]
-    gating["gating<br/><small>23 files · 6.2k lines</small>"]
+    gating["gating<br/><small>23 files · 6.3k lines</small>"]
     tracking_spatial["tracking+spatial<br/><small>15 files · 4.5k lines</small>"]
     qc_checks["qc+checks<br/><small>8 files · 4.9k lines</small>"]
     plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
     hpc["hpc<br/><small>9 files · 2.5k lines</small>"]
     ai_lab_log["ai+lab log<br/><small>21 files · 5.2k lines</small>"]
   end
-  api__routes -->|122| gating
+  api__routes -->|127| gating
   api__routes -->|79| model
   api__routes -->|57| config
   api__claude_kiwi -->|47| ai_lab_log
@@ -146,7 +146,7 @@ Both directions present (any n). In one module these are legal, but each pair is
 | tasks ↔ gating | 25: `Population`, `_clustfeatures_entry`, `_clustfeatures_path`, `_group_pops_by_value_name`, … | 1: `Track` |
 | tasks ↔ tracking+spatial | 27: `_basis_name`, `_basis_segments`, `append_corrections!`, `apply_track_ops!`, … | 8: `Track`, `_comp_col`, `roi_review_labels`, `store_written_at`, … |
 | tasks ↔ qc+checks | 18: `_cal_num`, `_cluster_run_env`, `_saturation_channels`, `acquisition_technology`, … | 6: `Denoise`, `Track`, `import_source_fingerprint`, `ngff_multiscales`, … |
-| tasks ↔ plots+boards | 3: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` | 9: `Branching`, `Track`, `TrackMeasures`, `_motiffeatures_path`, … |
+| tasks ↔ plots+boards | 3: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` | 10: `Branching`, `Track`, `TrackMeasures`, `_motiffeatures_path`, … |
 | tasks ↔ hpc | 1: `hpc_task_cpus` | 1: `zarr_group_meta_files` |
 | python bridge ↔ hpc | 1: `_run_py_hpc` | 3: `_app_dir`, `_py_task_env`, `pixi_env_name` |
 | cell data ↔ gating | 2: `gating_path`, `is_track_grained` | 16: `_split_channel_column`, `as_df`, `axis_of`, `canonical_channel_columns`, … |
@@ -191,7 +191,7 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **gating** | 18 |  | 12 | 4 |  |  | 1 |  |  | 16 | · | 5 | 6 |  |  |  |  |  |
 | **tracking+spatial** | 16 |  | 1 |  |  |  | 8 |  |  | 20 | 11 | · | 1 | 3 |  |  |  |  |
 | **qc+checks** | 17 |  | 5 | 4 | 3 | 4 | 6 |  |  | 2 | 13 |  | · |  |  | 1 |  |  |
-| **plots+boards** | 39 |  | 7 | 4 | 2 | 5 | 9 |  | 2 | 10 | 31 | 7 | 7 | · |  | 5 |  |  |
+| **plots+boards** | 39 |  | 7 | 4 | 2 | 5 | 10 |  | 2 | 10 | 31 | 7 | 7 | · |  | 5 |  |  |
 | **hpc** | 2 | 1 | 12 | 1 | 4 | 1 | 1 |  | 3 |  |  |  |  |  | · |  |  |  |
 | **ai+lab log** | 24 | 2 | 14 | 9 | 18 | 6 | 2 |  |  | 6 | 28 | 1 | 8 | 4 | 1 | · |  |  |
 | **logging** |  |  | 1 |  |  |  |  |  |  |  |  |  |  |  |  |  | · |  |
@@ -199,7 +199,7 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **api: server+ws** | 8 | 7 | 25 | 2 | 12 | 2 |  | 20 |  |  |  |  |  |  |  | 3 | 6 |  |
 | **api: rendering** | 29 | 4 | 15 |  | 3 |  | 5 |  | 1 | 10 | 19 | 12 |  |  |  |  |  |  |
 | **api: claude+kiwi** | 7 | 5 | 17 | 5 |  | 3 | 1 |  |  | 4 | 5 | 1 |  | 5 |  | 47 |  |  |
-| **api: routes** | 79 | 12 | 57 | 4 | 29 | 27 | 10 | 5 | 3 | 13 | 122 | 26 | 30 | 31 | 15 | 31 | 1 |  |
+| **api: routes** | 79 | 12 | 57 | 4 | 29 | 27 | 10 | 5 | 3 | 13 | 127 | 26 | 30 | 31 | 15 | 31 | 1 |  |
 
 </details>
 

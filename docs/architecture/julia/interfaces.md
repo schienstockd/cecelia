@@ -183,9 +183,9 @@ classDiagram
   Gate <|-- SliceGate
 ```
 
-<details><summary>11 shared operations — take any `Gate`, no subtype overrides them</summary>
+<details><summary>14 shared operations — take any `Gate`, no subtype overrides them</summary>
 
-`_gate_mask`, `_rule_values`, `anchor_rule`, `gate_channels`, `gate_shape_spec`, `inside`, `needs_anchor`, `project_gate`, `resolve_gate`, `rule_flags`, `set_gate!`
+`_disp_map`, `_gate_mask`, `_rule_values`, `anchor_rule`, `gate_channels`, `gate_shape_spec`, `inside`, `needs_anchor`, `project_gate`, `project_point`, `resolve_gate`, `resolve_with_flags`, `rule_flags`, `set_gate!`
 
 </details>
 
@@ -245,9 +245,9 @@ classDiagram
   AxisTransform <|-- LogicleTransform
 ```
 
-<details><summary>6 shared operations — take any `AxisTransform`, no subtype overrides them</summary>
+<details><summary>8 shared operations — take any `AxisTransform`, no subtype overrides them</summary>
 
-`effective_transform`, `invert_column`, `project_gate`, `transform_column`, `transform_key`, `transform_kind`
+`_disp_map`, `effective_transform`, `invert_column`, `project_gate`, `project_point`, `transform_column`, `transform_key`, `transform_kind`
 
 </details>
 

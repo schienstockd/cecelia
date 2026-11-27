@@ -56,12 +56,12 @@
   "rank": -6,
   "detail": "6 bare `fetch(` calls",
   "where": [
-   "frontend/src/stores/gating.ts:249",
-   "frontend/src/stores/gating.ts:268",
-   "frontend/src/stores/gating.ts:311",
-   "frontend/src/stores/gating.ts:342",
-   "frontend/src/stores/gating.ts:382",
-   "frontend/src/stores/gating.ts:577"
+   "frontend/src/stores/gating.ts:253",
+   "frontend/src/stores/gating.ts:272",
+   "frontend/src/stores/gating.ts:315",
+   "frontend/src/stores/gating.ts:346",
+   "frontend/src/stores/gating.ts:388",
+   "frontend/src/stores/gating.ts:583"
   ]
  },
  {

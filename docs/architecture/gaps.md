@@ -103,7 +103,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`stores/appControl.ts`** — 6 bare `fetch(` calls · `frontend/src/stores/appControl.ts:80`, `frontend/src/stores/appControl.ts:89`, `frontend/src/stores/appControl.ts:97`, `frontend/src/stores/appControl.ts:218` +2
 - **`stores/canvasPanels.ts`** — 1 bare `fetch(` call · `frontend/src/stores/canvasPanels.ts:101`
 - **`stores/customModules.ts`** — 1 bare `fetch(` call · `frontend/src/stores/customModules.ts:98`
-- **`stores/gating.ts`** — 6 bare `fetch(` calls · `frontend/src/stores/gating.ts:249`, `frontend/src/stores/gating.ts:268`, `frontend/src/stores/gating.ts:311`, `frontend/src/stores/gating.ts:342` +2
+- **`stores/gating.ts`** — 6 bare `fetch(` calls · `frontend/src/stores/gating.ts:253`, `frontend/src/stores/gating.ts:272`, `frontend/src/stores/gating.ts:315`, `frontend/src/stores/gating.ts:346` +2
 - **`stores/labCapture.ts`** — 1 bare `fetch(` call · `frontend/src/stores/labCapture.ts:33`
 - **`stores/log.ts`** — 1 bare `fetch(` call · `frontend/src/stores/log.ts:127`
 - **`stores/plotRegistry.ts`** — 1 bare `fetch(` call · `frontend/src/stores/plotRegistry.ts:77`

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { axisQ, effSpec, fitGridCols } from './montage'
+import { axisQ, effSpec, fitGridCols, transposeGate } from './montage'
 
 // The transform a montage tile asks for and the one it fetches dots with: a parameter it does not have
 // stays off the query (plotmeta derives it from the data), and the spec plotmeta reports back is the
@@ -40,5 +40,14 @@ describe('fitGridCols', () => {
   it('falls back to the near-square shape before the slot is measured', () => {
     expect(fitGridCols(3, 0, 0)).toBe(2)
     expect(fitGridCols(1, 0, 0)).toBe(1)
+  })
+})
+
+describe('transposeGate', () => {
+  it("swaps a following shape's peak with its outline, for the mirror tile", () => {
+    const g = { path: '/r', colour: '#f00', kind: 'rectangle' as const, x_min: 1, x_max: 2, y_min: 5, y_max: 7,
+                rule: { kind: 'follow' as const }, rule_ok: true, rule_peak: [1.5, 6] as [number, number] }
+    expect(transposeGate(g)).toMatchObject({ x_min: 5, x_max: 7, y_min: 1, y_max: 2, rule_peak: [6, 1.5] })
+    expect(transposeGate({ ...g, rule_peak: undefined }).rule_peak).toBeUndefined()
   })
 })

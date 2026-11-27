@@ -13,7 +13,7 @@ uses instead. Box also shows how many files import the store.
 flowchart LR
   subgraph BASE["base stores"]
     log["log<br/><small>48 importers</small>"]
-    project["project<br/><small>72 importers</small>"]
+    project["project<br/><small>73 importers</small>"]
     projectMeta["projectMeta<br/><small>60 importers</small>"]
     settings["settings<br/><small>63 importers</small>"]
   end
@@ -28,14 +28,14 @@ flowchart LR
   correctionCockpit["correctionCockpit<br/><small>2 importers</small>"]
   customModules["customModules<br/><small>6 importers</small>"]
   gating["gating<br/><small>7 importers</small><br/><small>uses log, project, projectMeta</small>"]
-  guide["guide<br/><small>6 importers</small><br/><small>uses project, projectMeta</small>"]
+  guide["guide<br/><small>7 importers</small><br/><small>uses project, projectMeta</small>"]
   guideMirror["guideMirror<br/><small>2 importers</small>"]
-  kiwi["kiwi<br/><small>11 importers</small><br/><small>uses projectMeta, settings</small>"]
+  kiwi["kiwi<br/><small>12 importers</small><br/><small>uses projectMeta, settings</small>"]
   labCapture["labCapture<br/><small>4 importers</small><br/><small>uses projectMeta, settings</small>"]
   labelOpsQueue["labelOpsQueue<br/><small>1 importers</small>"]
   layoutFold["layoutFold<br/><small>4 importers</small><br/><small>uses settings</small>"]
   linkedSelection["linkedSelection<br/><small>6 importers</small>"]
-  observer["observer<br/><small>24 importers</small>"]
+  observer["observer<br/><small>25 importers</small>"]
   paramHandoff["paramHandoff<br/><small>2 importers</small>"]
   plotRegistry["plotRegistry<br/><small>4 importers</small><br/><small>uses projectMeta</small>"]
   push["push<br/><small>7 importers</small>"]
@@ -88,23 +88,23 @@ flowchart LR
 
 | Store | Importers | By group |
 |---|---|---|
-| `project` | 72 | components (flat) 22, modules 15, components/plots 9, composables 8, stores 5, components/canvas 4, utils (flat) 3, components (other) 2, tasks 2, app root 1, lib (flat) 1 |
+| `project` | 73 | components (flat) 22, modules 16, components/plots 9, composables 8, stores 5, components/canvas 4, utils (flat) 3, components (other) 2, tasks 2, app root 1, lib (flat) 1 |
 | `settings` | 63 | components (flat) 15, modules 10, components/viewerWindow 9, composables 8, stores 6, components/canvas 5, components (other) 3, tasks 3, app root 2, components/plots 1, utils (flat) 1 |
 | `projectMeta` | 60 | modules 19, components (flat) 17, stores 10, composables 4, components/canvas 3, tasks 3, components (other) 2, app root 1, utils (flat) 1 |
 | `log` | 48 | modules 16, components (flat) 13, stores 5, app root 2, components/canvas 2, composables 2, tasks 2, utils (flat) 2, utils/viewer 2, components/plots 1, lib (flat) 1 |
 | `viewer` | 39 | modules 11, components/plots 9, composables 5, components (flat) 4, utils/viewer 3, stores 2, app root 1, components (other) 1, components/canvas 1, components/viewerWindow 1, tasks 1 |
 | `ws` | 30 | components (flat) 8, composables 6, modules 6, stores 4, tasks 2, utils (flat) 2, app root 1, lib (flat) 1 |
+| `observer` | 25 | components (flat) 13, components (other) 4, components/canvas 2, composables 2, stores 2, app root 1, components/viewerWindow 1 |
 | `tasks` | 25 | components (flat) 8, modules 5, tasks 3, utils (flat) 3, composables 2, stores 2, app root 1, lib (flat) 1 |
-| `observer` | 24 | components (flat) 12, components (other) 4, components/canvas 2, composables 2, stores 2, app root 1, components/viewerWindow 1 |
 | `appControl` | 22 | components (flat) 9, stores 4, modules 3, app root 2, composables 2, components (other) 1, lib (flat) 1 |
 | `taskDefs` | 13 | components (flat) 6, composables 2, modules 2, components (other) 1, stores 1, tasks 1 |
-| `kiwi` | 11 | components (other) 3, composables 3, components (flat) 2, components/canvas 2, modules 1 |
+| `kiwi` | 12 | components (flat) 3, components (other) 3, composables 3, components/canvas 2, modules 1 |
 | `canvasPanels` | 7 | components/canvas 2, composables 2, stores 2, modules 1 |
 | `gating` | 7 | modules 4, components/canvas 2, components (flat) 1 |
+| `guide` | 7 | components (flat) 6, app root 1 |
 | `push` | 7 | composables 3, components (other) 1, components/plots 1, modules 1, stores 1 |
 | `analysisTabs` | 6 | stores 3, components/canvas 1, modules 1, utils (flat) 1 |
 | `customModules` | 6 | components (flat) 4, modules 1, stores 1 |
-| `guide` | 6 | components (flat) 5, app root 1 |
 | `linkedSelection` | 6 | app root 1, components/canvas 1, composables 1, modules 1, stores 1, utils (flat) 1 |
 | `analysisLayout` | 5 | components/canvas 2, stores 2, modules 1 |
 | `captureReshow` | 5 | components/canvas 2, modules 2, composables 1 |
