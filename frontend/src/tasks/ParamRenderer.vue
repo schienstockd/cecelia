@@ -4,7 +4,7 @@
   Supports nested section (collapsible box) with recursive rendering.
 -->
 <script setup lang="ts">
-import { pixelSizeUm } from '../utils/physicalSize'
+import { calibratedPixelSizesUm } from '../utils/physicalSize'
 import { isUmParam, umSliderRange, autoUmScale, finestPixelUm, badLength } from './umRange'
 import { useFieldDraft } from '../composables/useFieldDraft'
 import { computed, ref, watch, onUnmounted, onDeactivated } from 'vue'
@@ -613,8 +613,7 @@ const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
 // spanning two objectives has no single answer, and printing one of them would state a scale that is
 // wrong for the others; the strip falls back to form units and says so.
 const groupPxSize = computed<number | null>(() => {
-  const sizes = (props.context?.images ?? [])
-    .map(i => pixelSizeUm(i.physicalSizeX, i.physicalSizeUnit)).filter((v): v is number => typeof v === 'number' && v > 0)
+  const sizes = calibratedPixelSizesUm(props.context?.images)
   if (!sizes.length) return null
   return sizes.every(v => v === sizes[0]) ? sizes[0] : null
 })

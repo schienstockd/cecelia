@@ -11,7 +11,7 @@
 // See docs/MODULES.md → *Length params (`unit`)*.
 import type { ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
-import { pixelSizeUm } from '../utils/physicalSize'
+import { calibratedPixelSizesUm } from '../utils/physicalSize'
 import { niceStep } from '../utils/niceStep'
 
 /** µm/px the µm defaults and ranges were tuned at (the low end of the intravital 2P data: zolIMa at
@@ -38,9 +38,7 @@ export function badLength(p: Pick<ParamDef, 'min'>, v: number): boolean {
  *  the same batch can still type its value. Uncalibrated images are skipped. */
 export function finestPixelUm(images: Pick<CciaImage, 'physicalSizeX' | 'physicalSizeUnit'>[] | undefined):
     { um: number; calibrated: number; distinct: boolean } | null {
-  const sizes = (images ?? [])
-    .map(i => pixelSizeUm(i.physicalSizeX, i.physicalSizeUnit))
-    .filter((v): v is number => typeof v === 'number' && v > 0)
+  const sizes = calibratedPixelSizesUm(images)
   if (!sizes.length) return null
   const um = Math.min(...sizes)
   return { um, calibrated: sizes.length, distinct: sizes.some(v => Math.abs(v - um) > um * 1e-3) }

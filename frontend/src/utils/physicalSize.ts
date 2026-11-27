@@ -70,6 +70,16 @@ export function pixelSizeUm(n: number | null | undefined, unit: string | null | 
   return n * (unit ? (UM_PER[unit.trim().toLowerCase()] ?? 1) : 1)
 }
 
+/** Each image's calibrated XY pixel size in µm, skipping images with none (or a non-positive one) —
+ *  the one reader of "the selected images' pixel sizes" (task form: µm slider factor, group strip). */
+export function calibratedPixelSizesUm(
+  images: { physicalSizeX?: number | null; physicalSizeUnit?: string | null }[] | undefined,
+): number[] {
+  return (images ?? [])
+    .map(i => pixelSizeUm(i.physicalSizeX, i.physicalSizeUnit))
+    .filter((v): v is number => typeof v === 'number' && v > 0)
+}
+
 /** µm per `unit`, strictly: 1 when no unit is recorded, null for a unit we don't know — the backend's
  *  `length_unit_um`. Use it where a wrong factor would print a confident wrong length (tissue size);
  *  `pixelSizeUm` keeps its ×1 fallback for its existing callers. */
