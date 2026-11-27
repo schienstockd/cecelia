@@ -670,16 +670,11 @@ export const useWsStore = defineStore('ws', () => {
         // Only a pixel writer's (valueName, filename) pair is a new image version — see utils/taskResultVersion
         const addedValueName = writtenImageVersion(meta)
         const addedFilename  = meta.filename as string
+        // Through `updateImageMeta`, so an open viewer's version picker hears of it too.
         if (addedValueName) {
           const store = useProjectStore()
-          for (const set of store.sets) {
-            const img = set.images.find(i => i.uid === imageUid)
-            if (img) {
-              if (!img.filepaths) img.filepaths = {}
-              img.filepaths[addedValueName] = addedFilename
-              break
-            }
-          }
+          const img = store.imageByUid(imageUid)
+          if (img) store.updateImageMeta(imageUid, { filepaths: { ...(img.filepaths ?? {}), [addedValueName]: addedFilename } })
         }
         // cropImage (and any task that produces a NEW image) reports the new uid + its set; pull the
         // fresh image payload and add it to the set so it appears without a full project reload.

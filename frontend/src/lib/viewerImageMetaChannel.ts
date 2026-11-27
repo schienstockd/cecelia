@@ -1,11 +1,12 @@
 // A "this image's display metadata just changed" signal — channel names renamed in the image table
-// or the metadata panel while a viewer has that image open.
+// or the metadata panel, or its versions added / removed / made active, while a viewer has that
+// image open.
 //
 // The viewer reads names once from `/api/viewer/meta` at open, and the pop-out lives in its own
 // window with its own (empty) project store, so a rename in the main window never reached it — the
 // old names stayed until the viewer was reopened. `stores/project.updateImageMeta` publishes here
-// when an image's `channelNames` actually change; `ViewerWindow` refetches meta and patches the
-// names in place (contrast, LUT and visibility untouched). Everything else that copies names out of a
+// when an image's `channelNames` or version list actually change; `ViewerWindow` refetches meta and
+// patches the names and its version picker in place (contrast, LUT and visibility untouched). Everything else that copies names out of a
 // response (gating store, gating-strategy plot, cluster labels) subscribes through
 // `composables/useImageMetaRefresh.ts`.
 //
