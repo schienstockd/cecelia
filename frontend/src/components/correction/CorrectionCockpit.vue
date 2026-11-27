@@ -50,6 +50,7 @@ import { undoLast as undoLabel, opDescription as labelOpDescription,
 import { submitTrackOps } from '../../lib/trackOpsRun'
 import { submitLabelOps } from '../../utils/labelOpsRun'
 import { showTracksInViewer } from '../../utils/viewer/showTracksInViewer'
+import { showTracksDeps } from '../../utils/viewerAppDeps'
 import { armViewerSelectMode, readTrackSelection } from '../../utils/viewer/trackSelectionFromViewer'
 import { selectedTracks as resolvedTracks } from '../../lib/trackCorrection'
 import { KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
@@ -450,7 +451,7 @@ function queueLabelOp(op: LabelOp | null): void {
 async function showInViewer(): Promise<void> {
   const ids = trackScope.value.selectedTracks.map(Number).filter(Number.isFinite)
   if (!ids.length) return
-  await showTracksInViewer(projectUid.value, imageUid.value, valueName.value, ids, 'cockpit')
+  await showTracksInViewer(showTracksDeps(), projectUid.value, imageUid.value, valueName.value, ids, 'cockpit')
 }
 
 /**
@@ -465,7 +466,7 @@ async function showInViewer(): Promise<void> {
  */
 async function drawInViewer(): Promise<void> {
   if (!imageUid.value) return
-  armViewerSelectMode('cockpit')
+  armViewerSelectMode(settings, 'cockpit')
 }
 async function readFromViewer(): Promise<void> {
   if (!projectUid.value || !imageUid.value || !valueName.value || !trackKey.value) return

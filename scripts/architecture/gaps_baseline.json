@@ -6,8 +6,8 @@
  "runner-unlaunched": 0,
  "shared-file-unguarded": 0,
  "julia-upward": 67,
- "viewer-store": 4,
+ "viewer-store": 0,
  "fetch-direct": 0,
- "py-cycle": 1,
- "store-cycle": 1
+ "py-cycle": 0,
+ "store-cycle": 0
 }

@@ -6,7 +6,7 @@
 // a field without deciding is a type error, and `drawSpec.test.ts` checks every `recorded` field reaches
 // the look.
 
-import { useSettingsStore } from '../../stores/settings'
+import type { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
 import { SPEC_POP_TYPES, trackableValueNames } from '../overlayAutoShow'
 import type { ViewerLookInput } from './viewerLook'
@@ -89,11 +89,14 @@ export interface DrawSpecSource {
 }
 
 
-/** The draw spec of `src`, every field a getter over the stores. Reading one field tracks only the
+/** The settings store a draw spec reads — passed in, since the viewer engine imports no app store
+ *  (docs/architecture/README.md). Pass the store itself, not a copy: the getters read it lazily. */
+export type DrawSpecSettings = ReturnType<typeof useSettingsStore>
+
+/** The draw spec of `src`, every field a getter over `settings`. Reading one field tracks only the
  *  settings it reads, so the viewer's computeds react as they did when they read the settings
  *  themselves; `{ ...drawSpecOf(src) }` is a snapshot (`readDrawSpec`). */
-export function drawSpecOf(src: DrawSpecSource): ViewerDrawSpec {
-  const settings = useSettingsStore()
+export function drawSpecOf(src: DrawSpecSource, settings: DrawSpecSettings): ViewerDrawSpec {
   const perSet = <T>(read: (su: string) => T, none: T): T => src.setUid ? read(src.setUid) : none
   return {
     get viewState() { return src.viewState },
@@ -176,7 +179,7 @@ export function drawSpecOf(src: DrawSpecSource): ViewerDrawSpec {
 /** The draw spec of `img` from the stores, as plain data: the published view state of the browser
  *  viewer, and the per-set / per-image settings the viewer draws from. `onImg`: the viewer shows `img`,
  *  so its version, and the segmentation names it draws from (`openImage`), are the ones on screen. */
-export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): ViewerDrawSpec {
+export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean, settings: DrawSpecSettings): ViewerDrawSpec {
   const viewer = useViewerStore()
   const open = onImg ? viewer.openImage : null
   const live = drawSpecOf({
@@ -191,6 +194,6 @@ export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): Vi
     version: open?.valueName || img.activeValueName || '',
     viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
     gating: readGatingCurrent(img.uid),
-  })
+  }, settings)
   return { ...live, popVisible: { ...live.popVisible } }
 }

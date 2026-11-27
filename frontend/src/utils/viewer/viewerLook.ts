@@ -8,13 +8,13 @@
 // is the one place that reads it.
 //
 // Split in two so the mapping is testable without stores: `viewerLook` is pure, `readViewerLook`
-// gathers its inputs from the settings store + the published viewer state.
+// gathers its inputs from the settings store (the caller passes it in) + the published viewer state.
 
 import { seedConfigFromViewState, clampContour, type BatchMovieCfg, type ViewStateLike } from '../batchMovie'
 import { viewPlaneZ, type ViewerViewState } from './viewState'
 import { useViewerStore } from '../../stores/viewer'
 import { CELL_POP_TYPES } from '../overlayAutoShow'
-import { readDrawSpec, type LookImage } from './drawSpec'
+import { readDrawSpec, type DrawSpecSettings, type LookImage } from './drawSpec'
 import { colourForRender, channelsForRender } from '../viewerColormap'
 import type { PopEyes } from './popEyes'
 import { maskColourKeys, type MaskColour } from '../maskPopTable'
@@ -212,12 +212,12 @@ function lookZRange(zr: [number, number] | undefined, is3D: boolean, nZ: number)
  *  `requireOpen` (default): `null` unless the browser viewer is showing `img` — there is no "on
  *  screen" to read. Off: always a look — the overlay half is settings and exists whether or not the
  *  viewer is open; channels / z / 3D come from whatever the viewer publishes, if anything. */
-export function readViewerLook(img: LookImage, setUid: string,
+export function readViewerLook(img: LookImage, setUid: string, settings: DrawSpecSettings,
                                { requireOpen = true }: { requireOpen?: boolean } = {}): BatchMovieCfg | null {
   const viewer = useViewerStore()
   const onImg = !!viewer.viewState && viewer.openImage?.imageUid === img.uid
   if (requireOpen && !onImg) return null
-  return viewerLook(readDrawSpec(img, setUid, onImg))
+  return viewerLook(readDrawSpec(img, setUid, onImg, settings))
 }
 
 /** A look whose channel colours are the hex the viewer shows (`colourForRender`). */

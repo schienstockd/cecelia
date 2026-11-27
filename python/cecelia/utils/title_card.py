@@ -1,11 +1,12 @@
-"""Movie title card — render a description slide and prepend it to a recorded .mp4.
+"""Movie title card — render a description slide, captions and frame overlays as image arrays.
 
 Part of the animation title-card feature (docs/todo/ANIMATION_PLAN.md → Phase H). Every recorder
 writes its mp4 frame by frame before this runs, so the card is composited as a POST-record step
 here: render N = ``duration × fps`` still frames of a dark slide (image name + attributes,
 channel/population/colour-by legend rows with colour swatches, an optional note) at the movie's
-exact resolution, then rewrite the file with those frames prepended. The rewrite re-encodes the
-clip once (acceptable for short movies).
+exact resolution; `movie_io.prepend_title_to_movie` rewrites the file with those frames prepended (the
+rewrite re-encodes the clip once — acceptable for short movies). This module draws only; every mp4
+read/write lives in `movie_io`, which imports this one (never the other way round).
 
 Content is passed in as a plain dict (assembled by the caller from the CANONICAL legend source — see
 Phase H, decision 4; channels are added by the recorder from the live viewer, decision 5):
@@ -20,11 +21,8 @@ Phase H, decision 4; channels are added by the recorder from the live viewer, de
       ],
     }
 
-Pure + testable without a viewer (only PIL + numpy for rendering; imageio only for the prepend, both
-already in the env via scikit-image / imageio-ffmpeg). See python/cecelia/tests/test_title_card.py.
+Pure + testable without a viewer (only PIL + numpy, already in the env via scikit-image). See python/cecelia/tests/test_title_card.py.
 """
-import os
-
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -374,40 +372,3 @@ def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None, timestamp_p
                 d.text((lx, ly), label, font=f, fill=_OVERLAY_TEXT,
                        stroke_width=stroke_w, stroke_fill=_OVERLAY_STROKE)
     return np.asarray(img, dtype=np.uint8)
-
-
-def prepend_title_to_movie(movie_path, content, *, duration_sec=3.0):
-    """Prepend the rendered title card to an existing .mp4, rewriting it in place. Reads the movie's
-    fps + frame size (so the card matches exactly), writes card frames then the movie's frames to a
-    temp file, and atomically replaces the original. Returns the number of card frames prepended.
-    Re-encodes the clip once (the source frames are read back and re-written)."""
-    import imageio.v2 as imageio   # local import: only the prepend step needs it, keeps render_* light
-
-    movie_path = str(movie_path)
-    with imageio.get_reader(movie_path) as r:
-        meta = r.get_meta_data()
-        fps = float(meta.get("fps") or 15)
-        frame0 = r.get_data(0)
-    height, width = int(frame0.shape[0]), int(frame0.shape[1])
-
-    card = render_card_frame(content, width, height)
-    n = title_frame_count(fps, duration_sec)
-
-    # The temp deliberately KEEPS the `.mp4` extension — imageio infers the writer format from it, so
-    # the sibling-suffix scheme `atomic_io` uses (`x.mp4.tmp.ab12`) can't be used here. That means a
-    # leftover from a killed run WOULD match a naive `*.mp4` directory listing, so `/api/movies`
-    # filters `.tmp.` names out. See cecelia/utils/atomic_io.py for the general rule.
-    tmp = movie_path + ".tmp.mp4"
-    # The SHARED writer (`movie_io.movie_writer`) — the same one the recorders use, because this file is
-    # the card concatenated onto a recording and the two halves must encode identically. Its
-    # macro_block_size=1 keeps the card + source frames at their exact (even) dimensions — no resize, so
-    # the appended source frames always match the writer's frame size.
-    from cecelia.utils.movie_io import movie_writer
-    with movie_writer(tmp, fps) as out, \
-            imageio.get_reader(movie_path) as r2:
-        for _ in range(n):
-            out.append_data(card)
-        for frame in r2:
-            out.append_data(frame)
-    os.replace(tmp, movie_path)
-    return n

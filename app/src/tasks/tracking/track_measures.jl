@@ -36,8 +36,17 @@ end
 struct Track
     id::Int
     t::Vector{Float64}       # physical time (frame_index × time_step)
-    coords::Matrix{Float64}  # n_steps × n_dims; physical space (px × pixel_res)
+    coords::Matrix{Float64}  # n_steps × n_dims; physical space (px × pixel_res); columns = TRACK_AXES
 end
+
+# The axis order of `Track.coords` columns (present axes only: a 2D track has x, y). The loader reads
+# the centroids in THIS order and every consumer that needs a particular axis looks it up here
+# (`_track_axis_cols`) rather than assuming a position.
+const TRACK_AXES = (:x, :y, :z)
+
+# Column indices of `axes` in a track with `n_dims` columns (absent axes are skipped).
+_track_axis_cols(n_dims::Integer, axes...)::Vector{Int} =
+    [i for (i, a) in enumerate(TRACK_AXES[1:n_dims]) if a in axes]
 
 n_steps(tr::Track) = size(tr.coords, 1)
 
@@ -209,7 +218,7 @@ function _load_tracks_with_labels(props_path::String,
     ("track_id" in col_names(lp; data_type=:obs)) ||
         error("TrackMeasures: no track_id column — run btrack first")
 
-    spatial_cols  = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only, x,y,z order
+    spatial_cols  = centroid_columns(lp; order=collect(TRACK_AXES))   # present axes, in TRACK_AXES order
     temporal_cols = temporal_columns(lp)
     isempty(temporal_cols) &&
         error("TrackMeasures: no temporal column — tracking needs a timecourse")
@@ -337,9 +346,10 @@ struct MotionDims
     metrics::Dict{String,Float64}
 end
 
-# in-plane (drop the leading skimage z axis; coords are [z,y,x] when 3D, [y,x] when 2D)
+# in-plane: keep the x, y columns (by name, via TRACK_AXES), drop z
 _collapse_to_2d(tr::Track)::Track =
-    size(tr.coords, 2) <= 2 ? tr : Track(tr.id, tr.t, tr.coords[:, end-1:end])
+    size(tr.coords, 2) <= 2 ? tr :
+        Track(tr.id, tr.t, tr.coords[:, _track_axis_cols(size(tr.coords, 2), :x, :y)])
 
 _lag1(prev::Vector{Float64}, next::Vector{Float64})::Float64 =
     length(prev) < 3 ? NaN : cor(prev, next)
@@ -352,17 +362,18 @@ function _detect_motion_dims(tracks)::MotionDims
     d = size(first(tracks).coords, 2)
     d < 3 && return MotionDims(2, false, "high", "no z axis (2D segmentation)",
                                Dict("spatialDims" => Float64(d)))
+    ix, iy, iz = (only(_track_axis_cols(d, a)) for a in (:x, :y, :z))
     zp=Float64[]; zn=Float64[]; yp=Float64[]; yn=Float64[]; xp=Float64[]; xn=Float64[]
     c3=Float64[]; c2=Float64[]; zvals=Float64[]
     for tr in tracks
         P = tr.coords; n = size(P, 1); n < 4 && continue
-        append!(zvals, P[:, 1])
+        append!(zvals, P[:, iz])
         D = [P[k+1, :] .- P[k, :] for k in 1:n-1]
         for k in 1:length(D)-1
             a = D[k]; b = D[k+1]
-            push!(zp, a[1]); push!(zn, b[1]); push!(yp, a[2]); push!(yn, b[2]); push!(xp, a[3]); push!(xn, b[3])
+            push!(zp, a[iz]); push!(zn, b[iz]); push!(yp, a[iy]); push!(yn, b[iy]); push!(xp, a[ix]); push!(xn, b[ix])
             na = norm(a); nb = norm(b); (na > 0 && nb > 0) && push!(c3, dot(a, b) / (na * nb))
-            a2 = a[2:3]; b2 = b[2:3]; na2 = norm(a2); nb2 = norm(b2)
+            a2 = a[[ix, iy]]; b2 = b[[ix, iy]]; na2 = norm(a2); nb2 = norm(b2)
             (na2 > 0 && nb2 > 0) && push!(c2, dot(a2, b2) / (na2 * nb2))
         end
     end

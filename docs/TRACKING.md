@@ -321,9 +321,13 @@ when `trackLength == 0`; `displacementRatio` → `NaN` when `maxDisplacement == 
 struct Track
     id::Int
     t::Vector{Float64}       # physical time (frame index × time_step seconds)
-    coords::Matrix{Float64}  # n_steps × n_dims, physical space (px × pixel_res µm), skimage z?,y,x
+    coords::Matrix{Float64}  # n_steps × n_dims, physical space (px × pixel_res µm), columns x, y[, z]
 end
 ```
+
+Column order is `TRACK_AXES` = `(:x, :y, :z)` (present axes only) — the loader reads centroids in that
+order and code that needs one axis (the motion-dims detector, the 2D collapse) looks it up by name via
+`_track_axis_cols`, never by position.
 
 Coordinates are read **in pixels** from `obsm/spatial` and time **as frame index** from
 `obsm/temporal` (via the `LabelProps` chain — no raw HDF5), then converted to physical units at

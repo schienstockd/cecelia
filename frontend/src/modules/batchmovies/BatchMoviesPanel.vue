@@ -393,7 +393,7 @@ async function fillFromView(force = false) {
   // settings for THIS image — those are per image, and exist whether or not it is open.
   const browserOpenUid = viewer.openImage?.imageUid
   if (viewer.viewState && (force || browserOpenUid === first)) {
-    seed = readViewerLook(rep, setUid.value, { requireOpen: false }) ?? {}
+    seed = readViewerLook(rep, setUid.value, settings, { requireOpen: false }) ?? {}
   } else if (force) {
     // User pressed the button expecting a fill — tell them why nothing changed rather than
     // silently defaulting.
