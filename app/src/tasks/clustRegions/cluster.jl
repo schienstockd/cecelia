@@ -24,6 +24,7 @@
 using DataFrames: nrow, groupby, DataFrame
 
 struct ClustRegions <: CciaTask end
+register_builtin_task!("clustRegions.cluster", ClustRegions(); spec = joinpath(@__DIR__, "cluster.json"))
 
 # Typed shape of what `_run_task(::ClustRegions, …)` reads from `params`.
 Base.@kwdef struct ClustRegionsParams

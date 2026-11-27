@@ -16,6 +16,7 @@
 using DataFrames: nrow
 
 struct ContactsMeshes <: CciaTask end
+register_builtin_task!("spatialAnalysis.contactsMeshes", ContactsMeshes(); spec = joinpath(@__DIR__, "contactsMeshes.json"))
 
 Base.@kwdef struct ContactsMeshesParams
     popsA::Vector{String}    = String[]

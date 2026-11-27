@@ -34,6 +34,7 @@ using DataFrames: nrow, DataFrame, groupby, sort
 import Dates
 
 struct MotifDiscovery <: CciaTask end
+register_builtin_task!("behaviour.motif_discovery", MotifDiscovery(); spec = joinpath(@__DIR__, "motif_discovery.json"))
 
 # Features (MOTIF_DISCOVERY_PLAN §P1): speed, angle + ONE HMM state column — whatever
 # `behaviour.hmm_states` wrote (`live.cell.hmm.state.<colName>`, colName default "default").

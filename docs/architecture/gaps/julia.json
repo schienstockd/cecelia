@@ -1,14 +1,6 @@
 [
     {
         "kind": "julia-upward",
-        "subject": "56 `CciaTask` subtypes",
-        "rank": -57,
-        "detail": "defined in tasks (tier 6), named from task framework (tier 5) — a list of every subtype; deriving it (`subtypes`, self-registration) closes it",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_history_leaves`",
         "rank": -4,
         "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)",
@@ -20,22 +12,6 @@
         "subject": "`active_profile_name`",
         "rank": -4,
         "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7), task framework (tier 5)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`Track`",
-        "rank": -3,
-        "detail": "defined in tasks (tier 6), called from gating (tier 4), qc+checks (tier 4), tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`Denoise`",
-        "rank": -2,
-        "detail": "defined in tasks (tier 6), called from qc+checks (tier 4), task framework (tier 5)",
         "where": [
         ]
     },
@@ -100,6 +76,14 @@
         "subject": "`TaskRequest`",
         "rank": -1,
         "detail": "defined in runner (tier 8), called from scheduler+chains (tier 7)",
+        "where": [
+        ]
+    },
+    {
+        "kind": "julia-upward",
+        "subject": "`Track`",
+        "rank": -1,
+        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },

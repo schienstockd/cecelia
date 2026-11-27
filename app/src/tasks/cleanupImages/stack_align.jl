@@ -1,4 +1,5 @@
 struct StackAlign <: CciaTask end
+register_builtin_task!("cleanupImages.stackAlign", StackAlign(); spec = joinpath(@__DIR__, "stack_align.json"))
 
 task_output_effect(::StackAlign) = "new-version"
 

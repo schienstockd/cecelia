@@ -47,8 +47,8 @@ ParamRenderer (popSelection) → TaskRunner (task:run)
 | Frontend page | `frontend/src/modules/TrackingModule.vue` (route `/track`, sidebar after Gate) |
 | popSelection widget | `frontend/src/tasks/ParamRenderer.vue` |
 
-Registered in `app/src/tasks/task_registry.jl` (`_spec_path` + `_fun_name_map` →
-`tracking.bayesian_tracking`) and included in `app/src/Cecelia.jl`.
+Registered as `tracking.bayesian_tracking` by `register_builtin_task!` beside its struct, and included
+in `app/src/Cecelia.jl`.
 
 ## Output — track lineage in H5AD `obs`
 
@@ -249,8 +249,8 @@ the composite
 | Param spec | `app/src/tasks/tracking/track_measures.json` (`valueName`, `dims`, `forceRecompute`) |
 | Composite spec | `app/src/tasks/tracking/bayesian_track_measures.json` |
 
-Registered in `task_registry.jl` (`tracking.track_measures` + the composite in
-`_COMPOSITE_SPEC_PATHS`) and included in `Cecelia.jl`.
+Registered as `tracking.track_measures` beside its struct (the composite in `task_registry.jl`) and
+included in `Cecelia.jl`.
 
 ### Units
 

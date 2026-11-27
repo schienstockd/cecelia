@@ -14,6 +14,7 @@
 # the maths. The ROI set carries its own review labels (`reviewLabels`), so review fits the question.
 
 struct RoiDiscovery <: CciaTask end
+register_builtin_task!("spatialAnalysis.roiDiscovery", RoiDiscovery(); spec = joinpath(@__DIR__, "roiDiscovery.json"))
 
 const ROI_LABELS_DEFAULT = "of interest, artefact, unsure"
 const ROI_LABELS_MAX = 12

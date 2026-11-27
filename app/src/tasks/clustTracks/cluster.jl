@@ -27,6 +27,7 @@
 using DataFrames: nrow, groupby, names
 
 struct ClustTracks <: CciaTask end
+register_builtin_task!("clustTracks.cluster", ClustTracks(); spec = joinpath(@__DIR__, "cluster.json"))
 
 # Typed shape of what `_run_task(::ClustTracks, …)` reads from `params`. Same clustering-engine
 # shape as `ClustPops`, plus track-specific `minTracklength`.

@@ -1,4 +1,5 @@
 struct ImportOmezarr <: CciaTask end
+register_builtin_task!("importImages.omezarr", ImportOmezarr(); spec = joinpath(@__DIR__, "..", "omezarr.json"))
 
 # Typed shape of what `_run_task(::ImportOmezarr, …)` reads from `params`. Every "auto" is a
 # sentinel that resolves to either a Settings default (ngffVersion) or a reader-aware default at

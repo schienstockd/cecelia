@@ -1,5 +1,4 @@
-# carry_over.jl — obs carry-over across `segment.measureLabels` in the correction composite
-# (docs/todo/CORRECTION_PLAN.md, P2 Decision 4b).
+# carry_over.jl — obs carry-over across `segment.measureLabels` (docs/todo/CORRECTION_PLAN.md, P2 4b).
 #
 # WHY THIS TASK EXISTS. `segment.measureLabels` builds a FRESH AnnData (measure_labels_run.py:104)
 # and writes it via `write_h5ad_atomic` — a total obs replace. Every prior obs column drops:
@@ -13,8 +12,7 @@
 # through unchanged, so per-step params aren't a lever — two typed structs is the shape that fits):
 #
 #   1. `segment.correct.carryOver.snapshot` runs BEFORE `segment.correct` + `segment.measureLabels`
-#      and writes a JSON blob under the task's run dir with every non-measurement obs column, keyed
-#      by label id.
+#      and writes a JSON blob in the task's run dir: every non-measurement obs column, by label id.
 #   2. `segment.correct.carryOver.restore` runs AFTER `segment.measureLabels` and adds those obs
 #      columns back — filtered to columns NOT present in the fresh h5ad, so measureLabels' own
 #      morphology always wins (no stale `mean_intensity_*` overrides a fresh one).
@@ -35,7 +33,9 @@
 using JSON3
 
 struct SegmentCorrectCarryOverSnapshot <: CciaTask end
+register_builtin_task!("segment.correct_carryover_snapshot", SegmentCorrectCarryOverSnapshot(); spec = joinpath(@__DIR__, "carry_over_snapshot.json"))
 struct SegmentCorrectCarryOverRestore  <: CciaTask end
+register_builtin_task!("segment.correct_carryover_restore", SegmentCorrectCarryOverRestore(); spec = joinpath(@__DIR__, "carry_over_restore.json"))
 
 # Both carry-over phases read only `valueName` from `params`. One typed struct + one parser;
 # the composite executor threads the same params dict through unchanged, so no per-phase fields.

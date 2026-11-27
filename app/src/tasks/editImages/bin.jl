@@ -1,4 +1,5 @@
 struct BinImage <: CciaTask end
+register_builtin_task!("editImages.bin", BinImage(); spec = joinpath(@__DIR__, "bin.json"))
 
 task_output_effect(::BinImage) = "new-image"
 

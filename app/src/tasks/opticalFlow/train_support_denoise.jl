@@ -1,4 +1,5 @@
 struct TrainSupportDenoise <: CciaTask end
+register_builtin_task!("opticalFlow.trainSupportDenoise", TrainSupportDenoise(); spec = joinpath(@__DIR__, "train_support_denoise.json"))
 
 # Typed shape of what `_run_task(::TrainSupportDenoise, …)` reads from `params`. `trainChannels`
 # stays a bag (resolved via `channel_indices` inside the handler using the set's shared channel

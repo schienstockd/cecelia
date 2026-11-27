@@ -6,7 +6,7 @@
 # A composite chains multiple sub-tasks sequentially.  Each step's returned
 # valueName is injected as the next step's input param.  No .jl file needed for
 # composite tasks — they are declared entirely in a JSON spec with a "composite"
-# array.  Register composite specs in _COMPOSITE_SPEC_PATHS (task_registry.jl).
+# array.  Register one with `register_builtin_task!` in task_registry.jl.
 #
 # **ADDING A TASK TRAIT? DECIDE HOW IT RECURSES HERE.** A composite's steps run through `_run_task`
 # directly, so they never register TaskRecords and are never consulted as tasks in their own right —

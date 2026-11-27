@@ -29,6 +29,8 @@
 using JSON3
 
 struct SegmentCorrect <: CciaTask end
+register_builtin_task!("segment.correct", SegmentCorrect(); spec = joinpath(@__DIR__, "correct.json"))
+register_builtin_task!("segment.staleness_report", SegmentStalenessReport(); spec = joinpath(@__DIR__, "staleness_report.json"))
 
 # Typed shape of what `_run_task(::SegmentCorrect, …)` reads from `params`. `labelOps` is
 # normalised by `parse_label_ops` (Vector | JSON string) — a separate helper because it throws

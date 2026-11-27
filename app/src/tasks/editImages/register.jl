@@ -1,4 +1,5 @@
 struct Register <: CciaTask end
+register_builtin_task!("editImages.register", Register(); spec = joinpath(@__DIR__, "register.json"))
 
 # The stacked output lives at a NEW image uid on the reference's set (add_image!). The Edit picker
 # surfaces this as "new image" so the user knows the run duplicates the reference rather than

@@ -1,4 +1,5 @@
 struct RemoveImage <: CciaTask end
+register_builtin_task!("importImages.remove", RemoveImage(); spec = joinpath(@__DIR__, "remove.json"))
 
 Base.@kwdef struct RemoveImageParams
     valueName::String  = VERSIONED_DEFAULT_VAL

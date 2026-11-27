@@ -1,4 +1,5 @@
 struct ManualGate <: CciaTask end
+register_builtin_task!("gate.manual_gate", ManualGate(); spec = joinpath(@__DIR__, "manual_gate.json"))
 
 # A manual chain step (docs/SCHEDULER.md → Manual steps): the run parks here per image so the user can
 # gate it, because nothing automatic can. PREPARE copies the exemplar's gates onto an image that has

@@ -10,6 +10,7 @@
 # COHORT-EXEMPT: download size varies by video by design, and the one quality signal (file vs
 # Immunemap voxel size) is a per-image yes/no already raised as a finding — nothing to outlier-check.
 struct ImmunemapFetch <: CciaTask end
+register_builtin_task!("importImages.immunemapFetch", ImmunemapFetch(); spec = joinpath(@__DIR__, "immunemapFetch.json"))
 
 const IMMUNEMAP_SOURCE_FILE = "immunemap_source.ims"
 

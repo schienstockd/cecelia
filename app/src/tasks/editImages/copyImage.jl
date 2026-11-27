@@ -1,4 +1,5 @@
 struct CopyImage <: CciaTask end
+register_builtin_task!("editImages.copyImage", CopyImage(); spec = joinpath(@__DIR__, "copyImage.json"))
 
 task_output_effect(::CopyImage) = "new-image"
 
