@@ -20,6 +20,7 @@ These change results when old work is re-run:
 - **Neighbour stats on kNN graphs** now count edges stored one way only, which they missed (about a fifth). Re-run the graph and stats on every image of a set (#2317).
 - **Region clustering (Leiden)** clusters each distinct neighbourhood mix once; small neighbourhoods used to split regions into thousands. Runs over 200 regions now fail.
 - **Cluster tracks** on a shape measure with few whole-number values (e.g. Euler number) now uses its per-track mean/median/…, not the share of each value. Re-run to compare.
+- **Imaris frame interval** from whole-second time stamps (e.g. Zeiss Elyra SIM) is no longer read as irregular: 5 s/6 s gaps of a 5.3 s series now give 5.3 s. Re-import to pick it up.
 
 ### Added
 

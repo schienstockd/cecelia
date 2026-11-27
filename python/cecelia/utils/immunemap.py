@@ -128,7 +128,9 @@ def time_step_interval(time_steps):
             return None, False
     if len(stamps) < 2:
         return None, False
-    interval, uniform, _ = summarise_gaps([(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])])
+    # Whole-second stamps (`%S`, no fraction): their gaps carry the rounding `resolution` allows for.
+    interval, uniform, _ = summarise_gaps([(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])],
+                                          resolution=1.0)
     if interval is None:
         return None, False
     return (interval, False) if uniform else (None, True)
