@@ -31,11 +31,13 @@ export function endpointsFor(kind: VaultKind): VaultEndpoints {
 }
 
 // The vault behind a task picker's `optionsFrom`. `coastalModels` is the flow vault under its
-// segmentation name; `cellposeModels` has no vault listing (built-ins + dropped-in files), so no entry.
-// Not `RESOLVERS` (utils/vaultManifest.ts): that maps a source to a manifest→form mapper and is keyed by
-// `flowModels`, the train task's name suggestions; this maps a PICKER's source to the listing it reads.
+// segmentation name, `flowModels` the flow train task's name suggestions; `cellposeModels` has no vault
+// listing (built-ins + dropped-in files), so no entry. Not `RESOLVERS` (utils/vaultManifest.ts): that
+// maps a source to a manifest→form mapper; this maps a picker's or name box's source to the listing it
+// reads, for the vault scope (utils/vaultScope.ts).
 const SOURCE_KIND: Record<string, VaultKind> = {
   coastalModels: 'flowModels',
+  flowModels:    'flowModels',
   denoiseModels: 'denoiseModels',
 }
 export const vaultKindForSource = (src: string | undefined): VaultKind | undefined =>

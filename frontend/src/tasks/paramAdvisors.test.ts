@@ -150,6 +150,22 @@ describe('motionDimsAdvisory', () => {
     expect(a.message).toContain('2D recommended')
   })
 
+  it('a 2D segmentation reads as 2D, not as a missed motion cutoff', () => {
+    const a = motionDimsAdvisory('auto', M({ dims: 2, zUsed: false, confidence: 'high',
+      reason: 'no z axis (2D segmentation)', metrics: {} }))!
+    expect(a.severity).toBe('ok')
+    expect(a.message).toBe('2D — no z to track in')
+    expect(a.tip).toBe('no z axis (2D segmentation)')
+    expect(a.flag).toBeUndefined()
+  })
+
+  it('untracked 3D data is not called a 3D recommendation', () => {
+    const a = motionDimsAdvisory('auto', M({ dims: 3, confidence: 'low',
+      reason: 'no tracks yet — z is assessed once tracking has run', metrics: {} }))!
+    expect(a.message).not.toContain('recommended')
+    expect(a.tip).toContain('no tracks yet')
+  })
+
   it('too few steps says so instead of implying a verdict', () => {
     const a = motionDimsAdvisory('auto', M({ metrics: { nSteps: 12 } }))!
     expect(a.severity).toBe('warn')

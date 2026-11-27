@@ -141,9 +141,9 @@ export function labelBpv(header: string | null): number {
 // normal fill / contour treatment); the focused id gets a distinct outline colour so "what am I
 // editing right now" is legible without leaving the viewer.
 //
-// One storage buffer per renderer — same shape on both, only the binding NUMBER differs (5 on the
-// flat renderer, 7 on the brick), which is the only per-renderer typing left after the shared
-// snippet.
+// One storage buffer per renderer — same shape on all three, only the binding NUMBER differs (5 on the
+// flat renderer and the 2D tile pass, 7 on the brick), which is the only per-renderer typing left after
+// the shared snippet.
 //
 // Ids above the ceiling are dropped silently. Real images are in the thousands of cells; 65 536 is
 // two orders of magnitude of headroom at 8 KB. When (if) a real store exceeds this, resize the

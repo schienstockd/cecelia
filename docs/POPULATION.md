@@ -1434,5 +1434,8 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   re-pushes live on every `gating:pop-tree` while on, so the viewer overlay tracks gate edits / pop
   add-remove as you gate — driven by `handleGatingChange` in `composables/useViewerAutoShow`, which
   `App.vue` mounts app-level. The
-  transient selection pop is **not** pushed back to the viewer (it is the selection *source* — a
-  round trip would loop through the picker).
+  transient selection pop is **not** pushed back to the viewer as a population (it is the selection
+  *source* — a round trip would loop through the picker). The viewer marks it itself instead
+  (`composables/useViewerPickSelection` follows `gating:pop-tree` and reads the membership): every
+  dot outside the selection dims to `PICK_DIM`, and the picked cells get the pick outline when their
+  segmentation's mask is drawn. Transient UI state — movies and stills never show it.

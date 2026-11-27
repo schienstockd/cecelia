@@ -2,7 +2,7 @@
 // DENOISE_INTEGRATION_PLAN.md) turned the flow-only vault into a two-kind one; a table with the
 // wrong endpoint would silently rename the wrong model, so it is worth pinning.
 import { describe, it, expect } from 'vitest'
-import { endpointsFor, VAULT_KIND_OPTIONS, type VaultKind } from './modelVaultKinds'
+import { endpointsFor, vaultKindForSource, VAULT_KIND_OPTIONS, type VaultKind } from './modelVaultKinds'
 
 describe('modelVaultKinds', () => {
   it('routes flow to the optical-flow api', () => {
@@ -29,4 +29,10 @@ describe('modelVaultKinds', () => {
       expect(o.tip, `${o.value} needs a tip`).toBeTruthy()
     }
   })
+
+  // every vault picker / name box is scoped like the manager: flow train's `modelName` reads
+  // `flowModels`, denoise train's `denoiseModels` (app/src/tasks/opticalFlow) — unmapped, it listed
+  // every user's and project's names
+  it.each([['flowModels', 'flowModels'], ['denoiseModels', 'denoiseModels'], ['coastalModels', 'flowModels']])(
+    'task source %s reads the %s vault', (src, kind) => expect(vaultKindForSource(src)).toBe(kind))
 })

@@ -54,6 +54,7 @@ import { armViewerSelectMode, readTrackSelection } from '../../utils/viewer/trac
 import { selectedTracks as resolvedTracks } from '../../lib/trackCorrection'
 import { KEY_HINT, type TrackSchemeAction } from '../../utils/trackSchemeKeymap'
 import { buildFocusViewState } from '../../utils/viewer/focusOnCell'
+import { fetchPickLabels } from '../../utils/viewer/pickSelection'
 import { overlaysUrl, type OverlayPayload } from '../../utils/viewerOverlays'
 import { getJson, postJson } from '../../utils/api'
 import {
@@ -153,16 +154,9 @@ async function reloadPicked(): Promise<void> {
     return
   }
   const seq = ++pickReq
-  try {
-    // quiet: re-read on every pick tick across windows; a failure just empties the strip
-    const d = await getJson<{ membership?: Record<string, number[]> }>('/api/gating/membership', {
-      query: { projectUid: projectUid.value, imageUid: imageUid.value, valueName: valueName.value,
-               pops: '/Pick selection' },
-      quiet: true,
-    })
-    const labs = d?.membership?.['/Pick selection'] ?? []
-    if (seq === pickReq) pickedLabels.value = labs.map(Number).filter(Number.isFinite)
-  } catch { if (seq === pickReq) pickedLabels.value = [] }
+  // a failure just empties the strip
+  const labs = await fetchPickLabels(projectUid.value, imageUid.value, valueName.value)
+  if (seq === pickReq) pickedLabels.value = labs
 }
 
 // Refresh triggers, in order of cheapness. Mode/vn change is a cockpit-driven state change, always

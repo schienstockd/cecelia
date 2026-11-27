@@ -19,9 +19,9 @@ function api_motion_dims(req::HTTP.Request)
         return 200, JSON3.write((; dims = det.dims, zUsed = det.z_used, confidence = det.confidence,
                                    reason = det.reason, metrics = det.metrics, valueName = vn))
     catch e
-        # no track_id yet (tracking not run) or unreadable — N/A, not a hard error for the preflight
+        # unreadable table (an untracked one is answered by the package) — N/A, not a hard error
         return 200, JSON3.write((; dims = 3, zUsed = true, confidence = "low",
-                                   reason = "could not assess z (no tracks yet?) — " * sprint(showerror, e),
+                                   reason = "could not assess z — " * sprint(showerror, e),
                                    metrics = Dict{String,Float64}(), valueName = vn))
     end
 end
