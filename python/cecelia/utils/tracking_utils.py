@@ -57,8 +57,8 @@ _HEALTHY_JOINS_PER_TRACKLET = 2
 
 # btrack's hypothesis engine bins track ends with `HypercubeBin(const unsigned int bin_xyz, …)`
 # (src/hyperbin.cc), built from `dist_thresh`, so the threshold is truncated to whole coordinate units
-# (µm here): below 1 the bin is 0 wide, a division by zero whose joins are platform-dependent (none
-# on Linux x86, an arbitrary subset on macOS arm64), and 1.5 searches 1 µm bins,
+# (µm here): below 1 the bin is 0 wide, a division by zero cast to int — undefined (Linux x86 proposed
+# no joins; macOS arm64 proposed all of them on the test fixture) — and 1.5 searches 1 µm bins,
 # dropping some joins between 1 and 1.5 µm (logged as a warning by `_check_join_load`). Rescaling the coordinates is no way round it: the motion
 # model's `accuracy` is a length too and btrack rejects it above 10 (src/tracker.cc).
 MIN_DIST_THRESH = 1.0
