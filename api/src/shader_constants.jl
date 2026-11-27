@@ -25,3 +25,6 @@ const LABEL_FILE_OUT_BIT = UInt32(SHADER_CONSTANTS.LABEL_FILE_OUT_BIT)
 #: A neighbour graph's line width when a look names none, in the tail width's units — the viewer's
 #: `SPATIAL_GRAPH_WIDTH` (`static_line_t1`, `lineWidth` in `shaders/overlay_quads.wgsl`).
 const SPATIAL_GRAPH_WIDTH = Float64(SHADER_CONSTANTS.SPATIAL_GRAPH_WIDTH)
+#: A movie's per-axis ceiling in pixels — the encoder's clamp (`movie_io.MAX_MOVIE_AXIS`) and the size
+#: fields' max (`utils/movieSize.ts`); `_record_max_px` caps a full-resolution recording at it.
+const MAX_MOVIE_AXIS = Int(SHADER_CONSTANTS.MAX_MOVIE_AXIS)

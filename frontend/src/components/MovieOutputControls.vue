@@ -12,8 +12,8 @@
 // Named v-models rather than one config object, because the three sites store these differently: the
 // viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
 import { computed } from 'vue'
-import { movieAxisPlaceholder, parseMovieAxis, movieSizeMode, movieSizePick,
-         type MovieResolution, type MovieSizeMode } from '../utils/movieSize'
+import { movieAxisPlaceholder, parseMovieAxis, movieSizeMode, movieSizePick, movieSizeTips, MAX_MOVIE_AXIS,
+         type MovieResolution, type MovieSizeMode, type MovieBlankSize } from '../utils/movieSize'
 import { useFieldDraft } from '../composables/useFieldDraft'
 import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
@@ -67,10 +67,13 @@ const props = withDefaults(defineProps<{
   // and a `res` row (screen / full / custom) replaces the bare size fields, which show under `custom`;
   // omit it and the row is the px fields alone. 3D has no native pixel grid, so it is the fields there.
   resolution?: MovieResolution | null
+  // What blank size fields record at here, for their placeholder and tooltips: the viewer's canvas
+  // (default), or the full image (a 2D batch, which has no canvas)
+  blankSize?: MovieBlankSize
 // `null` defaults for the two overlay props: a union alone does NOT suppress Vue's Boolean cast — the
 // cast-to-false branch fires whenever the prop is absent and has no `default`, whatever the union says.
 // Verified against Vue's own prop resolution rather than read off the docs.
-}>(), { timestamp: null, scaleBar: null, numbered: null })
+}>(), { timestamp: null, scaleBar: null, numbered: null, blankSize: 'canvas' })
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
   (e: 'update:sizeX', v: number | null): void
@@ -164,6 +167,8 @@ function setSizeMode(mode: MovieSizeMode) {
   if (pick.resolution) emit('update:resolution', pick.resolution)
 }
 
+const sizeTips = computed(() => movieSizeTips(props.blankSize))
+
 const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
   emit(`update:${axis}` as 'update:sizeX', parseMovieAxis(raw))
 </script>
@@ -194,13 +199,13 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
     </span>
 
     <span v-if="showSize" class="cc-row-group">
-      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Output size in pixels; blank = canvas size'">px</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeXDraft"
-             :placeholder="movieAxisPlaceholder(canvasX)" v-tooltip.bottom="'Width; blank = canvas width'"
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="sizeTips.label">px</span>
+      <input type="number" min="2" :max="MAX_MOVIE_AXIS" step="2" class="cc-input-2xs mo-num" v-model="sizeXDraft"
+             :placeholder="movieAxisPlaceholder(canvasX, blankSize)" v-tooltip.bottom="sizeTips.x"
              @change="onAxis('sizeX', sizeXDraft)" />
       <span class="cc-muted cc-fs-2xs">×</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeYDraft"
-             :placeholder="movieAxisPlaceholder(canvasY)" v-tooltip.bottom="'Height; blank = canvas height'"
+      <input type="number" min="2" :max="MAX_MOVIE_AXIS" step="2" class="cc-input-2xs mo-num" v-model="sizeYDraft"
+             :placeholder="movieAxisPlaceholder(canvasY, blankSize)" v-tooltip.bottom="sizeTips.y"
              @change="onAxis('sizeY', sizeYDraft)" />
     </span>
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { MAX_MOVIE_AXIS, movieAxisPlaceholder, movieSizeParams, parseMovieAxis,
-         movieSizeMode, movieSizePick } from './movieSize'
+         movieSizeMode, movieSizePick, movieSizeTips } from './movieSize'
+import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 
 describe('parseMovieAxis', () => {
   it('reads a positive integer', () => {
@@ -63,5 +64,17 @@ describe('res: screen / full / custom', () => {
     expect(movieSizePick('full', 1620, 1089)).toEqual({ sizeX: null, sizeY: null, resolution: 'full' })
     expect(movieSizePick('custom', 1620, 1089)).toEqual({ sizeX: 1620, sizeY: 1089 })
     expect(movieSizePick('custom', null, null)).toEqual({ sizeX: 1024, sizeY: 1024 })
+  })
+})
+
+describe('blank size, per surface', () => {
+  it('a batch says full image, not canvas — it has no canvas and records native pixels', () => {
+    expect(movieAxisPlaceholder(1512, 'full')).toBe('full')
+    expect(movieSizeTips('full').label).toMatch(/full image resolution/)
+    expect(movieSizeTips('canvas').label).toMatch(/canvas size/)
+  })
+
+  it('the ceiling is the shared constant the encoder and backend read', () => {
+    expect(MAX_MOVIE_AXIS).toBe(SHADER_CONSTANTS.MAX_MOVIE_AXIS)
   })
 })

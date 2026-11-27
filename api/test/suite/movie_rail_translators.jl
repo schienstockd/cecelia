@@ -422,7 +422,7 @@ end
     @test frame(_record_max_px(512, 512, vs))[1] == 2
     # blank: the canvas long side (the default), or the axis ceiling for "full"
     @test _record_max_px(nothing, nothing, vs) == 1620
-    @test _record_max_px(nothing, nothing, vs; resolution = :full) == MOVIE_MAX_AXIS
+    @test _record_max_px(nothing, nothing, vs; resolution = :full) == MAX_MOVIE_AXIS
     @test frame(_record_max_px(nothing, nothing, vs; resolution = :full)) == (1, length(crop.x), length(crop.y))
     # the whole image at "full" is native even when it is wider than the canvas; "screen" halves it
     @test pixel_transform(906, 1818; max_px = _record_max_px(nothing, nothing, vs; resolution = :full)).step == 1

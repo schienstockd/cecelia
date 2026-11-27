@@ -4,8 +4,10 @@
  * odd dimension — this only turns what the user typed into "a size" or "blank = the canvas size".
  */
 
-/** The per-axis ceiling; mirrors `movie_io.MAX_MOVIE_AXIS` so the field can't ask for a clamp. */
-export const MAX_MOVIE_AXIS = 4096
+import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
+
+/** The per-axis ceiling — `shaders/constants.json`, the number the encoder clamps at (`movie_io`). */
+export const MAX_MOVIE_AXIS: number = SHADER_CONSTANTS.MAX_MOVIE_AXIS
 
 /**
  * A typed axis value → a positive integer, or null for "unset" (blank, zero, junk).
@@ -24,8 +26,24 @@ export function parseMovieAxis(value: string | number | null | undefined): numbe
  * else a word. The point is that the default is VISIBLE — a movie records at the canvas size, and a
  * blank field that says nothing makes that look like "no size at all".
  */
-export function movieAxisPlaceholder(canvasAxis: number | null | undefined): string {
+export function movieAxisPlaceholder(canvasAxis: number | null | undefined, blank: MovieBlankSize = 'canvas'): string {
+  if (blank === 'full') return 'full'
   return canvasAxis && canvasAxis > 0 ? String(canvasAxis) : 'canvas'
+}
+
+/**
+ * What blank size fields record at on a surface: the viewer's `canvas` (a viewer recording), or the
+ * `full` image (a 2D batch — it has no canvas, so `_max_px_from_size` leaves it at native pixels).
+ */
+export type MovieBlankSize = 'canvas' | 'full'
+
+/** The size fields' tooltips for that surface — `label` the px label, `x` / `y` the two fields. */
+export function movieSizeTips(blank: MovieBlankSize): { label: string, x: string, y: string } {
+  return blank === 'full'
+    ? { label: 'Output size in pixels; blank = full image resolution', x: 'Width; blank = full image width',
+        y: 'Height; blank = full image height' }
+    : { label: 'Output size in pixels; blank = canvas size', x: 'Width; blank = canvas width',
+        y: 'Height; blank = canvas height' }
 }
 
 /**

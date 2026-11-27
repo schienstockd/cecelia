@@ -65,9 +65,6 @@ function _movie_size_params(data)
     read_axis(:sizeX), read_axis(:sizeY)
 end
 
-# The long-side ceiling of a movie; mirrors `movie_io.MAX_MOVIE_AXIS` and `utils/movieSize.ts`.
-const MOVIE_MAX_AXIS = 4096
-
 # What blank size fields record at (`resolution` on a record request): `:full` one output pixel per
 # image pixel of the view, anything else `:screen`, the viewer's canvas size (`_record_max_px`).
 _movie_resolution(data)::Symbol = _wstr(data, :resolution) == "full" ? :full : :screen

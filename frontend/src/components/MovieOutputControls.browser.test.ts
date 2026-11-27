@@ -8,11 +8,12 @@ import { frames, mountInto } from '../test/browser/mount'
 import type { MovieResolution } from '../utils/movieSize'
 
 function controls(init: { sizeX: number | null, sizeY: number | null, resolution?: MovieResolution | null,
-                          show3D?: boolean }) {
+                          show3D?: boolean, blankSize?: 'canvas' | 'full' }) {
   const m = reactive({ fps: 15, suffix: '', show3D: false, ...init })
   const host = mountInto({
     render: () => h('div', { style: 'width:360px' }, [h(MovieOutputControls, {
       fps: m.fps, sizeX: m.sizeX, sizeY: m.sizeY, suffix: m.suffix, show3D: m.show3D, resolution: m.resolution,
+      ...(m.blankSize ? { blankSize: m.blankSize } : {}),
       canvasX: 1620, canvasY: 1089,
       'onUpdate:sizeX': (v: number | null) => { m.sizeX = v },
       'onUpdate:sizeY': (v: number | null) => { m.sizeY = v },
@@ -50,5 +51,12 @@ describe('MovieOutputControls res row', () => {
     const three = controls({ sizeX: null, sizeY: null, resolution: 'full', show3D: true })
     expect(three.chip('full')).toBeUndefined()
     expect(three.sizeFields()).toBe(2)
+  })
+
+  it('a batch\'s blank fields say full, not the canvas size', () => {
+    const { host } = controls({ sizeX: null, sizeY: null, blankSize: 'full' })
+    const fields = [...host.querySelectorAll<HTMLInputElement>('input[type=number]')]
+    expect(fields.map(f => f.placeholder)).toEqual(['full', 'full'])
+    expect(fields[0].max).toBe('4096')
   })
 })

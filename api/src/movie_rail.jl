@@ -80,11 +80,11 @@ end
 
 # A recording's long-side cap (`max_px`) for a viewer record: the typed size wins; blank sizes take the
 # movie options' `resolution` — `:screen` the viewer's canvas long side (`_max_px_from_view_state`),
-# `:full` one output pixel per image pixel of the visible region, up to `MOVIE_MAX_AXIS`.
+# `:full` one output pixel per image pixel of the visible region, up to `MAX_MOVIE_AXIS`.
 function _record_max_px(size_x, size_y, view_state; resolution::Symbol = :screen)
     m = _max_px_from_size(size_x, size_y)
     m > 0 && return m
-    resolution === :full && return MOVIE_MAX_AXIS
+    resolution === :full && return MAX_MOVIE_AXIS
     _max_px_from_view_state(view_state)
 end
 
