@@ -20,8 +20,8 @@ import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
-import { autoValueName, valueNameOptions, showIfSatisfied,
-         paramAppliesToImages, resolveParamTip,
+import { autoValueName, valueNameOptions, paramApplies,
+         resolveParamTip,
          scopeValueName, scopeValueNames, siblingKeyOfType, popReloadSources, colsReloadSources, popChipValues, groupOrderKeys, newEntryDefaults, sharedChannels } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
@@ -98,10 +98,9 @@ const emit = defineEmits<{
 // Any one true means it renders nowhere rather than sitting there empty and looking broken. The
 // server-side twin filters these out of the effective run in `params_for_image`, so the handler's
 // `get(params, key, default)` returns the "off" default.
+// A section with every child ruled out counts as not applicable too — `paramApplies` recurses.
 const notApplicable = computed(() =>
-  props.param.hidden === true
-  || !showIfSatisfied(props.param.showIf, props.context?.values)
-  || !paramAppliesToImages(props.param, props.context?.images))
+  !paramApplies(props.param, props.context?.values, props.context?.images))
 
 // Which tip text to actually show. A plain `tip: "..."` is a constant; a `tips: [{text, requires}]`
 // array picks by image axes (first match wins). Callers still bind `v-tooltip.*` on the resolved
@@ -1248,8 +1247,10 @@ function onChannelUpdate(next: string[]) {
       </div>
       <div class="group-entry-body">
         <template v-for="p in param.params" :key="p.key">
-          <!-- Section inside group: collapsible visual box, flat data storage -->
+          <!-- Section inside group: collapsible visual box, flat data storage. Not drawn when it
+               does not apply to THIS entry — incl. every child ruled out (`paramApplies`). -->
           <template v-if="p.type === 'section'">
+            <template v-if="paramApplies(p, entryContext(entry.vals)?.values, context?.images)">
             <button
               class="group-section-toggle cc-section-toggle cc-eyebrow"
               @click="toggleGroupSection(entry.key, p.key, p.collapsed ?? false)"
@@ -1273,6 +1274,7 @@ function onChannelUpdate(next: string[]) {
         @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
               />
             </div>
+            </template>
           </template>
           <ParamRenderer
             v-else

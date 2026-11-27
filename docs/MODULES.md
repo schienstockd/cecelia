@@ -994,6 +994,8 @@ picker keeps the default, where an id-like obs column would be a feature nobody 
   ]
 }
 ```
+A section whose every child is ruled out (`showIf`, `hidden`, `requires.axes` — nested sections
+included) is not drawn: no empty collapsible. One rule, `paramApplies` in `frontend/src/tasks/paramValues.ts`.
 
 ### Fields any param may carry
 

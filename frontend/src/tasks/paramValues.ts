@@ -445,6 +445,23 @@ export function paramAppliesToImages(p: ParamDef, images: CciaImage[] | undefine
 }
 
 /**
+ * Whether a param is on the form at all — THE visibility rule, shared by `ParamRenderer` (what it
+ * draws) and `missingRequired` (what it demands). Three ways out: the server `hidden` it, its
+ * `showIf` fails against `values`, or the images lack its `requires.axes`.
+ *
+ * A `section` additionally needs at least one child that applies, recursively: its children are
+ * stored flat, so they read the same `values`. Without this a section whose every entry is ruled
+ * out (the neighbour graph's "Advanced" under Fixed windows) draws as an empty collapsible.
+ */
+export function paramApplies(p: ParamDef, values: ParamValues | undefined,
+                             images: CciaImage[] | undefined): boolean {
+  if (p.hidden === true || !showIfSatisfied(p.showIf, values) || !paramAppliesToImages(p, images))
+    return false
+  if (p.type === 'section') return (p.params ?? []).some(c => paramApplies(c, values, images))
+  return true
+}
+
+/**
  * The tip to show, given the selected images. Picks the first entry in `param.tips` whose
  * `requires.axes` is satisfied by every selected image, falling back to `param.tip`. Absent tip
  * (no match, or the matching entry omits text) means no info icon — that is the point of the
@@ -488,9 +505,7 @@ export function missingRequired(
   // validation read it
   const walk = (ps: ParamDef[] | undefined, vals: ParamValues | undefined) => {
     for (const p of ps ?? []) {
-      const applies = p.hidden !== true
-        && showIfSatisfied(p.showIf, vals)
-        && paramAppliesToImages(p, images)
+      const applies = paramApplies(p, vals, images)
       if (applies && p.required) {
         const v = vals?.[p.key]
         const empty = v === undefined || v === null || v === '' ||
