@@ -113,16 +113,18 @@ class TestJoinLoad(unittest.TestCase):
             tu.BayesianTrackingUtils(_params(distThresh=0.5), _Log())._track(_dense())
         self.assertIn("cannot join track ends below 1 µm", str(stop.exception))
 
-    def test_btrack_proposes_no_joins_below_one_unit(self):
-        """The premise of `MIN_DIST_THRESH`: candidates within 0.9 exist, btrack offers none of them.
+    def test_btrack_drops_joins_below_one_unit(self):
+        """The premise of `MIN_DIST_THRESH`: below 1 btrack's bins are 0 wide, so which in-range joins
+        it proposes is undefined — none on Linux x86, an arbitrary subset on macOS arm64. Never all.
         If a btrack upgrade fixes its bin truncation, this fails and the floor can go."""
         df = _dense()
         with btrack.BayesianTracker() as tracker:
             _track_frame_to_frame(tracker, df, 0.9, False)
             kinds = Counter(h.hypothesis_type.name for h in tracker.hypotheses())
             starts, ends = tu.tracklet_ends(tracker.tracks)
-        self.assertGreater(tu.join_candidates(starts, ends, 0.9, 5, False), 0)
-        self.assertEqual(kinds.get("LINK", 0), 0)
+        in_range = int(tu.join_counts(starts, ends, 0.9, 5, btrack_bins=False).sum())
+        self.assertGreater(in_range, 0)
+        self.assertLess(kinds.get("LINK", 0), in_range)
 
     def test_suggestion_is_the_largest_healthy_1_2_5_step(self):
         """Ten tracklets end at one spot; one starts 15 µm away, three 30 µm away. Per tracklet (14):

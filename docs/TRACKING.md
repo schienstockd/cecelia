@@ -129,7 +129,8 @@ creates a track by hand (see correction, below) must follow that convention; wri
   optimiser and names the largest 1-2-5 `distThresh` that brings it to ≤ 2 (else 1 µm, if
   that passes). **`distThresh` below 1 µm is refused**: btrack bins track ends with
   `HypercubeBin(unsigned int …)` built from `dist_thresh`, so it truncates to whole µm — below
-  1 no join is ever proposed, and a fractional value drops some joins past its whole part.
+  1 the bin is 0 wide and which joins it proposes is undefined (none on Linux x86, an arbitrary
+  subset on macOS arm64), and a fractional value drops some joins past its whole part.
   Rescaling coordinates can't dodge it: `accuracy` is a length btrack caps at 10. Measured on a 2D
   SIM movie (0.041 µm/px, objects 0.85 µm apart, 490/frame, 7187 tracklets): `distThresh = 10`
   gave 86 links per tracklet, and 5207 with branching (37 M hypotheses) — hypothesis
