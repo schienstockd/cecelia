@@ -104,11 +104,10 @@ class TestWriterRoundTrip(unittest.TestCase):
 
     def test_prepended_title_card_matches_the_movie(self):
         import imageio.v2 as imageio
-        from cecelia.utils import title_card as tc
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, 'clip.mp4')
             self._write(path, (34, 66), n=4, fps=10)
-            n_card = tc.prepend_title_to_movie(
+            n_card = movie_io.prepend_title_to_movie(
                 path, {'title': 'an image', 'note': '', 'sections': []}, duration_sec=0.3)
             self.assertGreater(n_card, 0)
             with imageio.get_reader(path) as r:

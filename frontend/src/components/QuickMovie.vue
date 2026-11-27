@@ -300,7 +300,7 @@ async function saveFigure() {
   // the Record range, every Nth frame — a one-frame range is a single still
   const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
   // the look on screen (mask, populations, tracks, graph edges) is drawn on the tiles, as a Record draws it
-  const look = vs ? readViewerLook(img, currentSetUid.value ?? '') : null
+  const look = vs ? readViewerLook(img, currentSetUid.value ?? '', settings) : null
   const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value,
                                                                            grid: figureGrid.value,
                                                                            look: look ? lookForRender(look) : null,
@@ -363,7 +363,7 @@ async function saveRoiFigures(projectUid: string, img: NonNullable<typeof opened
 async function recordRois(uid: string, projectUid: string) {
   const img = openedImage.value
   const snapshot = viewerStore.viewState as unknown as ViewerViewState | null
-  const look = img ? readViewerLook(img, currentSetUid.value ?? '') : null
+  const look = img ? readViewerLook(img, currentSetUid.value ?? '', settings) : null
   if (!img || !snapshot || !look) {
     recordNote.value = { severity: 'warn', short: 'Open the image in the viewer first' }
     return
@@ -430,7 +430,7 @@ async function recordTimelapse() {
     // The overlay half (pops, tracks, their segmentation, sizes) is the viewer's, read by the shared
     // `readViewerLook` — this recorder has no picker for them, so "what is shown" is the only answer.
     const live = openedImage.value
-      ? readViewerLook(openedImage.value, currentSetUid.value ?? '', { requireOpen: false }) : null
+      ? readViewerLook(openedImage.value, currentSetUid.value ?? '', settings, { requireOpen: false }) : null
     const look = { ...(live ?? {}),
                    ...seedConfigFromViewState(snapshot, openedImage.value?.channelNames ?? []),
                    ...(colourBy ? { colourBy } : {}) }
@@ -511,7 +511,7 @@ async function recordTimelapse() {
 async function recordViewerMatch(uid: string, projectUid: string) {
   const img = openedImage.value
   const snapshot = viewerStore.viewState as unknown as ViewerViewState | null
-  const look = img ? readViewerLook(img, currentSetUid.value ?? '') : null
+  const look = img ? readViewerLook(img, currentSetUid.value ?? '', settings) : null
   if (!img || !snapshot || !look) {
     recordNote.value = { severity: 'warn', short: 'Open the image in the viewer first',
       detail: 'Match viewer records what the viewer shows. Turn it off to record without one.' }

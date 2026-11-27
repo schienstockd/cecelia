@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   vaultInScope, vaultMatchesQuery, vaultUserLabel, vaultProjectLabel, vaultOriginGroup,
-  vaultPickerLayout, THIS_PROJECT, ORIGIN_UNKNOWN, type VaultOrigin,
+  vaultPickerLayout, vaultNamesInScope, THIS_PROJECT, ORIGIN_UNKNOWN, type VaultOrigin,
 } from './vaultScope'
 
 const base = { profile: 'alice', projectUid: 'P1', otherUsers: false, otherProjects: false }
@@ -98,5 +98,26 @@ describe('vaultPickerLayout', () => {
     const l = lay(base, 'other.pt')
     expect(titles(l)).toContain('Bcells')
     expect(l.hidden).toBe(1)
+  })
+})
+
+// The flow/denoise train tasks' "Model name" box: scoped like the picker, the toggles widen it.
+describe('vaultNamesInScope', () => {
+  const rows: Record<string, VaultOrigin> = {
+    'mine':  { createdBy: 'alice', projectUid: 'P1' },
+    'bobs':  { createdBy: 'bob',   projectUid: 'P1' },
+    'other': { createdBy: 'alice', projectUid: 'P2' },
+    'old':   {},
+  }
+  const names = ['mine', 'bobs', 'other', 'old', 'chainOutput']
+  const run = (s = base) => vaultNamesInScope(names, v => rows[v], s)
+
+  it('default: only my names from this project, plus unrecorded and row-less ones', () => {
+    expect(run()).toEqual({ shown: ['mine', 'old', 'chainOutput'], hidden: 2 })
+  })
+  it('the toggles widen it', () => {
+    expect(run({ ...base, otherUsers: true }).shown).toContain('bobs')
+    expect(run({ ...base, otherProjects: true }).shown).toContain('other')
+    expect(run({ ...base, otherUsers: true, otherProjects: true }).hidden).toBe(0)
   })
 })

@@ -23,15 +23,16 @@
  * ids it publishes as the highlight.
  */
 
-import { useSettingsStore } from '../../stores/settings'
+import type { useSettingsStore } from '../../stores/settings'
 import { useLogStore } from '../../stores/log'
 import type { TrackSelection } from '../../lib/trackCorrection'
 import { selectedTracks } from '../../lib/trackCorrection'
 import { ApiError, getJson } from '../api'
 
-/** Arm the viewer's "next drag = pick rectangle" mode, and hint the user in the log rail. */
-export function armViewerSelectMode(source: string): void {
-  const settings = useSettingsStore()
+/** Arm the viewer's "next drag = pick rectangle" mode, and hint the user in the log rail.
+ *  `settings`: the settings store, passed in (the viewer engine imports no app store). */
+export function armViewerSelectMode(settings: Pick<ReturnType<typeof useSettingsStore>, 'viewerSelectMode'>,
+                                    source: string): void {
   const log = useLogStore()
   settings.viewerSelectMode = 'select'
   log.info('Drag a rectangle on the viewer, then press Read.', { source })

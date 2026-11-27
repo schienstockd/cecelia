@@ -9,27 +9,19 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import VaultViewButton from './VaultViewButton.vue'
-import { useVaultRows } from '../composables/useVaultModel'
-import { useSettingsStore } from '../stores/settings'
-import { useProjectMetaStore } from '../stores/projectMeta'
-import { useAppControlStore } from '../stores/appControl'
+import { useVaultRows, useVaultScope } from '../composables/useVaultModel'
 import { vaultPickerLayout, type PickerOption } from '../utils/vaultScope'
 import type { VaultKind } from '../utils/modelVaultKinds'
 
 const props = defineProps<{ kind: VaultKind; options: PickerOption[]; tip?: string }>()
 const model = defineModel<string>({ default: '' })
 
-const settings    = useSettingsStore()
-const projectMeta = useProjectMetaStore()
-const appControl  = useAppControlStore()
+const scope = useVaultScope()
 const { rowFor, ensure } = useVaultRows(() => props.kind)
 
 watch(() => props.options.map(o => o.value), ensure, { immediate: true })
 
-const layout = computed(() => vaultPickerLayout(props.options, rowFor, {
-  profile: appControl.activeProfileName, projectUid: projectMeta.current?.uid,
-  otherUsers: settings.vaultOtherUsers, otherProjects: settings.vaultOtherProjects,
-}, model.value))
+const layout = computed(() => vaultPickerLayout(props.options, rowFor, scope.value, model.value))
 </script>
 
 <template>

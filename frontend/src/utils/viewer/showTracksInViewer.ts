@@ -1,12 +1,20 @@
-import { useProjectStore } from '../../stores/project'
-import { useSettingsStore } from '../../stores/settings'
+import type { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
 import { useLogStore } from '../../stores/log'
-import { useProjectMetaStore } from '../../stores/projectMeta'
-import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSelection'
 import { openViewerWindow } from '../viewerWindow'
 import { buildFocusViewState } from './focusOnCell'
 import { getJson, tryApi, type ApiResult } from '../api'
+
+/** The app state `showTracksInViewer` reads and writes. */
+export interface ShowTracksDeps {
+  /** the image the browser viewer has open (falsy = none) — read at call time, before any await */
+  openImageUid: string | null | undefined
+  /** the open project's uid, if any — the viewer is opened on it */
+  currentProjectUid: string | null | undefined
+  settings: Pick<ReturnType<typeof useSettingsStore>, 'getTrackVisibility' | 'setTrackVisibility'>
+  /** publish these tracks as the shared linked selection (scope `tracks`), under `source` */
+  publishTrackSelection: (imageUid: string, valueName: string, trackIds: number[], source: string) => void
+}
 
 /**
  * Show tracks in the browser viewer, and fly the camera to the union bbox at the middle timepoint.
@@ -31,9 +39,13 @@ import { getJson, tryApi, type ApiResult } from '../api'
  *      `setPendingViewState`. Silent failure here is fine — the highlight is the primary
  *      effect and a missing focus just means the user pans themselves.
  *
+ * The app state it reads and writes comes in as `deps` (the viewer engine imports no app store —
+ * docs/architecture/README.md); `showTracksDeps()` in `utils/viewerAppDeps.ts` builds it from the stores.
+ *
  * Returns true iff the highlight was published; false when there's no viewer open or no ids.
  */
 export async function showTracksInViewer(
+  deps: ShowTracksDeps,
   projectUid: string,
   imageUid: string,
   valueName: string,
@@ -42,20 +54,18 @@ export async function showTracksInViewer(
 ): Promise<boolean> {
   if (!trackIds.length || !projectUid || !imageUid || !valueName) return false
 
-  const project = useProjectStore()
-  const projectMeta = useProjectMetaStore()
-  const settings = useSettingsStore()
+  const { settings } = deps
   const viewerStore = useViewerStore()
   const log = useLogStore()
 
   // 1. Ensure viewer is on this image (no force-launch)
-  if (!project.openImageUid) {
+  if (!deps.openImageUid) {
     log.info('Open this image in the viewer first.', { source })
     return false
   }
-  if (project.openImageUid !== imageUid) {
+  if (deps.openImageUid !== imageUid) {
     openViewerWindow({
-      projectUid: projectMeta.current?.uid ?? projectUid,
+      projectUid: deps.currentProjectUid ?? projectUid,
       imageUid,
       valueName: valueName || undefined,
     })
@@ -73,8 +83,7 @@ export async function showTracksInViewer(
   // linkedSelection('tracks') producer for free — cell cards, correction cockpit, and any
   // future "Show" surface — without touching the callers. `source` names the calling surface
   // so a page-level clear from a different surface leaves this alone.
-  useLinkedSelectionStore().set({ scope: 'tracks', ids: [...trackIds], source, sourcePlotId: source,
-                                  perSource: { [linkedSourceKey(imageUid, valueName)]: [...trackIds] } })
+  deps.publishTrackSelection(imageUid, valueName, [...trackIds], source)
 
   // 3. Enable this segmentation's ribbons (the highlight NARROWS; the source has to exist).
   // Only poke `cc.viewerOverlaysTick` when we ACTUALLY flipped visibility — an unconditional
@@ -83,7 +92,7 @@ export async function showTracksInViewer(
   // current one arrived (the "shows the tracks I selected before the current one" report on
   // 2026-09-07). When visibility is already on the highlight alone is enough — one rebuild,
   // seeded from the highlight event, using the fresh ids.
-  const uid = project.openImageUid
+  const uid = deps.openImageUid
   if (uid) {
     const cur = settings.getTrackVisibility(uid, [valueName])
     if (!cur[valueName]) {

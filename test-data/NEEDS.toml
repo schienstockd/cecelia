@@ -60,3 +60,12 @@ budget = "labelProps table with a regions.<suffix> run (composition columns + cl
 opened = "2026-11-20"
 status = "open"
 synthetic = false
+
+[needs.cells-2d-movie]
+properties = ["cells", "movie", "2d", "real"]
+why = "The motion-dims preflight must call an untracked 2D movie 2D; every cell fixture with a time axis is 3D, so the end-to-end case skips."
+waiting = ["app/test/suite/summary_motion.jl → detect_motion_dims before tracking (the 2D movie case)"]
+budget = "labelProps table only (no track_id needed), no image store; a few thousand cells, under the 1 MB per-file cap"
+opened = "2026-11-27"
+status = "open"
+synthetic = false

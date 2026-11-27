@@ -300,6 +300,15 @@ export function motionDimsAdvisory(value: unknown, m: MotionDims | null): ParamA
   const f = (x?: number) => typeof x === 'number' ? x.toFixed(2) : '?'
   const n = mt.nSteps
 
+  // No z autocorrelation was measured and too few steps is not why: the verdict is structural (2D
+  // segmentation, no tracks yet, or a single z plane) — the backend's reason IS the explanation;
+  // the motion wording below ("did not clear the migration cutoff") would be false.
+  if (typeof mt.autocorrZ !== 'number' && (typeof n !== 'number' || (m.dims === 2 && n >= 50))) {
+    return m.dims === 2
+      ? { severity: 'ok', message: '2D — no z to track in', tip: m.reason }
+      : { severity: 'warn', message: '3D — not judged yet', tip: m.reason }
+  }
+
   // too little data to judge — say so rather than implying a verdict
   if (typeof n === 'number' && n < 50) {
     return { severity: 'warn', message: `${m.dims}D — too few steps to judge`,

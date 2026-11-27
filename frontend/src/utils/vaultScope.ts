@@ -120,3 +120,25 @@ export function vaultPickerLayout(
     .map(([title, opts]) => ({ title, options: opts }))
   return { loose, groups, hidden }
 }
+
+/**
+ * A training task's NAME box over a vault (`valueNameInput` + `optionsFrom` naming one) — the same
+ * scope as the picker above: names of models out of scope are not suggested, and counted for the View
+ * button. A name with no vault row (a chain-propagated output) is always offered. Only the
+ * suggestions narrow: the vault is global, so a hidden name still collides — the caller marks
+ * "exists" against the FULL list.
+ */
+export function vaultNamesInScope(
+  names: string[],
+  rowFor: (value: string) => VaultOrigin | undefined,
+  scope: VaultScope,
+): { shown: string[]; hidden: number } {
+  const shown: string[] = []
+  let hidden = 0
+  for (const n of names) {
+    const row = rowFor(n)
+    if (row && !vaultInScope(row, scope)) hidden++
+    else shown.push(n)
+  }
+  return { shown, hidden }
+}

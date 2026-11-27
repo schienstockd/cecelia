@@ -280,9 +280,22 @@ const _MOTION_DIMS_CACHE = BoundedCache(64)
 function detect_motion_dims(props_path::AbstractString, pixel_res, time_step; flush::Bool=false)::MotionDims
     stamp = string(file_stamp(props_path), "|", pixel_res, "|", time_step)
     cached!(_MOTION_DIMS_CACHE, String(props_path); stamp, flush) do
-        tracks = [tr for (tr, _) in _load_tracks_with_labels(props_path, pixel_res, time_step)]
+        lp = label_props(String(props_path))
+        pre = _motion_dims_from_axes(centroid_columns(lp), "track_id" in col_names(lp; data_type=:obs))
+        pre !== nothing && return pre
+        tracks = [tr for (tr, _) in _load_tracks_with_labels(String(props_path), pixel_res, time_step)]
         _detect_motion_dims(tracks)
     end::MotionDims
+end
+
+# The run form asks BEFORE tracking has run (no `track_id` yet), so answer from the segmentation's
+# own axes first: a 2D segmentation is 2D with or without tracks. `nothing` = tracks decide.
+function _motion_dims_from_axes(spatial_cols::Vector{String}, tracked::Bool)::Union{MotionDims,Nothing}
+    "centroid_z" in spatial_cols ||
+        return MotionDims(2, false, "high", "no z axis (2D segmentation)", Dict{String,Float64}())
+    tracked || return MotionDims(3, true, "low", "no tracks yet — z is assessed once tracking has run",
+                                 Dict{String,Float64}())
+    nothing
 end
 
 # ── Main task entry point ──────────────────────────────────────────────────────

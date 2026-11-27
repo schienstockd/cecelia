@@ -7,9 +7,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 | Section | Kind | Count |
 |---|---|---|
 | Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 67 |
-| Layers | [The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store](#viewer-store) | 4 |
-| Tangles | [Python modules that import each other](#py-cycle) | 1 |
-| Tangles | [Pinia stores that import each other](#store-cycle) | 1 |
 
 ## Layers
 
@@ -85,29 +82,3 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`with_pop_tree_lock`** — defined in gating (tier 4), called from model (tier 2)
 - **`write_qc`** — defined in qc+checks (tier 4), called from cell data (tier 3)
 - **`zarr_array_meta`** — defined in tasks (tier 6), called from qc+checks (tier 4)
-
-<a id="viewer-store"></a>
-### The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store
-
-`viewer-store` · to close: pass what it needs in as an input instead (`lib/webgpu` already holds this rule). The viewer's own `viewer` store and `log` are allowed.
-
-- **`linkedSelection`** — imported by 1 viewer file · `frontend/src/utils/viewer/showTracksInViewer.ts`
-- **`projectMeta`** — imported by 1 viewer file · `frontend/src/utils/viewer/showTracksInViewer.ts`
-- **`project`** — imported by 1 viewer file · `frontend/src/utils/viewer/showTracksInViewer.ts`
-- **`settings`** — imported by 3 viewer files · `frontend/src/utils/viewer/drawSpec.ts`, `frontend/src/utils/viewer/showTracksInViewer.ts`, `frontend/src/utils/viewer/trackSelectionFromViewer.ts`
-
-## Tangles
-
-<a id="py-cycle"></a>
-### Python modules that import each other
-
-`py-cycle` · to close: break the loop.
-
-- **movie_io ↔ title_card** · `python/cecelia/utils/movie_io.py`, `python/cecelia/utils/title_card.py`
-
-<a id="store-cycle"></a>
-### Pinia stores that import each other
-
-`store-cycle` · to close: break the loop.
-
-- **animation ↔ projectMeta** · `frontend/src/stores/animation.ts`, `frontend/src/stores/projectMeta.ts`

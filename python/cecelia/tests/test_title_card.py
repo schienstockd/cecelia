@@ -9,6 +9,7 @@ import unittest
 
 import numpy as np
 
+from cecelia.utils import movie_io
 from cecelia.utils import title_card as tc
 
 
@@ -275,7 +276,7 @@ class PrependTests(unittest.TestCase):
             for i in range(6):
                 w.append_data(np.full((120, 160, 3), min(255, i * 40), dtype=np.uint8))
 
-        n = tc.prepend_title_to_movie(path, {"title": "Test"}, duration_sec=1.0)
+        n = movie_io.prepend_title_to_movie(path, {"title": "Test"}, duration_sec=1.0)
         self.assertEqual(n, 10)                              # 10 fps × 1s
 
         with imageio.get_reader(path) as r:

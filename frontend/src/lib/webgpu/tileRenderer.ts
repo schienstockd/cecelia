@@ -30,7 +30,8 @@
 // They bind only the uniform buffer, so they draw before the atlas has finished allocating. On mode
 // switch to 3D the viewer disposes this renderer and creates the volume one.
 
-import { TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT } from './tileShader'
+import { TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT, TILE_PICK_BINDING } from './tileShader'
+import { PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer } from '../../utils/viewerLabels'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
 import { retireDestroyed } from './retireDestroyed'
@@ -147,6 +148,9 @@ export interface TileRenderer {
   /** Colour the mask from a per-id table (`utils/maskPopTable.ts`), or `null` for the per-id palette.
    *  The same object again is a no-op, so it can be called every frame. */
   setLabelTable(table: LabelTable | null): void
+  /** Outline a set of label ids on the mask, `focusId` distinctly — the volume renderer's `setPickSet`,
+   *  same buffer and contract. Empty labels with no focus, or `contourPx` 0, turns it off. */
+  setPickSet(labels: readonly number[], focusId?: number, contourPx?: number): void
   /** True when the tile is resident but its mask layer does not hold the current mask source. */
   needsLabel(key: TileKey): boolean
   /**
@@ -233,6 +237,9 @@ export async function createTileRenderer(
         texture: { sampleType: 'uint', viewDimension: '3d' } },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float', viewDimension: '2d' } },
+      // binding 5 = TILE_PICK_BINDING; literal so the webgpuBindings static check can scan it.
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: 'read-only-storage', minBindingSize: PICK_BUFFER_BYTES } },
     ],
   })
 
@@ -292,6 +299,12 @@ export async function createTileRenderer(
   // The label colours — the per-id palette, or a population table (`setLabelTable`).
   let pal = createLabelColourTexture(device, null)
   let palTable: LabelTable | null = null
+  // Pick highlight — always bound, all-zero until `setPickSet` (the shader's `labPickContourPx()` is then
+  // 0 and the outline branch short-circuits). Same discipline as the volume renderer.
+  const pickBuffer = device.createBuffer({
+    size: PICK_BUFFER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  })
+  device.queue.writeBuffer(pickBuffer, 0, emptyPickBuffer())
   // Bound until the first mask upload allocates the mask atlas — a bind group must be complete.
   const noLabels = device.createTexture({
     size: [1, 1, 1], dimension: '3d', format: 'r32uint',
@@ -389,6 +402,7 @@ export async function createTileRenderer(
         { binding: 2, resource: lutTex.createView() },
         { binding: 3, resource: (labAtlas ?? noLabels).createView() },
         { binding: 4, resource: pal.texture.createView() },
+        { binding: TILE_PICK_BINDING, resource: { buffer: pickBuffer } },
       ],
     })
   }
@@ -777,6 +791,13 @@ export async function createTileRenderer(
       u[U.lab.paletteRows] = pal.rows
       rebuildBindGroup()
     },
+    setPickSet(labels, focusId, contourPx) {
+      if (destroyed || dead) return
+      device.queue.writeBuffer(pickBuffer, 0, packPickBuffer(labels, {
+        focusId: focusId ?? 0,
+        contourPx: contourPx ?? (labels.length || focusId ? 2 : 0),
+      }))
+    },
     needsLabel(key) {
       if (!labelSource) return false
       const t = tiles.get(tileKeyStr(key))
@@ -886,7 +907,7 @@ export async function createTileRenderer(
       pointBuf?.destroy(); pointBuf = null
       segBuf?.destroy(); segBuf = null
       if (dead) return
-      lutTex.destroy(); pal.texture.destroy(); noLabels.destroy(); uniforms.destroy()
+      lutTex.destroy(); pal.texture.destroy(); noLabels.destroy(); uniforms.destroy(); pickBuffer.destroy()
       device.destroy()
     },
   }

@@ -34,6 +34,9 @@
 // touching the image bytes.
 @group(0) @binding(3) var labAtlas: texture_3d<u32>;
 @group(0) @binding(4) var pal: texture_2d<f32>;
+// Pick highlight — the same storage buffer and snippet as the 3D views (mip.wgsl / brick.wgsl), so a
+// picked cell is outlined in the tiled 2D view exactly as in the others.
+#include "pick.wgsl" PICK_BINDING=TILE_PICK_BINDING
 
 struct Inst {
   // World rect in µm (top-left corner + width/height). Screen up is -y in world, so a tile with the
@@ -138,8 +141,15 @@ fn labAt(vi: vec3<i32>) -> u32 {
     let id = textureLoad(labAtlas, vec3<i32>(sx, sy, in.slot), 0).r;
     labTileSampled = in.sampledPx;
     labTileId = id;
-    if (id != 0u && labShown(id) && labDrawn(vec3<i32>(sx, sy, in.slot), id, i32(p.lab.y))) {
-      acc = mix(min(acc, vec3(1.0)), labColour(id).rgb, p.lab.x);
+    let vi = vec3<i32>(sx, sy, in.slot);
+    if (id != 0u && labShown(id)) {
+      if (labDrawn(vi, id, i32(p.lab.y))) { acc = mix(min(acc, vec3(1.0)), labColour(id).rgb, p.lab.x); }
+      // Pick highlight ON TOP, as in mip.wgsl: focus wins over pick, outline pixels only.
+      let pw = labPickContourPx();
+      if (pw > 0 && labPickEdge(vi, id, pw)) {
+        if (labIsFocus(id)) { acc = vec3(0.2, 1.0, 1.0); }
+        else if (labInPick(id)) { acc = vec3(1.0, 1.0, 1.0); }
+      }
     }
   }
   return vec4(lensRim(min(acc, vec3(1.0)), in.pos.xy), 1.0);

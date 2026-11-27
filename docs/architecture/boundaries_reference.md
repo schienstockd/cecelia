@@ -183,7 +183,7 @@ Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
 | `chain:run:started` | `api/src/sockets.jl` | `frontend/src/stores/ws.ts` |
 | `chains_updated` | `api/src/routes.jl` | `frontend/src/modules/ChainModule.vue` |
 | `error` | `api/src/acq_review.jl`, `api/src/claim_review.jl` +19 | `frontend/src/lib/webgpu/compileShader.ts`, `frontend/src/stores/ws.ts`, `frontend/src/utils/webgpuProbe.ts` |
-| `gating:pop-tree` | `api/src/gating_api.jl` | `frontend/src/composables/useSummaryData.ts`, `frontend/src/stores/gating.ts` |
+| `gating:pop-tree` | `api/src/gating_api.jl` | `frontend/src/composables/useSummaryData.ts`, `frontend/src/composables/useViewerPickSelection.ts`, `frontend/src/stores/gating.ts` |
 | `kiwi:done` | `api/src/kiwi_api.jl` | `frontend/src/stores/kiwi.ts` |
 | `kiwi:step` | `api/src/kiwi_api.jl` | `frontend/src/components/AcqCheckDialog.vue`, `frontend/src/stores/kiwi.ts` |
 | `lab_log_updated` | `api/src/routes/image.jl`, `api/src/routes/lab_log.jl` | `frontend/src/stores/ws.ts` |
@@ -215,7 +215,7 @@ Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
 
 | File | Path | Named from |
 |---|---|---|
-| `constants.json` | `frontend/src/lib/webgpu/shaders/constants.json` | Julia: `api/src/shader_constants.jl`; Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts`, `frontend/src/lib/webgpu/shaderSource.ts` +6 |
+| `constants.json` | `frontend/src/lib/webgpu/shaders/constants.json` | Julia: `api/src/shader_constants.jl`; Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts`, `frontend/src/lib/webgpu/shaderSource.ts` +7 |
 | `figureStyle.json` | `frontend/src/lib/figureStyle.json` | Julia: `app/src/figures.jl`; Python: `python/cecelia/writers/render_figure.py`; TS/Vue: `frontend/src/components/FigureStyleEditor.vue`, `frontend/src/utils/figureStyle.ts` |
 | `golden.json` | `frontend/src/lib/webgpu/shaders/golden.json` | Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/wgslExpand.ts` |
 | `guides.json` | `mcp/cecelia_mcp/guides.json` | Python: `mcp/cecelia_mcp/server.py`, `scripts/agent_eval/guide_run.py` +1; TS/Vue: `frontend/src/lib/claudeOverview.ts`, `frontend/src/lib/guides/guideText.ts` +1 |
