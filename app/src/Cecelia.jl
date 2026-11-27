@@ -165,7 +165,7 @@ export pop_positions, pop_index_by_label
 export image_metric_frame, image_metric_summary, IMAGE_METRIC_SOURCES
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
-export track_classes, track_class_table, track_class_children, track_class_settings, track_class_summary, track_step_children
+export track_classes, track_class_table, track_class_children, track_class_settings, track_class_summary, track_step_children, track_pop_fractions
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
 # `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
 # the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.

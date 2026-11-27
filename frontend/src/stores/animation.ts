@@ -8,6 +8,7 @@ import { ref, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
 import { debouncedSave } from '../utils/debouncedSave'
+import { postJson } from '../utils/api'
 
 export interface AnimSnapshot {
   id: string
@@ -39,12 +40,10 @@ export const useAnimationStore = defineStore('animation', () => {
   const _autosave = debouncedSave(async () => {
     const uid = useProjectMetaStore().current?.uid
     if (!uid) return
-    await fetch('/api/projects/animations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: uid, animations: { snapshots: snapshots.value, fps: fps.value, sizeX: sizeX.value,
-                                                 sizeY: sizeY.value, suffix: suffix.value,
-                                                 titleCard: titleCard.value } }),
-    }).catch(() => { /* autosave is best-effort */ })
+    await postJson('/api/projects/animations', { projectUid: uid, animations: {
+      snapshots: snapshots.value, fps: fps.value, sizeX: sizeX.value, sizeY: sizeY.value,
+      suffix: suffix.value, titleCard: titleCard.value } })
+      .catch(() => { /* autosave is best-effort; the client logged the failure */ })
   }, { wait: 600 })
   const _save = () => _autosave.schedule()
   watch(snapshots, _save, { deep: true })

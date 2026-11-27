@@ -80,6 +80,10 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
                                 cell_measures = track_aggregate_measures(sib_img, vn, feats))
             "track_id" in names(frame) ||
                 error("clustering_features_pooled: no tracks for $(uid)/$(vn)")
+            for f in feats           # population shares (`popfrac:<path>`) are not in track_props
+                is_pop_fraction(f) &&
+                    (frame[!, f] = something(track_pop_fraction_column(sib_img, vn, f, frame.track_id), fill(NaN, nrow(frame))))
+            end
             select!(frame, intersect(String["track_id"; cluster_col; feats], names(frame)))
             rename!(frame, :track_id => :_track_id)
             # Tag origin, and fill missing features with NaN so vcat aligns.

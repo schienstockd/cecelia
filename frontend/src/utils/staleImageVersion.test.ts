@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isStoredValueNameStale, prunedImageVersion } from './staleImageVersion'
+import { imageVersionsChanged, isStoredValueNameStale, prunedImageVersion } from './staleImageVersion'
 
 describe('isStoredValueNameStale', () => {
   it('true when the stored name is not in the new filepaths (the re-import bug)', () => {
@@ -42,5 +42,20 @@ describe('prunedImageVersion', () => {
   it('falls back to empty when the active version is unknown or not registered', () => {
     expect(prunedImageVersion('gone', fps, undefined)).toBe('')
     expect(prunedImageVersion('gone', fps, 'alsoGone')).toBe('')
+  })
+})
+
+describe('imageVersionsChanged', () => {
+  const img = { filepaths: { default: 'a', denoised: 'b' }, activeValueName: 'denoised' }
+  it('a version added or removed', () => {
+    expect(imageVersionsChanged(img, { filepaths: { default: 'a', denoised: 'b', afCorrected: 'c' } })).toBe(true)
+    expect(imageVersionsChanged(img, { filepaths: { default: 'a' } })).toBe(true)
+  })
+  it('a new active version', () => {
+    expect(imageVersionsChanged(img, { activeValueName: 'default' })).toBe(true)
+  })
+  it('the same names (any order, a moved path) or a patch without them: no change', () => {
+    expect(imageVersionsChanged(img, { filepaths: { denoised: 'moved', default: 'a' }, activeValueName: 'denoised' })).toBe(false)
+    expect(imageVersionsChanged(img, {})).toBe(false)
   })
 })

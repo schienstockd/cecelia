@@ -4,11 +4,12 @@ import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useSettingsStore } from './settings'
-import { prunedImageVersion } from '../utils/staleImageVersion'
+import { imageVersionsChanged, prunedImageVersion } from '../utils/staleImageVersion'
 import type { CropSource } from '../utils/cropSource'
 import type { AcquisitionSettings, AcquisitionMissing } from '../utils/acquisitionSettings'
 import type { CleanupFactsChannel } from '../utils/acquisitionLightPath'
 import { publishViewerImageMeta } from '../lib/viewerImageMetaChannel'
+import { getJson, postJson } from '../utils/api'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
 export interface ImageSort { key: string; dir: 'asc' | 'desc' }
@@ -296,8 +297,10 @@ export const useProjectStore = defineStore('project', () => {
       // rename. Compared, not just present: `refreshImageMeta` re-sends the same list on every task.
       const renamed = patch.channelNames !== undefined
         && JSON.stringify(patch.channelNames) !== JSON.stringify(img.channelNames ?? [])
+      // ... and on a version added, removed or made active — its version picker lists them.
+      const versions = imageVersionsChanged(img, patch)
       Object.assign(img, patch)
-      if (renamed) publishViewerImageMeta(imageUid)
+      if (renamed || versions) publishViewerImageMeta(imageUid)
       // A version can vanish under the stored pick (re-import, storage reclaim, a headless
       // importImages.remove). Re-point it at the active version so an open pop-out switches too.
       if (patch.filepaths !== undefined) {
@@ -315,11 +318,8 @@ export const useProjectStore = defineStore('project', () => {
   // about, leaving the viewer/table stale (versions + segmentations missing). Called on task:done.
   async function refreshImageMeta(projectUid: string, imageUid: string) {
     try {
-      const res = await fetch(
-        `/api/images/meta?projectUid=${encodeURIComponent(projectUid)}&imageUid=${encodeURIComponent(imageUid)}`)
-      if (!res.ok) return
-      const body = await res.json() as { image?: Partial<CciaImage> }
-      if (body.image) updateImageMeta(imageUid, body.image)
+      const body = await getJson<{ image?: Partial<CciaImage> } | null>('/api/images/meta', { query: { projectUid, imageUid } })
+      if (body?.image) updateImageMeta(imageUid, body.image)
     } catch { /* leave the store as-is on any error */ }
   }
 
@@ -328,13 +328,10 @@ export const useProjectStore = defineStore('project', () => {
   // the resync can fill reaches the table and the metadata dialog. Throws on an HTTP error.
   // `measure` also runs the import's pixel probe where it is missing (per-depth profile; a full pass).
   async function resyncImageMeta(projectUid: string, imageUids: string[], measure = false): Promise<void> {
-    const res = await fetch('/api/images/meta/resync', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUids, measure }),
-    })
-    const body = await res.json().catch(() => ({})) as { images?: Record<string, Partial<CciaImage>>; error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    for (const [uid, img] of Object.entries(body.images ?? {})) updateImageMeta(uid, img)
+    // quiet: both callers (ImageTable, ImageMetadataDialog) log the failure themselves
+    const body = await postJson<{ images?: Record<string, Partial<CciaImage>> } | null>('/api/images/meta/resync',
+      { projectUid, imageUids, measure }, { quiet: true })
+    for (const [uid, img] of Object.entries(body?.images ?? {})) updateImageMeta(uid, img)
   }
 
   // Add an attr key (empty string value) to all images in a set.

@@ -20,7 +20,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/cleanupImages/stack_align_run.py` | `app/src/tasks/cleanupImages/stack_align.jl:153` | `alignChannel`, `imAlignedPath`, `imPath`, `maxShiftPx`, `minConfidence`, `qcOutPath`, `referenceMode` |
 | `tasks/clustPops/cluster_run.py` | `app/src/tasks/clustPops/cluster.jl:160` | `createUmap`, `featureCols`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold`, `qcOutPath`, `randomState`, `resolution` +4 |
 | `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:177` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `diversityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling` +5 |
-| `tasks/clustTracks/cluster_run.py` | `app/src/tasks/clustTracks/cluster.jl:190` | `X`, `axesOutPath`, `createUmap`, `featureCols`, `labels`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold` +10 |
+| `tasks/clustTracks/cluster_run.py` | `app/src/tasks/clustTracks/cluster.jl:194` | `X`, `axesOutPath`, `createUmap`, `featureCols`, `labels`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold` +10 |
 | `tasks/editImages/bin_run.py` | `app/src/tasks/editImages/bin.jl:114` | `factorX`, `factorY`, `imOutPath`, `imPath`, `op` |
 | `tasks/editImages/cropImage_run.py` | `app/src/tasks/editImages/cropImage.jl:115` | `imOutPath`, `imPath`, `t0`, `t1`, `x0`, `x1`, `y0`, `y1`, `z0`, `z1` |
 | `tasks/editImages/dtype_run.py` | `app/src/tasks/editImages/dtype.jl:64` | `dtype`, `imOutPath`, `imPath`, `rescale` |
@@ -79,7 +79,7 @@ Caller files per side; matching rules from `scripts/judge/coherence.py`, comment
 | Area | Routes | Julia side | Vue | MCP | Python | preview | No caller |
 |---|---|---|---|---|---|---|---|
 | `/api/viewer` | 42 | `api/src/captures_api.jl`, `api/src/landscape_api.jl` +6 | 14 | 1 |  |  |  |
-| `/api/gating` | 29 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 19 | 2 | 1 |  |  |
+| `/api/gating` | 30 | `api/src/gating_api.jl`, `api/src/gating_views_api.jl` | 19 | 2 | 1 |  |  |
 | `/api/images` | 24 | `api/src/image_geometry.jl`, `api/src/routes/image.jl` +4 | 18 | 2 |  |  |  |
 | `/api/kiwi` | 20 | `api/src/kiwi_api.jl`, `api/src/kiwi_profile_api.jl` +1 | 3 |  |  |  |  |
 | `/api/notebooks` | 17 | `api/src/notebooks_api.jl` | 4 | 1 |  |  |  |

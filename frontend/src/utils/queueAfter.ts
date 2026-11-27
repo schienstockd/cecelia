@@ -53,6 +53,11 @@ export function queueAfterTarget(groups: readonly LiveGroup[], picked: string | 
   return groups.find(g => g.funName === picked) ?? null
 }
 
+/** The button's text: names the one live function; with several, the picker beside it names it. */
+export function queueAfterLabel(groups: readonly LiveGroup[]): string {
+  return groups.length === 1 ? `Queue after ${groups[0]!.label}` : 'Queue after'
+}
+
 /** The follow-up as the runner would run it. */
 export interface FollowUp {
   funName: string

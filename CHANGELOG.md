@@ -24,6 +24,8 @@ These change results when old work is re-run:
 ### Added
 
 - **Add tracked cells** (a population's ⋯ menu): its tracked cells as a population to gate under; follows re-tracking.
+- **Cluster tracks on population shares:** a Populations group of features, each track's share of cells in a population.
+- **"Mostly" populations** (a population's ⋯ menu): per sub-population, the tracks mostly in it — every cell of those tracks, flicker included.
 - **Ribbons by sub-population** (viewer Tracks colour): each step in its cell's sub-population, or each track in the one most of its cells are in.
 - **Tracked only** (viewer Tracks section, on by default): while tracks are drawn, dots of cells with no track are dimmed; ribbon rows show tracked / gated.
 - **Track gating on cell measures:** a track gate can use any shape or channel measure, summarised per track (median by default).

@@ -29,6 +29,7 @@ import { profileStorage } from '../utils/profileStorage'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { singlePopOptions, prospectivePopGroups, type ProspectivePop } from '../utils/chainProspective'
 import { measureGroups, isTrackPopType } from '../utils/measureGroups'
+import { popFractionGroup } from '../utils/trackAxis'
 import { channelLabel, channelColumnName, migrateColumnSelection } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -443,7 +444,8 @@ async function loadCols() {
   if (!img || !projectUid) { colGroups.value = []; return }
   try {
     const d = await getJson<{ columns?: string[]; obsColumns?: string[]; channelNames?: string[]
-      channels?: string[]; cellMeasures?: string[]; cellObsMeasures?: string[]; trackAggregates?: string[] }>(
+      channels?: string[]; cellMeasures?: string[]; cellObsMeasures?: string[]; trackAggregates?: string[]
+      popFractions?: string[] }>(
       '/api/gating/channels', { query: { projectUid, imageUid: img.uid, valueName, popType,
                                         valueNames: scopedVns.length >= 2 ? scopedVns.join(',') : undefined } }) ?? {}
     const vars = (d.columns ?? []).filter(c => !COL_DENYLIST.has(c))
@@ -476,12 +478,14 @@ async function loadCols() {
     // column — docs/todo/CHANNEL_NAMES_PLAN.md); a selection saved as raw columns migrates on load
     const shadow = [...vars, ...obs, ...(d.cellMeasures ?? []), ...(d.cellObsMeasures ?? [])]
     const rename: Record<string, string> = {}
-    colGroups.value = groups.map(grp => ({
+    colGroups.value = [...groups.map(grp => ({
       title: grp.title, opts: grp.cols.map(c => {
         const value = channelColumnName(c, chans, shadow.filter(x => x !== c))
         rename[c] = value
         return { label: channelLabel(c, chans), value }
-      }) }))
+      }) })),
+      // Cluster tracks: a track's share of cells in a population (`popfrac:<path>`)
+      ...(track ? popFractionGroup(d.popFractions) : [])]
     const migrated = migrateColumnSelection(chipArr(), rename)
     if (migrated) emit('update:modelValue', migrated)
   } catch { /* no columns available yet */ }

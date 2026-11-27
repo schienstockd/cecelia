@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { liveGroups, queueAfterTarget, queueAfterTemplate, assertNoAfterLive, type LiveGroup } from './queueAfter'
+import { liveGroups, queueAfterLabel, queueAfterTarget, queueAfterTemplate, assertNoAfterLive, type LiveGroup } from './queueAfter'
 import type { TaskEntry } from '../stores/tasks'
 import { adoptableTasks, type InFlightTaskRow } from './runningTasks'
 
@@ -101,5 +101,15 @@ describe('assertNoAfterLive', () => {
   it('passes an ordinary template', () => {
     expect(() => assertNoAfterLive({ nodes: [{ id: 'n', fn: 'f', scope: 'image', params: {},
                                                barrier_policy: 'all', resource_pool: '' }] })).not.toThrow()
+  })
+})
+
+describe('queueAfterLabel', () => {
+  const g = (funName: string, label: string): LiveGroup => ({ funName, label, waitFor: {} })
+  it('names the one live function with a space before it', () => {
+    expect(queueAfterLabel([g('smooth', 'smoothing')])).toBe('Queue after smoothing')
+  })
+  it('leaves the name to the picker when several are live', () => {
+    expect(queueAfterLabel([g('a', 'A'), g('b', 'B')])).toBe('Queue after')
   })
 })

@@ -353,7 +353,7 @@ end
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
         "/api/gating/pop/set-own-gate", "/api/gating/pop/delete-own",   # Claude-scoped (gating_api.jl)
-        "/api/gating/pop/add-boolean", "/api/gating/pop/add-split",
+        "/api/gating/pop/add-boolean", "/api/gating/pop/add-split", "/api/gating/pop/add-track-classes",
         "/api/gating/pop/add-filter", "/api/gating/pop/add-cluster-pops", "/api/gating/pop/set-cluster-pops",
         "/api/gating/redo", "/api/gating/undo",
         "/api/images/attr/create", "/api/images/attr/delete",
@@ -512,7 +512,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 135 && length(POST_ROUTES) == 206
+    @test length(GET_ROUTES) == 135 && length(POST_ROUTES) == 207
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

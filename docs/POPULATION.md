@@ -514,6 +514,22 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `pop/update`), so a change re-stamps the map. `GET /api/gating/track-classes` answers the counts and
   `mixedPct`. The fraction moves with the gate: for a population near a line, a track gate on
   `<channel> median` (the track axis picker) is the steadier classifier.
+- **"mostly <child>" populations.** A population's ⋯ menu offers **Add "mostly" populations** (flow
+  map of a tracked segmentation, a sub-population without one): under the parent, one stored pop per
+  sub-population, `trackClassOf` = that child's path. Its cells are the parent's cells whose track is
+  classed as the child — every frame of the track, the flickered ones too, which is why it sits under
+  the parent: under the child those frames would be dropped (parent ∩ rule). `recompute!` evaluates it
+  after the sub-populations (`_pop_deps`, `_track_class_mask`); the parent's threshold and level are in
+  the map digest, so a change re-evaluates every read. A rename of the child rewrites the reference;
+  deleting the child is refused while its `mostly` pop exists (`boolean_dependents`, as a boolean's
+  terms). Each reads the level its child sits on (`_class_level_for`), so changing the parent's level
+  for the ribbons does not empty pops made at another. At track grain it is the tracks of that class (any
+  cell). The `mostly` pops are not sub-populations themselves (`_class_kids` skips them).
+- **Population shares as track features.** Cluster tracks' feature picker has a **Populations** group:
+  one chip per flow population (`popfrac:<path>`), value = the share of the track's cells in it over all
+  its cells (`track_pop_fractions`, `add_track_pop_fractions!`); the run labels it `<name> share`. The
+  shares of sub-populations that tile their parent sum to 1 per track, so one of them is redundant;
+  nothing drops it automatically — pick the ones that matter, as with any compositional features.
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths

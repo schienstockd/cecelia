@@ -1,6 +1,6 @@
 # TRACK_SUBPOP_GATING_PLAN
 
-Status: in progress (2026-11-26) · plan #2513 · P1–P4 merged (#2516, #2534, #2537, #2538) · P5 #2546 · P6 built.
+Status: in progress (2026-11-26) · plan #2513 · P1–P4 merged (#2516, #2534, #2537, #2538) · P5 #2546 · P6 #2549 · P7 #2550 · P8 built — every phase built.
 Brief: [`../archive/TRACK_SUBPOP_GATING_PROMPT.md`](../archive/TRACK_SUBPOP_GATING_PROMPT.md) (its
 banner lists the premises that turned out wrong). Reviewed once by a fresh agent (2026-11-25); its
 corrections are folded in.
@@ -113,8 +113,8 @@ tracked; track length median 8, p10 5, max 93 timepoints.
 | **P4** ✅ | **Add tracked cells** in a population's ⋯ menu (flow map of a tracked segmentation, once per population): a filter child `tracked`, `track_id > 0`, in the parent's colour (`utils/trackedChild.ts`, `PopulationManager.vue`). Test: it holds exactly the derived `_tracked`'s cells | small |
 | **P5** ✅ | `track_classes` (`app/src/tracking/track_classes.jl`): per-child fraction of a track's cells + class, strict majority over the threshold; overlapping children each counted (no order rule); threshold + level stored on the parent (`trackClass`); `GET /api/gating/track-classes` (counts, `mixedPct`). Measured on `7HDUcJ` `frags` (4,561 tracks): mixed 2.8 % at 0.5, 13.2 % at 0.6, 21.9 % at 0.7, 35.4 % at 0.8 — 0.5 kept. Was: Per-track sub-pop fractions + class on read — reuse the categorical branch of `track_props` (`track_props.jl:131`, already count/`nrow` per category) by feeding child membership as one categorical column built with `pop_membership` (`gating_engine.jl:270`); overlapping sibling gates (not quadrants, but possible) need a rule — first child in tree order, or one indicator column per child. Threshold stored on the tracked pop; QC readout: % mixed tracks. Synthetic flicker fixture, golden values from the definition | medium |
 | **P6** ✅ | Tracks Colour by **sub-population** (per step, first child holding the cell) + **dominant sub-population** (per track, `track_classes`); level picker + threshold + `% mixed` under each ribbon row, stored on the pop; recording parity through the server (`_step_colours`), no new look key — the setting lives on the pop | medium |
-| **P7** | **mostly `<child>`** derived pops (Decision 7) at cell and track grain | medium |
-| **P8** | Cluster tracks **Populations** group (fractions; docs note on compositional sums, no auto-drop) | small |
+| **P7** ✅ | **mostly `<child>`** pops (Decision 7) — *changed while building:* a STORED flow pop (`trackClassOf` = the child's path), made by **Add "mostly" populations** (`POST /api/gating/pop/add-track-classes`) and evaluated by `recompute!` (`_track_class_mask`), not a reserved derived leaf (that path touches ~30 frontend files keyed on `_tracked`). Works at cell and track grain like any flow pop | medium |
+| **P8** ✅ | Cluster tracks **Populations** group: one chip per stored flow pop (`popfrac:<path>`), value = a track's share of cells in it (`track_pop_fractions`), labelled `<name> share`; docs note on compositional sums, no auto-drop | small |
 
 P1–P3 are independent and safe in the hardening phase. P5 gates P6–P8.
 

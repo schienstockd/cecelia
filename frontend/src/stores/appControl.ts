@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { fetchProfiles, profileNameLabel, fetchClaudeLogin, logoutClaude, claudeLogoutError, endClaudeSession,
          type ClaudeLogin } from '../utils/profileApi'
 import { tasksLostOnRestart } from '../utils/runningTasks'
+import { apiFetch, getJson, postJson, refusalMessage } from '../utils/api'
 import { quitTaskPhrase } from '../utils/quitWarning'
 
 /** A PR merged on the dev branch since the installed build (`/api/update/check?channel=dev`). */
@@ -76,9 +77,6 @@ export const useAppControlStore = defineStore('appControl', () => {
     return ''
   }
 
-  const _post = (url: string, body: unknown = {}) =>
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-
   // dev-only: the repo's git worktrees, so the System panel can relaunch the backend from another
   // checkout without the console (backend/:8080 only — a frontend branch still needs its own Vite).
   const worktrees = ref<{ path: string; branch: string; current: boolean; primary?: boolean }[]>([])
@@ -86,7 +84,7 @@ export const useAppControlStore = defineStore('appControl', () => {
 
   // read the dev flag from diagnostics (prod never sets CECELIA_DEV → false)
   async function refreshDev() {
-    try { dev.value = !!(await (await fetch('/api/diagnostics')).json()).dev } catch { /* leave as-is */ }
+    try { dev.value = !!(await getJson<{ dev?: boolean }>('/api/diagnostics')).dev } catch { /* leave as-is */ }
   }
 
   // boot check: learn dev + first-launch state in one diagnostics call. Returns whether setup is
@@ -94,7 +92,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   // then lets the app load normally rather than trapping the user on /setup when the backend blips).
   async function refreshStartup(): Promise<boolean> {
     try {
-      const d = await (await fetch('/api/diagnostics')).json()
+      const d = await getJson<{ dev?: boolean; setupRequired?: boolean }>('/api/diagnostics')
       dev.value = !!d.dev
       setupRequired.value = !!d.setupRequired
     } catch { /* leave setupRequired as null → don't redirect */ }
@@ -215,7 +213,11 @@ export const useAppControlStore = defineStore('appControl', () => {
     const ch = channel ?? (localStorage.getItem('cc.preferDevChannel') === 'true' ? 'dev' : 'stable')
     updateChecking.value = true; updateMsg.value = ''
     try {
-      const d = await (await fetch(`/api/update/check?channel=${ch}`)).json()
+      const d = await getJson<{
+        current?: string; latest?: string | null; latestRef?: string | null; updateAvailable?: boolean
+        scope?: '' | 'user' | 'system' | 'dev'; channel?: 'stable' | 'dev'; url?: string; releaseNotes?: string
+        publishedAt?: string; behindBy?: unknown; mergedPrs?: unknown; compareUrl?: string
+        hasPrevious?: boolean; pendingRestart?: boolean; error?: string }>('/api/update/check', { query: { channel: ch } })
       updateCurrent.value     = d.current ?? ''
       updateLatest.value      = d.latest ?? null
       updateLatestRef.value   = d.latestRef ?? d.latest ?? null   // stable: tag IS the ref; dev: full sha
@@ -226,12 +228,12 @@ export const useAppControlStore = defineStore('appControl', () => {
       updateNotes.value       = d.releaseNotes ?? ''
       updatePublished.value   = d.publishedAt ?? ''
       updateBehindBy.value    = typeof d.behindBy === 'number' ? d.behindBy : null
-      updateMergedPrs.value   = Array.isArray(d.mergedPrs) ? d.mergedPrs : []
+      updateMergedPrs.value   = Array.isArray(d.mergedPrs) ? d.mergedPrs as MergedPr[] : []
       if (d.compareUrl) updateUrl.value = d.compareUrl   // dev: "View on GitHub" opens the full diff
       updateHasPrevious.value = !!d.hasPrevious
       updatePending.value     = !!d.pendingRestart
       if (d.error) updateMsg.value = d.error
-    } catch { updateMsg.value = 'Could not reach the update server.' }
+    } catch (e) { updateMsg.value = refusalMessage(e, 'Could not reach the update server.') }
     finally { updateChecking.value = false }
   }
 
@@ -247,13 +249,11 @@ export const useAppControlStore = defineStore('appControl', () => {
     if (!updateLatestRef.value || updateBusy.value) return
     updateBusy.value = true; updateMsg.value = ''
     try {
-      const res = await _post('/api/update/apply',
+      const d = await postJson<{ message?: string } | null>('/api/update/apply',
         { version: updateLatestRef.value, channel: updateChannel.value })
-      const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
-      updateMsg.value = res.ok ? (d.message ?? `Update ${updateLatest.value} staged — restart Cecelia to finish.`)
-                               : (d.error ?? 'Update failed.')
-      if (res.ok) markStaged('update')
-    } catch { updateMsg.value = 'Update failed (could not reach the server).' }
+      updateMsg.value = d?.message ?? `Update ${updateLatest.value} staged — restart Cecelia to finish.`
+      markStaged('update')
+    } catch (e) { updateMsg.value = refusalMessage(e, 'Update failed (could not reach the server).') }
     finally { updateBusy.value = false }
   }
 
@@ -261,12 +261,10 @@ export const useAppControlStore = defineStore('appControl', () => {
     if (!updateHasPrevious.value || updateRevertBusy.value) return
     updateRevertBusy.value = true; updateMsg.value = ''
     try {
-      const res = await _post('/api/update/revert')
-      const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
-      updateMsg.value = res.ok ? (d.message ?? 'Revert staged — restart Cecelia to finish.')
-                               : (d.error ?? 'Revert failed.')
-      if (res.ok) markStaged('revert')
-    } catch { updateMsg.value = 'Revert failed (could not reach the server).' }
+      const d = await postJson<{ message?: string } | null>('/api/update/revert', {})
+      updateMsg.value = d?.message ?? 'Revert staged — restart Cecelia to finish.'
+      markStaged('revert')
+    } catch (e) { updateMsg.value = refusalMessage(e, 'Revert failed (could not reach the server).') }
     finally { updateRevertBusy.value = false }
   }
 
@@ -286,8 +284,8 @@ export const useAppControlStore = defineStore('appControl', () => {
   }
   async function refreshWorktrees() {
     try {
-      const d = await (await fetch('/api/app/worktrees')).json() as {
-        worktrees?: { path: string; branch: string; current: boolean; primary?: boolean }[]; canSwitch?: boolean }
+      const d = await getJson<{
+        worktrees?: { path: string; branch: string; current: boolean; primary?: boolean }[]; canSwitch?: boolean }>('/api/app/worktrees')
       worktrees.value = d.worktrees ?? []
       canSwitch.value = !!d.canSwitch
     } catch { /* leave as-is */ }
@@ -304,7 +302,8 @@ export const useAppControlStore = defineStore('appControl', () => {
   async function quit() {
     busy.value = true; message.value = 'Shutting down…'
     await _flushProfileSettings()
-    try { await _post('/api/app/shutdown') } catch { /* connection dropped on exit */ }
+    // quiet on status 0: the connection dropping as the server exits is the expected outcome
+    try { await postJson('/api/app/shutdown', {}, { quiet: [0] }) } catch { /* connection dropped on exit */ }
     message.value = 'Cecelia is shutting down — you can close this window.'
   }
 
@@ -333,12 +332,12 @@ export const useAppControlStore = defineStore('appControl', () => {
   async function _restart(body: Record<string, unknown>, timeoutMs: number,
                           onExiting: () => void): Promise<string | null> {
     try {
-      const res = await _post('/api/app/restart', body)
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({} as { error?: string }))
-        return d.error ?? 'Restart failed.'
-      }
-    } catch { /* connection dropped as it exits — expected */ }
+      await postJson('/api/app/restart', body, { quiet: [0] })
+    } catch (e) {
+      const refusal = refusalMessage(e, '')
+      if (refusal) return refusal
+      /* status 0: connection dropped as it exits — expected */
+    }
     onExiting()
     await _waitForBackend(timeoutMs)
     return null
@@ -350,7 +349,8 @@ export const useAppControlStore = defineStore('appControl', () => {
     await new Promise(r => setTimeout(r, 1500))
     const start = Date.now()
     while (Date.now() - start < timeoutMs) {
-      try { if ((await fetch('/api/health', { cache: 'no-store' })).ok) return } catch { /* not up yet */ }
+      // no-store: a cached 200 would end the wait before the new server is up; quiet: failing is the wait
+      try { await apiFetch('/api/health', { cache: 'no-store', quiet: true }); return } catch { /* not up yet */ }
       await new Promise(r => setTimeout(r, 800))
     }
   }
@@ -362,13 +362,15 @@ export const useAppControlStore = defineStore('appControl', () => {
     if (refused) return refused
     busy.value = true; message.value = 'Switching worktree…'
     try {
-      const res = await _post('/api/app/switch-worktree', { path })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({} as { error?: string }))
-        busy.value = false; message.value = d.error ?? 'Worktree switch failed.'
+      await postJson('/api/app/switch-worktree', { path }, { quiet: [0] })
+    } catch (e) {
+      const refusal = refusalMessage(e, '')
+      if (refusal) {
+        busy.value = false; message.value = refusal
         return message.value
       }
-    } catch { /* connection dropped as it exits — expected */ }
+      /* status 0: connection dropped as it exits — expected */
+    }
     message.value = 'Backend switching worktree — reconnecting…'
     await _waitForBackend()
     busy.value = false; message.value = 'Switched worktree.'
