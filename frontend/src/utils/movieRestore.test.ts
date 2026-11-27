@@ -146,6 +146,11 @@ describe('lookRestore — tolerance (Decision 6)', () => {
     expect(r.cfg.zSlice).toBeNull()
   })
 
+  it('restores a full-resolution recording as full; an unknown value stays absent', () => {
+    expect(lookRestore({ sizeX: null, resolution: 'full' })!.output.resolution).toBe('full')
+    expect('resolution' in lookRestore({ resolution: 'huge' })!.output).toBe(false)
+  })
+
   it('restores the plane range a windowed recording drew; null clears the look’s', () => {
     expect(lookRestore({ zSlice: 8, zRange: [0, 16] })!.cfg.zRange).toEqual([0, 16])
     expect(lookRestore({ look: { zRange: [2, 4] }, zRange: null })!.cfg.zRange).toBeNull()

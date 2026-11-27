@@ -47,6 +47,8 @@ Base.@kwdef struct MovieRecordConfig <: MovieConfig
     # value never reaches here as anything other than nothing.
     sizeX::Union{Int,Nothing}               = nothing
     sizeY::Union{Int,Nothing}               = nothing
+    # what blank sizes recorded at: "screen" the canvas, "full" native pixels (`_record_max_px`)
+    resolution::String                      = "screen"
     suffix::String                          = ""
     # AbstractDict when the user enabled the title card, else nothing. Left as Any so a future
     # title-card schema change doesn't break the round-trip on movies recorded under the old shape.
