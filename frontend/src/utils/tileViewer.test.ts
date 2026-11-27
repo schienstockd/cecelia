@@ -3,7 +3,7 @@ import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
   tileSlotShape, tileMaskSourceId, sameMaskLayer, retryWhenMaskMoved, channelRuns, splitChannelSlab,
-  planeNeedsTiling,
+  planeNeedsTiling, tilePrefetchDepth, tilePlaybackTimepoints,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -419,5 +419,36 @@ describe('planeNeedsTiling', () => {
   })
   it('still tiles a whole slide by bytes on any adapter', () => {
     expect(planeNeedsTiling(META, 16384)).toBe(true)
+  })
+})
+
+describe('tilePrefetchDepth — playback read-ahead that fits the atlas', () => {
+  // A 2576² movie at L1: 3×3 visible tiles, 5×5 with the halo ring.
+  it('reads ahead as many frames as fit beside the current one, up to the cap', () => {
+    expect(tilePrefetchDepth(1024, 25, 9, 4)).toBe(4)
+    // 60 slots: 60 − 1 free − 25 now = 34 → three 9-tile frames.
+    expect(tilePrefetchDepth(60, 25, 9, 4)).toBe(3)
+  })
+  it('reads nothing ahead when not one more frame fits', () => {
+    expect(tilePrefetchDepth(30, 25, 9, 4)).toBe(0)
+    expect(tilePrefetchDepth(10, 25, 9, 4)).toBe(0)
+  })
+  it('reads nothing when the viewport has no tiles yet', () => {
+    expect(tilePrefetchDepth(1024, 0, 0, 4)).toBe(0)
+  })
+})
+
+describe('tilePlaybackTimepoints', () => {
+  it('is the frames after the playhead', () => {
+    expect(tilePlaybackTimepoints(3, 58, 4, true)).toEqual([4, 5, 6, 7])
+  })
+  it('wraps to frame 0 at the end of a loop', () => {
+    expect(tilePlaybackTimepoints(56, 58, 4, true)).toEqual([57, 0, 1, 2])
+  })
+  it('stops at the last frame without loop', () => {
+    expect(tilePlaybackTimepoints(56, 58, 4, false)).toEqual([57])
+  })
+  it('never repeats the playhead on a short movie', () => {
+    expect(tilePlaybackTimepoints(1, 3, 4, true)).toEqual([2, 0])
   })
 })

@@ -391,3 +391,35 @@ export function planeNeedsTiling(meta: ViewerMeta, dim3D: number = WEBGPU_DEFAUL
   return meta.nX * meta.nY * meta.bytesPerVoxel * nch > PLANE_TILE_THRESHOLD_BYTES
     || meta.nX > dim3D || meta.nY > dim3D
 }
+
+/**
+ * How many timepoints AHEAD of the playhead tile-mode playback reads, in whole frames of the viewport.
+ * The atlas has to hold the current frame (visible + halo, `nowCount`), every read-ahead frame's visible
+ * tiles (`perT` each), and the one free slot `fetchTile` keeps for an incoming tile — read further and
+ * each arrival evicts a tile the same window still wants. Capped at `requested`, the brick path's
+ * playback depth; 0 when not even one frame fits (playback then fetches each frame as it comes).
+ */
+export function tilePrefetchDepth(
+  slotCapacity: number, nowCount: number, perT: number, requested: number,
+): number {
+  if (!(perT > 0)) return 0
+  return Math.max(0, Math.min(requested, Math.floor((slotCapacity - 1 - nowCount) / perT)))
+}
+
+/**
+ * The timepoints playback reaches next, in order: `t+1 … t+depth`, wrapping to 0 when the movie loops
+ * so the end of a loop reads frame 0 ahead instead of waiting for it. Never `t` itself.
+ */
+export function tilePlaybackTimepoints(t: number, nT: number, depth: number, loop: boolean): number[] {
+  const out: number[] = []
+  for (let k = 1; k <= depth; k++) {
+    let u = t + k
+    if (u >= nT) {
+      if (!loop) break
+      u %= nT
+    }
+    if (u === t || out.includes(u)) break
+    out.push(u)
+  }
+  return out
+}
