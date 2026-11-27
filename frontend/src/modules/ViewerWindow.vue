@@ -35,6 +35,8 @@ import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
 import { useLivePreview } from '../composables/useLivePreview'
+import { useViewerPickSelection } from '../composables/useViewerPickSelection'
+import { pickLayerSelections, pickOutlineLabels } from '../utils/viewer/pickSelection'
 import { isStepMode, stepRgbFor, trackClassesUrl, type TrackClassInfo } from '../utils/viewer/trackClass'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
@@ -993,6 +995,10 @@ let allocatedBricks: boolean | null = null
 let allocatedZDepth: number | null = null
 let allocatedZLo: number | null = null
 const labelName = computed(() => spec.maskValueName)
+/** `/Pick selection` for this image — marked on the viewer (dimmed backdrop + outline), not only on
+ *  the plots. Read under the segmentation a pick goes to (the `pickCellAt` vn rule). */
+const pickSelection = useViewerPickSelection(projectUid, imageUid,
+  () => labelName.value || gatingCurrent.value.valueName || '')
 /** The mask a meta about to land would draw — `spec.maskValueName` over `names`, before `meta` is set. */
 function pickLabelName(names: string[]): string {
   return drawSpecOf({ ...specSource, labelNames: names }).maskValueName
@@ -1901,8 +1907,11 @@ const frame = usePlotResize(canvas, () => {
   // buffer is empty, which short-circuits the composite branch.
   const hlPick = viewerStore.pickHighlight
   const pickMatches = !!hlPick && hlPick.imageUid === imageUid
-  if (pickMatches) r.setPickSet(hlPick!.labels, hlPick!.focusId, 2)
-  else             r.setPickSet([], 0, 0)
+  // Otherwise the viewer's own pick selection, outlined on the drawn mask when it is the picked one.
+  const ownPick = pickMatches ? [] : pickOutlineLabels(pickSelection.value, labelName.value)
+  if (pickMatches)    r.setPickSet(hlPick!.labels, hlPick!.focusId, 2)
+  else if (ownPick.length) r.setPickSet(ownPick, 0, 2)
+  else                r.setPickSet([], 0, 0)
   r.setAlphaMode(opaqueCanvas.value ? 'opaque' : 'premultiplied')
   r.setTestPattern(testPattern.value)
   // Draw-time recording is gated on Debug being open (or `?bench=1` for the full-session
@@ -1990,8 +1999,11 @@ function rebuildOverlays() {
   // categories (a cluster column) default to the population palette, the one the UMAP and Julia's
   // `category_colours` default to
   const dimmed = spec.dimUntracked
-  points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l),
-                                                             dimUntracked: dimmed.includes(l.vn) })),
+  // the viewer's pick selection: the dots outside it dim, so the picked cells stand out
+  const picked = pickLayerSelections(pickSelection.value, popLayers.value.map(l => l.vn))
+  points = buildPointBufferLayers(popLayers.value.map((l, i) => ({ payload: l.payload, hidden: layerHidden(l),
+                                                             dimUntracked: dimmed.includes(l.vn),
+                                                             selected: picked[i] })),
                                  meta.value, POPULATION_PALETTE)
   pointCount.value = points.count
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
@@ -5539,6 +5551,8 @@ watch(() => viewerStore.trackHighlight?.updateId ?? null, () => rebuildOverlays(
 // (camera, t, and z all stayed put). Kick one here so the outline redraws immediately instead of
 // hanging on the previous pick until the user touches the viewer.
 watch(() => viewerStore.pickHighlight?.updateId ?? null, () => frame.redraw())
+// The viewer's own pick selection (`useViewerPickSelection`): the dots re-dim, the outline redraws.
+watch(pickSelection, () => rebuildOverlays())
 
 // Re-fires on updateId change (a fresh setPendingViewState arriving through the store setter or the
 // storage bridge) AND on meta/canvas becoming ready — the store may seed pendingViewState from

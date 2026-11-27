@@ -7,7 +7,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow,
-  isTrackDrawable, zPlaneOf, timeOrder, labelRows, trackedLabelCount, UNTRACKED_DIM,
+  isTrackDrawable, zPlaneOf, timeOrder, labelRows, trackedLabelCount, UNTRACKED_DIM, PICK_DIM,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -162,6 +162,30 @@ describe('Tracked only — dim untracked dots', () => {
     expect(green(buildPointBufferLayers([{ payload: payload() }], meta()))).toEqual([[0, 1, 0]])
     const untrackedSeg = payload({ cells: { ...payload().cells, track: [] } })
     expect(green(buildPointBufferLayers([{ payload: untrackedSeg, dimUntracked: true }], meta()))).toEqual([[0, 1, 0]])
+  })
+})
+
+describe('pick selection — dim the dots outside it', () => {
+  const rgbOf = (buf: { data: Float32Array }) => {
+    const out = new Map<number, number[]>()              // x → rgb (x is unique per cell here)
+    for (let i = 0; i < buf.data.length / POINT_STRIDE; i++) { const p = at(buf, i); out.set(p[0], p.slice(3, 6)) }
+    return out
+  }
+  it('picked cells keep their colour, every other dot keeps PICK_DIM of it', () => {
+    const buf = buildPointBufferLayers([{ payload: payload(), selected: new Set([11]) }], meta())
+    expect(buf.count).toBe(4)                            // dimmed, never dropped
+    const c = rgbOf(buf)
+    expect(c.get(2)).toEqual([1, 0, 0])                  // cell 11, picked
+    expect(c.get(1)).toEqual([PICK_DIM, 0, 0].map(v => Math.fround(v)))   // cell 10, same pop, not picked
+    expect(c.get(3)).toEqual([0, PICK_DIM, 0].map(v => Math.fround(v)))   // cell 12, other pop
+  })
+  it('stacks with Tracked only', () => {
+    const c = rgbOf(buildPointBufferLayers([{ payload: payload(), dimUntracked: true, selected: new Set([11]) }], meta()))
+    expect(c.get(3)).toEqual([0, UNTRACKED_DIM * PICK_DIM, 0].map(v => Math.fround(v)))   // untracked AND not picked
+  })
+  it('no selection draws every dot at full colour', () => {
+    const c = rgbOf(buildPointBufferLayers([{ payload: payload() }], meta()))
+    expect(c.get(1)).toEqual([1, 0, 0])
   })
 })
 
