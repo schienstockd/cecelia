@@ -289,6 +289,9 @@ time_step)` (`track_measures.jl`, **cached by the h5ad mtime**) decides by testi
   below in-plane.
 - z keeps 3D only if clearly migratory; collapses to 2D only if clearly jitter; **ambiguous / too few
   steps → keeps 3D at low confidence** (never silently drops a dimension).
+- **before tracking** (the run form asks before `track_id` exists) the segmentation's axes answer:
+  no `centroid_z` → **2D**; a z axis but no tracks → 3D at low confidence, "not judged yet"
+  (`_motion_dims_from_axes`).
 
 The decision + metrics are **logged** (a `[WARN]` when it collapses to 2D or is low-confidence) and
 surfaced **before running** via the run-form `motionDimsSelection` widget (which calls
