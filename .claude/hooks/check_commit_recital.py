@@ -503,15 +503,34 @@ def _relocated_slugs(changed: list[str]) -> set[str]:
     return moved - left
 
 
+#: A line that states what a test expects, or marks it as a repro: an assertion opener or matcher in
+#: TS (`expect(`, `.toBe(`, `.not.toEqual(`), Python (`assert`, `pytest.raises`, `self.assert…(`) or
+#: Julia (`@test`, `@test_throws`, `@test_broken`), or the marker itself.
+ASSERTION_LINE = re.compile(r"\bexpect\s*\(|\.to[A-Z]\w*\s*\(|\bassert\w*\b|\braises\s*\(|@test\w*\b|RESULT-REVIEW:")
+
+
+def _assertion_lines(text: str) -> list[str]:
+    return sorted(line.strip() for line in text.splitlines() if ASSERTION_LINE.search(line))
+
+
+def _assertions_kept(path: str) -> bool:
+    """The commit edits this held file but keeps every line that states what it expects — a fake
+    backend's reply reshaped, an import moved. Not what the gate guards: the repro still expects the
+    same thing. A deleted or renamed file (nothing staged at the old path) is never kept."""
+    staged = _staged_text(path)
+    return bool(staged) and _assertion_lines(staged) == _assertion_lines(_head_text(path))
+
+
 def reviewer_test_gate(message: str) -> str | None:
     """Gate 4: the author may fix the code, never the result review's test. A commit that edits,
     renames or deletes a file carrying `RESULT-REVIEW: <slug>` needs `[<slug>: false_positive:
     <reason>]` in its message, which sends the finding to the owner (`record.shipped_reproduced`) —
-    unless the commit moves the repro into a file of its own (`_relocated_slugs`)."""
+    unless the commit moves the repro into a file of its own (`_relocated_slugs`), or leaves every
+    assertion line as it was (`_assertions_kept`)."""
     pairs = {(s, o) for s, o, _ in _parse_pairs(message)}
     changed = _staged_changed_files()
     relocated = _relocated_slugs(changed)
-    held = sorted({(slug, path) for path in changed
+    held = sorted({(slug, path) for path in changed if not _assertions_kept(path)
                    for slug in REPRO_MARKER.findall(_head_text(path))
                    if (slug, "false_positive") not in pairs and slug not in relocated})
     if not held:

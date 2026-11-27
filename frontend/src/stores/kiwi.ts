@@ -14,7 +14,8 @@ import { useSettingsStore } from './settings'
 import { useWsStore } from './ws'
 import { useObserverStore } from './observer'
 import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
-import { draftAdd, draftRemove, parseDraft, upsertTurn, startKiwiTurn, cancelKiwiTurn, fetchKiwiTurns,
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
+import { appendPrompt, draftAdd, draftRemove, parseDraft, upsertTurn, startKiwiTurn, cancelKiwiTurn, fetchKiwiTurns,
          clearKiwiTurns, resolveKiwiRefs, refKey, type KiwiDraft, type KiwiTurn } from '../utils/kiwiTurn'
 
 const DRAFT_KEY = 'cc.kiwiDraft'
@@ -56,6 +57,15 @@ export const useKiwiStore = defineStore('kiwi', () => {
     if (!puid || !useObserverStore().ai.enabled) return false
     draft.value = draftAdd(draft.value, puid, ref)
     saveDraft()
+    settings.kiwiOpen = true
+    return true
+  }
+  /** Put `text` in Kiwi's question box (after anything unsent) and open Kiwi on Ask. Sends nothing.
+   *  False with no project or AI off, as `addRef`. The jump search's "Ask Kiwi" row calls it. */
+  function askText(text: string): boolean {
+    if (!projectUid.value || !useObserverStore().ai.enabled) return false
+    prompt.value = appendPrompt(prompt.value, text)
+    useSingleOpenSection('cc.kiwi.openSection', 'ask').set('ask')
     settings.kiwiOpen = true
     return true
   }
@@ -138,7 +148,7 @@ export const useKiwiStore = defineStore('kiwi', () => {
     if (running.value?.turnId === t.turnId) running.value = null
   })
 
-  return { projectUid, prompt, refs, draftResults, addRef, removeRef, clearDraft, turns, running, busy, error,
+  return { projectUid, prompt, refs, draftResults, addRef, askText, removeRef, clearDraft, turns, running, busy, error,
            followUp, followUpTurn, pointed, notePointed, load, ask, cancel, clearFeed }
 })
 
