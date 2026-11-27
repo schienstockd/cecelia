@@ -74,7 +74,8 @@
 end
 
 @testset "motion dimensionality detection (2D vs 3D)" begin
-    # build a Track by cumulative-summing per-step [dz,dy,dx] vectors (coords are [z,y,x])
+    # build a Track by cumulative-summing per-step [dx,dy,dz] vectors — x, y, z, the order
+    # `_load_tracks_with_labels` builds (`TRACK_AXES`), never skimage's z-first
     mk(steps) = begin
         P = zeros(length(steps) + 1, 3)
         for k in 1:length(steps); P[k+1, :] = P[k, :] .+ steps[k]; end
@@ -82,8 +83,8 @@ end
     end
     dy(k) = 2 + 0.5 * cos(k / 3); dx(k) = 2 + 0.5 * sin(k / 3)   # persistent forward heading in xy
     # z either tracks the persistent xy motion (real 3D) or oscillates with large amplitude (jitter)
-    real(rng)   = mk([[2 + 0.5*sin(k/3), dy(k), dx(k)] for k in rng])
-    jitter(rng) = mk([[(-1.0)^k * 4.0,   dy(k), dx(k)] for k in rng])
+    real(rng)   = mk([[dx(k), dy(k), 2 + 0.5*sin(k/3)] for k in rng])
+    jitter(rng) = mk([[dx(k), dy(k), (-1.0)^k * 4.0]   for k in rng])
     trks_real   = [real(t*20 : t*20+14)   for t in 1:8]
     trks_jitter = [jitter(t*20 : t*20+14) for t in 1:8]
 
@@ -93,8 +94,14 @@ end
     @test d2.dims == 2 && !d2.z_used           # oscillating/anti-persistent z → in-plane 2D
     @test d2.metrics["autocorrZ"] < 0          # jitter signature
 
+    # collapsing to 2D drops z and keeps the in-plane x, y — the measures are then x–y measures
+    tj = first(trks_jitter)
+    c2 = Cecelia._collapse_to_2d(tj)
+    @test c2.coords == tj.coords[:, 1:2]
+    @test Cecelia.track_length(c2) ≈ sum(k -> hypot(dx(k), dy(k)), 20:34)   # steps of trks_jitter[1]
+
     # a 2D-only track set (no z column) is trivially 2D
-    P2 = zeros(12, 2); for k in 1:11; P2[k+1, :] = P2[k, :] .+ [dy(k), dx(k)]; end
+    P2 = zeros(12, 2); for k in 1:11; P2[k+1, :] = P2[k, :] .+ [dx(k), dy(k)]; end
     @test Cecelia._detect_motion_dims([Cecelia.Track(1, Float64.(0:11), P2)]).dims == 2
 end
 
@@ -121,6 +128,21 @@ end
         p2 = joinpath(mktempdir(), "seg.h5ad"); cp(fixture_table(fx2), p2)
         @test Cecelia.detect_motion_dims(p2, [1.0, 1.0, 1.0], 1.0).dims == 2
     end
+end
+
+# The loader and the consumers above agree on one axis order: on a real tracked z-stack the loader's
+# columns ARE centroid_x, _y, _z (scaled), so position k of `coords` is `TRACK_AXES[k]`
+@testset "track coords follow TRACK_AXES (loader contract)" begin
+    fx = fixture_for(:cells, :movie, Symbol("3d"), :tracked)
+    tl = Cecelia._load_tracks_with_labels(fixture_table(fx), [5.0, 2.0, 3.0], 1.0)   # [sz, sy, sx]
+    @test !isempty(tl)
+    tr, lbls = first(tl)
+    @test size(tr.coords, 2) == 3
+    df = Cecelia.as_df(Cecelia.label_props(fixture_table(fx)) |>
+                       Cecelia.select_cols(["centroid_x", "centroid_y", "centroid_z"]))
+    r = findfirst(==(lbls[1]), df.label)
+    @test tr.coords[1, :] ≈ [df.centroid_x[r] * 3.0, df.centroid_y[r] * 2.0, df.centroid_z[r] * 5.0]
+    @test Cecelia.TRACK_AXES == (:x, :y, :z)
 end
 
 # the cached form: one slot per h5ad, recomputed when the file or the calibration it was scaled with
