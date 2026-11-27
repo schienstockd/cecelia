@@ -19,6 +19,7 @@ These change results when old work is re-run:
 
 - **Neighbour stats on kNN graphs** now count edges stored one way only, which they missed (about a fifth). Re-run the graph and stats on every image of a set (#2317).
 - **Region clustering (Leiden)** clusters each distinct neighbourhood mix once; small neighbourhoods used to split regions into thousands. Runs over 200 regions now fail.
+- **Track measures on z-stacks:** auto 2D/3D now judges z (it judged x), and 2D keeps x–y (it kept y–z). Re-run track measures on 3D movies.
 - **Cluster tracks** on a shape measure with few whole-number values (e.g. Euler number) now uses its per-track mean/median/…, not the share of each value. Re-run to compare.
 - **Imaris frame interval** from whole-second time stamps (e.g. Zeiss Elyra SIM) no longer reads as irregular. Re-import to pick it up.
 
