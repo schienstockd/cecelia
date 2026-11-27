@@ -48,6 +48,25 @@
             @test post(api_gating_pop_update, Dict{String,Any}("path" => "/all", "trackClass" => Dict("level" => 0)))[1] == 400
             st, _ = post(api_gating_pop_update, Dict{String,Any}("path" => "/all", "trackClass" => nothing))
             @test st == 200 && get_("pop=/all")[2]["threshold"] == 0.5
+
+            # "mostly <child>": one per sub-population, in its colour, one change; they are not
+            # sub-populations themselves, so the classes do not change
+            st, _ = post(api_gating_pop_add_track_classes, Dict{String,Any}("parent" => "/all"))
+            @test st == 200
+            m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+            @test m.pops["/all/mostly small"].track_class_of == "/all/small"
+            @test m.pops["/all/mostly big"].colour == m.pops["/all/big"].colour
+            @test [c["path"] for c in get_("pop=/all")[2]["children"]] == ["/all/small", "/all/big"]
+            big = Set(t for (t, c) in zip(d["trackIds"], d["classes"]) if c == 1)
+            cells = Cecelia.as_df(Cecelia.select_cols(Cecelia.label_props(img; value_name = vn), ["track_id"]))
+            @test Set(pop_df(img, "flow", ["$vn/all/mostly big"]).label) ==
+                  Set(l for (l, t) in zip(cells.label, cells.track_id) if t isa Real && isfinite(t) && Int(t) in big)
+            # nothing left to add → 400; one undo takes both away
+            @test post(api_gating_pop_add_track_classes, Dict{String,Any}("parent" => "/all"))[1] == 400
+            @test post(api_gating_pop_add_track_classes, Dict{String,Any}("parent" => "/all/big"))[1] == 400
+            @test post(api_gating_pop_add_track_classes, Dict{String,Any}("parent" => "/nope"))[1] == 404
+            post(api_gating_undo, Dict{String,Any}())
+            @test !has_pop(load_pop_tree(img; value_name = vn, pop_type = "flow"), "/all/mostly big")
         finally
             old === nothing ? delete!(Cecelia.cecelia_conf()["dirs"], "projects") :
                               (Cecelia.cecelia_conf()["dirs"]["projects"] = old)

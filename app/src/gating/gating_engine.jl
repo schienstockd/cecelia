@@ -74,6 +74,7 @@ end
 # carrying two definitions is never reported missing a column its membership doesn't read
 function _pop_columns(p)::Vector{String}
     (p.explicit_labels !== nothing || p.boolean_op !== nothing) && return String[]
+    p.track_class_of !== nothing && return String["track_id"]
     p.gate !== nothing && return String[p.gate.x_channel, p.gate.y_channel]
     p.filter_conditions !== nothing && return String[c.measure for c in p.filter_conditions]
     p.filter_measure !== nothing && return String[p.filter_measure]
@@ -235,6 +236,7 @@ function recompute!(m::PopulationTree, fetch_cols::Function; anchor::Bool = fals
     end
     memb = Dict{String,BitVector}()
     memb[ROOT] = trues(n)
+    track_class_cache = Dict{String,Dict{String,Set{Int}}}()     # parent → class → its track ids
     for path in topo_order(m)
         p = m.pops[path]
         parent_mask = get(memb, p.parent, trues(n))
@@ -245,6 +247,9 @@ function recompute!(m::PopulationTree, fetch_cols::Function; anchor::Bool = fals
         elseif p.boolean_op !== nothing
             # a set operation over other populations — no data column of its own (Decision 16)
             parent_mask .& _boolean_mask(p, memb, n, path)
+        elseif p.track_class_of !== nothing
+            # "mostly <child>": the parent's cells whose track's class is that child (track_classes.jl)
+            parent_mask .& _track_class_mask(m, p, memb, df, path, track_class_cache)
         elseif p.gate !== nothing
             # a gate whose axis column is absent from the fetched frame → no members, not a crash. See
             # the filter case below for the rationale (missing column ≠ hard 500).

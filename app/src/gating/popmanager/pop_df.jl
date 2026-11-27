@@ -391,7 +391,8 @@ function _map_digest(m::PopulationTree)::String
     for path in topo_order(m)
         p = m.pops[path]
         put((path, p.parent, p.gate === nothing ? nothing : gate_spec(p.gate), filter_spec(p),
-             boolean_spec(p), p.explicit_labels === nothing ? -1 : length(p.explicit_labels)))
+             boolean_spec(p), p.explicit_labels === nothing ? -1 : length(p.explicit_labels),
+             p.track_class, p.track_class_of))
         p.explicit_labels === nothing || SHA.update!(ctx, collect(reinterpret(UInt8, Int64.(p.explicit_labels))))
     end
     bytes2hex(SHA.digest!(ctx))
