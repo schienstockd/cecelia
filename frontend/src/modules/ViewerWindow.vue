@@ -6498,16 +6498,18 @@ async function onViewerRequest(data: Record<string, unknown>) {
 onMounted(() => {
   ws.on('viewer:landscape-request', onLandscapeRequest)
   ws.on('viewer:request', onViewerRequest)
-  // Channel renamed elsewhere (image table, metadata panel) while we're open: refetch meta and take
-  // only the names — contrast / LUT / visibility are the user's live view and stay as they are.
+  // Channel renamed elsewhere (image table, metadata panel), or a version added / removed / made
+  // active (a cleanup task, a delete, a reclaim) while we're open: refetch meta and take only the
+  // names and the version list — contrast / LUT / visibility are the user's live view and stay.
   stopImageMetaWatch = onViewerImageMeta(async (ev) => {
     if (ev.imageUid !== imageUid || !meta.value) return
     try {
       const m = await getJson<ViewerMeta>(metaUrl({ projectUid, imageUid, valueName: valueName.value }), { quiet: true })   // quiet: logged below
       const chs = meta.value?.channels ?? []
       for (let i = 0; i < Math.min(chs.length, m.channels.length); i++) chs[i].name = m.channels[i].name
+      if (meta.value) { meta.value.valueNames = m.valueNames; meta.value.activeValueName = m.activeValueName }
     } catch (e) {
-      vlog('warn', 'Channel-name refresh failed: ' + (e instanceof Error ? e.message : String(e)))
+      vlog('warn', 'Image-meta refresh failed: ' + (e instanceof Error ? e.message : String(e)))
     }
   })
   window.addEventListener('storage', onOverlaysTick)
