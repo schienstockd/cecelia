@@ -237,6 +237,14 @@ export function pointTarget(ref: KiwiRef, taskDefs?: ReadonlyMap<string, { task:
 
 export interface KiwiDraft { projectUid: string; refs: KiwiRef[] }
 
+/** Add `text` to the question box after what is already typed there — an unsent question is never
+ *  replaced (the jump search's "Ask Kiwi" row, docs/todo/HELP_SEARCH_PLAN.md H2). */
+export function appendPrompt(current: string, text: string): string {
+  const t = text.trim()
+  if (!t) return current
+  return current.trim() ? `${current.trimEnd()}\n${t}` : t
+}
+
 /** Attach `ref` unless it's already there (by `refKey`). A draft for another project starts over. */
 export function draftAdd(d: KiwiDraft, projectUid: string, ref: KiwiRef): KiwiDraft {
   const base = d.projectUid === projectUid ? d.refs : []

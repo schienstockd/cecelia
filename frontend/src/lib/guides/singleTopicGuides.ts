@@ -400,6 +400,7 @@ export const correctAMaskGuide: GuideDef = {
   group: 'Populations',
   icon: 'pi-wrench',
   summary: 'The hand-tools for fixing what an automated run got wrong — merge, split, redraw, delete.',
+  keywords: ['fix segmentation', 'edit labels', 'edit tracks', 'join', 'split'],
   prereqs: [PREREQ.projectOpen, PREREQ.segmented],
 
   steps: [

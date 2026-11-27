@@ -21,6 +21,7 @@ export const recordMovieGuide: GuideDef = {
   group: 'Analysis',
   icon: 'pi-video',
   summary: 'Record what the viewer is showing as an mp4, then repeat the same look across a whole set.',
+  keywords: ['capture', 'video', 'export', 'mp4', 'recording', 'movies'],
   prereqs: [PREREQ.projectOpen, PREREQ.timeSeries],
 
   steps: [
