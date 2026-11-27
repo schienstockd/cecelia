@@ -6,7 +6,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 74 |
+| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 67 |
 | Layers | [The viewer engine (`lib/webgpu`, `utils/viewer`) imports an app store](#viewer-store) | 4 |
 | Tangles | [Python modules that import each other](#py-cycle) | 1 |
 | Tangles | [Pinia stores that import each other](#store-cycle) | 1 |
@@ -28,12 +28,10 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`roi_suffixes_on`** — defined in tracking+spatial (tier 4), called from cell data (tier 3), model (tier 2)
 - **`task_params_name`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
 - **`TaskRequest`** — defined in runner (tier 8), called from scheduler+chains (tier 7)
-- **`Track`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`_catkey`** — defined in plots+boards (tier 8), called from tracking+spatial (tier 4)
 - **`_clustfeatures_entry`** — defined in gating (tier 4), called from model (tier 2)
 - **`_clustfeatures_part_of`** — defined in gating (tier 4), called from model (tier 2)
 - **`_clustfeatures_suffixes`** — defined in gating (tier 4), called from model (tier 2)
-- **`_comp_col`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`_finite`** — defined in plots+boards (tier 8), called from tracking+spatial (tier 4)
 - **`_fun_name_from_task`** — defined in scheduler+chains (tier 7), called from task framework (tier 5)
 - **`_keyed_strings`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
@@ -76,7 +74,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`read_state_json`** — defined in model (tier 2), called from config (tier 1)
 - **`rename_label_set_in_params`** — defined in scheduler+chains (tier 7), called from model (tier 2)
 - **`resolve_pop_type`** — defined in gating (tier 4), called from run records (tier 2)
-- **`roi_review_labels`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`save_pop_tree!`** — defined in gating (tier 4), called from model (tier 2)
 - **`series_base`** — defined in tasks (tier 6), called from qc+checks (tier 4)
 - **`store_axis_sizes`** — defined in tasks (tier 6), called from task framework (tier 5)
@@ -85,10 +82,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`store_written_at`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`task_source_stamp`** — defined in task framework (tier 5), called from run records (tier 2)
 - **`task_writes_into_key`** — defined in task framework (tier 5), called from run records (tier 2)
-- **`track_displacement`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
-- **`track_length`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
-- **`track_speed`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
-- **`track_straightness`** — defined in tasks (tier 6), called from tracking+spatial (tier 4)
 - **`with_pop_tree_lock`** — defined in gating (tier 4), called from model (tier 2)
 - **`write_qc`** — defined in qc+checks (tier 4), called from cell data (tier 3)
 - **`zarr_array_meta`** — defined in tasks (tier 6), called from qc+checks (tier 4)

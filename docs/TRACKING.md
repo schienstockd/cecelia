@@ -250,7 +250,7 @@ the composite
 
 | Layer | Path |
 |---|---|
-| Julia handler | `app/src/tasks/tracking/track_measures.jl` (`struct TrackMeasures`, `struct Track`) |
+| Julia handler | `app/src/tasks/tracking/track_measures.jl` (`struct TrackMeasures`); `struct Track` + per-track measures in `app/src/tracking/track_metrics.jl` |
 | Param spec | `app/src/tasks/tracking/track_measures.json` (`valueName`, `dims`, `forceRecompute`) |
 | Composite spec | `app/src/tasks/tracking/bayesian_track_measures.json` |
 
@@ -300,7 +300,8 @@ in-plane (xy) axes before any measure is computed. The result dict carries `dims
 
 The measure functions are a Julia port of **celltrackR** (Wortel et al. 2021,
 doi:10.1016/j.immuno.2021.100003; GPL-2). The attribution header is at the top of
-`track_measures.jl`. celltrackR is **not** a runtime dependency — the port is pinned to it by
+`tracking/track_metrics.jl` (`Track` + per-track measures) and `tasks/tracking/track_measures.jl`
+(per-cell measures + the task). celltrackR is **not** a runtime dependency — the port is pinned to it by
 **golden values cross-checked against celltrackR 1.2.2** in `app/test/runtests.jl` (the
 `Track measures (celltrackR golden)` testset, to 1e-6, plus single-step / single-position /
 zero-displacement edge cases). Ported: `trackLength`, `duration`, `speed`, `displacement`,

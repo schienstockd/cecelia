@@ -350,6 +350,7 @@ include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "
 include("plotting/stats.jl")
 include("plotting/image_metrics.jl")   # per-image sidecar metrics → summary plots (SPATIAL_PATTERN_PLAN D8)
 include("plotting/pop_positions.jl")   # every cell at its position, tagged by population (popPositions plot)
+include("tracking/track_metrics.jl")     # `Track` + per-track measures (celltrackR ports; the task + windows read them)
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_headings.jl")     # per-movie heading circular stats (radiatR port; the battery reads it)
@@ -359,6 +360,7 @@ include("tracking/track_approach.jl")     # approach toward a contacts target (p
 include("tracking/track_cohort.jl")       # (images × population) grouping for the two track plots
 include("tracking/track_classes.jl")      # one sub-population call per track (on read; TRACK_SUBPOP_GATING_PLAN P5)
 include("behaviour/hmm.jl")
+include("rois.jl")            # ROI sets + reviews (ROI_TRIAGE_PLAN); pure guard logic for /api/rois
 include("model/set.jl")
 include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
@@ -461,7 +463,6 @@ include("region_lens_query.jl")   # "find regions like this one" from a lens (LE
 include("tasks/clustRegions/lensQuery.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")
-include("rois.jl")            # ROI sets + reviews (ROI_TRIAGE_PLAN); pure guard logic for /api/rois
 include("figures.jl")         # paper figures from a spec (FIGURES_PLAN); the renderer is render_figure.py
 include("analysis_runs.jl")   # per-run delete registry (IMAGE_DELETE_PLAN Decision 14); after the task files it names
 include("tasks/task_registry.jl")

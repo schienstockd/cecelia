@@ -52,14 +52,6 @@ function parse_clust_regions_params(d::AbstractDict)::ClustRegionsParams
         createUmap       = Bool(get(d, "createUmap", true)))
 end
 
-# The per-cell composition obs column for one basis population. ONE namer, in Julia: the name is passed
-# to the Python runner (which writes the column) AND recorded in the clustfeatures sidecar (which the
-# heatmap reads as its row universe). They previously disagreed — Python sanitised the pop name into
-# `spatial.comp.B_qc__tracked.{suffix}` while Julia recorded the raw pop name `B/qc/_tracked`, so the
-# region composition heatmap asked for columns that did not exist and 400'd.
-_comp_col(basis_pop::AbstractString, suffix::AbstractString) =
-    "spatial.comp.$(replace(String(basis_pop), "/" => "_", " " => "_")).$(suffix)"
-
 # A window graph's density column — the cells in each cell's window, beside its composition.
 const WINDOW_DENSITY_NAME = "cells per window"
 

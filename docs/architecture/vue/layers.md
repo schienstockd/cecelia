@@ -25,7 +25,7 @@ flowchart LR
   plots["plots<br/><small>51 files · 8.7k lines</small>"]
   stores["stores<br/><small>36 files · 7.9k lines</small>"]
   tasks["tasks<br/><small>18 files · 9.4k lines</small>"]
-  utils__flat_["utils (flat)<br/><small>295 files · 35.7k lines</small>"]
+  utils__flat_["utils (flat)<br/><small>295 files · 35.8k lines</small>"]
   utils_viewer["utils/viewer<br/><small>23 files · 2.8k lines</small>"]
   components__flat_ -->|225| utils__flat_
   modules -->|169| utils__flat_
@@ -42,7 +42,7 @@ flowchart LR
   composables -->|57| stores
   components_plots -->|56| utils__flat_
   components_canvas -->|52| plots
-  tasks -->|51| utils__flat_
+  tasks -->|52| utils__flat_
   components_plots -->|50| composables
   modules -->|48| plots
   modules -->|39| components_canvas
@@ -78,7 +78,7 @@ flowchart LR
 | **modules** |  | 128 | 1 | 39 |  | 11 | 14 | 68 |  | 15 |  | 3 | · | 48 | 104 | 19 | 169 | 23 |
 | **plots** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | · |  |  | 14 | 1 |
 | **stores** | 1 |  |  |  |  |  |  | 4 |  | 11 | 4 |  |  | 2 | · |  | 82 | 5 |
-| **tasks** |  | 20 | 1 |  |  |  |  | 6 |  | 7 |  |  |  |  | 20 | · | 51 | 1 |
+| **tasks** |  | 20 | 1 |  |  |  |  | 6 |  | 7 |  |  |  |  | 20 | · | 52 | 1 |
 | **utils (flat)** |  |  |  |  |  |  |  | 1 |  | 18 | 13 | 1 |  | 18 | 10 | 8 | · | 1 |
 | **utils/viewer** |  |  |  |  |  |  |  |  |  | 1 |  |  |  | 1 | 11 |  | 29 | · |
 

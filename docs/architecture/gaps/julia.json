@@ -81,14 +81,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`Track`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_catkey`",
         "rank": -1,
         "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
@@ -116,14 +108,6 @@
         "subject": "`_clustfeatures_suffixes`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_comp_col`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },
@@ -465,14 +449,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`roi_review_labels`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`save_pop_tree!`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from model (tier 2)",
@@ -532,38 +508,6 @@
         "subject": "`task_writes_into_key`",
         "rank": -1,
         "detail": "defined in task framework (tier 5), called from run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`track_displacement`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`track_length`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`track_speed`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`track_straightness`",
-        "rank": -1,
-        "detail": "defined in tasks (tier 6), called from tracking+spatial (tier 4)",
         "where": [
         ]
     },
