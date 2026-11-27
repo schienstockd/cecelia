@@ -112,3 +112,24 @@ describe('visControlsFor — the rail offers exactly what the renderer honours',
     expect(visControlsFor({ chartType: 'boxplot', trend: true })).not.toContain('stats')
   })
 })
+
+describe('trend line — Y min / Y max set the axis (blank = auto)', () => {
+  // a fraction over time: the auto axis tops out at the curve (≈0.65), the user asks for 0…1
+  const r = R({ chartType: 'count', groupBy: 't', normalize: 'total',
+    series: [0, 1, 2, 3, 4, 5].map(t => ({ pop: '/A', value_name: 'T', uID: '', group: String(t), value: 0.4 + t * 0.04 })) })
+  const y = (v: object) => (buildPlotOptions(Stub, r, { ...defaultVis(), chartType: 'count', trend: true, byImage: false,
+    normalize: true, errorMetric: 'sd', nonNegative: true, plotWidth: 500, plotHeight: 300, legendHeight: 40,
+    colorOf: () => '#ff0000', ...v } as never) as { y: { domain: number[] } }).y.domain
+
+  it('auto runs 0 … the curve', () => {
+    const [lo, hi] = y({})
+    expect(lo).toBe(0)
+    expect(hi).toBeLessThan(1)
+  })
+  it('0 … 1 when asked', () => expect(y({ yMin: '0', yMax: '1' })).toEqual([0, 1]))
+  it('one side given, the other stays auto', () => {
+    expect(y({ yMax: '1' })).toEqual([0, 1])
+    expect(y({ yMin: '0.2' })[0]).toBe(0.2)
+  })
+  it('a range with no width falls back to auto', () => expect(y({ yMin: '1', yMax: '0.5' })).toEqual(y({})))
+})
