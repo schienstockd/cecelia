@@ -11,6 +11,9 @@ p = script_utils.script_params()
 s = lambda secs: ['2026-07-29 14:%02d:%02d.000' % divmod(t, 60) for t in secs]
 _ims(p['uniform'], stamps=s([0, 30, 60, 90]))
 _ims(p['paused'], stamps=s([0, 30, 60, 600, 630]))
+# VYZ9TQ's shape: whole-second stamps 2, 3, 2 s apart, then a steady ~5.26 s (5/6 s gaps)
+_ims(p['faststart'], stamps=['2025-09-29 01:%02d:%02d' % divmod(t, 60)
+                             for t in [0, 2, 5, 7] + [int(7 + 5.26 * k) for k in range(1, 31)]])
 _ims(p['nominal'], oir_step='12.5')
 _ims(p['none'])
 """
@@ -18,7 +21,8 @@ _ims(p['none'])
 @testset "source timing through the real Imaris reader" begin
     dir = mktempdir()
     ims = (uniform = joinpath(dir, "uniform.ims"), paused = joinpath(dir, "paused.ims"),
-           nominal = joinpath(dir, "nominal.ims"), none = joinpath(dir, "none.ims"))
+           nominal = joinpath(dir, "nominal.ims"), none = joinpath(dir, "none.ims"),
+           faststart = joinpath(dir, "faststart.ims"))
     script = joinpath(dir, "make_ims.py"); write(script, _IMS_FIXTURE_PY)
     log = String[]
     Cecelia.run_py(script, ims, joinpath(dir, "fixture_tasks"); on_log = l -> push!(log, l)) ||
@@ -39,7 +43,17 @@ _ims(p['none'])
     @test !haskey(m, "TimeIncrementDeclared")
     @test isempty(filter(f -> endswith(f, ".result.json"), readdir(run_dir)))   # the result file is removed
 
-    # paused: the file's answer is "no single interval" — nothing set, the declared one vetoed and said so
+    # a fast start, then steady: the steady part's interval wins over the declared one, flagged with
+    # the deviating timepoints for the calibration QC
+    ok, m, lines, _ = fill(ims.faststart)
+    @test ok && isapprox(m["TimeIncrement"], 5.26; atol = 0.05) && !haskey(m, "TimeIncrementDeclared")
+    @test m["TimeIncrementIrregular"]["frames"] == [[0, 3]] && m["TimeIncrementIrregular"]["steadyFrames"] == [3, 33]
+    @test any(l -> contains(l, "[WARN] Frame interval irregular") && contains(l, "0–3"), lines)
+    @test Cecelia.metadata_qc_findings(merge(m, Dict{String,Any}("PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5,
+        "PhysicalSizeUnit" => "micron")))[1]["code"] == "metadata.frame_interval_irregular"
+
+    # paused with no steady majority (2 of 4 gaps): the file's answer is "no single interval" —
+    # nothing set, the declared one vetoed and said so
     ok, m, lines, _ = fill(ims.paused)
     @test !ok && !haskey(m, "TimeIncrement")
     @test any(contains("Declared frame interval not applied"), lines)

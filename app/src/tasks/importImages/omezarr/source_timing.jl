@@ -73,9 +73,11 @@ by reading it directly. Same shape as the ImageJ Z-spacing fix in the task below
 reason — a source-specific calibration recovery Bio-Formats doesn't hand us.
 
 Only ever ADDS a value: if the store already carried an interval, that is what bioformats2raw
-actually found and it wins. An irregular series yields nothing (the runner refuses to flatten it to a
-median) — logged, because "no interval" and "an interval we declined to guess" are different answers
-and only the second is worth acting on.
+actually found and it wins. An irregular series yields its steady part's interval, recorded with the
+deviating frames as `TimeIncrementIrregular` (`{"frames": [[first, last], …], "steadyFrames": [first,
+last], "spread"}`, 0-based) for the calibration QC; one with no steady part yields nothing — logged,
+because "no interval" and "an interval we declined to guess" are different answers and only the second
+is worth acting on.
 """
 function _recover_ims_time_increment!(zarr_meta::Dict{String,Any}, src_path::AbstractString,
                                       run_dir::AbstractString;
@@ -100,10 +102,21 @@ function _recover_ims_time_increment!(zarr_meta::Dict{String,Any}, src_path::Abs
             nominal = get(res, :nominal, false) === true
             on_log("[INFO] Frame interval $(zarr_meta["TimeIncrement"]) s recovered from the Imaris " *
                    "source ($(get(res, :source, "?"))$(nominal ? ", nominal" : ""))")
+            # Irregular, so the interval is its steady part's (`ims_meta.steady_interval`): record
+            # which frames deviate — the calibration QC flags it (`metadata.frame_interval_irregular`).
+            if get(res, :uniform, nothing) === false
+                irr = Dict{String,Any}("frames" => [collect(Int, r) for r in res[:irregularFrames]],
+                                       "steadyFrames" => collect(Int, res[:steadyFrames]),
+                                       "spread" => Float64(res[:spread]))
+                zarr_meta["TimeIncrementIrregular"] = irr
+                on_log("[WARN] Frame interval irregular: taken from the steady timepoints " *
+                       "$(_frame_ranges_text([irr["steadyFrames"]])); timepoints " *
+                       "$(_frame_ranges_text(irr["frames"])) deviate")
+            end
             return true
         end
-        # Measured but not uniform (a paused acquisition): the file's own answer is "no single
-        # interval", which a declared one must not then override.
+        # Measured but with no steady part (random gaps, two rates): the file's own answer is "no
+        # single interval", which a declared one must not then override.
         irregular[] = get(res, :uniform, nothing) === false
         on_log("[WARN] No frame interval in the Imaris source: $(get(res, :reason, "unknown"))")
     catch e
