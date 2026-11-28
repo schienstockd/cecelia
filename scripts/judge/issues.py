@@ -580,9 +580,10 @@ def status_text(record: dict, report: dict | None, *, repo: str, pr: str | None 
         lines.append(f"- **Judge failed** for: {', '.join(failed)}. That step didn't run this pass.")
     if warning:
         lines.append(f"- **{warning}**")
-    props = record.get("proposals") or []
-    lines.append(f"- Rules: {len(props)} proposal(s) in {pr}" if props and pr else
-                 f"- Rules: {len(props)} proposal(s); no PR was opened" if props else "- Rules: no proposals.")
+    for label, props in (("Rules", _record.rule_proposals(record)), ("Plan review", _record.plan_proposals(record))):
+        if props or label == "Rules":
+            lines.append(f"- {label}: {len(props)} proposal(s) in {pr}" if props and pr else
+                         f"- {label}: {len(props)} proposal(s); no PR was opened" if props else f"- {label}: no proposals.")
     waiting = _record.verify_waiting(record["run"]["spend"])
     lines += [f"- Verify: {waiting}; the next pass verifies them."] if waiting else []
     lines.append(f"- Spend (list price): {_record.spend_line(record['run']['spend'])}")

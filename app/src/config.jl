@@ -175,6 +175,15 @@ const _PROJECTS_DIR_PLACEHOLDER = "/path/to/projects"
 projects_dir()::String = _cfg_dir("projects", _PROJECTS_DIR_PLACEHOLDER)
 
 """
+    default_export_dir() -> String
+
+Where bundles land when the caller doesn't pick a destination: a `cecelia_exports/` sibling of the
+projects dir (next to — not inside — the projects tree). Both separators are stripped: the setup
+screen stores the typed path verbatim, and on Windows `D:\\Cecelia\\projects\\` would otherwise give
+`dirname` the projects dir itself, landing exports inside it."""
+default_export_dir()::String = joinpath(dirname(rstrip(projects_dir(), ['/', '\\'])), "cecelia_exports")
+
+"""
     setup_required() -> Bool
 
 `true` when first-launch setup is still needed: no `custom.toml` yet, or the projects dir is
@@ -210,6 +219,56 @@ function set_projects_dir!(path::AbstractString)::String
     stored
 end
 
+# ── User modules + plugins: where they live ──
+# Paths only. Loading them is tasks/custom_modules.jl + tasks/plugins.jl; the python bridge reads
+# `plugin_roots` too (each plugin's `python/` goes on PYTHONPATH), so they sit at the bottom tier.
+const PLUGINS_SUBDIR = "plugins"
+
+"""
+    custom_modules_dir([dev_dir]) -> String
+
+The per-user custom-modules root, `<config_dir>/modules` (see [`config_dir`](@ref)).
+"""
+custom_modules_dir(dev_dir::Union{String,Nothing} = nothing)::String =
+    joinpath(config_dir(dev_dir), "modules")
+
+"""
+    plugins_dir([dev_dir]) -> String
+
+The plugin root, `<config_dir>/modules/plugins` (see [`custom_modules_dir`](@ref)).
+"""
+plugins_dir(dev_dir::Union{String,Nothing} = nothing)::String =
+    joinpath(custom_modules_dir(dev_dir), PLUGINS_SUBDIR)
+
+"""
+    plugin_roots(; dev_dir=nothing) -> Vector{String}
+
+Absolute path of every installed plugin directory, **sorted**.
+
+Sorted on purpose: precedence between two same-tier plugins is first-wins, and `readdir` yields
+filesystem order — which differs between machines. Without the sort, which plugin won a `fun_name`
+clash would depend on the disk.
+"""
+function plugin_roots(; dev_dir::Union{String,Nothing} = nothing)::Vector{String}
+    root = plugins_dir(dev_dir)
+    isdir(root) || return String[]
+    sort!(String[e for e in readdir(root; join = true) if isdir(e)])
+end
+
+# ── The active user profile ──
+const _DEFAULT_PROFILE = "default"
+
+"""
+    active_profile_name() -> String
+
+Active user-profile name from `custom.toml [ai].profile`, defaulting to `"default"`. Kiwi turns,
+per-profile settings and project ownership all read this — see `docs/todo/USER_PROFILE_PLAN.md`
+(the primitive was originally Kiwi-scoped in `LOGIN_CREDENTIAL_ISOLATION_PLAN`; the `[ai]` TOML
+section stays put per Phase 3, only the code identifiers renamed).
+"""
+active_profile_name()::String =
+    string(get(get(cecelia_conf(), "ai", Dict{String,Any}()), "profile", _DEFAULT_PROFILE))
+
 # ── Domain-specific config surfaces (all in the Cecelia module namespace) ──────
 # Order: models → binaries → throttle → image_format. `binaries.jl` uses `_cfg_dir`/`expand_user`
 # from above; `throttle.jl` and `image_format.jl` use `custom_toml_path`/`ensure_config_dir`/
@@ -223,6 +282,4 @@ include("config/tls.jl")
 include("config/server_threads.jl")
 include("config/viewer_cache.jl")
 include("config/shared_workstation.jl")
-# ── Per-profile settings — after agent_runner.jl so `active_profile_name()` is available ──
-# `agent_runner.jl` is loaded from Cecelia.jl AFTER config.jl, so profile_settings.jl can
-# only be included from there. That include statement lives near the AI block, not here.
+# ── Per-profile settings — config/profile_settings.jl is included from Cecelia.jl, beside the AI block.

@@ -31,7 +31,19 @@ from cecelia.effectiveness.judge_staleness import backlog, judge_store  # noqa: 
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
 SCHEMA_VERSION = 1
-PROPOSAL_KINDS = ("tighten", "ratchet")
+#: `tighten` / `ratchet` from the rules step; `plan_*` from the plan post-mortem (`plan_postmortem.KINDS`).
+PROPOSAL_KINDS = ("tighten", "ratchet", "plan_miss", "plan_noise", "plan_dismissed")
+RULE_KINDS = ("tighten", "ratchet")
+
+
+def rule_proposals(record: dict) -> list[dict]:
+    """The rules step's proposals (`P…`): a CLAUDE.md section to tighten or ratchet."""
+    return [p for p in record.get("proposals") or [] if p.get("kind") in RULE_KINDS]
+
+
+def plan_proposals(record: dict) -> list[dict]:
+    """The plan post-mortem's proposals (`M…`): an edit to the plan review prompt or conventions."""
+    return [p for p in record.get("proposals") or [] if p.get("kind") not in RULE_KINDS]
 BUG_STATUSES = ("open", "unjudged", "unmerged", "parked", "gone", "dismissed", "wont_fix")
 
 _HOW_TO_USE = (
@@ -125,11 +137,13 @@ def newly_open(bug: dict, date: str) -> bool:
 
 def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Sequence[dict],
           proposals: _t.Sequence[dict], spend: dict, agent_causes: _t.Sequence[dict] = (),
-          fixture_requests: dict | None = None, coherence: dict | None = None) -> dict:
+          fixture_requests: dict | None = None, coherence: dict | None = None,
+          plan_postmortem: dict | None = None) -> dict:
     """The record for the pass on `date`. `ts` is when the pass started: the next pass's sweep
     window opens there. `agent_causes`: run reviews' `agent` causes per guide (`run_reviews.py`).
     `fixture_requests`: open fixture requests and candidate COUNTS (`fixture_requests.summary`) —
-    the record is published, so never image names. `coherence`: whole-repo counts (`coherence.trend`)."""
+    the record is published, so never image names. `coherence`: whole-repo counts (`coherence.trend`).
+    `plan_postmortem`: the plan post-mortem's judged changes and cases (`plan_postmortem.run`)."""
     return {
         "schema_version": SCHEMA_VERSION, "kind": "pass", "date": date,
         "run": {"ts": ts, "sha": sha, "spend": spend},
@@ -139,6 +153,7 @@ def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Se
         **({"agent_causes": list(agent_causes)} if agent_causes else {}),
         **({"fixture_requests": fixture_requests} if fixture_requests and fixture_requests.get("requests") else {}),
         **({"coherence": coherence} if coherence else {}),
+        **({"plan_postmortem": plan_postmortem} if plan_postmortem is not None else {}),
     }
 
 
@@ -404,10 +419,11 @@ def _render_rules(record: dict) -> list[str]:
     out += [f"| {_cell(r['rule'])} | {r['findings']} | {r['sessions']} | {r['agent_made']} | {r['legacy']} "
             f"| {r.get('caught', '–')} |" for r in rules]
     out.append("")
-    for p in record.get("proposals", []):
+    rule_props = rule_proposals(record)
+    for p in rule_props:
         out += [f"- **{p['id']} · {p['kind']}** — {p['summary']}",
                 f"  - Sources: {', '.join(f'`{s}`' for s in p['sources'])}"]
-    if not record.get("proposals"):
+    if not rule_props:
         out.append(f"No rule reached {need} sessions.")
     return out
 
@@ -547,7 +563,35 @@ def render_markdown(record: dict) -> str:
         out += ["", "## Fixture requests", "", *_render_fixture_requests(record)]
     if record.get("coherence"):
         out += ["", "## Coherence counts", "", *_render_coherence(record)]
+    if "plan_postmortem" in record:
+        out += ["", "## Plan post-mortem", "", *_render_plan_postmortem(record)]
     return "\n".join(out) + "\n"
+
+
+_PLAN_PM_HOW_TO = (
+    "Merged changes that edited a parked plan, judged against the plan reviews that ran on it "
+    "(`scripts/judge/plan_postmortem.py`). *Vindicated*: a finding tagged through that the edit fixed "
+    "after all. *Miss*: the edit corrects an error the review saw and didn't flag. *Noise* (counted, not "
+    "listed): `false_positive` tags no edit has proved wrong. A pattern in 2+ plans becomes an `M` proposal.")
+
+
+def _render_plan_postmortem(record: dict) -> list[str]:
+    pm = record["plan_postmortem"]
+    failed = (record["run"].get("failed") or {}).get("plan_postmortem")
+    out = [_PLAN_PM_HOW_TO, "",
+           f"{pm.get('edits', 0)} plan edit(s) to judge, {len(pm.get('judged') or [])} judged, "
+           f"{len(pm.get('cases') or [])} new case(s), {pm.get('noise', 0)} noise tag(s) in the window."]
+    if failed:
+        out += ["", f"The judge failed (`{one_line(failed)}`): the edits not judged wait for the next pass."]
+    plan_props = plan_proposals(record)
+    if pm.get("cases") or plan_props:
+        out.append("")
+    for c in pm.get("cases") or []:
+        out.append(f"- **{c['kind']}** · `{c['plan']}` · {c.get('marker')} · `{c['sha'][:12]}` — "
+                   f"{one_line(c.get('what', ''))}" + (f" *Lesson:* {one_line(c['lesson'])}" if c.get("lesson") else ""))
+    for p in plan_props:
+        out.append(f"- **{p['id']} · {p['kind']}** — {p['summary']}")
+    return out
 
 
 def write(record: dict, *, mirror: bool = False, force: bool = False,

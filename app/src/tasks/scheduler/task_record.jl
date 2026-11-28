@@ -249,3 +249,32 @@ function cancel_task!(task_id::AbstractString)::Bool
     end
     true
 end
+
+# ── Removing a plugin — gated on its tasks not being live ──
+# (The rest of the plugin lifecycle is tasks/plugins.jl.)
+"""
+    plugin_remove!(name; dev_dir=nothing) -> NamedTuple
+
+Unregister the plugin's tasks, then delete its directory. Returns `(; ok, removed, error)`.
+
+**Refuses while any of its tasks is running.** Deleting the directory under a live run pulls the
+runner's own `_run.py` out from under a `run_py` subprocess, and `_unregister_task!` only drops the
+registry entry — an in-flight `_run_task` already holds the instance. Decision 9.
+"""
+function plugin_remove!(name::AbstractString; dev_dir::Union{String,Nothing} = nothing)
+    dir = joinpath(plugins_dir(dev_dir), String(name))
+    isdir(dir) || return (; ok = false, removed = String[], error = "no such plugin: $name")
+
+    mine = String[e.fun_name for e in user_task_specs(; dev_dir) if e.plugin == String(name)]
+    busy = [t.fun_name for t in list_tasks() if t.fun_name ∈ mine]
+    isempty(busy) ||
+        return (; ok = false, removed = String[],
+                  error = "still running: $(join(unique(busy), ", ")) — cancel it first")
+
+    removed = String[]
+    for fn in mine
+        _unregister_task!(fn) && push!(removed, fn)
+    end
+    rm(dir; recursive = true, force = true)
+    (; ok = true, removed, error = nothing)
+end

@@ -153,6 +153,17 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
 
+# A task that reports the CPU budget it ran under — the `RUN_CPU_BUDGET` the scheduler binds per job
+# (suite/run_usage.jl).
+struct _CpuBudgetTask <: CciaTask end
+Cecelia._run_task(::_CpuBudgetTask, ::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    Dict{String,Any}("budget" => Cecelia.RUN_CPU_BUDGET[], "threads" => Cecelia.run_cpu_threads(; cap = 4))
+
+# A `PyDispatch` with no `_run_py_remote` method of its own — the hook's fallback (suite/run_usage.jl).
+struct _NoRunnerDispatch <: Cecelia.PyDispatch end
+
 # A task that runs two Python processes through `run_py`, each allocating `mb` MiB and touching every
 # page — used to assert the run log's `usage` takes the larger peak, not the sum (suite/run_usage.jl).
 const _RU_SCRIPT = """

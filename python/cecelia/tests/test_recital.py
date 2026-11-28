@@ -703,6 +703,100 @@ class ResultReviewTest(unittest.TestCase):
         self.assertIn("_Result review: run_", body)
 
 
+#: Built, not written out: the doc-pointer convention test reads `docs/…/X.md` in code as a real pointer.
+_TODO = "docs/" + "todo/"
+_PLAN = _TODO + "WAVES_PLAN.md"
+
+
+def _added_file(path: str, lines: tuple[str, ...] = ("# Plan", "Decision 1: x")) -> str:
+    body = "".join(f"+{ln}\n" for ln in lines)
+    return (f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n"
+            f"@@ -0,0 +1,{len(lines)} @@\n{body}")
+
+
+def _deleted_file(path: str) -> str:
+    return (f"diff --git a/{path} b/{path}\ndeleted file mode 100644\n--- a/{path}\n+++ /dev/null\n"
+            "@@ -1,1 +0,0 @@\n-old\n")
+
+
+class PlanReviewTest(unittest.TestCase):
+    """The fourth reviewer (`docs/ai-assist/PLAN_REVIEW.md`): gated on parked plans, three tagged markers."""
+
+    setUp = FindingsEmissionTest.setUp
+    _events = FindingsEmissionTest._events
+
+    @staticmethod
+    def _fake(plan_reply: str):
+        prompts = []
+
+        def fake(prompt: str) -> str:
+            prompts.append(prompt)
+            return plan_reply if "PLAN_REVIEW.md" in prompt else "no findings"
+        return fake, prompts
+
+    def test_no_plan_in_the_diff_skips_without_spawning(self):
+        for diff in (_diff_of("docs/DEV.md"), _added_file("docs/" + "archive/X_PROMPT.md"),
+                     _added_file(_TODO + "README.md"), _deleted_file(_TODO + "OLD_PLAN.md")):
+            fake, prompts = self._fake("must not be asked")
+            body = run_recital(diff, claude_runner=fake)
+            self.assertIn("_Plan review: skipped — no plan changed_", body, diff)
+            self.assertFalse(any("PLAN_REVIEW.md" in p for p in prompts), diff)
+        rows = [e for e in self._events() if e["event"] == "plan_review_run"]
+        self.assertEqual({r["payload"]["escape_valve"] for r in rows}, {"no_plan"})
+
+    def test_a_new_or_edited_plan_is_reviewed(self):
+        for diff in (_added_file(_PLAN), _diff_of(_PLAN)):
+            fake, prompts = self._fake("_no plan review needed_")
+            body = run_recital(diff, claude_runner=fake)
+            self.assertTrue(any("PLAN_REVIEW.md" in p for p in prompts), diff)
+            self.assertIn("_no plan review needed_", body)
+
+    def test_tagged_markers_become_findings_and_advisories_are_listed(self):
+        reply = (f"- **{_PLAN}:61** — kill criterion (c) drops a pair whose signal survives "
+                 "the within-bin shuffle; that survival is the finding. Copied from the brief. Reasoning "
+                 "[**design flaw**]\n"
+                 f"- **{_PLAN}:20** — says holes are filled for the tissue only; `auto` "
+                 "default, user can override, regionEdge.jl:47 [**wrong claim**]\n"
+                 f"- **{_PLAN}:88** — dwell per ring; MOTILITY_METRICS_PLAN.md P3 [**already exists**]\n"
+                 f"- **{_PLAN}:90** — drop P4 from the first slice [**scope**]\n"
+                 f"- **{_PLAN}:12** — depends on feat/x, not reachable [**unverified**]")
+        fake, _ = self._fake(reply)
+        body = run_recital(_added_file(_PLAN), claude_runner=fake)
+        found = [e["payload"] for e in self._events() if e["event"] == "plan_review_finding"]
+        self.assertEqual([(f["line"], f["marker"]) for f in found],
+                         [(61, "design flaw"), (20, "wrong claim"), (88, "already exists")])
+        self.assertTrue(all(f["slug"].startswith("plan-") for f in found))
+        adv = [e["payload"] for e in self._events() if e["event"] == "plan_review_advisory"]
+        self.assertEqual([a["marker"] for a in adv], ["scope", "unverified"])
+        self.assertTrue(all("slug" not in a for a in adv))
+        for f in found:
+            self.assertIn(f"[{f['slug']}]", body)
+        self.assertIn("_Plan review: run_", body)
+        self.assertNotIn("PARSE WARNING", body)
+
+
+class MechanismRegistrationTest(unittest.TestCase):
+    """A reviewer added to `MARKERS` must reach every place a finding travels, or its findings are
+    logged but can never be closed: the slug grammar, the hook's resolved-event map, the log vocabulary."""
+
+    def test_every_mechanism_slug_is_parsed_and_resolvable(self):
+        import importlib.util
+        import re
+        from cecelia.effectiveness.log import FINDING_EVENTS, RESOLVED_EVENTS, SLUG_PATTERN
+        from cecelia.effectiveness.recital import MARKERS
+        hook_path = pathlib.Path(__file__).resolve().parents[3] / ".claude" / "hooks" / "check_commit_recital.py"
+        spec = importlib.util.spec_from_file_location("check_commit_recital_reg", hook_path)
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        for mech, markers in MARKERS.items():
+            slug = _slug(mech, "a.py", 1, markers[0])
+            self.assertRegex(slug, rf"^{SLUG_PATTERN}$", mech)
+            resolved = hook._finding_event_for_slug(slug)
+            self.assertIn(resolved, RESOLVED_EVENTS, mech)
+            self.assertIn(resolved, EVENT_TYPES, mech)
+            self.assertIn(re.sub(r"_resolved$", "", resolved), FINDING_EVENTS, mech)
+
+
 class DefaultRunnerEnvTest(unittest.TestCase):
     def test_reviewer_spawn_disables_observer_pairing(self):
         # A reviewer turn must not re-pair the user's project (observer MCP inherits env).

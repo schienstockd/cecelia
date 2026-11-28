@@ -5,7 +5,7 @@
   BaseModal like every other dialog. Editing physical size / timing / channels lives elsewhere
   (PhysicalSizeDialog, Metadata page). One mutation lives here: renaming a segmentation's
   value_name — the operation is scoped to the label set the user is looking at (POST
-  /api/images/labels/rename → app/src/storage.jl:rename_value_name!).
+  /api/images/labels/rename → app/src/rename_value_name.jl:rename_value_name!).
 -->
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, nextTick, onMounted } from 'vue'

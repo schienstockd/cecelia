@@ -875,7 +875,7 @@ end
     rm(proj.root; recursive=true)
 end
 
-# ── Sink-agnostic task execution (runner/execute.jl) ──────────────────────────
+# ── Sink-agnostic task execution (tasks/scheduler/execute.jl) ──────────────────────────
 # `execute_task` is the body `handle_task_run` used to inline. It is tested HERE, in the package, with
 # no server and no socket — which is the whole point: the API server and the detached runner drive the
 # same function, so its contract (scope dispatch, terminal frame on every path, result-before-status)

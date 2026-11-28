@@ -47,14 +47,7 @@ _is_store_dir(name::AbstractString)::Bool =
     endswith(name, ".zarr") && !any(s -> endswith(name, s), _SKIP_DIR_SUFFIXES)
 _skip_dir(name::AbstractString)::Bool = any(s -> endswith(name, s), _SKIP_DIR_SUFFIXES)
 
-"""
-    default_export_dir() -> String
-
-Where bundles land when the caller doesn't pick a destination: a `cecelia_exports/` sibling of the
-projects dir (next to — not inside — the projects tree). Both separators are stripped: the setup
-screen stores the typed path verbatim, and on Windows `D:\\Cecelia\\projects\\` would otherwise give
-`dirname` the projects dir itself, landing exports inside it."""
-default_export_dir()::String = joinpath(dirname(rstrip(projects_dir(), ['/', '\\'])), "cecelia_exports")
+# `default_export_dir()` (where a bundle lands by default) lives in config.jl beside `projects_dir()`.
 
 # Best-effort rewrite of the project uid where it's embedded as USER data we can't derive from location:
 # a notebook's hardcoded `load_project("<old>")`. Everything else that references the project — analysis
@@ -140,53 +133,8 @@ function _mirror_tree!(src::String, dst::String, rel::String, stores::Vector{Tup
     end
 end
 
-# System `tar` is the archiver (like the self-updater). Present on Linux/macOS and Windows 10 1803+
-# (bsdtar as tar.exe); guard so a missing binary is a clear error, not a cryptic spawn failure.
-_tar_available()::Bool = Sys.which("tar") !== nothing
-
-# Run one `tar` (pack or unpack) as a tracked subprocess, so cancel_job! can kill it. Returns clean exit.
-# `on_err` receives tar's own stderr when it fails. Previously both streams went to `devnull`, so a
-# failed pack reported only "[ERROR] Export failed." with no cause — which is exactly the position we
-# were in when export turned out to be broken on Windows and the log said nothing about why. Success
-# stays silent (tar is chatty and the caller logs its own progress).
-# Tar command builders — PURE, so the one property that matters can be asserted on any host: the
-# `-f` argument is a BARE FILENAME and the process cwd carries the directory.
-#
-# Why that property: GNU tar reads an archive path as `host:path` when a colon appears before any
-# separator, and tries to open a REMOTE archive. Every Windows absolute path starts `D:\...`, so
-# `-f D:\a\...\x.tar` becomes a connection attempt to host `D` — while a unix absolute path can
-# never trigger it (the leading `/` precedes the colon), which is why this only ever failed on Windows
-# and cannot be reproduced on Linux. `-C` is NOT parsed that way, so it stays absolute.
-#
-# Windows' own System32\tar.exe is bsdtar and doesn't do remote at all; but under `shell: bash` —
-# CI, and any Git Bash — `tar` resolves to Git-for-Windows' GNU tar.
-#
-# Compression rides on the archive's own extension rather than a caller flag, so `.tar` and
-# `.tar.gz` are packed and unpacked by the same two functions. Plugin install downloads a
-# `.tar.gz` from GitHub; project export writes a plain `.tar` (zarr is already compressed).
-_tar_gz(path::AbstractString)::Bool = endswith(path, ".tar.gz") || endswith(path, ".tgz")
-
-_tar_pack_cmd(out_tar::AbstractString, sdir::AbstractString)::Cmd =
-    Cmd(`tar $(_tar_gz(out_tar) ? "-czf" : "-cf") $(basename(out_tar)) -C $(dirname(sdir)) $(basename(sdir))`;
-        dir = dirname(out_tar))
-# `into` extracts elsewhere than the archive's own directory — again via `-C`, which is safe to
-# leave absolute. Empty means "into the cwd", i.e. beside the archive.
-_tar_unpack_cmd(tar_path::AbstractString; into::AbstractString = "")::Cmd =
-    Cmd(`tar $(_tar_gz(tar_path) ? "-xzf" : "-xf") $(basename(tar_path)) $(isempty(into) ? [] : ["-C", into])`;
-        dir = dirname(tar_path))
-
-function _run_tar(cmd::Cmd, task_id::AbstractString; on_err::Function = _ -> nothing)::Bool
-    err  = IOBuffer()
-    proc = run(pipeline(cmd; stdout = devnull, stderr = err); wait = false)
-    track_job!(task_id, proc)
-    wait(proc)
-    ok = proc.exitcode == 0 && proc.termsignal == 0   # termsignal too: libuv reports 0 exitcode on kill
-    if !ok
-        msg = strip(String(take!(err)))
-        isempty(msg) || on_err(msg)
-    end
-    ok
-end
+# The tar helpers (`_tar_available`, `_tar_pack_cmd`, `_tar_unpack_cmd`, `_run_tar`) live in jobs.jl,
+# beside `track_job!` — plugin install (tasks/plugins.jl) unpacks with them too.
 
 # Pack/unpack a set of units in parallel, bounded by `concurrency`, reporting progress + honouring
 # cancel. `work(unit)` does one unit (a tar) and returns Bool. Returns :done | :cancelled | :failed.

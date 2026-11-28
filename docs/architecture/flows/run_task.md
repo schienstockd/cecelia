@@ -72,7 +72,7 @@ here. `handle_task_run` first tries `_submit_to_runner`: an HTTP POST `/submit` 
 with the same `execute_task`. Its frames come back over a WS (`/events`) and go into the same sinks
 through `_relay_runner_frame`. If the runner refuses or is switched off, the task runs in-process. If it
 is enabled but not answering, the server relaunches it and falls back to in-process if that fails. On
-HPC (`target = hpc`), `run_py` hands off to `_run_py_hpc` at step 9 instead of spawning locally.
+HPC (`target = hpc`), `run_py` hands off to `_run_py_remote` (the `PyDispatch` hook; the HPC method calls `_run_py_hpc`) at step 9 instead of spawning locally.
 
 ## What crosses each boundary
 
@@ -101,8 +101,8 @@ HPC (`target = hpc`), `run_py` hands off to `_run_py_hpc` at step 9 instead of s
 | 3 | `api/src/sockets.jl` | `function _remember_fun_params(` |
 | 3 | `app/src/model/image.jl` | `function write_module_fun_params!(` |
 | 4 | `api/src/sockets.jl` | `run_in_process() = execute_task(req;` |
-| 4 | `app/src/runner/execute.jl` | `function execute_task(req::TaskRequest;` |
-| 4 | `app/src/runner/execute.jl` | `result = run_task(task_struct, img, req.params;` |
+| 4 | `app/src/tasks/scheduler/execute.jl` | `function execute_task(req::TaskRequest;` |
+| 4 | `app/src/tasks/scheduler/execute.jl` | `result = run_task(task_struct, img, req.params;` |
 | 5 | `app/src/tasks/scheduler/run.jl` | `validate_params(task, params)` |
 | 5 | `app/src/tasks/scheduler/run.jl` | `put!(pool.queue, job)` |
 | 5 | `app/src/tasks/segment/cellpose.json` | `"resource_pool": "gpu"` |
@@ -134,7 +134,7 @@ HPC (`target = hpc`), `run_py` hands off to `_run_py_hpc` at step 9 instead of s
 | 13 | `app/src/model/project.jl` | `function commit_state!(f::Function, obj)` |
 | 13 | `app/src/tasks/segment/cellpose.jl` | `bank_segment_qc!(img, "segment.cellpose"` |
 | 14 | `app/src/tasks/scheduler/jobs.jl` | `close_run_log!(tgt, job.id, string(final);` |
-| 15 | `app/src/runner/execute.jl` | `on_result(req.image_uid, result)` |
+| 15 | `app/src/tasks/scheduler/execute.jl` | `on_result(req.image_uid, result)` |
 | 15 | `api/src/sockets.jl` | `type="task:result"` |
 | 15 | `frontend/src/stores/ws.ts` | `if (type === 'task:result') {` |
 | 16 | `frontend/src/stores/tasks.ts` | `function setStatus(id: string, status: TaskStatus,` |
@@ -144,4 +144,4 @@ HPC (`target = hpc`), `run_py` hands off to `_run_py_hpc` at step 9 instead of s
 | note | `api/src/runner_api.jl` | `function _submit_to_runner(req)::Symbol` |
 | note | `app/src/runner/client.jl` | `_runner_post(h, "/submit", task_request_dict(req))` |
 | note | `api/src/runner_api.jl` | `function _relay_runner_frame(f::Dict{String,Any})` |
-| note | `app/src/py_runner.jl` | `return _run_py_hpc(script_rel, params, task_dir, d;` |
+| note | `app/src/py_runner.jl` | `return _run_py_remote(script_rel, params, task_dir, d;` |

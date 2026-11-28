@@ -489,3 +489,73 @@ classDiagram
 
 </details>
 
+## `PyDispatch`
+
+Defined in `app/src/py_runner.jl:195` · 1 subtypes · 16 required, 1 with a default
+
+**To add a subtype** — implement the required and expected functions; override an optional one only to change its default.
+
+| Function | Kind | Implemented by |
+|---|---|---|
+| `_hpc_adopt_submitted` | **required** | HpcDispatch |
+| `_hpc_claim_mirror!` | **required** | HpcDispatch |
+| `_hpc_classify` | **required** | HpcDispatch |
+| `_hpc_job_env` | **required** | HpcDispatch |
+| `_hpc_job_for_run` | **required** | HpcDispatch |
+| `_hpc_log_usage` | **required** | HpcDispatch |
+| `_hpc_mirror_owner` | **required** | HpcDispatch |
+| `_hpc_pull_writes!` | **required** | HpcDispatch |
+| `_hpc_sync_reads!` | **required** | HpcDispatch |
+| `_run_py_hpc` | **required** | HpcDispatch |
+| `hpc_assets_dir` | **required** | HpcDispatch |
+| `hpc_map_path` | **required** | HpcDispatch |
+| `hpc_mirror_dir` | **required** | HpcDispatch |
+| `hpc_rewrite_params` | **required** | HpcDispatch |
+| `hpc_run_fingerprint` | **required** | HpcDispatch |
+| `hpc_undeclared_changes` | **required** | HpcDispatch |
+| `_run_py_remote` | optional | HpcDispatch |
+
+```mermaid
+classDiagram
+  class PyDispatch {
+    <<abstract>>
+    +_hpc_adopt_submitted()
+    +_hpc_claim_mirror!()
+    +_hpc_classify()
+    +_hpc_job_env()
+    +_hpc_job_for_run()
+    +_hpc_log_usage()
+    +_hpc_mirror_owner()
+    +_hpc_pull_writes!()
+    +_hpc_sync_reads!()
+    +_run_py_hpc()
+    +_run_py_remote()
+    +hpc_assets_dir()
+    +hpc_map_path()
+    +hpc_mirror_dir()
+    +hpc_rewrite_params()
+    +hpc_run_fingerprint()
+    +hpc_undeclared_changes()
+  }
+  class HpcDispatch {
+    +_hpc_adopt_submitted()
+    +_hpc_claim_mirror!()
+    +_hpc_classify()
+    +_hpc_job_env()
+    +_hpc_job_for_run()
+    +_hpc_log_usage()
+    +_hpc_mirror_owner()
+    +_hpc_pull_writes!()
+    +_hpc_sync_reads!()
+    +_run_py_hpc()
+    +_run_py_remote()
+    +hpc_assets_dir()
+    +hpc_map_path()
+    +hpc_mirror_dir()
+    +hpc_rewrite_params()
+    +hpc_run_fingerprint()
+    +hpc_undeclared_changes()
+  }
+  PyDispatch <|-- HpcDispatch
+```
+
