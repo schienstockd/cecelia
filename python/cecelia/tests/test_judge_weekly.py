@@ -120,8 +120,14 @@ class _WeeklyFixture(_Fixture):
             props = [{"id": "P1", "kind": "tighten", "rule": rows[0]["rule"], "summary": "s", "sources": ["a"]}]
             return rows, props, {"agent_made": 4, "legacy": 0, "unknown": 0}, 0.5
 
+        def plan_postmortem(events, *, date, sha, history=(), judge=None, meter=None, failures=None, answered=None):
+            self.plan_pm_args = {"history": history, "answered": answered}
+            return {"edits": 0, "judged": [], "cases": [], "noise": 0}, list(self.plan_props), 0.0
+
+        self.plan_props: list = []
         for mod, name, fn in ((self.w._bugs, "sweep", sweep), (self.w._verify, "verify", verify),
-                              (self.w._rules, "propose", propose)):
+                              (self.w._rules, "propose", propose),
+                              (self.w._plan_postmortem, "run", plan_postmortem)):
             p = mock.patch.object(mod, name, fn)
             p.start()
             self.addCleanup(p.stop)
@@ -261,6 +267,18 @@ class WeeklyTest(_WeeklyFixture):
         self.assertIn("The rule-mapping judge failed this pass", md)
         self.fail_steps.clear()
         self.assertNotIn("failed", self.run_pass()["run"])
+
+    def test_a_plan_proposal_does_not_hide_a_failed_rules_step(self):
+        self.fail_steps.update(rules="judge failed (exit 1): boom")
+        self.plan_props = [{"id": "M1", "kind": "plan_miss", "rule": "PLAN_REVIEW.md → *Reviewer prompt* (x)",
+                            "summary": "missed x in 2 plans", "sources": ["s"], "cases": []}]
+        record = self.run_pass()
+        self.assertEqual(self.rec.validate(record), [])
+        body = self.w._pr_body(record)
+        self.assertIn("**Rules: the judge failed**", body)
+        self.assertIn("**Plan review: 1 proposal(s).**", body)
+        self.assertNotIn("Rules: 1 proposal", body)
+        self.assertIn("and **1 plan review proposal(s)**", self.w._rules_body(record))
 
     def test_the_headline_counts_verified_bugs_and_landed_fixes(self):
         fix = {"commit": "abcdef0123" + "0" * 30, "subject": "fix: x (fanout-b1)", "pr": 1430}

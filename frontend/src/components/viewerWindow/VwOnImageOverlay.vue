@@ -41,6 +41,8 @@ const props = defineProps<{
   branchNames: string[]
   /** neighbour graphs (`spatialAnalysis.cellNeighbours`), by run suffix — from the viewer's meta */
   graphNames: string[]
+  /** region boundaries (`spatialAnalysis.regionEdge`), by run name — from the viewer's meta */
+  edgeNames?: string[]
   /** each segmentation's derived files (halo, nuc), outlined on its mask */
   labelFiles: Record<string, string[]>
   /** masks that do not fit the shown image version (the window publishes it) */
@@ -95,6 +97,11 @@ function setGraph(sfx: string, v: boolean) {
 }
 const graphPopsOnly = computed(() => !!props.imageUid && settings.getGraphPopsOnly(props.imageUid))
 const setGraphPopsOnly = (v: boolean) => { if (props.imageUid) settings.setGraphPopsOnly(props.imageUid, v) }
+// Region boundaries: one outline per run, each on or off (`settings.getEdgeVisibility`, default on)
+const edgeVis = computed(() => props.imageUid ? settings.getEdgeVisibility(props.imageUid, props.edgeNames ?? []) : {})
+function setEdge(name: string, v: boolean) {
+  if (props.imageUid) settings.setEdgeVisibility(props.imageUid, { ...edgeVis.value, [name]: v })
+}
 // Which segmentations have tracks (a `track_id` column) — the tracks button is off without them.
 const { trackedNames } = useTrackValueNames(toRef(props, 'projectUid'), toRef(props, 'imageUid'), ref(''))
 const hasTracks = (vn: string) => trackedNames.value.includes(vn) || !!trackVis.value[vn]
@@ -127,6 +134,7 @@ const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
   ...props.branchNames.filter(vn => branchVis.value[vn]).map(vn => `${vn} skeleton`),
   ...props.graphNames.filter(sfx => graphVis.value[sfx]).map(sfx => `${sfx} graph`),
+  ...(props.edgeNames ?? []).filter(n => edgeVis.value[n]).map(n => `${n} edge`),
   ...switches.value.popTypes.filter(popOn).map(label),
   ...(props.timecourse && switches.value.cellTrackRibbons && ribbonsOn.value ? ['cell-track ribbons'] : []),
   ...(props.timecourse && switches.value.trackClusterRibbons && popOn('trackclust') ? ['track-cluster ribbons'] : []),
@@ -198,6 +206,11 @@ const summary = computed(() => [
         <CcToggle v-if="graphNames.some(sfx => graphVis[sfx])" class="cc-fs-2xs" label="Only between shown populations"
                   v-tooltip.bottom="'Edges whose two cells are both in a shown population'"
                   :model-value="graphPopsOnly" @update:model-value="setGraphPopsOnly" />
+      </div>
+      <div v-if="edgeNames?.length" class="vw-onimg-group">
+        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Region boundaries as lines'">Region edges</div>
+        <CcToggle v-for="n in edgeNames" :key="n" class="cc-fs-2xs" :label="n"
+                  :model-value="!!edgeVis[n]" @update:model-value="v => setEdge(n, v)" />
       </div>
       <div v-if="switches.popTypes.length" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Population types drawn as points'">Populations</div>

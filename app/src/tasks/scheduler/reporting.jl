@@ -118,6 +118,16 @@ function pool_status()
     [(; p.name, p.limit, p.running, queued=get(queued, p.name, 0)) for p in pools]
 end
 
+# The `RUN_CPU_BUDGET` (run_usage.jl) a job runs under: the cpu pool's headroom, counting the job's own
+# slot back in (it is already claimed when `_execute_job!` binds this). 1 when the pool cannot be read.
+function _pool_cpu_budget()::@NamedTuple{cpus::Int, dedicated::Bool}
+    cpus = try
+        cpu = filter(x -> x.name == "cpu", pool_status())
+        isempty(cpu) ? 1 : max(1, cpu[1].limit - cpu[1].running + 1)
+    catch; 1 end
+    (; cpus, dedicated = false)
+end
+
 function cancel_chain_run!(run_id::String)
     # 1) Flag the run so the executor skips not-yet-started nodes (checked between nodes).
     lock(_CANCELLED_CHAINS_LOCK) do; push!(_CANCELLED_CHAINS, run_id); end

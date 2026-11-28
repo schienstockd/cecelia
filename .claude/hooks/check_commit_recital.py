@@ -204,6 +204,8 @@ def _finding_event_for_slug(slug: str) -> str | None:
         return "result_review_finding_resolved"
     if slug.startswith("tv-"):
         return "test_value_finding_resolved"
+    if slug.startswith("plan-"):
+        return "plan_review_finding_resolved"
     return None
 
 

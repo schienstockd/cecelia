@@ -20,6 +20,8 @@
     ],
     "obsMeasurePatterns": [
       { "match": ".cell.min_distance#", "label": "distance to" },
+      { "match": ".cell.edge_dist#",    "label": "distance to edge of" },
+      { "match": ".cell.inside#",       "label": "inside" },
       { "match": ".cell.contact#",      "label": "contact with" },
       { "match": ".cell.contained_by#", "label": "enclosed by" },
       { "match": ".cell.contains_n#",   "label": "holds" },

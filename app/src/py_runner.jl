@@ -184,6 +184,32 @@ function python_bin_for(env::Union{Symbol,Nothing})::String
     bin
 end
 
+# ── Remote dispatch: the hook a higher layer plugs into ───────────────────────────────────────────
+#
+# `run_py` runs locally unless a task is dispatched elsewhere. Today the one elsewhere is a cluster
+# (hpc/dispatch.jl), which sits ABOVE this file in the layer order — so the bridge owns the scoped
+# value and the hook, and the HPC layer binds the one and adds a method to the other (`HpcDispatch <:
+# PyDispatch`, `_run_py_remote(…, ::HpcDispatch)`). Same inversion as `RUN_CPU_BUDGET` (run_usage.jl).
+
+"""Where a dispatched task's `run_py` calls go instead of a local process. Subtyped by `HpcDispatch`."""
+abstract type PyDispatch end
+
+"""The active dispatch, `nothing` for a local run. Bound by the HPC layer's `_with_run_target`."""
+const HPC_DISPATCH = Base.ScopedValues.ScopedValue{Union{Nothing,PyDispatch}}(nothing)
+
+"""
+    _run_py_remote(script_rel, params, task_dir, d::PyDispatch; reads, writes, env, on_log, on_progress) -> Bool
+
+`run_py` for a dispatched task. Each `PyDispatch` subtype adds its method (hpc/dispatch.jl); same
+contract as a local run: never throws, a failure is an `[ERROR]` line and `false` — which is all this
+fallback, for a subtype that forgot its method, does.
+"""
+function _run_py_remote(script_rel::AbstractString, params, task_dir::AbstractString, d::PyDispatch;
+                        on_log::Function = println, kw...)::Bool
+    on_log("[ERROR] $(script_rel) cannot run: no runner for a $(nameof(typeof(d))) dispatch")
+    false
+end
+
 """
     run_py(script_rel, params, task_dir; on_log, on_progress, on_process, env=nothing) -> Bool
 
@@ -224,7 +250,7 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
             on_log("[ERROR] $(script_rel) cannot run on the cluster: it declares no reads or writes")
             return false
         end
-        return _run_py_hpc(script_rel, params, task_dir, d; reads, writes, env, on_log, on_progress)
+        return _run_py_remote(script_rel, params, task_dir, d; reads, writes, env, on_log, on_progress)
     end
     py_root   = _python_dir()
     # Resolve the script:

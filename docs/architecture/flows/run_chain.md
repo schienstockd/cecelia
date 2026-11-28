@@ -116,13 +116,13 @@ with `runId`).
 | 7 | `app/src/runner/server.jl` | `route == "/submit-chain" && return _runner_submit_chain(body_bytes)` |
 | 7 | `app/src/runner/server.jl` | `_claim_chain_run!(creq.run_id)` |
 | 8 | `api/src/sockets.jl` | `Threads.@spawn execute_chain(creq;` |
-| 8 | `app/src/runner/execute.jl` | `function execute_chain(req::ChainRequest;` |
+| 8 | `app/src/tasks/scheduler/execute.jl` | `function execute_chain(req::ChainRequest;` |
 | 9 | `app/src/tasks/chain/persistence.jl` | `function load_chain_template(proj::CciaProject, name::String)::ChainTemplate` |
 | 9 | `app/src/tasks/chain/api.jl` | `run_dir = joinpath(_runs_dir(proj), new_id)` |
 | 9 | `app/src/tasks/chain/api.jl` | `Threads.@spawn _execute_image_chain!(` |
 | 9 | `app/src/tasks/chain/execute.jl` | `function _barrier_wait_all!(run::ChainRun, node_id::String)` |
 | 10 | `app/src/tasks/chain/execute.jl` | `chain_run_id = run.id,` |
-| 10 | `app/src/runner/execute.jl` | `function execute_task(req::TaskRequest;` |
+| 10 | `app/src/tasks/scheduler/execute.jl` | `function execute_task(req::TaskRequest;` |
 | 11 | `app/src/tasks/chain/persistence.jl` | `function _save_run!(run::ChainRun)` |
 | 11 | `app/src/tasks/chain/persistence.jl` | `write_atomic(joinpath(run._dir, "run.json")) do io` |
 | 12 | `app/src/events.jl` | `function _fire_chain_event!(event_type::String, payload::NamedTuple)` |

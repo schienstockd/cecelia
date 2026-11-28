@@ -30,6 +30,13 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 - **Name**: `<FEATURE>_PLAN.md`, SCREAMING_SNAKE (`CLUSTERING_PLAN.md`, `ANALYSIS_CANVAS_PLAN.md`).
 - **Top matter**: a one-line `Status:` (planning / paused / in-progress + branch) and a `## Goal`.
+  A plan that leans on unmerged code adds `Depends on: branch \`<branch>\` (worktree \`<name>\`)`,
+  so the plan review can read that code.
+- **Review before presenting**: stage a new or revised plan and run `pixi run recital` **before showing
+  it to the maintainer**, and fold the *Plan review* findings into the plan first. A fresh session
+  checks its claims against the code, its overlap with other plans, and whether its decisions and kill
+  criteria do what they say ([`../ai-assist/PLAN_REVIEW.md`](../ai-assist/PLAN_REVIEW.md)). The
+  commit runs it again on what changed.
 - **Locked decisions**: an explicit dated `## Decisions` (or "Locked decisions") section, numbered so
   code and other docs can cite them (`Decision 5`).
 - **Phases**: an independently-shippable build sequence with checkpoints.

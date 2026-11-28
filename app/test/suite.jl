@@ -130,6 +130,7 @@ include(joinpath(@__DIR__, "suite", "aggregate_runs_boundaries.jl"))
 include(joinpath(@__DIR__, "suite", "rois.jl"))
 include(joinpath(@__DIR__, "suite", "spatial_pattern.jl"))
 include(joinpath(@__DIR__, "suite", "proximity_profile.jl"))
+include(joinpath(@__DIR__, "suite", "region_edge.jl"))
 include(joinpath(@__DIR__, "suite", "proximity_single_population.jl"))
 include(joinpath(@__DIR__, "suite", "proximity_reference_superset.jl"))
 

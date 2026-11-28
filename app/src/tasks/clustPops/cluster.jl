@@ -77,8 +77,8 @@ function parse_clust_pops_params(d::AbstractDict)::ClustPopsParams
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
 end
 
-# `_write_clust_features!` (the run manifest every clustering task writes) lives beside its readers in
-# gating/popmanager/clustering_colour.jl.
+# `_write_clust_features!` (the run manifest every clustering task writes) lives in
+# gating/popmanager/clustering_colour.jl; its readers are in run_sidecars.jl.
 
 # One segment per (uID, value_name) of the pooled membership frame: its labelProps path, member labels
 # and its own `featureCols` for the selected features. Returns `(segments, names)` — `names` the features

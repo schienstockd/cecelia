@@ -12,7 +12,8 @@
 # reference forward.
 #
 #   pools.jl       — ResourcePool + `_pools_init!`, `_pool`, `resize_pool!`, `set_pool_limit!`.
-#   task_record.jl — TaskStatus enum, TaskRecord struct, register/deregister/cancel_task!.
+#   task_record.jl — TaskStatus enum, TaskRecord struct, register/deregister/cancel_task!, and
+#                    `plugin_remove!` (refuses while one of the plugin's tasks is live).
 #   reporting.jl   — read-only reporting (`list_pools`, `list_tasks`, `pool_status`) + the
 #                    chain-cancellation registry (`cancel_chain_run!`, `is_chain_cancelled`) +
 #                    `_publishable_params` (the JSON-safety whitelist).
@@ -20,6 +21,8 @@
 #                    `_execute_job!` (the post-exactly-once worker).
 #   run.jl         — the public `run_task` (single + set-scope + UID-resolving) and `run_tasks`
 #                    (parallel/sequential + UID-resolving) overloads.
+#   execute.jl     — `execute_task`/`execute_chain` (sink-agnostic, API server + runner). NOT included
+#                    here: Cecelia.jl includes it after tasks/chain.jl, whose types it uses.
 
 using Dates
 

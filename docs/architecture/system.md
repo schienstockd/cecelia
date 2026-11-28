@@ -92,10 +92,10 @@ One row per arrow end. `Symbol` must appear in `File` (as a definition or a call
 | 3 | `frontend/src/lib/openProjectChannel.ts` | `localStorage` |
 | 4 | `api/src/server.jl` | `using Cecelia` |
 | 5 | `app/src/runner/client.jl` | `_runner_post` |
-| 5 | `app/src/runner/execute.jl` | `execute_task` |
+| 5 | `app/src/tasks/scheduler/execute.jl` | `execute_task` |
 | 6 | `app/src/py_runner.jl` | `function run_py` |
 | 6 | `python/cecelia/utils/script_utils.py` | `def script_params` |
-| 7 | `app/src/py_runner.jl` | `_run_py_hpc` |
+| 7 | `app/src/py_runner.jl` | `_run_py_remote` |
 | 7 | `app/src/hpc/dispatch.jl` | `function _run_py_hpc` |
 | 7 | `app/src/hpc/backends/slurm.jl` | `hpc_submit` |
 | 8 | `app/src/preview.jl` | `HTTP.WebSockets.open` |

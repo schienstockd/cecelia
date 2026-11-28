@@ -105,7 +105,7 @@ browser ──ws──► API server (:8080) ──ws──► runner (:7657) �
                     └── on (re)connect: reconcile from /api/tasks + /api/tasks/recent
 ```
 
-**One implementation, two callers.** `execute_task` and `execute_chain` (`app/src/runner/execute.jl`)
+**One implementation, two callers.** `execute_task` and `execute_chain` (`app/src/tasks/scheduler/execute.jl`)
 are sink-agnostic: scope dispatch, the pre-job throw guard, the result→terminal-status ordering all
 live there, and the API server and the runner both call them. A second copy would get set-vs-image or
 the ordering subtly wrong.
@@ -324,7 +324,7 @@ With no backend at all, `CECELIA_PORT=7657 pixi run console` still shows the tas
 
 | File | Role |
 |---|---|
-| `app/src/runner/execute.jl` | `TaskRequest`/`ChainRequest` + `execute_task`/`execute_chain` — sink-agnostic |
+| `app/src/tasks/scheduler/execute.jl` | `TaskRequest`/`ChainRequest` + `execute_task`/`execute_chain` — sink-agnostic |
 | `app/src/runner/chain_frames.jl` | `subscribe_chain_frames!` — the `chain:node:*` frames, and the bank |
 | `app/src/runner/server.jl` | the runner process: routes, fan-out, claims, idle watchdog |
 | `app/src/runner/client.jl` | the API server's side: launch/adopt/ping, submit, cancel, subscribe |

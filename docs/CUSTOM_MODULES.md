@@ -445,7 +445,7 @@ worktree. (Then restart the server — a replaced `.jl` cannot be swapped into a
 Registry + precedence: `app/src/tasks/task.jl` (`register_task!`, `_task_from_fun_name`,
 `custom_task_clashes`). Loader: `app/src/tasks/custom_modules.jl` (`load_custom_modules!`,
 `_custom_module_sources`). Plugin layout + the ONE spec enumerator both API scans use:
-`app/src/tasks/plugins.jl` (`user_task_specs`, `plugin_roots`, `read_plugin_manifest`). Definitions
+`app/src/tasks/plugins.jl` (`user_task_specs`, `read_plugin_manifest`; the path helpers `plugin_roots`/`plugins_dir`/`custom_modules_dir` are in `app/src/config.jl`). Definitions
 scan: `api/src/routes.jl` `api_task_definitions` + `_custom_module_categories`. Python launcher:
 `app/src/py_runner.jl` `run_py` (`_custom_modules_pydirs` puts each plugin root on `PYTHONPATH`).
 Config resolver: `app/src/config.jl` `config_dir`.

@@ -25,7 +25,6 @@
 
 using Dates: now
 
-const PLUGINS_SUBDIR        = "plugins"
 const PLUGIN_MANIFEST       = "plugin.json"
 # A plugin's plot specs, mirroring the package's own `app/src/plotDefinitions/`. This is the half that
 # makes a plugin more than "custom modules in a directory": a plugin ships a custom TASK *and* the
@@ -52,28 +51,8 @@ const TIER_BUILTIN = 3
 tier_name(t::Integer)::String =
     t == TIER_BUILTIN ? "built-in" : t == TIER_USER ? "hand-dropped" : "plugin"
 
-"""
-    plugins_dir([dev_dir]) -> String
-
-The plugin root, `<config_dir>/modules/plugins` (see [`custom_modules_dir`](@ref)).
-"""
-plugins_dir(dev_dir::Union{String,Nothing} = nothing)::String =
-    joinpath(custom_modules_dir(dev_dir), PLUGINS_SUBDIR)
-
-"""
-    plugin_roots(; dev_dir=nothing) -> Vector{String}
-
-Absolute path of every installed plugin directory, **sorted**.
-
-Sorted on purpose: precedence between two same-tier plugins is first-wins, and `readdir` yields
-filesystem order — which differs between machines. Without the sort, which plugin won a `fun_name`
-clash would depend on the disk.
-"""
-function plugin_roots(; dev_dir::Union{String,Nothing} = nothing)::Vector{String}
-    root = plugins_dir(dev_dir)
-    isdir(root) || return String[]
-    sort!(String[e for e in readdir(root; join = true) if isdir(e)])
-end
+# `plugins_dir` and `plugin_roots` live in config.jl (with `custom_modules_dir` and `PLUGINS_SUBDIR`):
+# py_runner.jl puts each plugin's `python/` on PYTHONPATH, below this file in the layer order.
 
 """
     plugin_name_of(path; dev_dir=nothing) -> Union{String,Nothing}
@@ -695,32 +674,8 @@ function plugin_unpack!(tarball::AbstractString, url::AbstractString;
     end
 end
 
-"""
-    plugin_remove!(name; dev_dir=nothing) -> NamedTuple
-
-Unregister the plugin's tasks, then delete its directory. Returns `(; ok, removed, error)`.
-
-**Refuses while any of its tasks is running.** Deleting the directory under a live run pulls the
-runner's own `_run.py` out from under a `run_py` subprocess, and `_unregister_task!` only drops the
-registry entry — an in-flight `_run_task` already holds the instance. Decision 9.
-"""
-function plugin_remove!(name::AbstractString; dev_dir::Union{String,Nothing} = nothing)
-    dir = joinpath(plugins_dir(dev_dir), String(name))
-    isdir(dir) || return (; ok = false, removed = String[], error = "no such plugin: $name")
-
-    mine = String[e.fun_name for e in user_task_specs(; dev_dir) if e.plugin == String(name)]
-    busy = [t.fun_name for t in list_tasks() if t.fun_name ∈ mine]
-    isempty(busy) ||
-        return (; ok = false, removed = String[],
-                  error = "still running: $(join(unique(busy), ", ")) — cancel it first")
-
-    removed = String[]
-    for fn in mine
-        _unregister_task!(fn) && push!(removed, fn)
-    end
-    rm(dir; recursive = true, force = true)
-    (; ok = true, removed, error = nothing)
-end
+# `plugin_remove!` lives in tasks/scheduler/task_record.jl: it refuses while a plugin task is live
+# (`list_tasks`), which is the scheduler's to know.
 
 """
     plugin_registry() -> Vector{Dict{String,Any}}

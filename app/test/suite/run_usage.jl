@@ -115,3 +115,44 @@ end
         rm(proj.root; recursive = true)
     end
 end
+
+# The task tier sizes its parallelism from `RUN_CPU_BUDGET`, which the scheduler binds (the cpu pool's
+# headroom) — the task no longer calls `pool_status` / `hpc_task_cpus` above it. The HPC rebinding is
+# in suite/hpc_dispatch.jl.
+@testset "Run CPU budget: unset outside a run, the cpu pool's headroom inside one" begin
+    @test Cecelia.RUN_CPU_BUDGET[] === nothing
+    @test Cecelia.run_cpu_threads(; cap = 8) == 1                    # a task body called directly
+    Base.ScopedValues.with(Cecelia.RUN_CPU_BUDGET => (; cpus = 12, dedicated = false)) do
+        @test Cecelia.run_cpu_threads(; cap = 8) == 8                # a share of this machine: capped
+    end
+    Base.ScopedValues.with(Cecelia.RUN_CPU_BUDGET => (; cpus = 12, dedicated = true)) do
+        @test Cecelia.run_cpu_threads(; cap = 8) == 12               # a cluster job's own: all of it
+    end
+
+    proj = create_project!(name = "cpu-budget-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name = "s"); name = "img")
+    try
+        resize_pool!("cpu", 3)
+        # no spec ⇒ the cpu pool; its own slot is counted back in, so the headroom is the limit
+        r = run_task(_CpuBudgetTask(), img, Dict{String,Any}())
+        @test r["budget"] == (; cpus = 3, dedicated = false)
+        @test r["threads"] == 3
+        resize_pool!("cpu", 9)
+        r = run_task(_CpuBudgetTask(), img, Dict{String,Any}())
+        @test r["budget"] == (; cpus = 9, dedicated = false) && r["threads"] == 4   # cap = 4
+        @test Cecelia._pool_cpu_budget() == (; cpus = 10, dedicated = false)       # idle: limit + 1, as before
+    finally
+        resize_pool!("cpu", 20)   # restore default so later tests are unaffected
+        rm(proj.root; recursive = true)
+    end
+end
+
+@testset "run_py remote hook: a dispatch with no runner refuses, never runs locally" begin
+    log = String[]
+    ok = Base.ScopedValues.with(Cecelia.HPC_DISPATCH => _NoRunnerDispatch()) do
+        Cecelia.run_py("tasks/segment/measure_labels_run.py", (; a = 1), mktempdir();
+                       on_log = l -> push!(log, l), reads = ["/x"], writes = ["/y"])
+    end
+    @test ok === false
+    @test occursin("no runner for a _NoRunnerDispatch dispatch", only(log))
+end

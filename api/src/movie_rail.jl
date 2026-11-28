@@ -280,7 +280,13 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     spatial_graphs = sg_raw isa AbstractDict ?
         Dict{String,String}(String(k) => (v isa AbstractString ? String(v) : "") for (k, v) in sg_raw) :
         Dict{String,String}()
-    if !(show_pops || show_tracks || show_gated || show_tc || has_mask || !isempty(skeletons) || !isempty(spatial_graphs))
+    # the region boundaries drawn as lines, `{name => colour}` (a look's shown ones)
+    re_raw = _cfg_maybe(cfg, "regionEdges")
+    region_edges = re_raw isa AbstractDict ?
+        Dict{String,String}(String(k) => (v isa AbstractString ? String(v) : "") for (k, v) in re_raw) :
+        Dict{String,String}()
+    if !(show_pops || show_tracks || show_gated || show_tc || has_mask || !isempty(skeletons) ||
+         !isempty(spatial_graphs) || !isempty(region_edges))
         return nothing
     end
     # Per-segmentation tracks (`showTracks`): the visible `trackSources` — the viewer look's map
@@ -330,6 +336,8 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "spatialGraphs"    => spatial_graphs,
         "spatialGraphWidth" => _cfg_maybe(cfg, "spatialGraphWidth"),
         "spatialGraphPopsOnly" => _cfg_bool(cfg, "spatialGraphPopsOnly"),
+        "regionEdges"      => region_edges,
+        "regionEdgeWidth"  => _cfg_maybe(cfg, "regionEdgeWidth"),
         # a viewer look's "Tracked only": the segmentations whose untracked cells' dots are dimmed
         "dimUntracked"     => (d = _cfg_maybe(cfg, "dimUntracked");
                                d isa AbstractVector ? String[String(x) for x in d] : String[]),

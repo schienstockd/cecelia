@@ -29,6 +29,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, toRaw, onMounted, onUnmounted } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
+import { usePopRunFilter, popRuns, runShown, shownRuns } from '../utils/popRuns'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
@@ -113,8 +114,8 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks, trackedLabelCount,
-  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween,
-  type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween, regionEdgesUrl,
+  type SkeletonPayload, type SpatialGraphPayload, type RegionEdgePayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
   type OverlayPopsPayload,
 } from '../utils/viewerOverlays'
 import { OVERLAY_TICK_KEY, parseOverlayTick, patchPopsLook, layerFetches, type OverlayTick, type PopLook } from '../utils/viewer/overlayTick'
@@ -882,6 +883,7 @@ const specSource: DrawSpecSource = {
   get trackNames() { return cellTableNames() },
   get branchNames() { return meta.value?.branchNames ?? [] },
   get spatialGraphNames() { return meta.value?.spatialGraphNames ?? [] },
+  get regionEdgeNames() { return meta.value?.regionEdgeNames ?? [] },
   get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
   get nZ() { return meta.value?.nZ ?? 0 },
   get nT() { return meta.value ? meta.value.nT : undefined },
@@ -928,9 +930,14 @@ function toggleSelectMode() {
  *  (imageUid × vn) via `settings.getPopEyes` and separate from the manager's `show`, which only seeds
  *  a pop with no stored eye — so a gate edit (which refetches) no longer resets what the user chose. */
 const popEyes = ref<Map<string, PopEyes>>(new Map())
+/** Which clustering runs the populations list shows, per layer (`utils/popRuns.ts`) — a pop of a hidden
+ *  run is neither listed nor drawn (`hiddenPops`). Shared with the canvas picker, per project. Only a
+ *  layer whose pops come from two or more runs gets a row of run chips. */
+const popRunFilter = usePopRunFilter(() => projectUid)
 /** Populations whose eye is off, by `popKey` — what the points, capture and landscape ask. */
 const hiddenPops = computed(() => new Set(popLayers.value.flatMap(l => l.payload.pops
-  .filter(x => !popEyeOn(popEyes.value, l.vn, l.popType, x.path, x.show))
+  .filter(x => !popEyeOn(popEyes.value, l.vn, l.popType, x.path, x.show)
+               || !runShown(popRunFilter.hidden.value, l.vn, l.popType, x.run))
   .map(x => popKey(l.vn, l.popType, x.path)))))
 /**
  * The Tracks rows' eyes — a pop's RIBBONS, separate from its POINTS (`popEyes`). A user showing points
@@ -1380,7 +1387,32 @@ async function setTrackClass(key: string, patch: { threshold?: number; level?: n
 }
 /** The population layers with something to list, for the Populations section — a segmentation
  *  header above each group when more than one segmentation draws. */
-const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0))
+const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0).map(l => {
+  const pops = l.payload.pops.filter(p => runShown(popRunFilter.hidden.value, l.vn, l.popType, p.run))
+  return pops.length === l.payload.pops.length ? l : { ...l, payload: { ...l.payload, pops } }
+}))
+const popLayerRuns = computed(() => new Map(popLayers.value.map(l => {
+  const all = popRuns(l.payload.pops)
+  return [`${l.vn}::${l.popType}`, { all, shown: shownRuns(popRunFilter.hidden.value, l.vn, l.popType, all) }]
+})))
+/** Show only `shown` of a layer's runs; the watch below turns the hidden run's eyes off. */
+function setPopLayerRuns(l: PopLayer, shown: string[]) {
+  const all = popLayerRuns.value.get(`${l.vn}::${l.popType}`)?.all ?? []
+  popRunFilter.setShown(l.vn, l.popType, all, shown)
+  rebuildOverlays()
+}
+// A pop of a hidden run gets its eye turned OFF, however the run came to be hidden — here, from the
+// canvas picker (the hidden set is shared), or a new pop of a hidden run arriving on a refetch. The eyes
+// are what a recording draws (`drawSpec.popEyes`), so a run hidden on screen must not appear in a movie.
+watch(() => [popRunFilter.hidden.value, popLayers.value] as const, ([hidden, layers]) => {
+  const off = layers.flatMap(l => l.payload.pops
+    .filter(p => !runShown(hidden, l.vn, l.popType, p.run) && popEyeOn(popEyes.value, l.vn, l.popType, p.path, p.show))
+    .map(p => ({ vn: l.vn, key: eyeKey(l.popType, p.path) })))
+  if (!off.length) return
+  const next = new Map(popEyes.value)
+  for (const o of off) next.set(o.vn, { ...next.get(o.vn) ?? {}, [o.key]: false })
+  applyPopEyes(next)
+})
 const popLayerSegs = computed(() => new Set(listedPopLayers.value.map(l => l.vn)).size)
 const popLayerTypes = computed(() => new Set(listedPopLayers.value.map(l => l.popType)).size)
 /** The colour-by legend: the one scale every layer's points are shaded with (`pooledColourScale`,
@@ -2161,7 +2193,7 @@ function rebuildOverlays() {
     trackSpeedRange.value = null
   }
   // the skeletons ride in the same buffer, after the tracks (`appendSkeletonLines`)
-  segments = appendSkeletonLines(segments, [...shownSkeletons(), ...shownGraphs()], meta.value)
+  segments = appendSkeletonLines(segments, [...shownSkeletons(), ...shownGraphs(), ...shownEdges()], meta.value)
   segCount.value = segments.count
   // Whichever renderer owns the canvas draws them — the volume ones or the 2D tile one.
   if (renderer.value) seedRendererOverlays(renderer.value, points, segments)
@@ -2428,6 +2460,37 @@ watch(() => graphSuffixes.value.join('\n'), () => { void loadGraphs() })
 const graphRestyle = rafCoalesce(() => { if (graphSuffixes.value.length) rebuildOverlays() })
 watch(() => [spec.graphColour, spec.graphWidth, spec.graphPopsOnly], () => graphRestyle.schedule())
 onUnmounted(() => graphRestyle.cancel())
+
+/** Each shown region boundary (`/api/viewer/region-edges`), by run name — the graphs' lifecycle:
+ *  fetched once per run, dropped when its switch goes off, refetched after a task. */
+const edgePayloads = ref<Map<string, RegionEdgePayload>>(new Map())
+const edgeNames = computed(() => {
+  const vis = spec.edgeVisible
+  return (meta.value?.regionEdgeNames ?? []).filter(n => vis[n])
+})
+const shownEdges = () => edgeNames.value.flatMap(n => {
+  const payload = edgePayloads.value.get(n)
+  return payload ? [{ payload, colour: spec.edgeColour, width: spec.edgeWidth }] : []
+})
+async function loadEdges(force = false) {
+  if (!projectUid || !imageUid) return
+  const want = edgeNames.value
+  const next = new Map<string, RegionEdgePayload>()
+  await Promise.all(want.map(async n => {
+    const cached = force ? undefined : edgePayloads.value.get(n)
+    if (cached) { next.set(n, cached); return }
+    try {
+      next.set(n, await getJson<RegionEdgePayload>(regionEdgesUrl({ projectUid, imageUid, suffix: n }), { cache: 'no-store' }))
+    } catch { /* no line for this one; the rest still draw */ }
+  }))
+  if (want.join('\n') !== edgeNames.value.join('\n')) return
+  edgePayloads.value = next
+  rebuildOverlays()
+}
+watch(() => edgeNames.value.join('\n'), () => { void loadEdges() })
+const edgeRestyle = rafCoalesce(() => { if (edgeNames.value.length) rebuildOverlays() })
+watch(() => [spec.edgeColour, spec.edgeWidth], () => edgeRestyle.schedule())
+onUnmounted(() => edgeRestyle.cancel())
 
 async function loadTracks() {
   if (!projectUid || !imageUid) return
@@ -5759,6 +5822,7 @@ watch(meta, m => {
     trackNames: cellTableNames(),
     branchNames: m.branchNames ?? [],
     spatialGraphNames: m.spatialGraphNames ?? [],
+    regionEdgeNames: m.regionEdgeNames ?? [],
   })
 })
 
@@ -6053,6 +6117,8 @@ async function applyCacheClear(job: CacheClearJob): Promise<void> {
     void loadSkeletons(true)
     // a re-run neighbour graph rewrites its edges under the same suffix
     void loadGraphs(true)
+    // a re-run region edge rewrites its boundary under the same name
+    void loadEdges(true)
     // A rewritten mask: its new stamp moves `maskSourceId`, whose watcher refetches the mask alone.
     if (reload === 'mask') maskRev.value = job.rev
     return
@@ -6963,6 +7029,7 @@ onUnmounted(() => {
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :branch-names="meta.branchNames ?? []"
                         :graph-names="meta.spatialGraphNames ?? []"
+                        :edge-names="meta.regionEdgeNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes"
                         :columns-tick="lensQuery.columnsTick.value" />
@@ -7078,15 +7145,15 @@ onUnmounted(() => {
                                :label-name="labelName" :colour-note="maskColourNote"
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
                                :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1"
-                               :graph-shown="graphSuffixes.length > 0" @redraw="frame.redraw()" />
+                               :graph-shown="graphSuffixes.length > 0" :edge-shown="edgeNames.length > 0" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
-                              :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
+                              :layers="listedPopLayers" :runs="popLayerRuns" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
                               :all-visible="allPopsVisible" v-model:solo="soloPop" :colour-by="colourBy"
                               :legend="colourLegend" :ramp-style="rampStyle" :single-plane="singlePlane"
                               :has-z="meta!.nZ > 1" v-model:point-size="pointSize" v-model:point-border="pointBorder"
                               :point-count="pointCount" :mode="mode" :z-loaded="zLoaded"
-                              @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
+                              @set-all="setAllPops" @pop-eye="setPopEye" @set-runs="setPopLayerRuns" @redraw="frame.redraw()" />
 
         <!-- a still image has no tracks -->
         <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" :orphans="presentPopTypes?.orphanTracks ?? []" v-model:color-mode="trackColorMode"

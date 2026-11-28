@@ -295,6 +295,9 @@ function _image_payload(img::CciaImage)
         patternSuffixes = img_pattern_suffixes(img),
         # Proximity-profile runs (spatialAnalysis.proximityProfile) — the `proximity` namespace.
         proximitySuffixes = img_proximity_suffixes(img),
+        # Region-edge runs (spatialAnalysis.regionEdge) — the `regionEdges` namespace + the viewer's
+        # boundary-line list.
+        regionEdgeSuffixes = img_region_edge_suffixes(img),
         # ROI sets (spatialAnalysis.roiDiscovery) — the `rois` namespace + the viewer's ROI list.
         roiSuffixes     = img_rois_suffixes(img),
         # Clustering runs recorded for the ACTIVE segmentation, split by family so a `clusters.immune`

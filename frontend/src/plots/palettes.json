@@ -12,6 +12,7 @@
   "trackColorModes": ["track", "speed", "solid", "pop", "cell", "subpop", "class"],
   "heatRamp": ["#0B1A4D", "#1793FF", "#04FA00", "#FFA805", "#FF3856"],
   "noValue": "#1A1A1A",
+  "regionEdge": "#ffd33d",
   "trackMixed": "#9ca3af",
   "branchTypeColours": ["#E69F00", "#56B4E9", "#009E73", "#CC79A7"],
   "branchTypeNames": ["endpoint-to-endpoint", "endpoint-to-junction", "junction-to-junction", "isolated-cycle"]

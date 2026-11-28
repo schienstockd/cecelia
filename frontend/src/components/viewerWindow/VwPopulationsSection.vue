@@ -8,6 +8,7 @@
 <script setup lang="ts">
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
+import ChipSelect from '../ChipSelect.vue'
 import { computed } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { popRowLabels } from '../../utils/popName'
@@ -23,6 +24,8 @@ const props = defineProps<{
   /** why the overlays failed to load, '' when they did */
   error: string
   layers: VwPopLayer[]
+  /** per `vn::popType`, the clustering runs its pops come from and the ones listed (`utils/popRuns.ts`) */
+  runs: Map<string, { all: string[]; shown: string[] }>
   /** distinct segmentations / pop types listed — a group is named only when there is more than one */
   segs: number
   types: number
@@ -45,11 +48,19 @@ const emit = defineEmits<{
   setAll: [visible: boolean]
   'update:solo': [solo: boolean]
   popEye: [l: VwPopLayer, pop: OverlayPop, visible: boolean]
+  /** list (and draw) only these runs of the layer's pops */
+  setRuns: [l: VwPopLayer, shown: string[]]
   'update:pointSize': [px: number]
   'update:pointBorder': [px: number]
   redraw: []
 }>()
 const settings = useSettingsStore()
+// a layer's runs, when its pops come from two or more — one chip per run, at least one kept on
+const layerRuns = (l: VwPopLayer) => {
+  const r = props.runs.get(`${l.vn}::${l.popType}`)
+  return r && r.all.length > 1 ? r : null
+}
+const runChips = (all: string[]) => all.map(r => ({ value: r, label: r, tip: `Clustering run ${r}` }))
 // the group header already names the segmentation; within a group, two pops sharing a name (every
 // tracked pop is `_tracked`) are named by as much of their path as tells them apart
 const popLabels = computed(() => props.layers.map(l => {
@@ -105,6 +116,12 @@ const popLabels = computed(() => props.layers.map(l => {
           <!-- one group per (segmentation, pop type); named only when there is more than one -->
           <div v-if="segs > 1 || types > 1" class="cc-muted cc-fs-3xs">
             {{ segs > 1 ? l.vn : '' }}{{ segs > 1 && types > 1 ? ' · ' : '' }}{{ types > 1 ? l.popType : '' }}
+          </div>
+          <div v-if="layerRuns(l)" class="cc-row cc-row-tight" v-tooltip.bottom="'Clustering runs to list'">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Runs</span>
+            <ChipSelect multiple :options="runChips(layerRuns(l)!.all)" :model-value="layerRuns(l)!.shown"
+                        aria-label="Clustering runs to list"
+                        @update:model-value="v => emit('setRuns', l, v as string[])" />
           </div>
           <div v-for="pop in l.payload.pops" :key="pop.path" class="cc-row cc-row-tight">
             <span class="vw-swatch" :style="{ background: pop.colour }" />

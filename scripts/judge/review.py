@@ -467,7 +467,23 @@ def rule_answers(records: _t.Iterable[dict], reviews: _t.Iterable[dict]) -> dict
 _RULE_HOW = {"tighten": "Agents keep breaking it in code they wrote. Reword the rule so the next agent can't "
                         "miss it, or turn it into a mechanical check (a test, a lint, a recital step).",
              "ratchet": "Older code keeps the shape alive, and new code copies it. Add a test that bans the "
-                        "shape, with the existing sites as an allow-list that may only shrink."}
+                        "shape, with the existing sites as an allow-list that may only shrink.",
+             # the plan post-mortem's (`plan_postmortem.py`): a doc to edit, briefed on the cases
+             "plan_miss": "Later edits corrected errors of this kind that the plan review had seen and not "
+                          "flagged. Add the check that would have caught them to the reviewer prompt: a step, "
+                          "a grep, a question, not more general advice.",
+             "plan_noise": "Authors keep calling findings of this kind false positives, and no later edit has "
+                           "shown them wrong. Read the reasons: narrow what the prompt counts as this marker, "
+                           "or demote it to advisory.",
+             "plan_dismissed": "Authors tagged plan findings through that later edits fixed after all. Make the "
+                               "author side harder to skip: a convention, or a line in PLAN_REVIEW.md on "
+                               "answering a finding."}
+
+
+def _case_line(c: dict) -> str:
+    """One plan post-mortem case, as a card or a brief lists it."""
+    return (f"{c['kind']} · {c['plan']} · {c.get('marker')} · {c.get('sha', '')[:12] or c.get('slug', '')}: "
+            f"{c.get('what', '')}" + (f" Lesson: {c['lesson']}" if c.get("lesson") else ""))
 
 
 def source_findings(slugs: _t.Iterable[str], events: _t.Iterable[dict] | None = None) -> list[dict]:
@@ -488,10 +504,14 @@ def rule_brief(record: dict, p: dict, findings: _t.Sequence[dict]) -> str:
     lines = [f"Work rule proposal {p['id']} from the weekly judge record of {record['date']} "
              f"(`{_record.store_root() / (record['date'] + '.md')}`, section *Rules*).", "",
              f"Rule: `{file}` → section {heading}. Proposal ({p['kind']}): {_why(p)}.",
-             _RULE_HOW[p["kind"]], "", f"The findings that broke it ({len(p['sources'])}):"]
-    lines += [f"- `{f.get('slug')}` {f.get('file') or ''}: {f.get('desc', '')[:400]}" for f in findings]
-    lines += [f"- `{s}` (not in the log any more)" for s in p["sources"][len(findings):]
-              if s not in {f.get("slug") for f in findings}]
+             _RULE_HOW[p["kind"]], ""]
+    if p.get("cases"):   # a plan post-mortem proposal carries its cases; there's no finding row to look up
+        lines += [f"The cases behind it ({len(p['cases'])}):", *(f"- {_case_line(c)}"[:700] for c in p["cases"])]
+    else:
+        lines += [f"The findings that broke it ({len(p['sources'])}):"]
+        lines += [f"- `{f.get('slug')}` {f.get('file') or ''}: {f.get('desc', '')[:400]}" for f in findings]
+        lines += [f"- `{s}` (not in the log any more)" for s in p["sources"][len(findings):]
+                  if s not in {f.get("slug") for f in findings}]
     lines += ["", "Read the section and the findings, then say in two or three sentences what the findings have "
               "in common and why the rule didn't stop them. If they don't share a cause the rule can fix, say so "
               f"and stop. Otherwise {_worktree_line(worktree)} Keep the rule as short as it is now or shorter; "
@@ -585,16 +605,19 @@ def describe_rule(record: dict, p: dict, findings: _t.Sequence[dict], *, width: 
     out = [f"  {_col(ORANGE, p['kind'], use_colour=use_colour)}  {_col(_BOLD, file + ' → ' + heading, use_colour=use_colour)}",
            "", "  " + _col(BLUE, "Proposal", use_colour=use_colour)]
     out += _paragraph(f"{_why(p)}. {_RULE_HOW[p['kind']]}", width=width, use_colour=use_colour)
-    out += ["", "  " + _col(GREY, f"Findings ({len(p['sources'])})", use_colour=use_colour)]
-    for f in findings[:_CARD_FINDINGS]:
+    cases = p.get("cases") or []
+    out += ["", "  " + _col(GREY, f"Cases ({len(cases)})" if cases else f"Findings ({len(p['sources'])})",
+                            use_colour=use_colour)]
+    texts = ([' '.join(_case_line(c).split())[:300] for c in cases] if cases else
+             [f"{f.get('file') or f.get('slug')}: {' '.join(str(f.get('desc', '')).split())[:300]}" for f in findings])
+    for text in texts[:_CARD_FINDINGS]:
         wrapped = [_highlight(ln, use_colour=use_colour) for ln in _wrap_desc(
-            f"{f.get('file') or f.get('slug')}: {' '.join(str(f.get('desc', '')).split())[:300]}",
-            width=width, indent="      ", first_prefix="    • ").splitlines()]
+            text, width=width, indent="      ", first_prefix="    • ").splitlines()]
         if wrapped:
             wrapped[0] = "    " + _col(_DIM, "•", use_colour=use_colour) + wrapped[0][5:]
         out += wrapped
-    if len(findings) > _CARD_FINDINGS:
-        out.append("    " + _col(_DIM, f"… {len(findings) - _CARD_FINDINGS} more; the session gets them all",
+    if len(texts) > _CARD_FINDINGS:
+        out.append("    " + _col(_DIM, f"… {len(texts) - _CARD_FINDINGS} more; the session gets them all",
                                  use_colour=use_colour))
     return out
 
