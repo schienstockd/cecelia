@@ -69,7 +69,7 @@ Python launcher — were written down the same way, learned in flight rather tha
 
 ### Ported subsystems — validated by matching the R reference
 
-- **celltrackR track measures** (`app/src/tasks/tracking/track_measures.jl`) — the track-measurement
+- **celltrackR track measures** (`app/src/tracking/track_metrics.jl`, `app/src/tasks/tracking/track_measures.jl`) — the track-measurement
   functions from the R `celltrackR` package, translated into Julia. Validated by matching the R
   version's numeric output on the same input.
 - **btrack pipeline** — the Bayesian cell tracker (`btrack`) is invoked identically to the prior

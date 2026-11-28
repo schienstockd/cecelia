@@ -16,9 +16,7 @@
 struct RoiDiscovery <: CciaTask end
 register_builtin_task!("spatialAnalysis.roiDiscovery", RoiDiscovery(); spec = joinpath(@__DIR__, "roiDiscovery.json"))
 
-const ROI_LABELS_DEFAULT = "of interest, artefact, unsure"
-const ROI_LABELS_MAX = 12
-const ROI_LABEL_MAX_CHARS = 40
+# The review-label default, caps and parser (`ROI_LABELS_DEFAULT`, `roi_review_labels`) live in rois.jl.
 
 Base.@kwdef struct RoiDiscoveryParams
     pops::Vector{String}   = String[]
@@ -42,23 +40,6 @@ function parse_roi_discovery_params(d::AbstractDict)::RoiDiscoveryParams
         maxRois      = Int(get(d, "maxRois", 50)),
         reviewLabels = string(something(get(d, "reviewLabels", ROI_LABELS_DEFAULT), "")),
         roisSuffix   = string(get(d, "roisSuffix", "default")))
-end
-
-"""
-    roi_review_labels(text) -> Vector{String}
-
-The comma-separated review labels of a "Find ROIs" run, trimmed, de-duplicated, in order; at most
-$(ROI_LABELS_MAX), each at most $(ROI_LABEL_MAX_CHARS) characters (longer ones are cut).
-"""
-function roi_review_labels(text::AbstractString)::Vector{String}
-    out = String[]
-    for raw in split(text, ",")
-        l = first(strip(raw), ROI_LABEL_MAX_CHARS)
-        (isempty(l) || l in out) && continue
-        push!(out, String(l))
-        length(out) == ROI_LABELS_MAX && break
-    end
-    out
 end
 
 # Pure QC (advisory, never gates). No ROIs is the unambiguous bad case.

@@ -1,7 +1,7 @@
 /**
  * A list of short, user-invented words typed as chips (`components/ChipInput.vue`), stored as ONE
  * comma-separated string so a task param stays a plain `text` value — the parse rule below matches
- * the backend's (`roi_review_labels` in app/src/tasks/spatialAnalysis/roiDiscovery.jl): split on
+ * the backend's (`roi_review_labels` in app/src/rois.jl): split on
  * commas, trim, drop empties and repeats, keep the order.
  */
 

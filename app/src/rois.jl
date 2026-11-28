@@ -17,6 +17,29 @@ const ROI_STATUSES = ("pending", "accepted", "rejected", "flagged")
 const ROI_NOTE_MAX = 2048
 const ROI_REASON_MAX = 500
 
+# Review labels a "Find ROIs" run offers (`reviewLabels` on spatialAnalysis.roiDiscovery): the default
+# set and the caps `roi_review_labels` applies.
+const ROI_LABELS_DEFAULT = "of interest, artefact, unsure"
+const ROI_LABELS_MAX = 12
+const ROI_LABEL_MAX_CHARS = 40
+
+"""
+    roi_review_labels(text) -> Vector{String}
+
+The comma-separated review labels of a "Find ROIs" run, trimmed, de-duplicated, in order; at most
+$(ROI_LABELS_MAX), each at most $(ROI_LABEL_MAX_CHARS) characters (longer ones are cut).
+"""
+function roi_review_labels(text::AbstractString)::Vector{String}
+    out = String[]
+    for raw in split(text, ",")
+        l = first(strip(raw), ROI_LABEL_MAX_CHARS)
+        (isempty(l) || l in out) && continue
+        push!(out, String(l))
+        length(out) == ROI_LABELS_MAX && break
+    end
+    out
+end
+
 # One lock for every reviews file: writes are rare (a click, a label) and a per-path lock table would
 # be more machinery than the contention warrants.
 const _ROI_REVIEWS_LOCK = ReentrantLock()
