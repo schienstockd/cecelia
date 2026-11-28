@@ -88,7 +88,7 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
           # The synthetic "all cells" root ("/") has no gating-map identity — uid is empty; a
           # capture that references it restores by (value_name, "/") alone.
           want_all_cells && push!(kept, (path = "/", name = "all", colour = "#7c93b8",
-                                         pop_type = "live", uid = "",
+                                         pop_type = "live", uid = "", run = "",
                                          granularity = "cell", category = "gated"))
           for p in g.populations
               # branch is a THIRD granularity distinct from cell/track (BRANCHING_PLAN Decision 2);
@@ -98,7 +98,7 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
               cat  = pop_category(p.pop_type, p.path)
               _accept_permits(acc, gran, cat) || continue
               push!(kept, (path = p.path, name = p.name, colour = p.colour,
-                           pop_type = string(p.pop_type), uid = p.uid,
+                           pop_type = string(p.pop_type), uid = p.uid, run = get(p, :run, ""),
                            granularity = gran, category = cat))
           end
           kept
@@ -261,7 +261,8 @@ function _resolve_track_family_pops(img::CciaImage, pt::AbstractString,
         # typed-as-track comes from the pop_type (`is_track_pop`), not the stored `p.is_track` flag,
         # which no GUI/MCP writer sets — every viewer/overlay/movie consumer reads it from here
         meta[String(path)] = (colour = p.colour, name = p.name, uid = p.uid,
-                              show = p.show, is_track = is_track_pop(pt, String(path)))
+                              show = p.show, is_track = is_track_pop(pt, String(path)),
+                              run = something(cluster_pop_suffix(p), ""))
         push!(paths, String(path))
     end
     isempty(paths) && return NamedTuple[]
@@ -294,7 +295,7 @@ function _resolve_track_family_pops(img::CciaImage, pt::AbstractString,
         # trackclust pops the same way it reads flow-pop-with-tracked-cells.
         push!(out, (path = path, name = m_.name, colour = m_.colour, uid = m_.uid,
                     show = m_.show, is_track = m_.is_track, has_tracks = true,
-                    labels = labs))
+                    run = m_.run, labels = labs))
     end
     out
 end
@@ -528,9 +529,10 @@ function _resolve_pops_compute(img::CciaImage, pt::String, value_name::String)::
         # this pop's authoring — needed by the viewer's per-pop ribbon to stop cells authored by
         # a sibling pop from bleeding into this pop's tracks. See viewer_api.jl overlays payload +
         # frontend `filterPayloadByTrackSource`. Additive field; existing callers ignore it.
+        # `run`: the clustering run a cluster pop picks from ("" otherwise) — the viewer's run filter
         push!(out, (path = p.path, name = p.name, colour = p.colour, uid = p.uid,
                     show = p.show, is_track = is_track_pop(pt, p.path), has_tracks = has_tracks,
-                    labels = labs))
+                    run = something(cluster_pop_suffix(p), ""), labels = labs))
     end
     out
 end

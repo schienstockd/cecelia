@@ -139,6 +139,15 @@ end
     @test cells[1].populations[1].name == "all"                 # backend all-cells root
     @test !any(occursin("_tracked", p) for p in cpaths)         # cells never show tracked sets
     @test all(!is_track_pop(p.pop_type, p.path) for p in cells[1].populations if p.path != "/")
+    # every row names the clustering run it picks from — "" for gates and the all-cells root — so the
+    # picker can hide a second run's populations as one (the run is the filter measure's suffix)
+    @test Dict(p.path => p.run for p in cells[1].populations) ==
+          Dict("/" => "", "/qc" => "", "/qc/sub" => "", "/myeloid" => "default")
+    # `pop_run` answers "" — never throws — for a path the tree lacks or for something that is no tree
+    @test Cecelia.pop_run(cm, "/myeloid") == "default"
+    @test Cecelia.pop_run(cm, "/nope") == ""
+    @test Cecelia.pop_run(fm, "/qc") == ""
+    @test Cecelia.pop_run(nothing, "/myeloid") == ""
 
     # CELLS, clusters excluded → drops /myeloid
     cells_nc = population_scope_groups([:img1], names_for, load, "cells"; include_clusters=false)
@@ -148,6 +157,8 @@ end
     # NO plain cell gates (/qc, /qc/sub) and NO all-cells root ("/")
     trk = population_scope_groups([:img1], names_for, load, "tracks")
     tpaths = Set(p.path for p in trk[1].populations)
+    @test only(p for p in trk[1].populations if p.path == "/clusterA").run == "tracks"
+    @test only(p for p in trk[1].populations if p.path == "/qc/_tracked").run == ""
     @test tpaths == Set(["/_tracked", "/qc/_tracked", "/qc/sub/_tracked", "/TEST", "/clusterA"])
     @test !("/qc" in tpaths) && !("/qc/sub" in tpaths) && !("/" in tpaths)
     @test all(is_track_pop(p.pop_type, p.path) for p in trk[1].populations)
