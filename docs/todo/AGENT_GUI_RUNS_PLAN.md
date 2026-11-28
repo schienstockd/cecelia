@@ -4,7 +4,7 @@
 code twice before building; the second pass found D4 mostly built and the chain pre-flight weaker than
 `run_replaces` (see *Second check*). Open questions answered by the builder's defaults (end of file).
 Code: `mcp/cecelia_mcp/gui_mode.py`, `autonomous.py` (`gui_project`, `check_writes`), `run_write_check`
-(`app/src/run_log.jl`) behind `POST /api/tasks/write-check`, `adoptsForeignTask`
+(`app/src/tasks/chain/preflight.jl`) behind `POST /api/tasks/write-check`, `adoptsForeignTask`
 (`frontend/src/utils/runningTasks.ts`), the plugin's second server (`plugin.json` 1.1.0).
 
 ## Second check (2026-11-28)

@@ -56,7 +56,7 @@ end
 #
 # Asked before submitting, by Claude starting work in a GUI user's project (the autonomous server in GUI
 # mode, mcp/cecelia_mcp/autonomous.py; docs/todo/AGENT_GUI_RUNS_PLAN.md D3). The answer is
-# `run_write_check` (app/src/run_log.jl) — the same `run_replaces` the run log stamps at open.
+# `run_write_check` (app/src/tasks/chain/preflight.jl) — the same `run_replaces` the run log stamps at open.
 #
 # Request body:  { funName, params, projectUid, imageUids }
 # Response 200:  { output?: {name, ns, into, key?}, replaces?: {imageUid: {...}}, free? }

@@ -176,6 +176,10 @@ end
 
         # an unknown task names nothing
         @test isempty(run_write_check("no.such.task", [img], Dict{String,Any}()))
+        # a name under the pre-registry `outputValueName` spelling, with no writing leaf, is still keyed
+        # there; a fixed output no param names has no key (and so no free name is offered)
+        @test Cecelia._run_output_key(Dict{String,Any}("outputValueName" => "x"), Dict{String,Any}(), "x") == "outputValueName"
+        @test Cecelia._run_output_key(Dict{String,Any}("outputValueName" => "x"), Dict{String,Any}(), "afCorrected") == ""
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
         had_kpv ? (zarr["keepPreviousVersion"] = old_kpv) : delete!(zarr, "keepPreviousVersion")

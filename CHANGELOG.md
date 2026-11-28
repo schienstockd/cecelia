@@ -26,7 +26,7 @@ These change results when old work is re-run:
 
 ### Added
 
-- **Claude can start runs in your session** (Cecelia plugin): in the project you have open, after you approve each call. It will not segment, measure, track, change an image or overwrite a result; a taken name is refused with a free one. Its runs show in the Task Manager. Re-run Set up to get it.
+- **Claude can start runs in your session** (Cecelia plugin), in the open project, after you approve each call. Never segmentation, measuring, tracking, image changes or overwrites. Re-run Set up.
 - **Population positions — Populations on grey** (Colour): every cell in plain grey under the picked populations, instead of the density heatmap.
 - **µm sliders follow the image scale:** on fine pixels (SIM, confocal) every µm task param's slider range shrinks to fit; pick the factor by Parameters, or type any value.
 - **Add tracked cells** (a population's ⋯ menu): its tracked cells as a population to gate under; follows re-tracking.
