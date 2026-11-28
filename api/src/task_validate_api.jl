@@ -51,3 +51,36 @@ function api_task_validate(req::HTTP.Request, body_bytes::Vector{UInt8})
     result === nothing && return 200, "null"
     return 200, JSON3.write(result)
 end
+
+# ── POST /api/tasks/write-check — what a run WOULD write, and whether that replaces something ─────
+#
+# Asked before submitting, by Claude starting work in a GUI user's project (the autonomous server in GUI
+# mode, mcp/cecelia_mcp/autonomous.py; docs/todo/AGENT_GUI_RUNS_PLAN.md D3). The answer is
+# `run_write_check` (app/src/run_log.jl) — the same `run_replaces` the run log stamps at open.
+#
+# Request body:  { funName, params, projectUid, imageUids }
+# Response 200:  { output?: {name, ns, into, key?}, replaces?: {imageUid: {...}}, free? }
+# Response 4xx:  { error } — missing funName/projectUid/imageUids, or an image that does not resolve
+#                (unlike the advisory above, an image left out would be a "nothing replaced" not checked).
+function api_task_write_check(body_bytes::Vector{UInt8})
+    body = try
+        JSON3.read(String(body_bytes))
+    catch e
+        return _gerr(400, "invalid JSON body: " * sprint(showerror, e))
+    end
+    fun_name    = string(get(body, :funName, ""))
+    project_uid = string(get(body, :projectUid, ""))
+    image_uids  = String[String(u) for u in get(body, :imageUids, String[])]
+    isempty(fun_name)    && return _gerr(400, "funName is required")
+    isempty(project_uid) && return _gerr(400, "projectUid is required")
+    isempty(image_uids)  && return _gerr(400, "imageUids is required")
+    raw = get(body, :params, nothing)
+    params = raw isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in raw) : Dict{String,Any}()
+    imgs = CciaImage[]
+    for uid in image_uids
+        img, err = _gating_image(project_uid, uid)
+        img === nothing && return err
+        push!(imgs, img)
+    end
+    return 200, JSON3.write(run_write_check(fun_name, imgs, params))
+end

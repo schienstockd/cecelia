@@ -125,6 +125,63 @@ end
     end
 end
 
+# docs/todo/AGENT_GUI_RUNS_PLAN.md D3: Claude, starting work in a GUI user's project, asks first what the
+# run would write. A region clustering re-run under an existing suffix is the case the chain pre-flight
+# does not see (its namespace is not on the image) — `run_replaces` finds it through the run log.
+@testset "run_write_check: what a run would write, what it replaces, and a free name" begin
+    have_fixture(fixture_path("testpr")) || return @test_skip "testpr fixture missing"   # MAINT-EXEMPT: the testpr copy the testsets above use (`_rl_prov_fixture`); asserts on its label set B
+    dir = _rl_prov_fixture()
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    zarr = get!(Cecelia.cecelia_conf(), "zarr", Dict{String,Any}())
+    had_kpv = haskey(zarr, "keepPreviousVersion"); old_kpv = get(zarr, "keepPreviousVersion", nothing)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
+        zarr["keepPreviousVersion"] = false
+        img = init_object("testpr", "KDIeEm")
+
+        # a new label set: named, nothing replaced, no suggestion
+        c = run_write_check("segment.cellposeMeasure", [img],
+                            Dict{String,Any}("valueName" => "default", "outputValueName" => "fresh"))
+        @test c["output"]["name"] == "fresh" && c["output"]["ns"] == "labels" && c["output"]["into"] == false
+        @test c["output"]["key"] == "outputValueName"
+        @test !haskey(c, "replaces") && !haskey(c, "free")
+
+        # the image's label set `B`: replaced, and `B_2` is free
+        c = run_write_check("segment.cellposeMeasure", [img],
+                            Dict{String,Any}("valueName" => "default", "outputValueName" => "B"))
+        @test c["replaces"][img.uid]["name"] == "B"
+        @test c["free"] == "B_2"
+
+        # regions: not on the image, so only the run log can say a suffix is taken
+        rp = Dict{String,Any}("valueNameSuffix" => "gBT")
+        c = run_write_check("clustRegions.cluster", [img], rp)
+        @test c["output"]["name"] == "gBT" && c["output"]["ns"] == "regions" && !haskey(c, "replaces")
+        tid = "rwc1-$(rand(1000:9999))"
+        Cecelia.open_run_log!(img, "clustRegions.cluster", "default", rp; task_id = tid)
+        close_run_log!(img, tid, "done")
+        c = run_write_check("clustRegions.cluster", [img], rp)
+        @test c["replaces"][img.uid]["taskId"] == tid
+        @test c["output"]["key"] == "valueNameSuffix" && c["free"] == "gBT_2"
+        # an omitted param takes the spec default, as the run would — the suffix is `default`
+        @test run_write_check("clustRegions.cluster", [img], Dict{String,Any}())["output"]["name"] == "default"
+
+        # a write-into (tracking into `B`): the input is the output, so there is no free name to offer
+        tp = Dict{String,Any}("valueName" => "B")
+        tt = "rwc2-$(rand(1000:9999))"
+        Cecelia.open_run_log!(img, "tracking.bayesian_tracking", "B", tp; task_id = tt)
+        close_run_log!(img, tt, "done")
+        c = run_write_check("tracking.bayesian_tracking", [img], tp)
+        @test c["output"]["into"] == true && c["output"]["key"] == "valueName"
+        @test haskey(c["replaces"], img.uid) && !haskey(c, "free")
+
+        # an unknown task names nothing
+        @test isempty(run_write_check("no.such.task", [img], Dict{String,Any}()))
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        had_kpv ? (zarr["keepPreviousVersion"] = old_kpv) : delete!(zarr, "keepPreviousVersion")
+    end
+end
+
 @testset "Run log rotates past the cap into an archive instead of dropping" begin
     proj = create_project!(name="runlog-archive-$(rand(1000:9999))")
     img  = add_image!(add_set!(proj; name="s"); name="img")

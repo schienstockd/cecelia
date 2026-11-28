@@ -20,6 +20,11 @@ the project the launcher named (may be unset — "new project") plus every proje
 created, and the session may create projects, sets and images (``NO_GUI_ROUTES``). Without the
 switch those routes stay refused and the lock is exactly as above.
 
+GUI mode (``CECELIA_MCP_GUI=1``, ``gui_mode.py``; docs/todo/AGENT_GUI_RUNS_PLAN.md) is the third: the
+Cecelia plugin starts this server in a GUI user's own session. The lock is the project OPEN in the app,
+checked per call; a run that writes an image version or a label set, or that would replace an existing
+output (``POST /api/tasks/write-check``), is refused. Only ``GUI_ROUTES`` are added.
+
 Stdlib + ``websockets`` (already a dependency of the observer's listener).
 """
 from __future__ import annotations
@@ -34,6 +39,7 @@ from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
 from cecelia_mcp.client import ApiError, DisallowedRoute, claude_headers, http_json
+from cecelia_mcp.gui_mode import gui_mode_enabled, write_refusals
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
 
@@ -63,6 +69,12 @@ NO_GUI_ROUTES = frozenset({
     ("POST", "/api/projects/create"),   # WRITE — a new project (joins this session's lock)
     ("POST", "/api/sets/create"),       # WRITE — a new set in an allowed project
     ("POST", "/api/images/register"),   # WRITE — pending images; importImages.omezarr converts them
+})
+
+# Allowed ONLY in GUI mode (`gui_mode_enabled()`): which project is open, and what a run would write.
+GUI_ROUTES = frozenset({
+    ("GET", "/api/projects"),           # most recently opened first — the project open in the app
+    ("POST", "/api/tasks/write-check"), # read-only: what a run would write, and whether it replaces
 })
 
 _TERMINAL = {"done", "failed", "cancelled", "interrupted", "skipped"}
@@ -100,7 +112,14 @@ def allowed_projects() -> list[str]:
     return ([lock] if lock else []) + [p for p in extra if p != lock]
 
 
-def check_project(project_uid: str) -> None:
+def check_project(project_uid: str, gui_project: str = "") -> None:
+    if gui_mode_enabled():
+        if not gui_project:
+            raise LockViolation("no project is open in Cecelia — ask the user to open the one to work in")
+        if project_uid != gui_project:
+            raise LockViolation(f"project {project_uid!r} is not the one open in Cecelia "
+                                f"({gui_project!r}); this session may only run work there")
+        return
     allowed = allowed_projects()
     if not allowed:
         if no_gui_enabled():
@@ -220,12 +239,36 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
     def _request(self, method: str, path: str, params: dict | None = None, body: dict | None = None,
                  raw: bool = False):
         if (method, path) not in AUTONOMOUS_ROUTES and not (
-                no_gui_enabled() and (method, path) in NO_GUI_ROUTES):
+                no_gui_enabled() and (method, path) in NO_GUI_ROUTES) and not (
+                gui_mode_enabled() and (method, path) in GUI_ROUTES):
             raise DisallowedRoute(f"{method} {path} is not an allowed autonomous route")
         uid = (body or {}).get("projectUid") or (params or {}).get("projectUid")
         if uid is not None:
-            check_project(str(uid))
+            self.check_project(str(uid))
         return http_json(self.base_url, method, path, params, body, self.timeout, raw=raw)
+
+    def gui_project(self) -> str:
+        """GUI mode: the project open in Cecelia — the most recently OPENED one (`lastOpenedAt` is
+        stamped when the app opens a project). Asked per call, so switching in the app moves the lock."""
+        projects = self._request("GET", "/api/projects").get("projects", []) or []
+        opened = [p for p in projects if p.get("lastOpenedAt")]
+        if not opened:
+            return ""
+        return str(max(opened, key=lambda p: str(p.get("lastOpenedAt"))).get("uid") or "")
+
+    def check_project(self, project_uid: str) -> None:
+        check_project(project_uid, self.gui_project() if gui_mode_enabled() else "")
+
+    def check_writes(self, project_uid: str, fun_name: str, params: dict, image_uids: list[str]) -> None:
+        """GUI mode: refuse a run that writes an image version / label set or replaces an output."""
+        if not gui_mode_enabled():
+            return
+        check = self._request("POST", "/api/tasks/write-check",
+                              body={"projectUid": project_uid, "funName": fun_name, "params": params,
+                                    "imageUids": image_uids})
+        bad = write_refusals(fun_name, check or {})
+        if bad:
+            raise LockViolation("; ".join(bad))
 
     def definitions(self) -> dict:
         if self._definitions is None:
@@ -327,8 +370,9 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
 
     def run_task(self, project_uid: str, fun_name: str, params: dict, image_uids: list[str],
                  set_uid: str = "") -> dict:
-        check_project(project_uid)
+        self.check_project(project_uid)
         spec = self.check_task(fun_name, params)
+        self.check_writes(project_uid, fun_name, params, image_uids)
         scope = spec.get("scope") or "image"
         launches = []
         targets = [None] if scope == "set" else image_uids
@@ -349,7 +393,7 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         return {"funName": fun_name, "tasks": launches}
 
     def run_chain(self, project_uid: str, chain_name: str, image_uids: list[str]) -> dict:
-        check_project(project_uid)
+        self.check_project(project_uid)
         template = self._request("GET", "/api/chains/get", {"projectUid": project_uid, "name": chain_name})
         # The server repairs a name its filename guard refuses ("a + b" is stored as "a b") and the GET
         # resolves the sent name the same way — run under the STORED name so chain:run finds it too.
@@ -359,6 +403,7 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
             fn = node.get("fn") or node.get("fun") or ""
             try:
                 self.check_task(fn, node.get("params") or {})
+                self.check_writes(project_uid, fn, node.get("params") or {}, image_uids)
             except (LockViolation, ApiError) as e:
                 problems.append(f"node {node.get('id')}: {e}")
         if problems:

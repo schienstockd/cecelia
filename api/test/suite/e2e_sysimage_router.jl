@@ -447,7 +447,7 @@ end
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim", "/api/viewer/chunk-cache/set",
         "/api/versions/prune",   # VN P5 prune surface — dry-run first, then destructive
         "/api/profiles/save", "/api/profiles/delete",
-        "/api/tasks/custom-modules/reload", "/api/tasks/validate",
+        "/api/tasks/custom-modules/reload", "/api/tasks/validate", "/api/tasks/write-check",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/system/envs/install",
         "/api/system/weights/fetch",

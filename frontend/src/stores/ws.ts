@@ -13,7 +13,8 @@ import { useLinkedSelectionStore, linkedSourceKey, outlineSource } from './linke
 import { useBlackboardStore } from './blackboard'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
-import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses, expiredCancels } from '../utils/runningTasks'
+import { fetchInFlightTasks, adoptableTasks, adoptsForeignTask, staleInFlightStatuses, expiredCancels } from '../utils/runningTasks'
+import { debouncedLatest } from '../utils/debouncedLatest'
 import { useViewerStore } from './viewer'
 import { markTtlSeconds } from '../utils/viewer/markLifetime'
 import { pickBoardTab } from '../utils/boardNav'
@@ -187,6 +188,11 @@ export const useWsStore = defineStore('ws', () => {
     for (const r of staleInFlightStatuses(rows, id => byBackendId.get(id)))
       tasks.setStatus(r.id, r.status, { startedAt: r.startedAt, pool: r.pool })
   }
+
+  // A task started from ANOTHER socket (Claude in the user's session, a second tab) arrives as frames for
+  // an id with no row — pull the snapshot so it gets one (`adoptsForeignTask`). Debounced: a set task's
+  // burst of frames, or several started at once, is one fetch.
+  const adoptSoon = debouncedLatest<void>(() => adoptInFlight(), { wait: 300 })
 
   // A reload races: the socket usually opens BEFORE the project finishes loading, and until it has, a
   // snapshot row can't be resolved to an image name (so `adoptInFlight` declines). Retry when a project
@@ -500,6 +506,8 @@ export const useWsStore = defineStore('ws', () => {
         if (adoptsRailJob(job, useTaskStore().tasks.find(t => t.id === taskId))) {
           useTaskStore().adoptJob(railJobRow(job))
         }
+        if (adoptsForeignTask(job, id => useTaskStore().tasks.some(t => (t.backendTaskId || t.id) === id)))
+          adoptSoon.schedule()
         // the backend's own timestamps — see utils/taskElapsed.ts for why they beat stamping locally
         useTaskStore().setStatus(taskId, status as any, {
           startedAt:  parseRailTime(data.startedAt),

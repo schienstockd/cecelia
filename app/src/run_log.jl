@@ -496,6 +496,59 @@ function run_replaces(fun_name::AbstractString, img::CciaImage, params::Abstract
 end
 
 """
+    run_write_check(fun_name, imgs, params) -> Dict
+
+What a run of `fun_name` with `params` WOULD write on `imgs`, asked before it is submitted — for an agent
+starting work in a GUI user's project (`POST /api/tasks/write-check`, docs/todo/AGENT_GUI_RUNS_PLAN.md
+D3). Omitted params take the spec default, as the run would. Keys, each absent when there is nothing:
+
+  output   — `{name, ns, into, key?}`: what the run writes (`_run_output_identity`) and the param that
+             names it. Absent = the run names no output.
+  replaces — `{imageUid => run_replaces(…)}` for each image where that output already exists.
+  free     — when something is replaced and a param names the output (not a write-into): the first of
+             `<name>_2`, `<name>_3`, … that replaces nothing on any of `imgs` (`free_label_name`'s naming).
+"""
+function run_write_check(fun_name::AbstractString, imgs::AbstractVector, params::AbstractDict)
+    fn = String(fun_name)
+    out = Dict{String,Any}()
+    leaves = _history_leaves(fn)
+    leaves === nothing && return out
+    p = merge(_history_param_defaults(fn), Dict{String,Any}(String(k) => v for (k, v) in params))
+    name, ns, into = _run_output_identity(fn, p, leaves)
+    isempty(name) && return out
+    key = into ? task_writes_into_key(fn) : _run_output_key(p, leaves, name)
+    o = Dict{String,Any}("name" => name, "ns" => ns, "into" => into)
+    isempty(key) || (o["key"] = key)
+    out["output"] = o
+    reps = Dict{String,Any}()
+    for img in imgs
+        r = run_replaces(fn, img, p)
+        r === nothing || (reps[img.uid] = r)
+    end
+    isempty(reps) && return out
+    out["replaces"] = reps
+    (into || isempty(key)) && return out
+    for i in 2:99
+        q = merge(p, Dict{String,Any}(key => "$(name)_$(i)"))
+        all(img -> run_replaces(fn, img, q) === nothing, imgs) || continue
+        out["free"] = "$(name)_$(i)"
+        break
+    end
+    out
+end
+
+# The param that names output `name`: a writing leaf holding it (a renamed one under its saved key, as
+# `_history_output` matches), else the legacy `outputValueName`. "" = a fixed output no param names.
+function _run_output_key(params::AbstractDict, leaves, name::AbstractString)::String
+    for (k, l) in leaves
+        l.writes || continue
+        kk = something(_stored_key(k, l.former, params), k)
+        string(get(params, kk, "")) == name && return kk
+    end
+    string(get(params, "outputValueName", "")) == name ? "outputValueName" : ""
+end
+
+"""
     run_gates(fun_name, img, params) -> Vector{Dict}
 
 The gated populations a run of `fun_name` with `params` reads on `img`, each `{valueName, path, hash}`

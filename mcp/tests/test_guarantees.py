@@ -138,6 +138,11 @@ GUARANTEES: dict[str, tuple[str, str, str, str]] = {
         "mcp/cecelia_mcp/guidance.py", "nothing here can START it",
         "mcp/tests/test_server.py", "test_no_tool_can_start_work",
     ),
+    # In the user's own session it may start work, but must never try to write over theirs.
+    "a GUI-session run never writes a label set, an image version or a taken name": (
+        "mcp/cecelia_mcp/guidance.py", "never onto a label set, an image version or a taken name",
+        "mcp/tests/test_autonomous.py", "test_a_taken_suffix_is_refused_with_a_free_one",
+    ),
 }
 
 

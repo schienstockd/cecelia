@@ -31,7 +31,8 @@ The GUI is only a client. Everything below already runs without it:
    (`scripts/agent_eval/app_project.py`). Nothing exposes project, set or image creation as tools.
 2. **`cecelia-autonomous` is built as an eval sandbox.** It is locked to one throwaway project
    (`CECELIA_MCP_PROJECT`, required), optionally forces an output prefix (`CECELIA_MCP_PREFIX`), and
-   its docs say it is never wired into an interactive session.
+   its docs say it is never wired into an interactive session. (Since 2026-11-28 it also has a GUI
+   mode, started by the plugin in a GUI user's session: `docs/todo/AGENT_GUI_RUNS_PLAN.md`.)
 3. **No launcher.** Nothing starts the server headless, writes the MCP config and opens `claude`.
 4. **The observer carries GUI-only tools.** These are `mark_tracks` / `mark_cells` / `mark_plot` /
    `mark_tile` / `mark_freeform` / `point_at_ui`, `get_recent_captures` / `get_capture` /

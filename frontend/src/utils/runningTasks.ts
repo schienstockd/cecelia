@@ -106,6 +106,21 @@ const ACTIVE = new Set(['queued', 'running'])
 const moduleFromFun = moduleKeyFromFun
 
 /**
+ * Does a live `task:status` frame name a task this tab has no row for, so the in-flight snapshot should
+ * be pulled now (`adoptInFlight`)? A task started from ANOTHER socket — Claude's autonomous server in the
+ * user's session, a second tab — sends its frames to every socket, but `setStatus` ignores an unknown
+ * id, so the run was invisible (and could not be cancelled) here until a reconnect.
+ * Only a live status: a run that ended before this tab saw it is the outcome poll's business. Not a
+ * backend job (`pool: 'job'`): `adoptsRailJob` makes that row from the frame itself.
+ * `known` is matched on the SCHEDULER id (a chain row keeps it on `backendTaskId`).
+ * docs/todo/AGENT_GUI_RUNS_PLAN.md D4.
+ */
+export function adoptsForeignTask(f: { taskId: string; status: string; pool?: string },
+                                  known: (id: string) => boolean): boolean {
+  return !!f.taskId && ACTIVE.has(f.status) && f.pool !== 'job' && !known(f.taskId)
+}
+
+/**
  * Snapshot rows → task-list entries, dropping what this tab can't or shouldn't show.
  *
  * Skipped, each for a reason:
