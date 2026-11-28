@@ -28,7 +28,8 @@ from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
 
 #: The reviewer findings in the Recital column. A test-value finding (a test that can't fail) isn't
 #: one: its `untested` ones reach the bug check mutated again at main, a line of their own below.
-FINDING_EVENTS = _ALL_FINDING_EVENTS - {"test_value_finding"}
+#: Nor is a plan-review finding: it is about a design doc, so it never flows into the bug check.
+FINDING_EVENTS = _ALL_FINDING_EVENTS - {"test_value_finding", "plan_review_finding"}
 
 
 def _load_sibling(name: str):

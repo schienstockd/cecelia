@@ -37,7 +37,8 @@ from cecelia.effectiveness.log import FINDING_EVENTS as _ALL_FINDING_EVENTS  # n
 
 #: A result-review finding is a wrong result, not a CLAUDE.md rule broken: the bug sweep's input only.
 #: A test-value finding is a test that can't fail, read by the P4 review (TEST_VALUE_PLAN.md), not here.
-_FINDING_EVENTS = _ALL_FINDING_EVENTS - {"result_review_finding", "test_value_finding"}
+#: A plan-review finding is about a design doc, not a rule a code change broke.
+_FINDING_EVENTS = _ALL_FINDING_EVENTS - {"result_review_finding", "test_value_finding", "plan_review_finding"}
 from cecelia.effectiveness.git_context import git_output, parse_diff  # noqa: E402
 from cecelia.effectiveness.recital import MARKERS  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402

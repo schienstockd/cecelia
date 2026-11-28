@@ -421,6 +421,7 @@ judge-weekly = "python scripts/judge/weekly.py"
 judge-bugs   = "python scripts/judge/bugs.py"
 judge-verify = "python scripts/judge/verify.py"
 judge-rules  = "python scripts/judge/rules.py"
+judge-plans  = "python scripts/judge/plan_postmortem.py"
 # The agent run reviews a pass would log (guide / platform causes) and its agent causes per guide,
 # printed; reads the run harness's projects dir (`--projects-dir D`), logs nothing.
 judge-run-reviews = "python scripts/judge/run_reviews.py"

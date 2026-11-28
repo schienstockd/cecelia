@@ -428,6 +428,14 @@ def render_rollup(
             pr_lookup=pr_lookup,
         ),
         _mechanism_section(
+            "Plan review",
+            "plan_review_run",
+            "plan_review_finding",
+            events,
+            resolved_event="plan_review_finding_resolved",
+            pr_lookup=pr_lookup,
+        ),
+        _mechanism_section(
             "Test value",
             "test_value_run",
             "test_value_finding",
