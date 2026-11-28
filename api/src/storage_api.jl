@@ -1,6 +1,6 @@
 # Storage API — the Settings storage box. GET the walked summary (disk + reclaimable originals),
 # POST to reclaim (delete the original import of images whose corrected variant is active). Thin
-# adapters over app/src/storage.jl (project_storage_summary / reclaim_defaults!). See
+# adapters over app/src/maintenance.jl (project_storage_summary) + app/src/storage.jl (reclaim_defaults!). See
 # docs/todo/STORAGE_RECLAIM_PLAN.md.
 
 # GET /api/storage/summary?projectUid=

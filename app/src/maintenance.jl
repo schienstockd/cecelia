@@ -95,3 +95,60 @@ end
 
 # The `maintenance:cancel` WS message still targets patches by name; route it to the shared canceller.
 cancel_maintenance!(task_id::AbstractString) = cancel_job!(task_id)
+
+# ── Project-wide summary (the storage box) ────────────────────────────────────
+
+"""
+    project_storage_summary(proj_uid) -> Dict
+
+Disk total/available (via `diskstat`, a cheap statvfs) plus a walked breakdown of the project's image
+stores and the reclaimable (non-active) versions. The `reclaimable` list carries one entry per image
+that has at least one freeable version — the total bytes freed, the version kept active, and the list
+of versions that would be removed. Shape mirrors what the frontend renders + posts back to reclaim.
+"""
+function project_storage_summary(proj_uid::String)::Dict{String,Any}
+    proj = load_project(proj_uid)
+    reclaimable    = Dict{String,Any}[]
+    total_reclaim  = 0
+    image_bytes    = 0   # image OME-ZARR versions only (the `0/` dir)
+    analysis_bytes = 0   # everything DERIVED (the `1/` dir minus ANALYSIS_KEEP)
+
+    for s in proj._sets, img in s._images
+        st = image_storage(img)
+        image_bytes    += sum(v.bytes for v in st.versions; init = 0)
+        analysis_bytes += analysis_bytes_of(img)
+        if !isempty(st.reclaimable) && st.reclaimableBytes > 0
+            push!(reclaimable, Dict{String,Any}(
+                "imageUid"      => img.uid,
+                "name"          => img.name,
+                "setUid"        => s.uid,
+                "bytes"         => st.reclaimableBytes,
+                "activeVersion" => st.active,
+                "versions"      => [Dict{String,Any}("valueName" => v.valueName, "bytes" => v.bytes)
+                                    for v in st.versions if v.valueName in st.reclaimable],
+            ))
+            total_reclaim += st.reclaimableBytes
+        end
+    end
+    sort!(reclaimable; by = e -> e["bytes"], rev = true)   # biggest first
+
+    ds = Base.Filesystem.diskstat(projects_dir())
+    Dict{String,Any}(
+        "diskTotal"        => ds.total,
+        "diskAvailable"    => ds.available,
+        "imageBytes"       => image_bytes,   # image stores only (the `0/` dir)
+        # Everything DERIVED, so the one screen that reports disk usage isn't silent about the half of
+        # the project it can't otherwise see. Reported, never auto-freed: dropping analysis is a
+        # deliberate per-image act in the Import page's Delete modal, not something a project-wide
+        # "free up space" button should do (docs/todo/IMAGE_DELETE_PLAN.md Decision 5).
+        "analysisBytes"    => analysis_bytes,
+        "reclaimableBytes" => total_reclaim,
+        "reclaimable"      => reclaimable,
+        # Leftovers a cancelled/crashed run abandoned: staging dirs, import scratch, unregistered and
+        # truncated stores. Distinct from `reclaimable` above — that is real data the user could choose
+        # to drop, this is bytes nothing can reach. Reported here so the cleanup ANNOUNCES itself
+        # instead of waiting to be discovered in Data patches; freed by the `store-debris` patch, which
+        # uses this same detector.
+        "debris"           => store_debris_summary(proj),
+    )
+end

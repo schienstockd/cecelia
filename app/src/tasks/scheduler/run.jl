@@ -14,11 +14,7 @@
 # Blocking on take!(done) yields the OS thread to Julia's scheduler (no spin-wait),
 # so many submitters can wait without exhausting the thread pool.
 
-function _fun_name_from_task(task::CciaTask)::String
-    spec = _task_spec(task)
-    isnothing(spec) && return string(typeof(task))
-    string(get(spec, "fun_name", string(typeof(task))))
-end
+# `_fun_name_from_task` (a task instance -> its registered fun_name) lives in tasks/task/registry.jl.
 
 # Wrap an on_log callback so every line is also appended (timestamped) to
 # {img._dir}/logs/{fun_name}.log — matching the behaviour the REPL and GUI

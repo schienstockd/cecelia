@@ -266,7 +266,7 @@ export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance
 export start_job!, claim_job!, job_active, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
 export resize_pool!, set_pool_limit!
-# Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
+# Sink-agnostic execution (tasks/scheduler/execute.jl) — one implementation, driven by the API server today and
 # by the detached runner next. See docs/todo/TASK_RUNNER_PLAN.md.
 export TaskRequest, execute_task, task_request, task_request_dict
 export ChainRequest, execute_chain, chain_request, chain_request_dict
@@ -479,7 +479,7 @@ include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
 # Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
 # detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
-include("runner/execute.jl")
+include("tasks/scheduler/execute.jl")
 # Chain events -> wire frames, shared by the API server and the runner (one builder, one bank).
 include("runner/chain_frames.jl")
 # Task preview — the resident preview worker's lifecycle + request shape. Shares the resident-WS-
@@ -504,7 +504,7 @@ include("project_io.jl")
 include("ai/agent_runner.jl")
 include("ai/observer_plugin.jl")   # the terminal plugin: observer MCP + caller hook
 include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log out
-# Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
+# Per-profile settings (`active_profile_name()` itself is in config.jl).
 include("config/profile_settings.jl")
 include("ai/claude_conversations.jl")   # delete a profile's Claude conversations (shared workstation)
 include("ai/ai_switch.jl")   # is AI allowed for this profile? workstation ceiling + profile preference

@@ -12,10 +12,11 @@
 [areas]
 "model"            = ["app/src/model/", "app/src/helpers.jl", "app/src/storage.jl",
                       "app/src/data_source.jl", "app/src/discard.jl", "app/src/events.jl"]
-"jobs (export, import, maintenance)" = ["app/src/jobs.jl", "app/src/project_io.jl", "app/src/stored_zip.jl",
+"jobs (export, import, maintenance)" = ["app/src/project_io.jl", "app/src/stored_zip.jl",
                       "app/src/maintenance.jl", "app/src/rename_value_name.jl"]
 "config"           = ["app/src/config/", "app/src/config.jl", "app/src/config_dir.jl", "app/src/ports.jl",
-                      "app/src/api_token.jl", "app/src/single_instance.jl", "app/src/utils.jl"]
+                      "app/src/api_token.jl", "app/src/single_instance.jl", "app/src/utils.jl",
+                      "app/src/jobs.jl"]   # OS process control + the job registry + tar: foundational
 "run records"      = ["app/src/run_log.jl", "app/src/run_sidecars.jl", "app/src/run_usage.jl"]
 "scheduler+chains" = ["app/src/tasks/scheduler/", "app/src/tasks/scheduler.jl", "app/src/tasks/chain/",
                       "app/src/tasks/chain.jl", "app/src/tasks/task_outcomes.jl", "app/src/preview.jl"]

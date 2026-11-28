@@ -455,18 +455,8 @@ const _AMBIENT_CLAUDE_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
                              "CLAUDE_CODE_USE_FOUNDRY",
                              "AWS_BEARER_TOKEN_BEDROCK")
 
-const _DEFAULT_PROFILE = "default"
-
-"""
-    active_profile_name() -> String
-
-Active user-profile name from `custom.toml [ai].profile`, defaulting to `"default"`. Kiwi turns,
-per-profile settings and project ownership all read this — see `docs/todo/USER_PROFILE_PLAN.md`
-(the primitive was originally Kiwi-scoped in `LOGIN_CREDENTIAL_ISOLATION_PLAN`; the `[ai]` TOML
-section stays put per Phase 3, only the code identifiers renamed).
-"""
-active_profile_name()::String =
-    string(get(get(cecelia_conf(), "ai", Dict{String,Any}()), "profile", _DEFAULT_PROFILE))
+# `active_profile_name()` and `_DEFAULT_PROFILE` live in config.jl (the bottom tier: model, tasks and
+# the scheduler all read the active profile).
 
 """
     turn_profile(rec) -> String
