@@ -30,13 +30,13 @@ flowchart LR
   plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
   ai_lab_log["ai+lab log<br/><small>20 files · 4.9k lines</small>"]
   package_root["package root<br/><small>1 files · 0.6k lines</small>"]
-  tasks -->|68| model
+  tasks -->|69| model
   package_root -->|46| tasks
   plots_boards -->|39| model
   tasks -->|36| config
   tasks -->|35| tracking_spatial
-  plots_boards -->|31| gating
-  tasks -->|31| cell_data
+  plots_boards -->|34| gating
+  tasks -->|32| cell_data
   ai_lab_log -->|28| gating
   ai_lab_log -->|25| model
   scheduler_chains -->|24| task_framework
@@ -51,6 +51,7 @@ flowchart LR
   gating -->|17| model
   package_root -->|17| gating
   gating -->|16| cell_data
+  tracking_spatial -->|16| gating
   tracking_spatial -->|16| model
   ai_lab_log -->|15| config
   scheduler_chains -->|15| model
@@ -141,15 +142,14 @@ Both directions present (any n). In one module these are legal, but each pair is
 | task framework ↔ cell data | 4: `label_props`, `n_obs`, `select_cols`, `view_centroid_cols` | 1: `_task_spec` |
 | task framework ↔ qc+checks | 1: `channel_signal_flags` | 4: `_composite_step_names`, `_stored_key`, `_task_from_fun_name`, `task_params_name` |
 | task framework ↔ ai+lab log | 1: `active_profile_name` | 6: `CompositeTask`, `_composite_step_names`, `_composite_steps`, `_show_if_satisfied`, … |
-| tasks ↔ plots+boards | 3: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` | 8: `TrackMeasures`, `_motiffeatures_path`, `_region_owned_cols`, `aggregate_qc_key`, … |
 | tasks ↔ hpc | 1: `hpc_task_cpus` | 1: `zarr_group_meta_files` |
 | python bridge ↔ hpc | 1: `_run_py_hpc` | 3: `_app_dir`, `_py_task_env`, `pixi_env_name` |
 | cell data ↔ gating | 2: `gating_path`, `is_track_grained` | 16: `_split_channel_column`, `as_df`, `axis_of`, `canonical_channel_columns`, … |
 | cell data ↔ tracking+spatial | 2: `corrections_dir`, `roi_suffixes_on` | 20: `_agg_suffix`, `_channel_label`, `_var_measure_set`, `as_df`, … |
 | cell data ↔ qc+checks | 2: `qc_finding`, `write_qc` | 2: `centroid_columns`, `label_props` |
-| gating ↔ tracking+spatial | 8: `_track_class_mask`, `add_pop_fraction_cols!`, `is_tracked`, `track_aggregate_base`, … | 14: `_clustfeatures_entry`, `_clustfeatures_features`, `_clustfeatures_part_of`, `_coerce_filter_fun`, … |
+| gating ↔ tracking+spatial | 8: `_track_class_mask`, `add_pop_fraction_cols!`, `is_tracked`, `track_aggregate_base`, … | 16: `_catkey`, `_clustfeatures_entry`, `_clustfeatures_features`, `_clustfeatures_part_of`, … |
 | gating ↔ qc+checks | 6: `_cohort_outliers`, `cohort_value_names`, `qc_finding`, `qc_path`, … | 12: `_gate_canon`, `_split_pop_ref`, `gate_shape_spec`, `gating_qc!`, … |
-| tracking+spatial ↔ plots+boards | 3: `_catkey`, `_finite`, `_ordered_cats` | 8: `_is_categorical_col`, `_is_var_measure`, `add_pop_fraction_cols!`, `approach_cell_col`, … |
+| tracking+spatial ↔ plots+boards | 1: `_finite` | 8: `_is_categorical_col`, `_is_var_measure`, `add_pop_fraction_cols!`, `approach_cell_col`, … |
 | plots+boards ↔ ai+lab log | 4: `_collect_contact_stats`, `_collect_pattern_stats`, `_collect_proximity_stats`, `contact_matrix` | 4: `boards_doc_path`, `plot_spec_index`, `plot_summary_data`, `read_boards_doc` |
 
 ## Layers — calls up the declared order
@@ -178,14 +178,14 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **run records** | 5 |  | 6 | · | 6 | 5 |  |  |  |  | 4 |  |  |  |  |  |  |  |
 | **scheduler+chains** | 15 | 1 | 14 | 20 | · | 24 | 2 | 2 | 3 | 2 | 8 |  | 2 |  | 3 | 1 | 1 |  |
 | **task framework** | 15 | 3 | 9 | 4 | 2 | · |  |  |  | 4 |  |  | 1 |  |  | 1 |  |  |
-| **tasks** | 68 | 1 | 36 | 5 | 1 | 7 | · |  | 2 | 31 | 24 | 35 | 18 | 3 | 1 |  |  |  |
+| **tasks** | 69 | 1 | 36 | 5 | 1 | 7 | · |  | 2 | 32 | 24 | 35 | 18 |  | 1 |  |  |  |
 | **runner** | 4 | 1 | 13 |  | 18 | 2 |  | · |  |  |  |  |  |  |  | 1 | 6 |  |
 | **python bridge** |  |  | 7 | 2 |  | 1 |  |  | · |  |  |  |  |  | 1 |  |  |  |
 | **cell data** | 20 |  | 7 | 10 | 1 | 1 |  |  | 2 | · | 2 | 2 | 2 |  |  |  |  |  |
 | **gating** | 17 |  | 13 | 4 |  |  |  |  |  | 16 | · | 8 | 6 |  |  |  |  |  |
-| **tracking+spatial** | 16 |  | 2 |  |  |  |  |  |  | 20 | 14 | · | 1 | 3 |  |  |  |  |
+| **tracking+spatial** | 16 |  | 2 |  |  |  |  |  |  | 20 | 16 | · | 1 | 1 |  |  |  |  |
 | **qc+checks** | 21 |  | 6 | 4 | 3 | 4 |  |  |  | 2 | 12 |  | · |  |  |  |  |  |
-| **plots+boards** | 39 |  | 7 | 4 | 3 | 5 | 8 |  | 2 | 10 | 31 | 8 | 7 | · |  | 4 |  |  |
+| **plots+boards** | 39 |  | 7 | 4 | 3 | 5 | 9 |  | 2 | 11 | 34 | 8 | 7 | · |  | 4 |  |  |
 | **hpc** | 1 | 1 | 13 | 1 | 4 | 1 | 1 |  | 3 |  |  |  |  |  | · |  |  |  |
 | **ai+lab log** | 25 | 2 | 15 | 9 | 19 | 6 | 1 |  |  | 6 | 28 | 1 | 8 | 4 | 1 | · |  |  |
 | **logging** |  |  | 1 |  |  |  |  |  |  |  |  |  |  |  |  |  | · |  |

@@ -140,7 +140,7 @@ export function mergePickOrder(selected: readonly string[], shown: readonly stri
 
 // ── attribute groups ("compare by attribute") ─────────────────────────────────────────────────────
 
-/** Category order the server falls back to (`_sort_cats`, plot_data.jl): numeric when every key is a
+/** Category order the server falls back to (`_sort_cats`, gating/density.jl): numeric when every key is a
  *  number, else lexical. */
 export function sortCats(keys: readonly string[]): string[] {
   const nums = keys.map(k => (k.trim() !== '' && Number.isFinite(Number(k)) ? Number(k) : null))

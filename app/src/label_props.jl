@@ -201,6 +201,10 @@ function col_names(lp::LabelProps; data_type::Symbol=:vars)::Vector{String}
     end
 end
 
+# Suffixes of obs columns `{prefix}{suffix}` in `cols` (e.g. `col_names(lp; data_type = :obs)`).
+_obs_suffixes(cols, prefix::AbstractString) =
+    [c[ncodeunits(prefix)+1:end] for c in cols if startswith(c, prefix) && ncodeunits(c) > ncodeunits(prefix)]
+
 """
     n_obs(lp) -> Int
 

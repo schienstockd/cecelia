@@ -78,6 +78,11 @@ function discard!(path::AbstractString)
     nothing
 end
 
+# `discard!` a path that may not exist, logging it; `true` when something was removed. The run deletes
+# (analysis_runs.jl) and the re-track cleanup use it.
+_rm_if(path::AbstractString; on_log = _ -> nothing) =
+    ispath(path) && (on_log("[INFO] Removing: $path"); discard!(path); true)
+
 """
     sweep_discarded!()
 

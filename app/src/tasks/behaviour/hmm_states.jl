@@ -69,6 +69,28 @@ _hmm_pops(params)::Vector{String} = _str_list(params, "pops")
 hmm_fit_path(props_path::AbstractString) = props_sidecar_path(props_path, "hmmfit")
 
 """
+    prune_stale_hmmfit!(props_path; on_log) -> Vector{String}
+
+Drop the fit records (`{props}.hmmfit.json`) whose `live.cell.hmm.state.<colName>` column is no
+longer on `props_path`, returning the dropped keys. Every path that drops HMM state columns calls it:
+re-measure, re-track, track correction, track-set delete (all but the first drop every `live.cell.*`
+via `is_stale_track_measure`). A record left behind would be read as the fit of any later column of that name some other
+route brings back — `_hmm_profile_fit` and `_hmm_fit_summary` don't check the column.
+"""
+function prune_stale_hmmfit!(props_path::AbstractString; on_log = _ -> nothing)::Vector{String}
+    sidecar = hmm_fit_path(props_path)
+    raw = read_props_sidecar(sidecar)
+    (isempty(raw) || !isfile(props_path)) && return String[]
+    cols  = Set(col_names(label_props(props_path); data_type = :obs))
+    stale = sort!([k for k in keys(raw) if !((_HMM_STATE_PREFIX * k) in cols)])
+    isempty(stale) && return stale
+    on_log("[INFO] $(basename(props_path)) no longer carries HMM run(s) $(join(stale, ", ")) — " *
+           "dropping their fit records")
+    drop_props_sidecar_keys!(sidecar, raw, stale)
+    stale
+end
+
+"""
     hmm_fit_entry(props_path, col_name) -> Union{Nothing,Dict{String,Any}}
 
 THE reader for one HMM run's fit record (`col_name` = the run's `colName`, i.e. the suffix of
