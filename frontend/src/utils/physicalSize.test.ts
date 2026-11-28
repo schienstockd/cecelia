@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shortUnit, shortTimeUnit, fmtNum, formatPhysicalSize, formatTimeIncrement } from './physicalSize'
+import { shortUnit, shortTimeUnit, fmtNum, formatPhysicalSize, formatTimeIncrement, calibratedPixelSizesUm } from './physicalSize'
 
 describe('shortUnit', () => {
   it('collapses OME micron variants to µm', () => {
@@ -95,5 +95,18 @@ describe('pixelSizeUm', () => {
     expect(pixelSizeUm(500, 'nm')).toBeCloseTo(0.5)
     expect(pixelSizeUm(0.0005, 'millimeter')).toBeCloseTo(0.5)
     expect(pixelSizeUm(null, 'nm')).toBeNull()
+  })
+})
+
+describe('calibratedPixelSizesUm', () => {
+  it('converts each image to µm/px and skips the uncalibrated', () => {
+    // 41 nm = 0.041 µm; null, 0 and a missing size carry no calibration
+    expect(calibratedPixelSizesUm([
+      { physicalSizeX: 0.5, physicalSizeUnit: 'micrometer' },
+      { physicalSizeX: 41, physicalSizeUnit: 'nm' },
+      { physicalSizeX: null, physicalSizeUnit: 'micrometer' },
+      { physicalSizeX: 0, physicalSizeUnit: 'micrometer' },
+    ])).toEqual([0.5, 0.041])
+    expect(calibratedPixelSizesUm(undefined)).toEqual([])
   })
 })

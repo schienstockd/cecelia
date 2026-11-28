@@ -675,7 +675,7 @@ tells you nothing. One resolver per language, and everything goes through it:
 | Language | Resolver |
 |---|---|
 | Python | `zarr_utils.py` → `series_base` (used by `zarr_data_to_list`/`open_as_zarr`/`open_zarr`) |
-| Julia | `app/src/tasks/importImages/omezarr.jl` → `series_base` (used by `read_ome_metadata`, `update_ome_scale!`) |
+| Julia | `app/src/model/zarr_store.jl` → `series_base` (used by `read_ome_metadata`, `update_ome_scale!`, `qc.jl`, `store_rev`) |
 
 Never assume one format, and never hand-roll the check — always go through the readers (see
 *Image / OME-ZARR access — always go through `zarr_utils`* above).

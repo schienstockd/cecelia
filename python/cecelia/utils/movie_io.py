@@ -13,12 +13,14 @@ recording. Both draw their text through `title_card` (which only draws, and neve
 import contextlib
 import os
 
+from cecelia.utils.wgsl_utils import shader_constants
+
 # Per-axis ceiling for a requested movie size. A canvas screenshot renders through the GL context, so a
 # size the driver cannot allocate is not a clean failure — on some drivers it comes back as a blank
 # frame, which would encode happily into a black movie. Render cost also scales with pixel count, so a
 # few thousand frames at 8K is a hang, not a figure. 4096 is comfortably inside every GL max-viewport
-# we would ship against.
-MAX_MOVIE_AXIS = 4096
+# we would ship against. One number for the encoder, the backend and the size fields: `shaders/constants.json`.
+MAX_MOVIE_AXIS = int(shader_constants()["MAX_MOVIE_AXIS"])
 
 # libx264 with yuv420p subsamples chroma 2×2, so odd dimensions are rejected outright — and because we
 # write with macro_block_size=1 (exact frames, no silent rescale), imageio will not paper over it.

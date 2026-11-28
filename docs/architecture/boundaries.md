@@ -47,7 +47,7 @@ Data files named from two or more languages. The 72 task specs (`app/src/tasks/<
 
 | File | Read by | Test |
 |---|---|---|
-| `constants.json` | Julia, Python, TS/Vue | `api/test/suite/movie_rail_translators.jl` +1 |
+| `constants.json` | Julia, Python, TS/Vue | `api/test/suite/movie_rail_translators.jl` +2 |
 | `figureStyle.json` | Julia, Python, TS/Vue | `python/cecelia/tests/test_render_figure.py` |
 | `golden.json` | Python, TS/Vue | `api/test/suite/overlay_3d_and_rail_3d.jl` +2 |
 | `guides.json` | Python, TS/Vue | `app/test/suite/guides_and_flow.jl` +3 |

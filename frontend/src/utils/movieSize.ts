@@ -4,8 +4,10 @@
  * odd dimension — this only turns what the user typed into "a size" or "blank = the canvas size".
  */
 
-/** The per-axis ceiling; mirrors `movie_io.MAX_MOVIE_AXIS` so the field can't ask for a clamp. */
-export const MAX_MOVIE_AXIS = 4096
+import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
+
+/** The per-axis ceiling — `shaders/constants.json`, the number the encoder clamps at (`movie_io`). */
+export const MAX_MOVIE_AXIS: number = SHADER_CONSTANTS.MAX_MOVIE_AXIS
 
 /**
  * A typed axis value → a positive integer, or null for "unset" (blank, zero, junk).
@@ -24,16 +26,64 @@ export function parseMovieAxis(value: string | number | null | undefined): numbe
  * else a word. The point is that the default is VISIBLE — a movie records at the canvas size, and a
  * blank field that says nothing makes that look like "no size at all".
  */
-export function movieAxisPlaceholder(canvasAxis: number | null | undefined): string {
+export function movieAxisPlaceholder(canvasAxis: number | null | undefined, blank: MovieBlankSize = 'canvas'): string {
+  if (blank === 'full') return 'full'
   return canvasAxis && canvasAxis > 0 ? String(canvasAxis) : 'canvas'
 }
 
 /**
- * Both axes, as sent to the API — `{}` when either is unset, since a single axis cannot describe a
- * frame and half a size would silently letterbox. One rule, so all three surfaces agree.
+ * What blank size fields record at on a surface: the viewer's `canvas` (a viewer recording), or the
+ * `full` image (a 2D batch — it has no canvas, so `_max_px_from_size` leaves it at native pixels).
  */
-export function movieSizeParams(sizeX: number | null, sizeY: number | null): { sizeX?: number, sizeY?: number } {
+export type MovieBlankSize = 'canvas' | 'full'
+
+/** The size fields' tooltips for that surface — `label` the px label, `x` / `y` the two fields. */
+export function movieSizeTips(blank: MovieBlankSize): { label: string, x: string, y: string } {
+  return blank === 'full'
+    ? { label: 'Output size in pixels; blank = full image resolution', x: 'Width; blank = full image width',
+        y: 'Height; blank = full image height' }
+    : { label: 'Output size in pixels; blank = canvas size', x: 'Width; blank = canvas width',
+        y: 'Height; blank = canvas height' }
+}
+
+/**
+ * What a 2D viewer recording with blank size fields comes out at: `screen` the viewer's canvas size,
+ * `full` one movie pixel per image pixel of the visible region (up to MAX_MOVIE_AXIS). The backend
+ * reads it as `resolution` (`_record_max_px`, api/src/movie_rail.jl).
+ */
+export const MOVIE_RESOLUTIONS = ['screen', 'full'] as const
+export type MovieResolution = typeof MOVIE_RESOLUTIONS[number]
+export const MOVIE_RESOLUTION_DEFAULT: MovieResolution = 'screen'
+/** The `res` control's three states: the two resolutions, or typed sizes (`custom`). */
+export type MovieSizeMode = MovieResolution | 'custom'
+
+/** Typed sizes are `custom`, whatever resolution is stored; else the stored resolution. */
+export function movieSizeMode(sizeX: number | null, sizeY: number | null,
+                              resolution: MovieResolution | null | undefined): MovieSizeMode {
+  return parseMovieAxis(sizeX) && parseMovieAxis(sizeY) ? 'custom' : (resolution ?? MOVIE_RESOLUTION_DEFAULT)
+}
+
+/**
+ * What picking a `res` mode writes. A resolution clears the sizes (typed sizes would win over it);
+ * `custom` starts the fields at the canvas size, so the first movie matches what `screen` gave.
+ */
+export function movieSizePick(mode: MovieSizeMode, canvasX: number | null | undefined,
+                              canvasY: number | null | undefined):
+  { sizeX: number | null, sizeY: number | null, resolution?: MovieResolution } {
+  if (mode !== 'custom') return { sizeX: null, sizeY: null, resolution: mode }
+  return { sizeX: parseMovieAxis(canvasX) ?? 1024, sizeY: parseMovieAxis(canvasY) ?? 1024 }
+}
+
+/**
+ * Both axes, as sent to the API — `{}` when either is unset, since a single axis cannot describe a
+ * frame and half a size would silently letterbox. One rule, so all three surfaces agree. With no sizes,
+ * `resolution: 'full'` rides along when asked for (`screen` is the backend's default, so it is omitted).
+ */
+export function movieSizeParams(sizeX: number | null, sizeY: number | null,
+                                resolution?: MovieResolution | null):
+  { sizeX?: number, sizeY?: number, resolution?: MovieResolution } {
   const x = parseMovieAxis(sizeX)
   const y = parseMovieAxis(sizeY)
-  return x && y ? { sizeX: x, sizeY: y } : {}
+  if (x && y) return { sizeX: x, sizeY: y }
+  return resolution === 'full' ? { resolution } : {}
 }

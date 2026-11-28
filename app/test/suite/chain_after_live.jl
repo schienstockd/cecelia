@@ -6,6 +6,16 @@
 const _AL_FN = "testTasks.image_task"
 
 _al_wait(f; timeout = 30.0) = timedwait(f, timeout; pollint = 0.05) === :ok
+# A task id no other testset can hold. `gen_uid` draws from the global RNG, and every @testset starts
+# from the same seed, so sibling testsets replay the same uid sequence: "waits out a run this process
+# cannot see" banked `failed` under the very id the next testset gave its live run on `a`, and that
+# stale outcome became a's when the chain looked after a's run had ended. The banked outcomes outlive
+# the testset, so the id comes from the OS instead.
+_al_uid() = String(rand(Cecelia.Random.RandomDevice(), Cecelia.UID_CHARS, 12))
+# The app's status sink (`ws_status` on the API server, `_emit_status` on the runner) banks every run's
+# outcome; a bare `run_task` banks nothing. Without it an id the chain never saw live has no outcome
+# here, ever, and the wait holds on it forever.
+_al_bank(rec) = record_task_outcome!(rec.id, string(rec.status); image_uid = rec.image_uid, fun = rec.fun_name)
 _al_state(run, uid, nid) = run.image_states[uid][nid].status
 _al_live(uid) = !isempty(Cecelia._live_runs_of(_AL_FN, uid))
 
@@ -24,9 +34,10 @@ _al_template(wait_for = Dict{String,Any}()) = ChainTemplate("Queue after",
 
 # The standalone run the chain will queue after, registered before the chain starts.
 function _al_start_live(proj, uid; wait_ms)
-    id = gen_uid()
+    id = _al_uid()
     t  = Threads.@spawn run_task(proj.uid, uid; fun_name = _AL_FN, task_id = id,
-                                 params = Dict{String,Any}("waitMs" => wait_ms), on_log = _ -> nothing)
+                                 params = Dict{String,Any}("waitMs" => wait_ms), on_log = _ -> nothing,
+                                 on_status_change = _al_bank)
     @test _al_wait(() -> _al_live(uid))
     id, t
 end
@@ -115,7 +126,7 @@ end
     # The run is on the task runner while the chain runs here (or ended before the chain looked): no local
     # record, only the id the browser saw. The wait holds until that id's outcome is banked.
     proj, (a, b) = _al_project(2)
-    ghost = gen_uid()
+    ghost = _al_uid()
     t = Threads.@spawn run_chain(proj, [a, b]; template = _al_template(Dict{String,Any}(a => [ghost])),
                                  on_log = _ -> nothing)
     run_id = _al_run_id(proj)
@@ -138,16 +149,17 @@ end
     proj, (a, b) = _al_project(2)
     id_a, live_a = _al_start_live(proj, a; wait_ms = 300)
     _,    live_b = _al_start_live(proj, b; wait_ms = 5000)   # the spec's max
-    # a's id passed as seen, so its wait engages even if a ends before the chain looks
+    # a has ended before the chain looks, always — the order a slow machine produced at random. Only
+    # the id the asker saw (passed as seen) says a ran; its banked outcome is a's.
+    fetch(live_a)
     t = Threads.@spawn run_chain(proj, [a, b]; template = _al_template(Dict{String,Any}(a => [id_a])),
                                  on_log = _ -> nothing)
     run_id = _al_run_id(proj)
-    @test _al_wait(() -> !_al_live(a))
     sleep(Cecelia._AFTER_LIVE_GRACE + 0.5)           # a's own grace is long over…
     @test _al_live(b)                                # …while b is still going
     @test _al_state(load_chain_run(proj, run_id), a, "wait") == NODE_RUNNING
     run = fetch(t)
-    fetch(live_a); fetch(live_b)
+    fetch(live_b)
     @test all(_al_state(run, u, n) == NODE_DONE for u in (a, b), n in ("wait", "next"))
     rm(proj.root; recursive = true)
 end

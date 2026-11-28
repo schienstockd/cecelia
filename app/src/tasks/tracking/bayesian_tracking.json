@@ -45,7 +45,8 @@
     {
       "key": "maxSearchRadius",
       "label": "Max search radius (µm)",
-      "type": "int",
+      "unit": "um",
+      "type": "float",
       "min": 1,
       "max": 200,
       "step": 1,
@@ -138,12 +139,13 @@
         {
           "key": "distThresh",
           "label": "Distance threshold (µm)",
+          "unit": "um",
           "type": "float",
           "min": 1,
           "max": 50,
           "step": 0.2,
           "default": 10,
-          "tip": "Furthest apart two track ends may be joined"
+          "tip": "Furthest apart two track ends may be joined (1 µm or more)"
         },
         {
           "key": "timeThresh",
@@ -218,6 +220,7 @@
         {
           "key": "thetaDist",
           "label": "Theta dist (µm)",
+          "unit": "um",
           "type": "float",
           "min": 1,
           "max": 50,

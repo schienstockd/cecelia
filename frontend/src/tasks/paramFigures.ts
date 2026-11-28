@@ -29,6 +29,7 @@ import { driftZSmoothFigure } from './driftZSmoothVis'
 import { stackAlignFigure } from './stackAlignVis'
 import { flowRegisterFigure } from './flowRegisterVis'
 import { afRolesFigure } from './afVis'
+import { neighbourGraphFigure } from './neighbourGraphVis'
 import { channelsWithRole } from '../utils/channelRoles'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 
@@ -318,6 +319,28 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       // Narrower than driftSmoothing (900): each column here is ZP=10 planes tall and only
       // ~48 px wide, so a 460 wide panel keeps three side-views legible without empty margin.
       defaultW: 460, defaultH: 320,
+    }
+  },
+
+  /**
+   * Neighbour graph's type (`spatialAnalysis.cellNeighbours`). One column per option — the same
+   * cells linked by Delaunay, kNN, radius, and binned into fixed windows — at the form's current
+   * radius / k / window size. See `neighbourGraphVis.ts`.
+   */
+  neighbourGraph: ctx => {
+    const { vis, note } = neighbourGraphFigure({
+      radius:     num(ctx.values?.neighbourRadius, 30),
+      k:          num(ctx.values?.nNeighbours, 6),
+      windowSize: num(ctx.values?.windowSize, 50),
+    })
+    return {
+      vis,
+      note,
+      title: 'Graph type',
+      tip: 'Show which cells each graph type links',
+      headings: ['Delaunay', 'kNN', 'Radius', 'Windows'],
+      storageKey: 'neighbour-graph-figure',
+      defaultW: 520, defaultH: 230,
     }
   },
 }

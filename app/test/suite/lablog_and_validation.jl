@@ -609,7 +609,14 @@ end
                     checked_required += 1
                 end
 
-                if t in ("int", "float")
+                if t in ("int", "float") && get(p, "unit", nothing) in ("um", "um2")
+                    # a length: the spec range is a slider span, so only the sign is a bound and a
+                    # value past the span runs (docs/MODULES.md → Length params)
+                    rejects(resolved, with(-1), key, "negative length")
+                    checked_bounds += 1
+                    haskey(p, "max") && @test validate_params(resolved, with(p["max"] + 1)) === nothing
+                    rejects(resolved, with("not-a-number"), key, "wrong type")
+                elseif t in ("int", "float")
                     if haskey(p, "min")
                         rejects(resolved, with(p["min"] - 1), key, "below min")
                         checked_bounds += 1

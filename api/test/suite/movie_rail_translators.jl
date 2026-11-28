@@ -7,6 +7,7 @@
 #  - `API: crop_from_view_state — one-shot record uses the viewer rectangle`
 #  - `API: z_from_view_state — one-shot record matches the viewer plane`
 #  - `API: _max_px_from_view_state — blank size fields cap at the viewer canvas`
+#  - `API: _record_max_px — res full records native pixels of the view`
 #  - `API: movie overlays — clock timestamp + scale-bar picker match the viewer`
 #  - `API: interpolate_keyframes reaches the incoming keyframe exactly`
 #
@@ -406,6 +407,31 @@ end
     @test _max_px_from_view_state(Dict{String,Any}()) == 0
     @test _max_px_from_view_state(
         Dict{String,Any}("canvas" => Dict("width" => 0, "height" => 0))) == 0
+end
+
+@testset "API: _record_max_px — res full records native pixels of the view" begin
+    # A 1818 × 906 image, the viewer zoomed 1.85x on a 1620 × 1089 canvas: the visible region is
+    # ~877 × 591 image pixels. A typed 512 strides it by 2 (half the data); "full" keeps every pixel.
+    vs = Dict{String,Any}("canvas" => Dict("width" => 1620, "height" => 1089),
+                          "camera" => Dict("center" => [0, 408.12, 1274.40], "zoom" => 1.8494),
+                          "dims" => Dict("ndisplay" => 2))
+    crop = crop_from_view_state(vs, 906, 1818)
+    frame(max_px) = (tf = pixel_transform(906, 1818; crop, max_px); (tf.step, tf.dW, tf.dH))
+    # typed size wins, whatever `resolution` says
+    @test _record_max_px(512, 512, vs; resolution = :full) == 512
+    @test frame(_record_max_px(512, 512, vs))[1] == 2
+    # blank: the canvas long side (the default), or the axis ceiling for "full"
+    @test _record_max_px(nothing, nothing, vs) == 1620
+    @test _record_max_px(nothing, nothing, vs; resolution = :full) == MAX_MOVIE_AXIS
+    @test frame(_record_max_px(nothing, nothing, vs; resolution = :full)) == (1, length(crop.x), length(crop.y))
+    # the whole image at "full" is native even when it is wider than the canvas; "screen" halves it
+    @test pixel_transform(906, 1818; max_px = _record_max_px(nothing, nothing, vs; resolution = :full)).step == 1
+    @test pixel_transform(906, 1818; max_px = _record_max_px(nothing, nothing, vs)).step == 2
+    # a batch has no view state: blank stays native
+    @test _record_max_px(nothing, nothing, nothing) == 0
+    @test _movie_resolution(Dict(:resolution => "full")) === :full
+    @test _movie_resolution(Dict{Symbol,Any}()) === :screen
+    @test _movie_resolution(Dict(:resolution => "junk")) === :screen
 end
 
 @testset "API: movie overlays — clock timestamp + scale-bar picker match the viewer" begin

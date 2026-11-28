@@ -120,6 +120,24 @@ creates a track by hand (see correction, below) must follow that convention; wri
   purpose: a GLPK timeout returns the tracks unmerged, so a limit would make results depend
   on machine speed.
 
+  **What bounds it instead is a COUNT (`_check_join_load`).** btrack offers each track end
+  every track start within `distThresh` and `1..timeThresh` frames as a link, and with
+  branching every PAIR of those as a division — a MIP, not an assignment. `join_candidates`
+  reproduces that count exactly (pinned against `tracker.hypotheses()`) and the run logs it
+  (`>> Optimiser: N tracklets, M join candidates (k per tracklet …)`). Above
+  `MAX_JOINS_PER_TRACKLET` (10; real 2P runs sit at 0.9–1.8) the run stops before the
+  optimiser and names the largest 1-2-5 `distThresh` that brings it to ≤ 2 (else 1 µm, if
+  that passes). **`distThresh` below 1 µm is refused**: btrack bins track ends with
+  `HypercubeBin(unsigned int …)` built from `dist_thresh`, so it truncates to whole µm — below
+  1 the bin is 0 wide and which joins it proposes is undefined (Linux x86 proposed none; macOS
+  arm64 proposed all on the test fixture), and a fractional value drops some joins past its
+  whole part.
+  Rescaling coordinates can't dodge it: `accuracy` is a length btrack caps at 10. Measured on a 2D
+  SIM movie (0.041 µm/px, objects 0.85 µm apart, 490/frame, 7187 tracklets): `distThresh = 10`
+  gave 86 links per tracklet, and 5207 with branching (37 M hypotheses) — hypothesis
+  generation took 70 s and GLPK never returned. `distThresh` is a physical length: on dense
+  sub-µm data it belongs near the object spacing, not at the 2P default.
+
   Two consequences that read as bugs and are not:
 
   * **A drawn track is longer than the search radius, by design.** The radius bounds one
@@ -321,9 +339,13 @@ when `trackLength == 0`; `displacementRatio` → `NaN` when `maxDisplacement == 
 struct Track
     id::Int
     t::Vector{Float64}       # physical time (frame index × time_step seconds)
-    coords::Matrix{Float64}  # n_steps × n_dims, physical space (px × pixel_res µm), skimage z?,y,x
+    coords::Matrix{Float64}  # n_steps × n_dims, physical space (px × pixel_res µm), columns x, y[, z]
 end
 ```
+
+Column order is `TRACK_AXES` = `(:x, :y, :z)` (present axes only) — the loader reads centroids in that
+order and code that needs one axis (the motion-dims detector, the 2D collapse) looks it up by name via
+`_track_axis_cols`, never by position.
 
 Coordinates are read **in pixels** from `obsm/spatial` and time **as frame index** from
 `obsm/temporal` (via the `LabelProps` chain — no raw HDF5), then converted to physical units at

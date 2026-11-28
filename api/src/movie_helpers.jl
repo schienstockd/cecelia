@@ -65,6 +65,10 @@ function _movie_size_params(data)
     read_axis(:sizeX), read_axis(:sizeY)
 end
 
+# What blank size fields record at (`resolution` on a record request): `:full` one output pixel per
+# image pixel of the view, anything else `:screen`, the viewer's canvas size (`_record_max_px`).
+_movie_resolution(data)::Symbol = _wstr(data, :resolution) == "full" ? :full : :screen
+
 # {proj}/movies/ for an image (img._dir = {proj}/1/{uid}); created if missing. One place the movies
 # dir is derived — the single-image recorders and the batch path all go through here.
 function _movies_dir(img)::String

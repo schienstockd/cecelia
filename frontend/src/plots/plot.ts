@@ -687,16 +687,18 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // a blank bound is filled from the data extent (so min-only or max-only works); +5% headroom on top.
   const ext = drawnExtent(r, o)
   const uMin = parseFloat(o.yMin), uMax = parseFloat(o.yMax)
-  const hasUser = Number.isFinite(uMin) || Number.isFinite(uMax)
+  const hasUser = hasUserRange(o)
   let measDomain: number[] | null = null
   if (ext && isDist) {
     measDomain = distDomain(ext, o)
-  } else if (hasUser && ext) {
+  } else if (hasUser) {
     // count/proportion charts (frequency, histogram, …) auto-scale their Y — but still HONOUR an explicit
-    // yMin/yMax (previously these were ignored). ext here is the value/count extent (series `value`), used
-    // only to fill a blank side; both sides given → used verbatim.
-    const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative ? 0 : ext.min)
-    const hi = Number.isFinite(uMax) ? uMax : ext.max * 1.05
+    // yMin/yMax. The extent fills only a blank side (both sides given → used verbatim), and it is what
+    // these charts DRAW — bin counts, category values, stack totals — not the series `value` they do not
+    // carry: reading `value` left the range ignored on every real histogram / frequency / stacked chart.
+    const bext = binnedExtent(r, o) ?? ext
+    const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative || !bext ? 0 : bext.min)
+    const hi = Number.isFinite(uMax) ? uMax : (bext ? bext.max * 1.05 : NaN)
     if (hi > lo) measDomain = [lo, hi]
   }
   opts[measAxis] = { ...(opts[measAxis] as object ?? {}), grid: o.grid,
@@ -767,7 +769,30 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
     const dom = reserveStatsBand(measDomain, ext.max, band, axisPx, !!o.logScale)
     opts[measAxis] = { ...(opts[measAxis] as object), domain: dom }
   }
-  return opts
+  return Object.assign(opts, userRangeClip(o))
+}
+
+/** Y min / Y max cut the measure axis, and Plot does not clip marks to it: a bar, box, whisker or area
+ *  past the range drew on over the margin, the tick labels and the legend. With a user range set every
+ *  data mark clips to the frame — Plot's plot-level default, which its axes and frames opt out of. */
+export const userRangeClip = (o: Pick<BuildOpts, 'yMin' | 'yMax'>): { clip?: true } =>
+  hasUserRange(o) ? { clip: true } : {}
+const hasUserRange = (o: Pick<BuildOpts, 'yMin' | 'yMax'>) =>
+  Number.isFinite(parseFloat(o.yMin)) || Number.isFinite(parseFloat(o.yMax))
+
+// what the binned / categorical charts draw on the measure axis: histogram bin counts, a category's
+// value (count or share), a stacked bar's total; a 100%-stacked bar always runs 0…1
+function binnedExtent(r: PlotDataResponse, o: Pick<BuildOpts, 'chartType'>): { min: number; max: number } | null {
+  if (o.chartType === 'stacked100') return { min: 0, max: 1 }
+  if (!STACKED_CHARTS.has(o.chartType) && o.chartType !== 'histogram' && o.chartType !== 'frequency') return null
+  let lo = Infinity, hi = -Infinity
+  const upd = (v: number) => { if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v } }
+  for (const s of r.series) {
+    const vs = (o.chartType === 'histogram' ? s.counts : (s.values ?? s.counts)) ?? []
+    if (STACKED_CHARTS.has(o.chartType)) upd(vs.reduce((a, v) => a + (Number.isFinite(v) ? v : 0), 0))
+    else vs.forEach(upd)
+  }
+  return Number.isFinite(lo) ? { min: Math.min(0, lo), max: hi } : null
 }
 
 // ── matrix / heatmap (Plot.cell) ──────────────────────────────────────────────────
@@ -1022,6 +1047,10 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   if (!fit.length) return null
   const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   const yhi = o.logScale ? hi : hi * 1.05
+  // auto: 0 (1 on log) … the curve's top; Y min / Y max replace either side — the measure-axis rule the
+  // distribution charts use, so a fraction can be read on 0…1 rather than 0…0.65
+  const autoLo = o.logScale ? 1 : 0
+  const yDomain = distDomain({ min: autoLo, max: hi }, { ...o, nonNegative: true }) ?? [autoLo, yhi > 0 ? yhi : 1]
   const legend = dedupLegend(color)
   const legendN = legend.domain.length
   const topPad = legendTopPad(legendN, o)
@@ -1042,14 +1071,15 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
   )
   const opts: Record<string, unknown> = {
-    ...THEME, color, marginTop: topPad,
+    // a user Y range clips the line/ribbon to the frame — the same plot-level clip every other chart uses
+    ...THEME, color, marginTop: topPad, ...userRangeClip(o),
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
     // "Time (<unit>)" only when the frames were actually converted — otherwise the axis IS the frame
     // index and must keep saying so rather than implying a unit it doesn't have
     x: { label: o.labX || (o.timeScale ? `Time (${tu.unit})` : frameAxisLabel(r.groupBy)), grid: o.grid,
          ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
-         ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },
+         ...(o.logScale ? { type: 'log' } : {}), domain: yDomain },
     ...fxScale(o),
     marks,
   }

@@ -4,7 +4,9 @@
   Supports nested section (collapsible box) with recursive rendering.
 -->
 <script setup lang="ts">
-import { pixelSizeUm } from '../utils/physicalSize'
+import { calibratedPixelSizesUm } from '../utils/physicalSize'
+import { isUmParam, umSliderRange, autoUmScale, finestPixelUm, badLength } from './umRange'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import { computed, ref, watch, onUnmounted, onDeactivated } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import { useProjectStore, type CciaImage } from '../stores/project'
@@ -18,8 +20,8 @@ import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
-import { autoValueName, valueNameOptions, showIfSatisfied,
-         paramAppliesToImages, resolveParamTip,
+import { autoValueName, valueNameOptions, paramApplies,
+         resolveParamTip,
          scopeValueName, scopeValueNames, siblingKeyOfType, popReloadSources, colsReloadSources, popChipValues, groupOrderKeys, newEntryDefaults, sharedChannels } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
@@ -64,6 +66,8 @@ export interface ParamContext {
                                // step's gates, tracking's `/_tracked`) — offered beside the image's
   keepChosenNames?: boolean    // valueNameSelection: never replace a chosen name (the chain editor —
                                // the node's name is the plan; see `autoValueName`)
+  umScale?: number             // a `unit` param's slider factor (`tasks/umRange.ts`); absent = auto
+                               // from the finest selected pixel size
 }
 
 const props = defineProps<{
@@ -94,10 +98,9 @@ const emit = defineEmits<{
 // Any one true means it renders nowhere rather than sitting there empty and looking broken. The
 // server-side twin filters these out of the effective run in `params_for_image`, so the handler's
 // `get(params, key, default)` returns the "off" default.
+// A section with every child ruled out counts as not applicable too — `paramApplies` recurses.
 const notApplicable = computed(() =>
-  props.param.hidden === true
-  || !showIfSatisfied(props.param.showIf, props.context?.values)
-  || !paramAppliesToImages(props.param, props.context?.images))
+  !paramApplies(props.param, props.context?.values, props.context?.images))
 
 // Which tip text to actually show. A plain `tip: "..."` is a constant; a `tips: [{text, requires}]`
 // array picks by image axes (first match wins). Callers still bind `v-tooltip.*` on the resolved
@@ -129,6 +132,18 @@ const val = computed({
   get: () => props.modelValue ?? props.param.default,
   set: (v) => emit('update:modelValue', v),
 })
+
+// int/float slider range. A `unit` param's range follows the image scale (`umRange.ts`), and a typed
+// value outside it is kept — the slider just sits at its end.
+const umParam = computed(() => isUmParam(props.param))
+const sliderRange = computed(() => umSliderRange(props.param,
+  props.context?.umScale ?? autoUmScale(finestPixelUm(props.context?.images)?.um)))
+const numDraft = useFieldDraft(() => val.value as number | undefined)
+function commitNumber() {
+  const n = props.param.type === 'int' ? parseInt(numDraft.value) : parseFloat(numDraft.value)
+  if (Number.isFinite(n) && !badLength(props.param, n)) val.value = n
+  else numDraft.value = String(val.value ?? '')
+}
 
 // valueNameSelection: intersection of available names across selected images.
 // Which field is used depends on param.field:
@@ -597,8 +612,7 @@ const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
 // spanning two objectives has no single answer, and printing one of them would state a scale that is
 // wrong for the others; the strip falls back to form units and says so.
 const groupPxSize = computed<number | null>(() => {
-  const sizes = (props.context?.images ?? [])
-    .map(i => pixelSizeUm(i.physicalSizeX, i.physicalSizeUnit)).filter((v): v is number => typeof v === 'number' && v > 0)
+  const sizes = calibratedPixelSizesUm(props.context?.images)
   if (!sizes.length) return null
   return sizes.every(v => v === sizes[0]) ? sizes[0] : null
 })
@@ -779,16 +793,21 @@ function onChannelUpdate(next: string[]) {
       <input
         type="range"
         class="slider"
-        :min="param.min ?? 0"
-        :max="param.max ?? 100"
-        :step="param.step ?? (param.type === 'int' ? 1 : 0.01)"
+        :min="sliderRange.min"
+        :max="sliderRange.max"
+        :step="sliderRange.step"
         :value="val as number"
         @input="val = param.type === 'int'
           ? parseInt(($event.target as HTMLInputElement).value)
           : parseFloat(($event.target as HTMLInputElement).value)"
-        v-tooltip.bottom="`${val} (range ${param.min}–${param.max})`"
+        v-tooltip.bottom="`${val} (range ${sliderRange.min}–${sliderRange.max})`"
       />
-      <span class="slider-val">{{ val }}</span>
+      <!-- a length/area: type any value, the slider range is only the usual span at this scale -->
+      <input v-if="umParam" type="number" class="cc-input-xs slider-num" min="0"
+        :step="sliderRange.step" v-model="numDraft" :aria-label="param.label"
+        v-tooltip.bottom="'Type a value outside the slider range'"
+        @change="commitNumber" />
+      <span v-else class="slider-val">{{ val }}</span>
     </div>
 
     <!-- bool → shared toggle switch. No `v-tooltip`: `param-label` above already carries `param.tip`
@@ -1228,8 +1247,10 @@ function onChannelUpdate(next: string[]) {
       </div>
       <div class="group-entry-body">
         <template v-for="p in param.params" :key="p.key">
-          <!-- Section inside group: collapsible visual box, flat data storage -->
+          <!-- Section inside group: collapsible visual box, flat data storage. Not drawn when it
+               does not apply to THIS entry — incl. every child ruled out (`paramApplies`). -->
           <template v-if="p.type === 'section'">
+            <template v-if="paramApplies(p, entryContext(entry.vals)?.values, context?.images)">
             <button
               class="group-section-toggle cc-section-toggle cc-eyebrow"
               @click="toggleGroupSection(entry.key, p.key, p.collapsed ?? false)"
@@ -1253,6 +1274,7 @@ function onChannelUpdate(next: string[]) {
         @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
               />
             </div>
+            </template>
           </template>
           <ParamRenderer
             v-else
@@ -1322,6 +1344,7 @@ function onChannelUpdate(next: string[]) {
 }
 /* the look is the global slider base (style.css → Sliders) */
 .slider { flex: 1; }
+.slider-num { width: 5.5em; text-align: right; }
 .slider-val {
   font-size: var(--cc-fs-sm);
   font-family: var(--cc-mono);

@@ -6,15 +6,16 @@ using Statistics: median
 # does for chain.jl / task.jl. Nothing here `module`s the sub-files — the runtime is one namespace,
 # and struct/const definitions load top-down, function bodies resolve at call time.
 #
-#   reader.jl      — pure metadata reads. `_delta_t_fallback` (OME time-interval recovery), the NGFF/series structural readers (`series_base`,
-#                    `bf2raw_series_subdir`, `ngff_attrs`, `ngff_multiscales`, `ngff_version`,
-#                    `zarr_array_meta`), and `read_ome_metadata` — the single flat-Dict reader
-#                    every consumer (api/image_geometry.jl, qc.jl, coastal, this task) shares.
+#   reader.jl      — pure metadata reads. `_delta_t_fallback` (OME time-interval recovery),
+#                    `bf2raw_series_subdir`, `zarr_group_meta_files`, and `read_ome_metadata` — the
+#                    single flat-Dict reader every consumer (api/image_geometry.jl, qc.jl, coastal, this
+#                    task) shares. The structural readers underneath (`series_base`, `ngff_attrs`,
+#                    `ngff_multiscales`, `ngff_version`, `zarr_array_meta`, `store_axis_sizes`) and the
+#                    stat-only `store_rev` / `store_written_at` fingerprint live in the model tier,
+#                    `app/src/model/zarr_store.jl`, because QC and the task framework ask them too.
 #   source_timing.jl — `_fill_source_time_increment!`: the interval for a store with none — what the
 #                    source file measured (`_recover_ims_time_increment!`), else what the publisher
 #                    declared at registration (`_apply_declared_time_increment!`, Immunemap).
-#   fingerprint.jl — `store_rev`, a stat-only "did this store change" fingerprint (the viewer's
-#                    reload-only-on-change gate, `/api/viewer/meta` → `storeRevs`).
 #   calibration.jl — metadata WRITERS. `update_ome_scale!` (NGFF axis scale + unit) and
 #                    `update_ome_xml_pixels!` (OME-XML `Pixels` attrs) — kept together because a
 #                    calibration edit must land in BOTH halves or the store disagrees with itself.
@@ -33,13 +34,13 @@ using Statistics: median
 #                    finished (the probe reports it), unless the import keeps it.
 #   staging.jl     — source copying — `_stage_source!` and the yielding chunked copy underneath, so
 #                    a multi-GB import doesn't freeze the WS server. The COMPANION detector
-#                    (`_companion_files`) also lives here since the staging step is what fans it out.
+#                    (`_companion_files`) and `import_source_fingerprint` live in `app/src/utils.jl`
+#                    beside `source_fingerprint`, since QC re-takes the fingerprint too.
 #   task.jl        — the `ImportOmezarr` task itself: struct, `ImportOmezarrParams`,
 #                    `parse_import_omezarr_params`, and the `_run_task` that stitches everything above
 #                    together.
 include(joinpath(@__DIR__, "omezarr", "reader.jl"))
 include(joinpath(@__DIR__, "omezarr", "source_timing.jl"))
-include(joinpath(@__DIR__, "omezarr", "fingerprint.jl"))
 include(joinpath(@__DIR__, "omezarr", "calibration.jl"))
 include(joinpath(@__DIR__, "omezarr", "ccid_sync.jl"))
 include(joinpath(@__DIR__, "omezarr", "saturation.jl"))

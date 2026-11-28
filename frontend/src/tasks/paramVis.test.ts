@@ -150,7 +150,7 @@ describe('paramVisColumns', () => {
     // What this pass IS is what you check before any number.
     const roles = paramVisColumns(GROUP, TWO_PASS, ['0', '1']).rows.map(r => r.role)
     const rank = { text: 0, diameter: 1, blur: 1, distance: 1, area: 1, fraction: 2,
-                   grid: 0 } as const
+                   grid: 0, scene: 0 } as const
     expect(roles.map(r => rank[r])).toEqual([...roles.map(r => rank[r])].sort())
     expect(roles[0]).toBe('text')
   })

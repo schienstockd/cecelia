@@ -134,6 +134,10 @@ end
             # a track plot asking for the share column gets it (the cluster heatmap's read)
             tdf = pop_df(img, "flow", ["$vn/all"]; granularity = :track, pop_cols = [tok])
             @test tok in names(tdf) && all(r -> r[tok] ≈ fr[Int(r.track_id)], eachrow(tdf))
+            # …and so does a track-grained pop_type (`track`/`trackclust` — a track cluster run's heatmap),
+            # which reads `track_props` directly: the share is in no table, so it must be added (#2557)
+            gdf = pop_df(img, "track", [ROOT]; value_name = vn, granularity = :track, pop_cols = ["num_cells", tok])
+            @test tok in names(gdf) && nrow(gdf) > 0 && all(r -> r[tok] ≈ fr[Int(r.label)], eachrow(gdf))
             # its own tracks are exactly those
             @test nrow(r.table) == nrow(track_classes(img; value_name = vn, parent = "/all").table)   # not a sub-population
         finally

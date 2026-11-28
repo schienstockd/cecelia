@@ -32,6 +32,9 @@ export interface ParamDef {
   min?: number
   max?: number
   step?: number
+  // A length (`um`) or area (`um2`): the slider range scales with the selected images' pixel size and
+  // a typed value outside it is allowed (`tasks/umRange.ts`; server checks sign only)
+  unit?: 'um' | 'um2'
   default?: unknown
   // select / valueNameSelection
   // `help` is per-OPTION guidance — "when would I pick this one" — shown under the select once that

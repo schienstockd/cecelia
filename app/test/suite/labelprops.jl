@@ -9,9 +9,26 @@
         "noiseInital" => 300, "distThresh" => 10.0, "segmentationMissRate" => 0.1,
     )
     @test begin validate_params(task, good); true end
-    # maxSearchRadius max is 200
+    # maxSearchRadius is a length (`unit: "um"`): its spec 1–200 is the 2P slider span, not a bound.
+    # Super-resolution data needs a sub-µm radius, a coarse one may type past 200; only the sign is
+    # checked (floor 1 > 0, so 0 is refused too) — docs/MODULES.md → Length params.
+    @test begin validate_params(task, merge(good, Dict{String,Any}("maxSearchRadius" => 0.3))); true end
+    @test begin validate_params(task, merge(good, Dict{String,Any}("maxSearchRadius" => 500))); true end
     @test_throws ParamValidationError validate_params(
-        task, merge(good, Dict{String,Any}("maxSearchRadius" => 500)))
+        task, merge(good, Dict{String,Any}("maxSearchRadius" => 0)))
+    @test_throws ParamValidationError validate_params(
+        task, merge(good, Dict{String,Any}("maxSearchRadius" => -1)))
+    @test Cecelia.parse_bayesian_tracking_params(Dict{String,Any}("maxSearchRadius" => 0.3)).maxSearchRadius == 0.3
+    # a STORED length (a chain node's bag) keeps a value outside its slider span — only a bad sign
+    # is pulled in (`_clamp_to_spec` → `_clamp_to_range`)
+    @test Cecelia._clamp_to_range(0.4, Dict{String,Any}("unit" => "um", "min" => 5, "max" => 500)) == 0.4
+    @test Cecelia._clamp_to_range(900, Dict{String,Any}("unit" => "um", "min" => 5, "max" => 500)) == 900
+    @test Cecelia._clamp_to_range(0, Dict{String,Any}("unit" => "um", "min" => 5, "max" => 500)) == 5
+    @test Cecelia._clamp_to_range(-2, Dict{String,Any}("unit" => "um2", "min" => 0, "max" => 10)) == 0
+    @test Cecelia._clamp_to_spec(task, Dict{String,Any}("maxSearchRadius" => 0.3))["maxSearchRadius"] == 0.3
+    # maxLost has no unit: its range stays a bound
+    @test_throws ParamValidationError validate_params(
+        task, merge(good, Dict{String,Any}("maxLost" => 500)))
     # segmentationMissRate min is 0.001
     @test_throws ParamValidationError validate_params(
         task, merge(good, Dict{String,Any}("segmentationMissRate" => 0.0)))

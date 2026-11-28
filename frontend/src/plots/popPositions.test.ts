@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { containBox, tileBox, GATE_CELL_PAD, framesIn, popWireToken, positionLayers, positionPops,
+import { containBox, tileBox, GATE_CELL_PAD, GREY_BASE, colourColumn, framesIn, popWireToken, positionLayers, positionPops,
          resolveFrame, sharedValueScale } from './popPositions'
 import { POPULATION_PALETTE } from './plot'
 
@@ -113,5 +113,13 @@ describe('population positions — colour by a value', () => {
     ])
     expect(s).toEqual({ extent: [-5, 10], ticks: [{ pos: -5, label: '-5' }, { pos: 0, label: '0' }, { pos: 10, label: '10' }] })
     expect(sharedValueScale([{ valueRange: null }, {}])).toBeNull()
+  })
+})
+
+describe('population positions — colour', () => {
+  it('the grey backdrop is a population colouring, never sent as a column', () => {
+    expect(colourColumn(GREY_BASE)).toBe('')
+    expect(colourColumn('')).toBe('')
+    expect(colourColumn('CD4')).toBe('CD4')
   })
 })

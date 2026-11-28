@@ -9,8 +9,10 @@
   module pages) or, on a Cluster / Region page, the populations its manager has switched on
   (`shownPops`). Data: `GET /api/plots/pop-positions` (`meta=1` per image for the axes, then the
   cells — both with the populations); the layer split is `plots/popPositions.ts` (tested). Drawn by the shared `GateScatterCell`,
-  read-only. Colour by: the populations (default), or a cell column — a Find similar lens score above all
-  (`colourByGroups`) — shading every cell on ONE scale across the tiles (`sharedValueScale`; a lens score's
+  read-only. A movie plays through its frames (`PlayPauseButton` + `usePlaybackTimer`, the viewer's).
+  Colour by: the populations over the all-cells density (default), the populations over every
+  cell in plain grey (`GREY_BASE` — the picked populations are then the only colour), or a cell column —
+  a Find similar lens score above all (`colourByGroups`) — shading every cell on ONE scale across the tiles (`sharedValueScale`; a lens score's
   is fixed at 0–1), so the images compare side by side.
 -->
 <script setup lang="ts">
@@ -23,9 +25,12 @@ import GateScatterCell from './GateScatterCell.vue'
 import PopFamilySelect from './PopFamilySelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import CcToggle from '../CcToggle.vue'
+import PlayPauseButton from '../PlayPauseButton.vue'
+import { usePlaybackTimer } from '../../composables/usePlaybackTimer'
+import { playbackAdvance } from '../../utils/volumeCache'
 import SearchSelect from '../SearchSelect.vue'
 import ColourBarLegend from './ColourBarLegend.vue'
-import { allColourBy, colourByGroups, fetchColourByColumns, NO_COLOUR_BY, type ColourByColumns } from '../../utils/viewer/colourByColumns'
+import { colourByGroups, fetchColourByColumns, NO_COLOUR_BY, type ColourByColumns } from '../../utils/viewer/colourByColumns'
 import { useLensNames } from '../../composables/useLensNames'
 import { lensLabel } from '../../utils/viewer/lensQuery'
 import type { PopLayer } from './PlotLayers.vue'
@@ -36,7 +41,7 @@ import { fetchSegmentationPops } from '../../plots/populations'
 import type { CompareMode } from '../../plots/trackGroups'
 import type { VisProps } from '../../plots/plot'
 import { dotRadiusFor } from '../../plots/density'
-import { GATE_CELL_PAD, framesIn, tileBox, positionLayers, positionPops, resolveFrame,
+import { GATE_CELL_PAD, GREY_BASE, colourColumn, framesIn, tileBox, positionLayers, positionPops, resolveFrame,
          sharedValueScale } from '../../plots/popPositions'
 import { fitGridCols } from '../../plots/montage'
 import { useBoxSize } from '../../composables/usePlotResize'
@@ -68,8 +73,10 @@ const project = useProjectStore()
 const { options: familyOptions, popType: railFamily } =
   usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
 const onRail = computed(() => !!props.popTypes?.length)
-// colour by: '' = the populations, else a cell column (persisted per panel)
+// colour by: '' = the populations, GREY_BASE = the populations on grey, else a cell column (persisted per panel)
 const colourBy = computed({ get: () => props.state.colourBy ?? '', set: v => (props.state.colourBy = v) })
+const greyBase = computed(() => colourBy.value === GREY_BASE)
+const column = computed(() => colourColumn(colourBy.value))
 const family = computed(() => onRail.value ? railFamily.value : (props.popType ?? 'flow'))
 const ownSeries = computed(() => filterSeriesToPopType(props.series ?? [], family.value))
 
@@ -104,13 +111,17 @@ watch([() => uids.value[0], columnsVn], async ([uid, vn]) => {
 }, { immediate: true })
 // a lens is named as it was renamed (Movies & figures / the viewer's Lenses), not by its column
 const lensNames = useLensNames(() => props.projectUid)
-const colourGroups = computed(() => colourByGroups(columns.value, lensNames.value))
-const valueScale = computed(() => (colourBy.value ? sharedValueScale(tiles.value.map(t => t.meta)) : null))
+// the two population colourings lead the list: on the density (default) or on plain grey
+const colourGroups = computed(() => {
+  const [lead, ...rest] = colourByGroups(columns.value, lensNames.value, 'Populations on density')
+  return [{ options: [...lead!.options, { value: GREY_BASE, label: 'Populations on grey' }] }, ...rest]
+})
+const valueScale = computed(() => (column.value ? sharedValueScale(tiles.value.map(t => t.meta)) : null))
 // the legend switch (the rail's Legend): the population key and the colour bar, both in the controls
 // strip above the tiles — one for the grid (`ColourBarLegend`, the montage's rule), never on a tile
 const showLegend = computed(() => props.vis?.legend !== false)
-const valueLabel = computed(() => colourBy.value.startsWith('spatial.lens.')
-  ? `like ${lensLabel(colourBy.value, lensNames.value)}` : colourBy.value)
+const valueLabel = computed(() => column.value.startsWith('spatial.lens.')
+  ? `like ${lensLabel(column.value, lensNames.value)}` : column.value)
 const loading = ref(false)
 useDelayedLoading(loading)
 const error = ref('')
@@ -122,7 +133,7 @@ async function fetchTiles(isCurrent: () => boolean) {
     for (const uid of uids.value) {
       const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: uid, popType: family.value })
       if (pops.value.length) q.set('pops', pops.value.map(p => p.token).join(','))
-      if (colourBy.value) q.set('colourBy', colourBy.value)
+      if (column.value) q.set('colourBy', column.value)
       const mr = await tryApi(getJson<Meta>(`/api/plots/pop-positions?${q}&meta=1`))
       if (!mr.ok) continue
       const meta = mr.data
@@ -143,7 +154,7 @@ async function fetchTiles(isCurrent: () => boolean) {
 const run = debouncedLatest<void>((_a, isCurrent) => fetchTiles(isCurrent),
   { wait: 150, onState: st => { loading.value = st !== 'idle' },
     onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
-watch([() => uids.value.join(','), family, () => pops.value.map(p => p.token).join(','), () => colourBy.value],
+watch([() => uids.value.join(','), family, () => pops.value.map(p => p.token).join(','), () => column.value],
       () => run.schedule(), { immediate: true })
 onBeforeUnmount(() => run.cancel())
 // a task finishing on one of these images (a new region run, a re-gate) redraws the plot
@@ -162,6 +173,21 @@ const frameIdx = computed({
   get: () => Math.max(0, frames.value.indexOf(frame.value ?? frames.value[0]!)),
   set: i => (frame.value = frames.value[i] ?? null),
 })
+
+// play: steps the slider through the frames in a loop. A frame is drawn from the cells already loaded,
+// so the only wait is a refetch in flight (a population ticked mid-play) — the step holds until it lands.
+const PLAY_FPS = 5
+const playing = ref(false)
+const canPlay = () => isMovie.value && !allFrames.value
+const { stopPlay, togglePlay } = usePlaybackTimer({
+  playing, fps: () => PLAY_FPS, canPlay,
+  step: () => {
+    const s = playbackAdvance(frameIdx.value, frames.value.length, true, () => !loading.value)
+    if (s.ended) return 'ended'
+    if (!s.stalled) frameIdx.value = s.t
+  },
+})
+watch([isMovie, allFrames], () => { if (playing.value && !canPlay()) stopPlay() })
 
 const imageName = (uid: string) =>
   project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
@@ -196,7 +222,7 @@ const tileStyle = (e: Ext) => {
     <div class="ppv-ctrl cc-panel-controls">
       <div class="cc-row">
         <PopFamilySelect v-if="onRail" :options="familyOptions" v-model="railFamily" />
-        <span v-if="allColourBy(columns).length" class="cc-row-group" v-tooltip.top="'Colour the cells by populations or a measure'">
+        <span class="cc-row-group" v-tooltip.top="'Colour the cells by populations or a measure'">
           <span class="cc-fs-xs">Colour</span>
           <SearchSelect v-model="colourBy" :groups="colourGroups" aria-label="Colour by" />
         </span>
@@ -206,8 +232,9 @@ const tileStyle = (e: Ext) => {
             <span class="cc-fs-xs">All frames</span>
           </span>
           <span v-if="!allFrames" class="cc-row-group ppv-frame">
+            <PlayPauseButton :playing="playing" @toggle="togglePlay" />
             <input v-model.number="frameIdx" type="range" min="0" :max="frames.length - 1" step="1"
-                   aria-label="Frame" v-tooltip.top="'Frame'" />
+                   aria-label="Frame" v-tooltip.top="'Frame'" @pointerdown="stopPlay" />
             <span class="cc-fs-xs">t {{ frame }}</span>
           </span>
         </template>
@@ -231,7 +258,7 @@ const tileStyle = (e: Ext) => {
           <GateScatterCell :points="layers[t.uid]!.base" :extents="t.meta.extents" :view-extents="t.meta.extents"
                            :x-ticks="t.meta.xTicks" :y-ticks="t.meta.yTicks"
                            :x-label="`X (${t.meta.unit})`" :y-label="`Y (${t.meta.unit})`"
-                           :pop-layers="layers[t.uid]!.popLayers" :show-pops="pops.length > 0 && !valueScale"
+                           :pop-layers="layers[t.uid]!.popLayers" :show-pops="pops.length > 0 && !valueScale" :base-grey="greyBase"
                            :base-values="valueScale ? layers[t.uid]!.values : null"
                            :value-extent="valueScale?.extent ?? null" :value-ticks="valueScale?.ticks ?? []"
                            :value-label="valueLabel" :value-legend="false"

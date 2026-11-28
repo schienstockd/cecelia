@@ -494,6 +494,8 @@ function handle_movie_record(ws, data)
     # keyframe). Absent snapshot (an old client) leaves the record path at whole-image aspect.
     view_state_raw = get(data, :viewState, nothing)
     view_state     = view_state_raw isa AbstractDict ? view_state_raw : nothing
+    # blank sizes: the viewer's canvas, or native pixels ("full") — the movie options' `res`
+    resolution     = _movie_resolution(data)
     # What produced this movie, banked into settings/movies.json once the bytes land (Phase 4 of
     # docs/todo/MOVIE_MANAGEMENT_PLAN.md). Assembled HERE rather than inside the recorder, so the
     # recorder keeps knowing nothing about the request shape. `look` is the viewer's live channels +
@@ -508,7 +510,7 @@ function handle_movie_record(ws, data)
     movie_config = MovieRecordConfig(;
         imageUid = image_uid,
         keyframeMeta = get(data, :keyframeMeta, nothing),
-        fps = fps, sizeX = size_x, sizeY = size_y, suffix = suffix,
+        fps = fps, sizeX = size_x, sizeY = size_y, resolution = String(resolution), suffix = suffix,
         titleCard = tc,
         valueNames = value_names, labelValueNames = label_vns,
         branchValueNames = branch_vns, labelContour = contour,
@@ -609,7 +611,7 @@ function handle_movie_record(ws, data)
                                     share_contrast = share_ctr, layout = layout,
                                     t_start = t_start, t_end = t_end,
                                     show_timestamp = show_ts, show_scale_bar = show_sb,
-                                    view_state = view_state,
+                                    view_state = view_state, resolution = resolution,
                                     movie_config = movie_config)
         catch e
             @warn "offline compare grid crashed" exception = e
@@ -663,6 +665,7 @@ function handle_movie_record(ws, data)
                            overlays_raw = overlays_raw,
                            view_state = view_state,
                            match_viewer = match_viewer || Bool(get(data, :liveSpecs, false)),
+                           resolution = resolution,
                            movie_config = movie_config)
     catch e
         @warn "offline record crashed" exception = e

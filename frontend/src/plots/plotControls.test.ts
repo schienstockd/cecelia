@@ -12,6 +12,9 @@ import type { PlotDataResponse } from './types'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Stub = new Proxy({}, { get: (_t, mark) => (data: unknown, opts: unknown) => ({ mark, data, opts }) }) as any
 const two = (extra: object) => ['A', 'B'].map((p, i) => ({ pop: `/${p}`, value_name: 'T', uID: '', group: '', value: 2 + i, ...extra }))
+// histogram / frequency series as the server sends them: counts (and values), no scalar `value` — a fixture
+// with one hid that the Y range read the extent from `value` and so did nothing on these charts
+const twoBinned = (extra: object) => ['A', 'B'].map(p => ({ pop: `/${p}`, value_name: 'T', uID: '', group: '', ...extra }))
 // overlapping raw values, so the swarm/jitter offset has something to move
 const dist = { q1: 1, median: 2, q3: 3, lower: 0.5, upper: 4, mean: 2, n: 5, sd: 1, sem: 0.4, ci95: 0.8,
                points: [2, 2, 2, 2], pointIds: [1, 2, 3, 4] }
@@ -24,11 +27,11 @@ const fit = [{ k: 2, run: 'k2', logLik: -10, aic: 20, bic: 25, gain: null, conve
 const [A, B] = ['a long population name that will not fit/qc', 'another long population name here/qc']
 const matrix = (matrixMode: string) => R({ chartType: 'matrix', matrixMode, series: [], xLabels: [A, B], yLabels: [A, B],
   cells: [{ x: A, y: A, value: 1 }, { x: B, y: A, value: -2 }, { x: A, y: B, value: 3 }, { x: B, y: B, value: 0.5 }] })
-const freq = (chartType: string) => R({ chartType, categories: ['x', 'y'], series: two({ values: [0.3, 0.7] }) })
+const freq = (chartType: string) => R({ chartType, categories: ['x', 'y'], series: twoBinned({ counts: [3, 7], values: [0.3, 0.7] }) })
 
 // [name, kind, response, the vis the plot is drawn with]
 const CASES: [string, PlotKind, PlotDataResponse, object?][] = [
-  ['histogram', { chartType: 'histogram' }, R({ chartType: 'histogram', binEdges: [0, 1, 2, 3], series: two({ counts: [1, 2, 3] }) })],
+  ['histogram', { chartType: 'histogram' }, R({ chartType: 'histogram', binEdges: [0, 1, 2, 3], series: twoBinned({ counts: [1, 2, 3] }) })],
   ['bar', { chartType: 'bar' }, R({ chartType: 'bar', series: two(dist) })],
   ['count', { chartType: 'count' }, R({ chartType: 'count', series: two({ n: 5 }) })],
   ['percent', { chartType: 'percent' }, R({ chartType: 'percent', series: two({ n: 5, nPositive: 2 }) })],
@@ -110,5 +113,35 @@ describe('visControlsFor — the rail offers exactly what the renderer honours',
       expect(visControlsFor({ chartType: t })).not.toContain('stats')
     // a box plot grouped by time draws a trend line — no comparison is drawn on it
     expect(visControlsFor({ chartType: 'boxplot', trend: true })).not.toContain('stats')
+  })
+})
+
+describe('trend line — Y min / Y max set the axis (blank = auto)', () => {
+  // a fraction over time: the auto axis tops out at the curve (≈0.65), the user asks for 0…1
+  const r = R({ chartType: 'count', groupBy: 't', normalize: 'total',
+    series: [0, 1, 2, 3, 4, 5].map(t => ({ pop: '/A', value_name: 'T', uID: '', group: String(t), value: 0.4 + t * 0.04 })) })
+  const y = (v: object) => (buildPlotOptions(Stub, r, { ...defaultVis(), chartType: 'count', trend: true, byImage: false,
+    normalize: true, errorMetric: 'sd', nonNegative: true, plotWidth: 500, plotHeight: 300, legendHeight: 40,
+    colorOf: () => '#ff0000', ...v } as never) as { y: { domain: number[] } }).y.domain
+
+  it('auto runs 0 … the curve', () => {
+    const [lo, hi] = y({})
+    expect(lo).toBe(0)
+    expect(hi).toBeLessThan(1)
+  })
+  it('0 … 1 when asked', () => expect(y({ yMin: '0', yMax: '1' })).toEqual([0, 1]))
+  it('one side given, the other stays auto', () => {
+    expect(y({ yMax: '1' })).toEqual([0, 1])
+    expect(y({ yMin: '0.2' })[0]).toBe(0.2)
+  })
+  it('a range with no width falls back to auto', () => expect(y({ yMin: '1', yMax: '0.5' })).toEqual(y({})))
+
+  // the shared plot-level clip (userRangeClip), as on every other chart: on with a user range, off on auto
+  const clip = (v: object) => (buildPlotOptions(Stub, r, { ...defaultVis(), chartType: 'count', trend: true, byImage: false,
+    normalize: true, errorMetric: 'sd', nonNegative: true, plotWidth: 500, plotHeight: 300, legendHeight: 40,
+    colorOf: () => '#ff0000', ...v } as never) as { clip?: boolean }).clip
+  it('a user range clips the line to the frame; auto clips nothing', () => {
+    expect(clip({ yMax: '0.5' })).toBe(true)
+    expect(clip({})).toBeUndefined()
   })
 })

@@ -227,8 +227,7 @@ function _clamp_to_spec_params(ps, params::Dict{String,Any}, on_clamp::Function)
         elseif type in ("int", "float") && haskey(out, key)
             v = out[key]
             (v isa Real && !(v isa Bool) && isfinite(v)) || continue
-            mn = get(p, "min", nothing); mx = get(p, "max", nothing)
-            to = (!isnothing(mn) && v < mn) ? mn : (!isnothing(mx) && v > mx) ? mx : v
+            to = _clamp_to_range(v, p)   # a `unit` param keeps any non-negative value (validate.jl)
             to == v && continue
             type == "float" && (to = Float64(to))   # a JSON bound of `60.0` can read back as Int 60
             on_clamp(key, v, to)

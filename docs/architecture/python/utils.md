@@ -3,7 +3,7 @@
 > **Generated** by `scripts/architecture/python_extract.py` — do not edit; run `pixi run arch-diagrams`.
 
 
-`cecelia.utils` is 61 modules, 22.5k lines. Which ones carry the weight, and how they lean on each other.
+`cecelia.utils` is 61 modules, 22.6k lines. Which ones carry the weight, and how they lean on each other.
 
 ## The 20 most-imported modules
 

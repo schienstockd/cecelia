@@ -1,18 +1,3 @@
-function _companion_files(names::AbstractVector{<:AbstractString}, main::AbstractString)
-    stem   = first(splitext(main))       # main name WITHOUT extension, e.g. "…-res_0001"
-    prefix = stem * "_"
-    filter(names) do n
-        n == main && return true
-        # Olympus OIR companions are `<main-stem>_<digits>` and are typically EXTENSIONLESS, e.g.
-        # `…-res_0001.oir` (main) + `…-res_0001_00001`, `…-res_0001_00002`, … . So match a numeric
-        # run after `<stem>_` (with an optional extension), not a fixed 5-digit + same-extension shape
-        # — the earlier rule matched none of these, so only the main file staged and bioformats saw a
-        # fraction of the timepoints. Literal stem prefix still avoids grabbing a sibling `…-res_0002`.
-        startswith(n, prefix) || return false
-        occursin(r"^[0-9]+(\.[^.]+)?$", chop(n; head = length(prefix), tail = 0))
-    end
-end
-
 """
 Copy a source image (+ its companion file set) to a local scratch dir and return the path to the
 copied main file. Reading a multi-file format like Olympus OIR directly over SMB is dominated by
@@ -62,29 +47,4 @@ function _stage_source!(src_path::AbstractString, stage_dir::AbstractString;
     end
     on_log("[INFO] Staged $(length(files)) file(s) ($(round(copied / 1e9; digits = 1)) GB).")
     joinpath(stage_dir, basename(src_path))
-end
-
-
-"""
-    import_source_fingerprint(src_path; sample_bytes) -> Dict{String,Any}
-
-`source_fingerprint` of the file the import read, plus — for a multi-file format (Olympus OIR) — the
-companions' `count` and total `bytes` from `stat` alone (no reads), since the bulk of the pixels live
-in them and the main file's sample would not see them change. Banked as `meta.oriFingerprint`.
-Empty (and a `@warn`) when it can't be taken — a record, so it never fails the import.
-"""
-function import_source_fingerprint(src_path::AbstractString;
-                                   sample_bytes::Integer = SOURCE_FINGERPRINT_SAMPLE)::Dict{String,Any}
-    try
-        fp = source_fingerprint(src_path; sample_bytes = sample_bytes)
-        isempty(fp) && return fp
-        dir, main = dirname(abspath(src_path)), basename(src_path)
-        comps = filter(!=(main), _companion_files(readdir(dir), main))
-        isempty(comps) || (fp["companions"] = Dict{String,Any}("count" => length(comps),
-            "bytes" => sum(f -> filesize(joinpath(dir, f)), comps; init = 0)))
-        fp
-    catch e
-        @warn "Could not fingerprint the import source" src_path exception = e
-        Dict{String,Any}()
-    end
 end

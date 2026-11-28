@@ -700,7 +700,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                              :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice" v-model:zRange="zRange"
-                             v-model:renderQuality="renderQuality" />
+                             v-model:renderQuality="renderQuality" :blank-size="show3D && compareShapeNow.cells <= 1 ? 'canvas' : 'full'" />
         <!-- Only when there is a timelapse to trim. The bound is the LONGEST in the selection — the
              backend clamps each image to its own length, so a shorter one records to its end. -->
         <MovieTimeRange v-if="tFrames > 1" v-model:tStart="tStart" v-model:tEnd="tEnd" :frames="tFrames" />

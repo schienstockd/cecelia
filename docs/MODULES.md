@@ -994,6 +994,8 @@ picker keeps the default, where an id-like obs column would be a feature nobody 
   ]
 }
 ```
+A section whose every child is ruled out (`showIf`, `hidden`, `requires.axes` — nested sections
+included) is not drawn: no empty collapsible. One rule, `paramApplies` in `frontend/src/tasks/paramValues.ts`.
 
 ### Fields any param may carry
 
@@ -1204,6 +1206,24 @@ never runs on those paths. Test-enforced: every method of `validate_params` must
 
 **`step`** — slider granularity for `int` / `float`, alongside `min` and `max`.
 
+**`unit`** — *Length params (`unit`)*: `"um"` (a length) or `"um2"` (an area) on an `int` / `float`
+whose label says `(µm)` / `(µm²)` (ratchet: *a length param declares its unit*). Its `min`/`max`/`step`
+are then the slider span at ×1 — the pixel size the defaults were tuned at (`UM_REFERENCE_PX`, 0.3 µm,
+intravital 2P) — not bounds:
+
+- **Slider** — `frontend/src/tasks/umRange.ts`: the span × a factor (× factor² for an area), the step
+  rounded to 1-2-5. The factor is **auto** from the finest calibrated pixel size among the selected
+  images (`px / 0.3` → the nearest of 1, 0.5, 0.2, 0.1 …; never above 1, so coarse data keeps the spec
+  span), or one the user picks in the *µm ×…* select by the Parameters heading (kept per project in
+  `profileStorage`). SIM at 0.041 µm/px → ×0.1: `windowSize` 5–500 becomes 0.5–50 µm in 0.1 steps.
+  The chain editor uses auto.
+- **Typed value** — the param gets a number field beside the slider; any non-negative value is kept,
+  the slider just sits at its end.
+- **Server** — `_validate_range` / `_clamp_to_range` (`tasks/task/validate.jl`) check only the sign:
+  ≥ 0, or > 0 when the spec's floor is above 0. The frontend `clampToSpec` mirrors it.
+- **Defaults are NOT scaled** — a default above the scaled span shows as the slider at its end and the
+  typed number.
+
 **`collapsed`** — a `section` starts closed. Use for Advanced; a section the user needs on first run
 should not be collapsed.
 
@@ -1262,7 +1282,9 @@ the order chips.
 name's entry in `tasks/paramFigures.ts`. For a choice whose options differ in what they DO rather than
 in any number on the form, where `vis` has nothing to draw — smoothing's `temporalStat` is three words
 sharing the same window, the same sigma and the same channels, and what separates them is only visible
-as a spot moving through a window (a `grid` row with frames; see `VisRole`). The builder is handed the
+as a spot moving through a window (a `grid` row with frames; see `VisRole`) — or, when the options
+differ in geometry, a `scene` row of dots and lines (`neighbourGraph`: which cells Delaunay, kNN,
+radius and fixed windows link). The builder is handed the
 selected images and the CURRENT form values, so the figure redraws as the form changes and can size
 its own cost row to the user's movie. Named in the spec for the same reason `vis` is a role: a picture
 keyed off `temporalStat` inside `ParamRenderer` is a second description of the form, and the next task
