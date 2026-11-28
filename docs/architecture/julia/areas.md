@@ -21,11 +21,11 @@ flowchart LR
   run_records["run records<br/><small>3 files · 0.9k lines</small>"]
   scheduler_chains["scheduler+chains<br/><small>21 files · 5.3k lines</small>"]
   task_framework["task framework<br/><small>12 files · 3.7k lines</small>"]
-  tasks["tasks<br/><small>81 files · 12.7k lines</small>"]
+  tasks["tasks<br/><small>81 files · 12.6k lines</small>"]
   runner["runner<br/><small>5 files · 1.4k lines</small>"]
   cell_data["cell data<br/><small>4 files · 2.4k lines</small>"]
   gating["gating<br/><small>23 files · 6.3k lines</small>"]
-  tracking_spatial["tracking+spatial<br/><small>15 files · 4.6k lines</small>"]
+  tracking_spatial["tracking+spatial<br/><small>16 files · 4.8k lines</small>"]
   qc_checks["qc+checks<br/><small>8 files · 4.9k lines</small>"]
   plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
   ai_lab_log["ai+lab log<br/><small>20 files · 4.9k lines</small>"]
@@ -34,9 +34,9 @@ flowchart LR
   package_root -->|46| tasks
   plots_boards -->|39| model
   tasks -->|36| config
+  tasks -->|35| tracking_spatial
   plots_boards -->|31| gating
   tasks -->|31| cell_data
-  tasks -->|29| tracking_spatial
   ai_lab_log -->|28| gating
   ai_lab_log -->|25| model
   scheduler_chains -->|24| task_framework
@@ -75,11 +75,11 @@ flowchart LR
     config["config<br/><small>16 files · 3.8k lines</small>"]
     scheduler_chains["scheduler+chains<br/><small>21 files · 5.3k lines</small>"]
     task_framework["task framework<br/><small>12 files · 3.7k lines</small>"]
-    tasks["tasks<br/><small>81 files · 12.7k lines</small>"]
+    tasks["tasks<br/><small>81 files · 12.6k lines</small>"]
     runner["runner<br/><small>5 files · 1.4k lines</small>"]
     cell_data["cell data<br/><small>4 files · 2.4k lines</small>"]
     gating["gating<br/><small>23 files · 6.3k lines</small>"]
-    tracking_spatial["tracking+spatial<br/><small>15 files · 4.6k lines</small>"]
+    tracking_spatial["tracking+spatial<br/><small>16 files · 4.8k lines</small>"]
     qc_checks["qc+checks<br/><small>8 files · 4.9k lines</small>"]
     plots_boards["plots+boards<br/><small>12 files · 4.9k lines</small>"]
     hpc["hpc<br/><small>9 files · 2.5k lines</small>"]
@@ -141,7 +141,6 @@ Both directions present (any n). In one module these are legal, but each pair is
 | task framework ↔ cell data | 4: `label_props`, `n_obs`, `select_cols`, `view_centroid_cols` | 1: `_task_spec` |
 | task framework ↔ qc+checks | 1: `channel_signal_flags` | 4: `_composite_step_names`, `_stored_key`, `_task_from_fun_name`, `task_params_name` |
 | task framework ↔ ai+lab log | 1: `active_profile_name` | 6: `CompositeTask`, `_composite_step_names`, `_composite_steps`, `_show_if_satisfied`, … |
-| tasks ↔ tracking+spatial | 29: `_basis_name`, `_basis_segments`, `add_track_pop_fractions!`, `append_corrections!`, … | 7: `Track`, `_comp_col`, `roi_review_labels`, `track_displacement`, … |
 | tasks ↔ plots+boards | 3: `_obs_suffixes`, `_rm_if`, `prune_stale_hmmfit!` | 8: `TrackMeasures`, `_motiffeatures_path`, `_region_owned_cols`, `aggregate_qc_key`, … |
 | tasks ↔ hpc | 1: `hpc_task_cpus` | 1: `zarr_group_meta_files` |
 | python bridge ↔ hpc | 1: `_run_py_hpc` | 3: `_app_dir`, `_py_task_env`, `pixi_env_name` |
@@ -179,12 +178,12 @@ The declared order, bottom first (`[layers]` in `julia_areas.toml`). An area may
 | **run records** | 5 |  | 6 | · | 6 | 5 |  |  |  |  | 4 |  |  |  |  |  |  |  |
 | **scheduler+chains** | 15 | 1 | 14 | 20 | · | 24 | 2 | 2 | 3 | 2 | 8 |  | 2 |  | 3 | 1 | 1 |  |
 | **task framework** | 15 | 3 | 9 | 4 | 2 | · |  |  |  | 4 |  |  | 1 |  |  | 1 |  |  |
-| **tasks** | 68 | 1 | 36 | 5 | 1 | 7 | · |  | 2 | 31 | 24 | 29 | 18 | 3 | 1 |  |  |  |
+| **tasks** | 68 | 1 | 36 | 5 | 1 | 7 | · |  | 2 | 31 | 24 | 35 | 18 | 3 | 1 |  |  |  |
 | **runner** | 4 | 1 | 13 |  | 18 | 2 |  | · |  |  |  |  |  |  |  | 1 | 6 |  |
 | **python bridge** |  |  | 7 | 2 |  | 1 |  |  | · |  |  |  |  |  | 1 |  |  |  |
 | **cell data** | 20 |  | 7 | 10 | 1 | 1 |  |  | 2 | · | 2 | 2 | 2 |  |  |  |  |  |
 | **gating** | 17 |  | 13 | 4 |  |  |  |  |  | 16 | · | 8 | 6 |  |  |  |  |  |
-| **tracking+spatial** | 16 |  | 2 |  |  |  | 7 |  |  | 20 | 14 | · | 1 | 3 |  |  |  |  |
+| **tracking+spatial** | 16 |  | 2 |  |  |  |  |  |  | 20 | 14 | · | 1 | 3 |  |  |  |  |
 | **qc+checks** | 21 |  | 6 | 4 | 3 | 4 |  |  |  | 2 | 12 |  | · |  |  |  |  |  |
 | **plots+boards** | 39 |  | 7 | 4 | 3 | 5 | 8 |  | 2 | 10 | 31 | 8 | 7 | · |  | 4 |  |  |
 | **hpc** | 1 | 1 | 13 | 1 | 4 | 1 | 1 |  | 3 |  |  |  |  |  | · |  |  |  |

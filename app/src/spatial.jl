@@ -14,6 +14,14 @@ using DataFrames: DataFrame, groupby, combine, nrow, rename!, sort!, dropmissing
 
 _region_col(suffix::AbstractString) = "regions.$(suffix)"
 
+# The per-cell composition obs column for one basis population (`clustRegions.cluster`, the lens query).
+# ONE namer, in Julia: the name is passed to the Python runner (which writes the column) AND recorded in
+# the clustfeatures sidecar (which the heatmap reads as its row universe). They previously disagreed — Python sanitised the pop name into
+# `spatial.comp.B_qc__tracked.{suffix}` while Julia recorded the raw pop name `B/qc/_tracked`, so the
+# region composition heatmap asked for columns that did not exist and 400'd.
+_comp_col(basis_pop::AbstractString, suffix::AbstractString) =
+    "spatial.comp.$(replace(String(basis_pop), "/" => "_", " " => "_")).$(suffix)"
+
 # Display name of the composition "other" bin — graph neighbours outside the analysis's basis. One
 # constant so the column name, the sidecar label and any UI text agree.
 const OTHER_BASIS_NAME = "other"
