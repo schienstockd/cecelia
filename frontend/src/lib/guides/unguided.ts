@@ -280,6 +280,16 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Look at the proximity plots on a real PhenoCycler or IBEX set')],
   }) },
+  { id: 'region-edge', title: 'Distance to region edge', group: 'Explore', maturity: covering(['spatialAnalysis.regionEdge'], {
+    tier: 'experimental', testedOn: 'Real PhenoCycler sections, split and cropped; synthetic layouts',
+    evidence: [
+      { path: 'python/cecelia/tests/test_region_edge_utils.py', test: 'test_frame_is_not_boundary',
+        failsIf: 'a cell where the tissue leaves the image reads distance 0' },
+      { path: 'python/cecelia/tests/test_region_edge_utils.py', test: 'test_tear_is_filled_unless_asked_not_to',
+        failsIf: 'a tear inside the tissue counts as an edge' },
+    ],
+    next: [todo('Look at the boundary line and distances on a 3D stack and a timecourse')],
+  }) },
   { id: 'motif-discovery', title: 'Motif discovery', group: 'Explore', maturity: covering(['behaviour.motif_discovery'], {
     tier: 'experimental', testedOn: 'A real measured + tracked fixture',
     next: [

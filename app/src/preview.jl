@@ -99,7 +99,9 @@ _is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
 # 22: new backend `segment.ridgesMeasure`; a protocol-21 worker answers "no preview backend" for it.
 # 23: new backend `editImages.splitTissues` (whole image, `wholeImage`/`countNoun` in the reply); a
 # protocol-22 worker answers "no preview backend" for it.
-const PREVIEW_PROTOCOL = 23
+# 24: new backend `spatialAnalysis.regionEdge` (the region's shape, whole image); a protocol-23 worker
+# answers "no preview backend" for it.
+const PREVIEW_PROTOCOL = 24
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 # `env` is the pixi env the worker runs in — `nothing` for the default (cellpose 4), `:cellpose_v3` for

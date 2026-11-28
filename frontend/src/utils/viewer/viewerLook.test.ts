@@ -23,6 +23,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   maskColour: 'id',
   trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {}, graphVisible: {}, graphColour: '#ffffff', graphWidth: 1, graphPopsOnly: false,
+  edgeVisible: {}, edgeColour: '#ffd33d', edgeWidth: 2,
   scaleBar: true, timestamp: false, scaleBarPx: 24, timestampPx: 18, steps: 384,
   ...over,
 })
@@ -307,5 +308,19 @@ describe('viewerLook — neighbour graphs', () => {
     expect(cfg.spatialGraphWidth).toBe(1)
     const cfg2 = buildBatchMovieConfig(viewerLook(base({ graphVisible: { net: true }, graphPopsOnly: true })), ['cpSAM'], {})
     expect(cfg2.spatialGraphPopsOnly).toBe(true)
+  })
+})
+
+describe('viewerLook — region edges', () => {
+  it('records the shown boundaries as lines in the picked colour and width', () => {
+    const l = viewerLook(base({ edgeVisible: { tissue: true, gc: false }, edgeColour: '#00ffff', edgeWidth: 3 }))
+    expect(l.regionEdges).toEqual({ tissue: '#00ffff' })
+    expect(l.regionEdgeWidth).toBe(3)
+    expect(viewerLook(base({ edgeVisible: { tissue: false } })).regionEdges).toBeUndefined()
+  })
+  it('a batch filled from the view sends them', () => {
+    const cfg = buildBatchMovieConfig(viewerLook(base({ edgeVisible: { tissue: true } })), ['cpSAM'], {})
+    expect(cfg.regionEdges).toEqual({ tissue: '#ffd33d' })
+    expect(cfg.regionEdgeWidth).toBe(2)
   })
 })

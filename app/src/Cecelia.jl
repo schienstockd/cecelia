@@ -83,6 +83,7 @@ export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
 export img_pattern_dir, img_pattern_path, img_pattern_suffixes
 export img_proximity_dir, img_proximity_path, img_proximity_suffixes
+export img_region_edge_dir, img_region_edge_path, img_region_edge_suffixes
 export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
 export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
@@ -119,6 +120,7 @@ export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
 export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df, branch_paths
 export SkeletonSegments, skeleton_segments, skeleton_segments_at
+export region_edge_segments
 export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between, spatial_graph_window_grid, window_grid_segments
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
@@ -242,7 +244,7 @@ export stale_artefacts_for, staleness_sidecar_path, stale_outputs_for
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions, LensQuery, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes, ProximityProfile
+export CellNeighbours, ClustRegions, LensQuery, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes, ProximityProfile, RegionEdge
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
@@ -346,6 +348,7 @@ include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (notebooks)
 include("skeleton_lines.jl")   # a skeleton's branch polylines as segments (viewer + movies)
 include("spatial_graph_lines.jl")   # a neighbour graph's edges as segments (viewer + movies)
+include("region_edge_lines.jl")   # a region's boundary as segments (viewer + movies)
 include("plotting/plot_data.jl")
 include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "elbow") from the hmmfit records
 include("plotting/stats.jl")
@@ -458,6 +461,7 @@ include("tasks/spatialAnalysis/proximity_bands.jl")
 include("tasks/spatialAnalysis/proximityProfile.jl")
 include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")
+include("tasks/spatialAnalysis/regionEdge.jl")
 include("tasks/clustRegions/graph.jl")
 include("tasks/clustRegions/cluster.jl")
 include("region_lens_query.jl")   # "find regions like this one" from a lens (LENS_QUERY_PLAN)

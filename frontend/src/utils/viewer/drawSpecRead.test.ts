@@ -21,7 +21,7 @@ const { useViewerStore } = await import('../../stores/viewer')
 
 const src = (over: Record<string, unknown> = {}) => ({
   imageUid: 'img1', setUid: 'set1', labelNames: ['cpSAM', 'flowTom'], trackNames: ['flowTom'],
-  branchNames: [], spatialGraphNames: [], channelNames: ['DAPI'], nZ: 0, version: 'raw', viewState: null,
+  branchNames: [], spatialGraphNames: [], regionEdgeNames: [], channelNames: ['DAPI'], nZ: 0, version: 'raw', viewState: null,
   gating: { valueName: '', popType: '' }, ...over,
 })
 

@@ -327,6 +327,19 @@ function _proximity_delete!(img, run; on_log = _ -> nothing)
     _rm_if(qc_path(img, "spatialAnalysis.proximityProfile", run.key); on_log)
 end
 
+# A region-edge run: its boundary file + QC, and its two columns in whichever cell table carries them.
+function _region_edge_delete!(img, run; on_log = _ -> nothing)
+    _rm_if(img_region_edge_path(img, run.key); on_log)
+    _rm_if(qc_path(img, "spatialAnalysis.regionEdge", run.key); on_log)
+    for vn in _run_segs(img)
+        p = img_label_props_path(img, vn)
+        cols = [c for c in _run_obs_cols(p) if (m = match(REGION_EDGE_COL_RE, c)) !== nothing && m.captures[3] == run.key]
+        isempty(cols) && continue
+        label_props(p) |> drop_obs(cols) |> save!
+        on_log("[INFO] region edge $(run.key): dropped $(join(cols, ", ")) from $(basename(p))")
+    end
+end
+
 function _rois_delete!(img, run; on_log = _ -> nothing)
     _rm_if(img_rois_path(img, run.key); on_log)
     _rm_if(qc_path(img, "spatialAnalysis.roiDiscovery", run.key); on_log)
@@ -485,6 +498,8 @@ const RUN_KINDS = RunKind[
             img -> _file_runs("patterns", img_pattern_suffixes(img)), _patterns_delete!),
     RunKind("proximity", "Proximity profiles", ["spatialAnalysis.proximityProfile"],
             img -> _file_runs("proximity", img_proximity_suffixes(img)), _proximity_delete!),
+    RunKind("regionEdges", "Region edges", ["spatialAnalysis.regionEdge"],
+            img -> _file_runs("regionEdges", img_region_edge_suffixes(img)), _region_edge_delete!),
     RunKind("rois", "ROI sets", ["spatialAnalysis.roiDiscovery"],
             img -> _file_runs("rois", img_rois_suffixes(img)), _rois_delete!),
     RunKind("contacts", "Contacts", ["spatialAnalysis.cellContacts", "spatialAnalysis.contactsMeshes"],

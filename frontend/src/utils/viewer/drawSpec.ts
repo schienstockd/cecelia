@@ -33,6 +33,8 @@ export interface LookImage {
   branchLabels?: Record<string, unknown>
   /** the neighbour graphs, by run suffix (the image payload's `spatialGraphs`) */
   spatialGraphs?: Record<string, unknown>
+  /** the region-edge runs (the image payload's `regionEdgeSuffixes`) */
+  regionEdgeSuffixes?: string[]
   labelPropsNames?: string[]
   activeValueName?: string
 }
@@ -61,6 +63,7 @@ export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   tailWidth: 'recorded', tailLength: 'recorded', labelContour: 'recorded', maskColour: 'recorded',
   trackColourMode: 'recorded', colourBy: 'recorded', colourOverrides: 'recorded',
   branchVisible: 'recorded', graphVisible: 'recorded', graphColour: 'recorded', graphWidth: 'recorded', graphPopsOnly: 'recorded',
+  edgeVisible: 'recorded', edgeColour: 'recorded', edgeWidth: 'recorded',
   scaleBar: 'recorded', timestamp: 'recorded',
   scaleBarPx: 'recorded', timestampPx: 'recorded', steps: 'recorded',
   grid: AID, gridDensity: AID, landscape: AID, landscapeLabels: AID, roiSpotlight: AID,
@@ -79,6 +82,8 @@ export interface DrawSpecSource {
   branchNames: string[]
   /** the neighbour graphs (run suffixes) */
   spatialGraphNames: string[]
+  /** the region-edge runs (names) */
+  regionEdgeNames: string[]
   channelNames: string[]
   nZ: number
   /** frames; a still (≤ 1) never colours its mask by track clusters (`effectiveMaskColour`). Absent = unknown, as stored */
@@ -163,6 +168,11 @@ export function drawSpecOf(src: DrawSpecSource, settings: DrawSpecSettings): Vie
     get graphColour() { return settings.viewerGraphColour },
     get graphWidth() { return settings.viewerGraphWidth },
     get graphPopsOnly() { return src.imageUid ? settings.getGraphPopsOnly(src.imageUid) : false },
+    get edgeVisible() {
+      return src.imageUid ? settings.getEdgeVisibility(src.imageUid, src.regionEdgeNames) : {}
+    },
+    get edgeColour() { return settings.viewerEdgeColour },
+    get edgeWidth() { return settings.viewerEdgeWidth },
     get scaleBar() { return settings.viewerScaleBar },
     get timestamp() { return settings.viewerTimestamp },
     get scaleBarPx() { return settings.viewerScaleBarPx },
@@ -188,6 +198,7 @@ export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean, set
     trackNames: open?.trackNames ?? trackableValueNames(img),
     branchNames: open?.branchNames ?? Object.keys(img.branchLabels ?? {}),
     spatialGraphNames: open?.spatialGraphNames ?? Object.keys(img.spatialGraphs ?? {}),
+    regionEdgeNames: open?.regionEdgeNames ?? img.regionEdgeSuffixes ?? [],
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
     nT: img.sizeT ?? undefined,

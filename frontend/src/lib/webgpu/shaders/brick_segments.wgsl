@@ -30,7 +30,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @l
   let c = camera();
   let pa = project(a - boxCentre(), c, aspect);
   let pb = project(b - boxCentre(), c, aspect);
-  o.pos = ribbonPos(pa.xy, pb.xy, vi, overlayPx(lineWidth(tEnd, p.ov.z), p.trail.z, pxPerUm(0.5 * (pa.z + pb.z))), p.vp.yz);
+  o.pos = ribbonPos(pa.xy, pb.xy, vi, linePx(tEnd, p.ov.z, p.trail.z, pxPerUm(0.5 * (pa.z + pb.z))), p.vp.yz);
   return o;
 }
 

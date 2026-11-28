@@ -12,7 +12,8 @@
   read-only. A movie plays through its frames (`PlayPauseButton` + `usePlaybackTimer`, the viewer's).
   Colour by: the populations over the all-cells density (default), the populations over every
   cell in plain grey (`GREY_BASE` — the picked populations are then the only colour), or a cell column —
-  a Find similar lens score above all (`colourByGroups`) — shading every cell on ONE scale across the tiles (`sharedValueScale`; a lens score's
+  a Find similar lens score above all (`colourByGroups`) — shading the picked populations' cells (every
+  cell when none is picked; the rest grey) on ONE scale across the tiles (`sharedValueScale`; a lens score's
   is fixed at 0–1), so the images compare side by side.
 -->
 <script setup lang="ts">
@@ -193,7 +194,8 @@ const imageName = (uid: string) =>
   project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
 // each tile's layers for the shown frame — computed once per frame/population change, not per binding
 const layers = computed(() => Object.fromEntries(tiles.value.map(t => {
-  const l = positionLayers(t.data, frame.value, pops.value.length)
+  // colouring by a measure with populations picked: the measure on THEIR cells, the rest grey
+  const l = positionLayers(t.data, frame.value, pops.value.length, pops.value.length > 0)
   const popLayers: PopLayer[] = l.pops.map((pts, k) =>
     ({ path: pops.value[k]!.token, colour: pops.value[k]!.colour, points: pts }))
   return [t.uid, { base: l.base, values: l.values, popLayers }]

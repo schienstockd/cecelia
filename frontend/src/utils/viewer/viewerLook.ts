@@ -71,6 +71,11 @@ export interface ViewerLookInput {
   graphWidth: number
   /** only the edges between cells of the pops drawn (`settings.getGraphPopsOnly`) */
   graphPopsOnly: boolean
+  /** per region-edge run, its switch (`settings.getEdgeVisibility`) — the shown ones draw their
+   *  boundary in `edgeColour`, `edgeWidth` wide (`settings.viewerEdgeColour` / `viewerEdgeWidth`) */
+  edgeVisible: Record<string, boolean>
+  edgeColour: string
+  edgeWidth: number
   /** the scale bar / timestamp, on or off (`settings.viewerScaleBar` / `viewerTimestamp`) */
   scaleBar: boolean
   timestamp: boolean
@@ -189,6 +194,12 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     out.spatialGraphs = Object.fromEntries(graphs.map(sfx => [sfx, i.graphColour]))
     out.spatialGraphWidth = i.graphWidth
     if (i.graphPopsOnly) out.spatialGraphPopsOnly = true
+  }
+  // the shown region boundaries, one colour (`region_edge_segments`)
+  const edges = Object.keys(i.edgeVisible).filter(n => i.edgeVisible[n])
+  if (edges.length) {
+    out.regionEdges = Object.fromEntries(edges.map(n => [n, i.edgeColour]))
+    out.regionEdgeWidth = i.edgeWidth
   }
   if (i.colourBy) {
     out.colourBy = i.colourBy
