@@ -61,14 +61,14 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/spatialAnalysis/roi_discovery_run.py` | `app/src/tasks/spatialAnalysis/roiDiscovery.jl:95` | `groupBy`, `imPath`, `labels`, `labelsPath`, `maxRois`, `mergeGap`, `minObjects`, `propsPath`, `qcOutPath`, `rankBy`, `readCols`, `reviewLabels` +4 |
 | `tasks/spatialAnalysis/spatial_pattern_run.py` | `app/src/tasks/spatialAnalysis/spatialPattern.jl:110` | `graphPath`, `graphSuffix`, `nPermutations`, `nRadii`, `outPath`, `propsPaths`, `qcOutPath`, `rMax`, `randomState`, `targets` |
 | `tasks/tracking/bayesian_tracking_run.py` | `app/src/tasks/tracking/bayesian_tracking_steps.jl:24` | — |
-| `tasks/tracking/delete_track_source_run.py` | `app/src/analysis_runs.jl:232` | `propsPath`, `trackSource` |
+| `tasks/tracking/delete_track_source_run.py` | `app/src/analysis_runs.jl:227` | `propsPath`, `trackSource` |
 | `tasks/tracking/track_props_run.py` | `app/src/tasks/tracking/track_measures.jl:196` | — |
 | `utils/model_weights.py` | `api/src/system_api.jl:186` | `models` |
 | `utils/store_sweep.py` | `app/src/maintenance.jl:57` | `apply`, `resultPath`, `root` |
 | `writers/render_animation_run.py` | `api/src/movie_render.jl:213`, `api/src/movie_render.jl:280` +1 | `canvasH`, `canvasW`, `fps`, `labelColouring`, `labelColours`, `labelContourPx`, `labelFiles`, `labelOpacity`, `labelsPath`, `outPath`, `outPaths`, `overlaySizeUnit` +10 |
 | `writers/render_figure.py` | `app/src/figures.jl:103` | `states` |
 | `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:845` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
-| `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1175` | — |
+| `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1179` | — |
 
 Call sites with a computed script name (not resolved): `app/src/maintenance.jl:88`, `app/src/model/project.jl:412`, `app/src/py_runner.jl:188`
 
@@ -240,7 +240,7 @@ Files per language that name each kind of project file (a reference, not necessa
 
 | File kind | Julia | Python | TS/Vue |
 |---|---|---|---|
-| project.json | 12 |  |  |
+| project.json | 11 |  |  |
 | ccid.json (image / set record) | 42 | 16 | 17 |
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |

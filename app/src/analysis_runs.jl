@@ -64,12 +64,7 @@ function _cross_seg_runs(kind::AbstractString, hits::Vector{Tuple{String,String}
                    detail = join(by_key[k], ", "), value_names = by_key[k]) for k in sort(order)]
 end
 
-# Suffixes of obs columns `{prefix}{suffix}` on a table.
-_obs_suffixes(cols, prefix::AbstractString) =
-    [c[ncodeunits(prefix)+1:end] for c in cols if startswith(c, prefix) && ncodeunits(c) > ncodeunits(prefix)]
-
-_rm_if(path::AbstractString; on_log = _ -> nothing) =
-    ispath(path) && (on_log("[INFO] Removing: $path"); discard!(path); true)
+# `_obs_suffixes` (label_props.jl) and `_rm_if` (discard.jl) live beside what they wrap: tasks call them too.
 
 
 # ── clustering-family runs (cell clusters, track clusters, regions) ────────────────────────────
@@ -262,27 +257,7 @@ function _hmm_list(img)
     _cross_seg_runs("hmm", hits)
 end
 
-"""
-    prune_stale_hmmfit!(props_path; on_log) -> Vector{String}
-
-Drop the fit records (`{props}.hmmfit.json`) whose `live.cell.hmm.state.<colName>` column is no
-longer on `props_path`, returning the dropped keys. Every path that drops HMM state columns calls it:
-re-measure, re-track, track correction, track-set delete (all but the first drop every `live.cell.*`
-via `is_stale_track_measure`). A record left behind would be read as the fit of any later column of that name some other
-route brings back — `_hmm_profile_fit` and `_hmm_fit_summary` don't check the column.
-"""
-function prune_stale_hmmfit!(props_path::AbstractString; on_log = _ -> nothing)::Vector{String}
-    sidecar = hmm_fit_path(props_path)
-    raw = read_props_sidecar(sidecar)
-    (isempty(raw) || !isfile(props_path)) && return String[]
-    cols  = Set(col_names(label_props(props_path); data_type = :obs))
-    stale = sort!([k for k in keys(raw) if !((_HMM_STATE_PREFIX * k) in cols)])
-    isempty(stale) && return stale
-    on_log("[INFO] $(basename(props_path)) no longer carries HMM run(s) $(join(stale, ", ")) — " *
-           "dropping their fit records")
-    drop_props_sidecar_keys!(sidecar, raw, stale)
-    stale
-end
+# `prune_stale_hmmfit!` lives beside `hmm_fit_path` (tasks/behaviour/hmm_states.jl).
 
 function _hmm_delete!(img, run; on_log = _ -> nothing)
     for vn in run.value_names

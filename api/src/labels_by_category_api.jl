@@ -18,7 +18,7 @@
 # filters + dedupes on `df.label`. No `label_props` / `h5open` on the hot path.
 #
 # CATEGORY MATCHING is done via `_catkey_local` — an exact clone of `_catkey` in
-# `app/src/plotting/plot_data.jl:42` (private). The frequency chart's response uses the same
+# `app/src/gating/density.jl` (private). The frequency chart's response uses the same
 # normalisation to build its `categories` list, so a category string the client got FROM that
 # response round-trips here unchanged. Duplicated rather than exposed because it's a one-liner
 # and drift is caught by the validation testset (below).
@@ -30,7 +30,7 @@
 # NB: `api/` does not `using DataFrames` — column access via `getproperty` (`df.label`) or
 # `df[i, :name]` only, `length(v)` instead of `nrow`. Matches labels_api.jl / tracking_api.jl.
 
-# ONE-LINER CLONE of app/src/plotting/plot_data.jl:42 (`_catkey`). Kept identical so a category
+# ONE-LINER CLONE of app/src/gating/density.jl (`_catkey`). Kept identical so a category
 # string the client received from `/api/plot_data` (chartType="frequency") is comparable here.
 _catkey_local(v) = (v isa Real && isfinite(v) && v == round(v)) ? string(Int(round(v))) : string(v)
 

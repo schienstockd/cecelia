@@ -910,7 +910,10 @@ end
                      "pops",
                      # claim checks over groups of images (claim_checks.jl) — `group` the compared
                      # attribute(s), `design` the experiment design's group or replicate
-                     "group", "design"])
+                     "group", "design",
+                     # an interval read from an irregular series' steady part
+                     # (metadata.frame_interval_irregular) — the interval, the deviating timepoints
+                     "interval", "frames"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -1653,6 +1656,15 @@ end
         @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>30.0,
             "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==
               ["metadata.frame_interval_no_unit"]
+        # interval read from an irregular series' steady part (TimeIncrementIrregular marker) →
+        # frame_interval_irregular, naming the deviating timepoints (VYZ9TQ: a fast start, frames 0–3)
+        irr = Cecelia.metadata_qc_findings(Dict("SizeT"=>58,"TimeIncrement"=>5.2593,"TimeIncrementUnit"=>"second",
+            "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>"micron",
+            "TimeIncrementIrregular"=>Dict{String,Any}("frames"=>Any[Any[0, 3], Any[40, 41]],
+                                                     "steadyFrames"=>Any[3, 57], "spread"=>0.6)))
+        @test codes(irr) == ["metadata.frame_interval_irregular"]
+        @test irr[1]["detail"]["field"] == "t"
+        @test contains(irr[1]["long"], "5.26 s") && contains(irr[1]["long"], "0–3, 40–41")
         # a unit we can't convert → flagged (the accessor would otherwise assume s / µm silently)
         @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>30.0,"TimeIncrementUnit"=>"fortnight",
             "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==

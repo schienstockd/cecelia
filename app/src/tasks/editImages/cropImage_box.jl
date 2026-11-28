@@ -60,6 +60,11 @@ function _crop_inherited_meta(src_meta::AbstractDict, box::NamedTuple)::Dict{Str
     end
     if box.t0 != -1 && box.t1 != -1
         out["SizeT"] = box.t1 - box.t0
+        irr = get(out, "TimeIncrementIrregular", nothing)
+        if irr isa AbstractDict
+            irr = crop_irregular_frames(irr, box.t0, box.t1)
+            isnothing(irr) ? delete!(out, "TimeIncrementIrregular") : (out["TimeIncrementIrregular"] = irr)
+        end
     elseif haskey(src_meta, "SizeT")
         out["SizeT"] = src_meta["SizeT"]
     end

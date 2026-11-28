@@ -1,17 +1,17 @@
 [
     {
         "kind": "julia-upward",
-        "subject": "`_history_leaves`",
-        "rank": -4,
-        "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)",
+        "subject": "`active_profile_name`",
+        "rank": -5,
+        "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), model (tier 2), scheduler+chains (tier 7), task framework (tier 5)",
         "where": [
         ]
     },
     {
         "kind": "julia-upward",
-        "subject": "`active_profile_name`",
+        "subject": "`_history_leaves`",
         "rank": -4,
-        "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7), task framework (tier 5)",
+        "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
@@ -81,14 +81,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`_catkey`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_clustfeatures_entry`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from model (tier 2)",
@@ -145,30 +137,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`_obs_suffixes`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_ordered_cats`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_parse_tkey`",
-        "rank": -1,
-        "detail": "defined in ai+lab log (tier 8), called from scheduler+chains (tier 7)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_preflight_fields`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
@@ -180,14 +148,6 @@
         "subject": "`_preflight_has`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_rm_if`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
         "where": [
         ]
     },
@@ -236,14 +196,6 @@
         "subject": "`_task_spec`",
         "rank": -1,
         "detail": "defined in task framework (tier 5), called from cell data (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`append_lab_log!`",
-        "rank": -1,
-        "detail": "defined in ai+lab log (tier 8), called from qc+checks (tier 4)",
         "where": [
         ]
     },
@@ -305,22 +257,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`img_project_dir`",
-        "rank": -1,
-        "detail": "defined in model (tier 2), called from config (tier 1)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`img_project_uid`",
-        "rank": -1,
-        "detail": "defined in model (tier 2), called from config (tier 1)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`is_bookkeeping_param`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from qc+checks (tier 4)",
@@ -340,14 +276,6 @@
         "subject": "`is_track_grained`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from cell data (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`json_native`",
-        "rank": -1,
-        "detail": "defined in model (tier 2), called from config (tier 1)",
         "where": [
         ]
     },
@@ -393,25 +321,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`prune_stale_hmmfit!`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`qc_finding`",
         "rank": -1,
         "detail": "defined in qc+checks (tier 4), called from cell data (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`read_state_json`",
-        "rank": -1,
-        "detail": "defined in model (tier 2), called from config (tier 1)",
         "where": [
         ]
     },

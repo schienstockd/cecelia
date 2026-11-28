@@ -100,6 +100,33 @@ was copied into another project belongs to that project, whatever any baked-in v
 img_project_uid(img::CciaImage)::String = basename(img_project_dir(img))
 
 """
+    vault_origin_stamp(img, by = "") -> Dict{String,Any}
+
+Who trained a model and in which project: `{createdBy = {profile}, project = {uid, name}}`, for a
+training runner to merge into the manifest it writes. `img` is the run's first image, so the project
+is wherever the training set lives. `by` is the launcher the scheduler hands a task as
+`params["_by"]` — not `author_stamp()`, which inside a pool worker is whoever is active when the job
+RUNS, and that need not be who queued it. Empty (a bare `_run_task` call) falls back to the active
+profile. No `via`: the scheduler carries only the profile.
+
+Why it exists: the vaults are per install, NOT per project. One person in one project never notices.
+On a shared machine every user's models from every project land in one list, and the manager uses
+these fields to show only yours from the open project by default (`frontend/src/utils/vaultScope.ts`).
+The project NAME is recorded next to the uid because the vault outlives projects — a deleted or
+re-identified project still has a readable name in the list.
+"""
+function vault_origin_stamp(img::CciaImage, by::AbstractString = "")::Dict{String,Any}
+    # a missing name is not worth failing a finished training run over — the uid still scopes it
+    name = try
+        string(get(read_state_json(joinpath(img_project_dir(img), "project.json")), :name, ""))
+    catch
+        ""
+    end
+    Dict{String,Any}("createdBy" => Dict{String,Any}("profile" => isempty(by) ? active_profile_name() : by),
+                     "project"   => Dict{String,Any}("uid" => img_project_uid(img), "name" => name))
+end
+
+"""
 Absolute path to the active (or named) filepath value_name, at the specified `version` (defaults to
 `_latest` on new-shape entries; unchanged on legacy bare-scalar entries). See
 `docs/todo/VN_VERSIONING_PLAN.md` for the two-axis versioning model.
@@ -1083,11 +1110,31 @@ on the SET reaches a derived image through `inherit_data_source!`, since the der
 in another set."""
 const SOURCE_META_KEYS = ("ori_path", "oriFingerprint", "data_source")
 
-"""The `meta` keys that make up an image's frame interval: the value, its unit, and where it came
-from when it was declared rather than read (`TimeIncrementDeclared`, Immunemap). A derived image that
-keeps the source's timing carries all three, so the interval never arrives without its provenance —
-splat this into an inherited-meta key list instead of naming `TimeIncrement*` by hand."""
-const TIME_META_KEYS = ("TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared")
+"""The `meta` keys that make up an image's frame interval: the value, its unit, where it came from
+when it was declared rather than read (`TimeIncrementDeclared`, Immunemap), and the timepoints that
+don't run at it when it was read from an irregular series' steady part (`TimeIncrementIrregular`). A
+derived image that keeps the source's timing carries them all, so the interval never arrives without
+its provenance — splat this into an inherited-meta key list instead of naming `TimeIncrement*` by hand.
+A T-crop re-indexes the irregular frames (`crop_irregular_frames`)."""
+const TIME_META_KEYS = ("TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared", "TimeIncrementIrregular")
+
+"""
+    crop_irregular_frames(irr, t0, t1) -> Union{Dict,Nothing}
+
+`TimeIncrementIrregular` for a crop keeping frames `t0:t1-1` (half-open): every 0-based `[first, last]`
+range clipped to the kept frames and shifted to start at 0. `nothing` when no deviating gap is left —
+the crop removed them, so there is nothing to flag. Pure.
+"""
+function crop_irregular_frames(irr::AbstractDict, t0::Integer, t1::Integer)
+    clip(r) = (a = max(Int(r[1]), t0); b = min(Int(r[2]), t1 - 1); a < b ? [a - t0, b - t0] : nothing)
+    frames = filter(!isnothing, [clip(r) for r in something(get(irr, "frames", nothing), [])])
+    isempty(frames) && return nothing
+    out = Dict{String,Any}(String(k) => v for (k, v) in irr)
+    out["frames"] = frames
+    steady = get(irr, "steadyFrames", nothing)
+    steady === nothing || (out["steadyFrames"] = something(clip(steady), Int[]))
+    out
+end
 
 """The `meta` flag saying an image's planes run the REVERSE of its `ori_path` file's: it was derived from
 a Z-flipped version (`store_z_flipped`). A settings re-read from that file is mirrored in Z for it

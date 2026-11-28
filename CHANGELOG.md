@@ -22,6 +22,7 @@ These change results when old work is re-run:
 - **Track measures on z-stacks:** auto 2D/3D now judges z (it judged x), and 2D keeps x–y (it kept y–z). Re-run track measures on 3D movies.
 - **Cluster tracks** on a shape measure with few whole-number values (e.g. Euler number) now uses its per-track mean/median/…, not the share of each value. Re-run to compare.
 - **Imaris frame interval** from whole-second time stamps (e.g. Zeiss Elyra SIM) no longer reads as irregular. Re-import to pick it up.
+- **Irregular Imaris frame interval** is taken from the steady frames (e.g. 5.26 s after a fast start); the other timepoints are flagged. Re-import to pick it up.
 
 ### Added
 

@@ -124,11 +124,14 @@ function reseed() {
 }
 watch(targetUids, reseed, { immediate: true })
 
-// A PhysicalSizeZ written here is either a human confirming/entering it, or copied from a
-// trusted reference — either way it's no longer "auto-corrected, unverified", so clear that
-// stale marker (api_images_meta_set treats a null value as "delete this key").
-function withZFlagCleared(fields: Record<string, unknown>): Record<string, unknown> {
-  return 'PhysicalSizeZ' in fields ? { ...fields, PhysicalSizeZ_raw: null } : fields
+// A PhysicalSizeZ / TimeIncrement written here is either a human confirming/entering it, or copied
+// from a trusted reference — either way it's no longer "auto-corrected" / "read from an irregular
+// series", so clear that stale marker (api_images_meta_set treats a null value as "delete this key").
+function withAutoFlagsCleared(fields: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...fields }
+  if ('PhysicalSizeZ' in fields) out.PhysicalSizeZ_raw = null
+  if ('TimeIncrement' in fields) out.TimeIncrementIrregular = null
+  return out
 }
 function zFlagPatch(fields: Record<string, unknown>): Record<string, unknown> {
   return 'PhysicalSizeZ' in fields ? { physicalSizeZCorrected: false } : {}
@@ -175,7 +178,7 @@ function patchFrom(fields: Record<string, unknown>): Record<string, unknown> {
 async function pushFieldsTo(fields: Record<string, unknown>, uids: string[]): Promise<boolean> {
   const projectUid = projectMeta.current?.uid
   if (!projectUid || !uids.length) return false
-  const withCleared = withZFlagCleared(fields)
+  const withCleared = withAutoFlagsCleared(fields)
   const values: Record<string, Record<string, unknown>> = {}
   for (const u of uids) values[u] = withCleared
   // quiet: every caller logs the failure itself
@@ -190,7 +193,7 @@ async function apply() {
   saving.value = true
   try {
     await pushFieldsTo(fields, targetUids.value)
-    const patch = patchFrom(withZFlagCleared(fields))
+    const patch = patchFrom(withAutoFlagsCleared(fields))
     for (const uid of targetUids.value) project.updateImageMeta(uid, patch)
     log.info(`Updated physical size/timing for ${targetUids.value.length} image(s).`, { source: 'metadata' })
     emit('close')
@@ -212,7 +215,7 @@ async function copyToSelected() {
   copying.value = true
   try {
     await pushFieldsTo(fields, uids)
-    const patch = patchFrom(withZFlagCleared(fields))
+    const patch = patchFrom(withAutoFlagsCleared(fields))
     for (const u of uids) project.updateImageMeta(u, patch)
     log.info(`Copied to ${uids.length} selected image(s).`, { source: 'metadata' })
   } catch (e) {
@@ -236,7 +239,7 @@ async function fillFlagged() {
   propagating.value = true
   try {
     await pushFieldsTo(fields, targets.map(t => t.uid))
-    const patch = patchFrom(withZFlagCleared(fields))
+    const patch = patchFrom(withAutoFlagsCleared(fields))
     for (const t of targets) project.updateImageMeta(t.uid, patch)
     log.info(`Filled ${targets.length} flagged image(s) from "${img.name}".`, { source: 'metadata' })
   } catch (e) {
