@@ -8,15 +8,7 @@
 # Unlike the chain, nothing is dropped: an import or a crop (never replayed) is a row with a note,
 # a run logged before params were recorded is a row saying so, and a training step stays in.
 
-"""
-    is_bookkeeping_param(key) -> Bool
-
-A task param that says how a run writes, not how it processes: `overwrite` (replace a label set of the
-same name) — the cells come out the same either way. `key` is the param name or a dotted path to it.
-The Methods table and the claim checks leave it out; a chain still replays it.
-"""
-const BOOKKEEPING_PARAMS = ("overwrite",)
-is_bookkeeping_param(key::AbstractString) = last(split(key, '.')) in BOOKKEEPING_PARAMS
+# `is_bookkeeping_param` (left out of the table, and of the claim checks) is in tasks/task/spec_leaves.jl.
 
 # `tkey` (frontend plots/series.ts), a plotted series' key: "popType::valueName/pop" — split on the
 # first "::" then the first "/". pop_types and value_names contain no "::", and a pop path always starts

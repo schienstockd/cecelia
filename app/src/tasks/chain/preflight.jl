@@ -10,14 +10,8 @@
 #   warn — it will run, but not as you may expect: skipped (missing axis / pixel size), or it replaces
 #          an output the image already has (an image version only while keepPreviousVersion is off)
 
-# The image field a name in namespace `ns` lives in ("" = image versions). `nothing` = not checkable here.
-function _preflight_fields(ns::String)
-    ns == ""       ? (:filepath,) :
-    ns == "labels" ? (:labels, :label_props) : nothing
-end
-
-_preflight_has(img, name, ns) =
-    (fs = _preflight_fields(ns); fs === nothing || any(f -> img_has_value_name(img, name; field = f), fs))
+# The namespace → image-field table (`_preflight_fields` / `_preflight_has`) is in tasks/task/spec_leaves.jl:
+# the run log's provenance reads it too.
 
 # Names a node's ancestors produce in this chain — an input that will exist by the time the node runs.
 function _preflight_produced(t::ChainTemplate, node_id::String)::Set{String}

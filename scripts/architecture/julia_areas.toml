@@ -17,6 +17,11 @@
 "config"           = ["app/src/config/", "app/src/config.jl", "app/src/config_dir.jl", "app/src/ports.jl",
                       "app/src/api_token.jl", "app/src/single_instance.jl", "app/src/utils.jl"]
 "run records"      = ["app/src/run_log.jl", "app/src/run_sidecars.jl", "app/src/run_usage.jl"]
+# "run history" READS the run records against the task specs: what a run read, replaced and gated on
+# (run_provenance.jl), which outputs a later edit left stale (correction_staleness.jl), and whether a
+# claim's runs agree (claim_checks.jl). It sits with "task framework" (tier 5) because it reads the
+# specs' leaves (tasks/task/spec_leaves.jl) and the framework's `run_task_logged!` stamps through it.
+"run history"      = ["app/src/run_provenance.jl", "app/src/correction_staleness.jl", "app/src/claim_checks.jl"]
 "scheduler+chains" = ["app/src/tasks/scheduler/", "app/src/tasks/scheduler.jl", "app/src/tasks/chain/",
                       "app/src/tasks/chain.jl", "app/src/tasks/task_outcomes.jl", "app/src/preview.jl"]
 "task framework"   = ["app/src/tasks/task/", "app/src/tasks/task.jl", "app/src/tasks/task_registry.jl",
@@ -25,14 +30,13 @@
 "tasks"            = ["app/src/tasks/"]
 "runner"           = ["app/src/runner/", "app/src/lifeline.jl"]
 "python bridge"    = ["app/src/py_runner.jl"]
-"cell data"        = ["app/src/label_props.jl", "app/src/label_correction.jl", "app/src/segmentation.jl",
-                      "app/src/correction_staleness.jl"]
+"cell data"        = ["app/src/label_props.jl", "app/src/label_correction.jl", "app/src/segmentation.jl"]
 "gating"           = ["app/src/gating/", "app/src/qc_gating.jl"]
 "tracking+spatial" = ["app/src/tracking/", "app/src/behaviour/", "app/src/spatial.jl",
                       "app/src/spatial_graph_lines.jl", "app/src/skeleton_lines.jl", "app/src/anisotropy.jl",
                       "app/src/region_lens_query.jl", "app/src/rois.jl"]
 "qc+checks"        = ["app/src/qc/", "app/src/qc.jl", "app/src/qc_cohort.jl", "app/src/acq_check.jl",
-                      "app/src/acq_sampling.jl", "app/src/claim_checks.jl", "app/src/experiment_design.jl"]
+                      "app/src/acq_sampling.jl", "app/src/experiment_design.jl"]
 "plots+boards"     = ["app/src/plotting/", "app/src/analysis_board_spec.jl", "app/src/analysis_boards.jl",
                       "app/src/analysis_runs.jl", "app/src/analysis_export_provenance.jl",
                       "app/src/figures.jl", "app/src/cell_cards.jl", "app/src/view_profiles.jl"]
@@ -63,7 +67,7 @@ tiers = [
   ["model", "run records"],                               # Project / Set / Image, run logs, and their persistence
   ["python bridge", "cell data"],                         # run_py; label props, segmentation records
   ["gating", "tracking+spatial", "qc+checks"],            # analyses over cell data
-  ["task framework"],                                     # CciaTask, specs, param validation
+  ["task framework", "run history"],                      # CciaTask, specs, param validation; run provenance read off them
   ["tasks"],                                              # the task implementations
   ["scheduler+chains", "hpc", "jobs (export, import, maintenance)"],  # running tasks and jobs
   ["runner", "plots+boards", "ai+lab log"],               # consumers of everything below

@@ -1303,7 +1303,7 @@ Several reports in one run merge (`merge_run_usage!`): maxima for peaks and book
 
 **Format.** Every entry written now carries `format` (`RUN_LOG_FORMAT`, 1), stamped where the entry is created; a close keeps the number its open wrote. Absent = format 0, written before the field existed. Entries are never migrated in place: readers stay tolerant of every older format (a missing field reads as not recorded) and check `run_entry_format(e)` only when they need a field a newer format guarantees. The number is bumped when a field changes meaning, not for a new optional field (`run_log.jl` → *Format*).
 
-**What it read and what it replaced** — stamped at open by `run_provenance` (`app/src/run_log.jl`),
+**What it read and what it replaced** — stamped at open by `run_provenance` (`app/src/run_provenance.jl`),
 from the task spec alone, so every task gets it with no per-task code. Re-runs overwriting their
 output is by design (`keep_previous_version()` is the opt-in that keeps image versions); the record is
 what says it happened. All three fields are absent on older entries and when there is nothing to say:

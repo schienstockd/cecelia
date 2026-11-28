@@ -210,6 +210,22 @@ function design_expect_phrase(d::ExperimentDesign)::String
 end
 
 """
+    claim_unit_attrs(v) -> Vector{String}
+
+A replicate's attributes, normalised: a list or one string (`nothing` = none), trimmed, blanks and
+repeats dropped. The one rule for every scope that is stored, compared or checked.
+"""
+claim_unit_attrs(v) = unique!(String[strip(string(a)) for a in (v isa AbstractVector ? v : v === nothing ? () : (v,))
+                                     if !isempty(strip(string(a)))])
+
+# An image's replicate ("M1 × left"; "" when any of its attributes is blank — a half-named replicate
+# can't be counted). The claim checks (claim_checks.jl) key their units by it too.
+function _claim_unit_of(img, attrs)
+    vals = String[string(get(img.attr, a, "")) for a in attrs]
+    any(isempty ∘ strip, vals) ? "" : join(vals, " × ")
+end
+
+"""
     design_replicates(imgs, uids, parents) -> Dict{String,String}
 
 uID → its replicate under the design's `parents` (outermost first): the claim check's own replicate

@@ -333,6 +333,7 @@ include("model/image.jl")
 include("model/zarr_store.jl")   # OME-ZARR structural reads (series_base, ngff_*, store_rev) — before qc.jl
 include("qc.jl")
 include("run_log.jl")
+include("run_provenance.jl")   # run history: inputs / replaces / gates a run read, read off the task specs
 include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")
