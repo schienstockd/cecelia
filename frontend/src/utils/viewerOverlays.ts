@@ -71,6 +71,8 @@ export interface OverlayPop {
    *  (see `filterPayloadByTrackSource`). Absent on payloads from older servers → the caller falls
    *  back to labels-only filtering. */
   uid?: string
+  /** The clustering run a cluster pop picks from ("" or absent for a gate) — the run filter (`utils/popRuns.ts`). */
+  run?: string
   labels: number[]
 }
 

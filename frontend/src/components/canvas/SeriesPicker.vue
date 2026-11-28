@@ -18,6 +18,8 @@ import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
 import CanvasSidePanel from './CanvasSidePanel.vue'
 import { popAvailable, type PlotReadout } from '../../plots/plotReadout'
+import { useProjectStore } from '../../stores/project'
+import { usePopRunFilter, popRuns, runShown, shownRuns } from '../../utils/popRuns'
 
 const props = defineProps<{
   groups: SegmentationPops[]          // populations available, grouped by segmentation
@@ -76,9 +78,23 @@ const emit = defineEmits<{
   reload: []
 }>()
 
+// Which clustering runs are listed (`utils/popRuns.ts`) — shared with the viewer, per project. A pop of a
+// hidden run is dropped from the list unless it is picked: a plotted series must stay findable.
+const project = useProjectStore()
+const runFilter = usePopRunFilter(() => project.loadedProjectUid ?? '')
+// per segmentation, each pop type whose pops come from two or more runs → its runs and the ones shown
+const groupRuns = computed(() => new Map(props.groups.map(g => {
+  const types = [...new Set(g.populations.map(p => p.popType))]
+  return [g.valueName, types.flatMap(pt => {
+    const all = popRuns(g.populations.filter(p => p.popType === pt))
+    return all.length > 1 ? [{ popType: pt, all, shown: shownRuns(runFilter.hidden.value, g.valueName, pt, all) }] : []
+  })]
+})))
+const runChips = (all: string[]) => all.map(r => ({ value: r, label: r, tip: `Clustering run ${r}` }))
 // the rows each segmentation SHOWS — on a track plot, `_tracked` folded into its population
 const rowGroups = computed(() => props.groups.map(g => ({ valueName: g.valueName,
-                                                         rows: pickerRows(g.populations, !!props.tracks) })))
+  rows: pickerRows(g.populations.filter(p => runShown(runFilter.hidden.value, g.valueName, p.popType, p.run)
+                                             || isLit(g.valueName, p.path, p.popType)), !!props.tracks) })))
 const total = computed(() => rowGroups.value.reduce((n, g) => n + g.rows.filter(r => !r.inert).length, 0))
 const inertKeys = computed(() => new Set(rowGroups.value.flatMap(g => g.rows.filter(r => r.inert)
   .map(r => tkey(r.popType, g.valueName, r.path)))))
@@ -156,6 +172,12 @@ function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) em
     </div>
     <template v-for="grp in (selectionUnused ? [] : rowGroups)" :key="grp.valueName">
       <div v-if="grp.rows.length" class="pick-group-head">{{ grp.valueName }}</div>
+      <div v-for="r in groupRuns.get(grp.valueName) ?? []" :key="'runs' + r.popType" class="pick-order"
+           v-tooltip.bottom="'Clustering runs to list'">
+        <span class="cc-muted cc-fs-2xs">runs{{ (groupRuns.get(grp.valueName)?.length ?? 0) > 1 ? ` · ${r.popType}` : "" }}</span>
+        <ChipSelect multiple :options="runChips(r.all)" :model-value="r.shown" aria-label="Clustering runs to list"
+                    @update:model-value="v => runFilter.setShown(grp.valueName, r.popType, r.all, v as string[])" />
+      </div>
       <div v-for="p in grp.rows" :key="p.popType + grp.valueName + p.path"
            class="pick-row" :class="{ active: rowLit(grp.valueName, p), off: rowOff(grp.valueName, p) }"
            :style="{ paddingLeft: 12 + p.depth * 14 + 'px' }"

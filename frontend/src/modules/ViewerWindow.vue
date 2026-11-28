@@ -29,6 +29,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, toRaw, onMounted, onUnmounted } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
+import { usePopRunFilter, popRuns, runShown, shownRuns } from '../utils/popRuns'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
@@ -929,9 +930,14 @@ function toggleSelectMode() {
  *  (imageUid × vn) via `settings.getPopEyes` and separate from the manager's `show`, which only seeds
  *  a pop with no stored eye — so a gate edit (which refetches) no longer resets what the user chose. */
 const popEyes = ref<Map<string, PopEyes>>(new Map())
+/** Which clustering runs the populations list shows, per layer (`utils/popRuns.ts`) — a pop of a hidden
+ *  run is neither listed nor drawn (`hiddenPops`). Shared with the canvas picker, per project. Only a
+ *  layer whose pops come from two or more runs gets a row of run chips. */
+const popRunFilter = usePopRunFilter(() => projectUid)
 /** Populations whose eye is off, by `popKey` — what the points, capture and landscape ask. */
 const hiddenPops = computed(() => new Set(popLayers.value.flatMap(l => l.payload.pops
-  .filter(x => !popEyeOn(popEyes.value, l.vn, l.popType, x.path, x.show))
+  .filter(x => !popEyeOn(popEyes.value, l.vn, l.popType, x.path, x.show)
+               || !runShown(popRunFilter.hidden.value, l.vn, l.popType, x.run))
   .map(x => popKey(l.vn, l.popType, x.path)))))
 /**
  * The Tracks rows' eyes — a pop's RIBBONS, separate from its POINTS (`popEyes`). A user showing points
@@ -1381,7 +1387,32 @@ async function setTrackClass(key: string, patch: { threshold?: number; level?: n
 }
 /** The population layers with something to list, for the Populations section — a segmentation
  *  header above each group when more than one segmentation draws. */
-const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0))
+const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0).map(l => {
+  const pops = l.payload.pops.filter(p => runShown(popRunFilter.hidden.value, l.vn, l.popType, p.run))
+  return pops.length === l.payload.pops.length ? l : { ...l, payload: { ...l.payload, pops } }
+}))
+const popLayerRuns = computed(() => new Map(popLayers.value.map(l => {
+  const all = popRuns(l.payload.pops)
+  return [`${l.vn}::${l.popType}`, { all, shown: shownRuns(popRunFilter.hidden.value, l.vn, l.popType, all) }]
+})))
+/** Show only `shown` of a layer's runs; the watch below turns the hidden run's eyes off. */
+function setPopLayerRuns(l: PopLayer, shown: string[]) {
+  const all = popLayerRuns.value.get(`${l.vn}::${l.popType}`)?.all ?? []
+  popRunFilter.setShown(l.vn, l.popType, all, shown)
+  rebuildOverlays()
+}
+// A pop of a hidden run gets its eye turned OFF, however the run came to be hidden — here, from the
+// canvas picker (the hidden set is shared), or a new pop of a hidden run arriving on a refetch. The eyes
+// are what a recording draws (`drawSpec.popEyes`), so a run hidden on screen must not appear in a movie.
+watch(() => [popRunFilter.hidden.value, popLayers.value] as const, ([hidden, layers]) => {
+  const off = layers.flatMap(l => l.payload.pops
+    .filter(p => !runShown(hidden, l.vn, l.popType, p.run) && popEyeOn(popEyes.value, l.vn, l.popType, p.path, p.show))
+    .map(p => ({ vn: l.vn, key: eyeKey(l.popType, p.path) })))
+  if (!off.length) return
+  const next = new Map(popEyes.value)
+  for (const o of off) next.set(o.vn, { ...next.get(o.vn) ?? {}, [o.key]: false })
+  applyPopEyes(next)
+})
 const popLayerSegs = computed(() => new Set(listedPopLayers.value.map(l => l.vn)).size)
 const popLayerTypes = computed(() => new Set(listedPopLayers.value.map(l => l.popType)).size)
 /** The colour-by legend: the one scale every layer's points are shaded with (`pooledColourScale`,
@@ -7117,12 +7148,12 @@ onUnmounted(() => {
                                :graph-shown="graphSuffixes.length > 0" :edge-shown="edgeNames.length > 0" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
-                              :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
+                              :layers="listedPopLayers" :runs="popLayerRuns" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
                               :all-visible="allPopsVisible" v-model:solo="soloPop" :colour-by="colourBy"
                               :legend="colourLegend" :ramp-style="rampStyle" :single-plane="singlePlane"
                               :has-z="meta!.nZ > 1" v-model:point-size="pointSize" v-model:point-border="pointBorder"
                               :point-count="pointCount" :mode="mode" :z-loaded="zLoaded"
-                              @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
+                              @set-all="setAllPops" @pop-eye="setPopEye" @set-runs="setPopLayerRuns" @redraw="frame.redraw()" />
 
         <!-- a still image has no tracks -->
         <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" :orphans="presentPopTypes?.orphanTracks ?? []" v-model:color-mode="trackColorMode"

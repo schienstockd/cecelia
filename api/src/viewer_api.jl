@@ -1148,7 +1148,7 @@ function _viewer_payload_pops(img, pt, vn)
     try
         [(; path = p.path, name = p.name, colour = p.colour, uid = p.uid, show = p.show,
             isTrack = p.is_track, hasTracks = get(p, :has_tracks, false),
-            labels = p.labels)
+            run = get(p, :run, ""), labels = p.labels)
          for p in resolve_pops(img, pt; value_name = vn)]
     catch e
         @warn "viewer overlays: populations unavailable" value_name = vn exception = e
