@@ -330,6 +330,7 @@ include("jobs.jl")
 include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
+include("model/zarr_store.jl")   # OME-ZARR structural reads (series_base, ngff_*, store_rev) — before qc.jl
 include("qc.jl")
 include("run_log.jl")
 include("label_props.jl")
