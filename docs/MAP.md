@@ -50,7 +50,7 @@ The area-per-area reference: [root doc index](../CLAUDE.md).
 | Change AF weight math (bleedthrough alphas, weight stats) | Python side: `python/cecelia/utils/correction_utils.py` (`af_bleedthrough_alphas`, `af_correct_frame`, `af_weight_stats`) |
 | Add or change an HMM fit over track measurements | `app/src/behaviour/hmm.jl:hmm_fit_states` |
 | Change how HMM transitions are labelled (self-transitions, start rows, hybrid states) | `app/src/behaviour/hmm.jl:hmm_transitions` |
-| Change track-measure algorithms (celltrackR port) | `app/src/tasks/tracking/track_measures.jl` |
+| Change track-measure algorithms (celltrackR port) | `app/src/tracking/track_metrics.jl` (`Track` + per-track measures); per-cell measures + the task in `app/src/tasks/tracking/track_measures.jl` |
 
 ## Frontend
 

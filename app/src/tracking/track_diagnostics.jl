@@ -1,6 +1,6 @@
 # Track DIAGNOSTICS — the celltrackR quality-control battery, ported.
 #
-# `tasks/tracking/track_measures.jl` ports the per-track MEASURES (speed, straightness, …): one number
+# `tracking/track_metrics.jl` ports the per-track MEASURES (speed, straightness, …): one number
 # per track, for gating and plotting. This file ports the other half of celltrackR — the diagnostics
 # that ask whether the tracking result can be trusted at all, and what kind of motion it contains.
 # They are curves and verdicts over the WHOLE image, not per-track columns, which is why they are not

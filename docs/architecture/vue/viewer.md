@@ -16,7 +16,7 @@ flowchart LR
   utils_viewer -->|20| utils__flat_["utils (flat)"]
   lib_webgpu -->|14| utils__flat_["utils (flat)"]
   components_viewerWindow -->|13| utils__flat_["utils (flat)"]
-  components_viewerWindow -->|10| components__flat_["components (flat)"]
+  components_viewerWindow -->|11| components__flat_["components (flat)"]
   components_viewerWindow -->|6| composables["composables"]
   components_viewerWindow -->|3| plots["plots"]
   components_viewerWindow -->|3| stores["stores"]

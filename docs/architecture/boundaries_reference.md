@@ -19,7 +19,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/cleanupImages/smooth_run.py` | `app/src/tasks/cleanupImages/smooth.jl:191` | `bilateralColor`, `bilateralPolish`, `bilateralReach`, `channels`, `farnebackMaxShiftPx`, `imOutputPath`, `imPath`, `qcOutPath`, `restoreGain`, `spatialMethod`, `spatialSigma`, `temporalFrames` +1 |
 | `tasks/cleanupImages/stack_align_run.py` | `app/src/tasks/cleanupImages/stack_align.jl:154` | `alignChannel`, `imAlignedPath`, `imPath`, `maxShiftPx`, `minConfidence`, `qcOutPath`, `referenceMode` |
 | `tasks/clustPops/cluster_run.py` | `app/src/tasks/clustPops/cluster.jl:161` | `createUmap`, `featureCols`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold`, `qcOutPath`, `randomState`, `resolution` +4 |
-| `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:178` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `diversityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling` +5 |
+| `tasks/clustRegions/cluster_run.py` | `app/src/tasks/clustRegions/cluster.jl:170` | `basis`, `clusterMethod`, `compCols`, `createUmap`, `densityCol`, `diversityCol`, `graphPaths`, `graphSuffix`, `includeOther`, `numClusters`, `otherCol`, `pooling` +5 |
 | `tasks/clustTracks/cluster_run.py` | `app/src/tasks/clustTracks/cluster.jl:195` | `X`, `axesOutPath`, `createUmap`, `featureCols`, `labels`, `logBase`, `maxFraction`, `normaliseAxis`, `normalisePercentile`, `normalisePercentileBottom`, `normaliseToMedian`, `pagaThreshold` +10 |
 | `tasks/editImages/bin_run.py` | `app/src/tasks/editImages/bin.jl:115` | `factorX`, `factorY`, `imOutPath`, `imPath`, `op` |
 | `tasks/editImages/cropImage_run.py` | `app/src/tasks/editImages/cropImage.jl:116` | `imOutPath`, `imPath`, `t0`, `t1`, `x0`, `x1`, `y0`, `y1`, `z0`, `z1` |
@@ -58,16 +58,16 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/spatialAnalysis/cell_contacts_mesh_run.py` | `app/src/tasks/spatialAnalysis/contactsMeshes.jl:95` | `aLabelPath`, `aLabels`, `bLabelPath`, `checkContained`, `imPath`, `maxContactDist`, `physicalSizes`, `popType`, `propsPath`, `qcOutPath`, `targets` |
 | `tasks/spatialAnalysis/cell_neighbour_stats_run.py` | `app/src/tasks/spatialAnalysis/neighbourStats.jl:147` | `basis`, `graphPath`, `graphSuffix`, `nPermutations`, `qcOutPath`, `randomState`, `segments`, `shufflePops`, `statsPath` |
 | `tasks/spatialAnalysis/cell_neighbours_run.py` | `app/src/tasks/spatialAnalysis/cellNeighbours.jl:119` | `graphPath`, `nNeighbours`, `neighbourMethod`, `neighbourRadius`, `perTimepoint`, `physicalSizes`, `qcOutPath`, `segments`, `windowSize` |
-| `tasks/spatialAnalysis/roi_discovery_run.py` | `app/src/tasks/spatialAnalysis/roiDiscovery.jl:114` | `groupBy`, `imPath`, `labels`, `labelsPath`, `maxRois`, `mergeGap`, `minObjects`, `propsPath`, `qcOutPath`, `rankBy`, `readCols`, `reviewLabels` +4 |
+| `tasks/spatialAnalysis/roi_discovery_run.py` | `app/src/tasks/spatialAnalysis/roiDiscovery.jl:95` | `groupBy`, `imPath`, `labels`, `labelsPath`, `maxRois`, `mergeGap`, `minObjects`, `propsPath`, `qcOutPath`, `rankBy`, `readCols`, `reviewLabels` +4 |
 | `tasks/spatialAnalysis/spatial_pattern_run.py` | `app/src/tasks/spatialAnalysis/spatialPattern.jl:110` | `graphPath`, `graphSuffix`, `nPermutations`, `nRadii`, `outPath`, `propsPaths`, `qcOutPath`, `rMax`, `randomState`, `targets` |
 | `tasks/tracking/bayesian_tracking_run.py` | `app/src/tasks/tracking/bayesian_tracking_steps.jl:24` | — |
 | `tasks/tracking/delete_track_source_run.py` | `app/src/analysis_runs.jl:232` | `propsPath`, `trackSource` |
-| `tasks/tracking/track_props_run.py` | `app/src/tasks/tracking/track_measures.jl:324` | — |
+| `tasks/tracking/track_props_run.py` | `app/src/tasks/tracking/track_measures.jl:196` | — |
 | `utils/model_weights.py` | `api/src/system_api.jl:186` | `models` |
 | `utils/store_sweep.py` | `app/src/maintenance.jl:57` | `apply`, `resultPath`, `root` |
 | `writers/render_animation_run.py` | `api/src/movie_render.jl:213`, `api/src/movie_render.jl:280` +1 | `canvasH`, `canvasW`, `fps`, `labelColouring`, `labelColours`, `labelContourPx`, `labelFiles`, `labelOpacity`, `labelsPath`, `outPath`, `outPaths`, `overlaySizeUnit` +10 |
 | `writers/render_figure.py` | `app/src/figures.jl:103` | `states` |
-| `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:835` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
+| `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:845` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
 | `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1175` | — |
 
 Call sites with a computed script name (not resolved): `app/src/maintenance.jl:88`, `app/src/model/project.jl:412`, `app/src/py_runner.jl:188`
@@ -215,7 +215,7 @@ Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
 
 | File | Path | Named from |
 |---|---|---|
-| `constants.json` | `frontend/src/lib/webgpu/shaders/constants.json` | Julia: `api/src/shader_constants.jl`; Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts`, `frontend/src/lib/webgpu/shaderSource.ts` +7 |
+| `constants.json` | `frontend/src/lib/webgpu/shaders/constants.json` | Julia: `api/src/shader_constants.jl`; Python: `python/cecelia/utils/movie_io.py`, `python/cecelia/utils/wgpu_host.py` +1; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts`, `frontend/src/lib/webgpu/shaderSource.ts` +8 |
 | `figureStyle.json` | `frontend/src/lib/figureStyle.json` | Julia: `app/src/figures.jl`; Python: `python/cecelia/writers/render_figure.py`; TS/Vue: `frontend/src/components/FigureStyleEditor.vue`, `frontend/src/utils/figureStyle.ts` |
 | `golden.json` | `frontend/src/lib/webgpu/shaders/golden.json` | Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/wgslExpand.ts` |
 | `guides.json` | `mcp/cecelia_mcp/guides.json` | Python: `mcp/cecelia_mcp/server.py`, `scripts/agent_eval/guide_run.py` +1; TS/Vue: `frontend/src/lib/claudeOverview.ts`, `frontend/src/lib/guides/guideText.ts` +1 |

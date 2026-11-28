@@ -51,7 +51,7 @@ Checked by convention-check (`wrong home`).
 
 **Exception — whole files that exist to bridge a named external system.** A legacy-format migrator
 (`migrateLegacy.jl`, `python/cecelia/utils/legacy_migrate.py`, `scan_legacy_run.py`), a canonical
-port of a published algorithm (`app/src/tasks/tracking/track_measures.jl` and
+port of a published algorithm (`app/src/tracking/track_metrics.jl`, `app/src/tasks/tracking/track_measures.jl` and
 `app/src/tracking/track_diagnostics.jl` — the celltrackR ports, validated against celltrackR golden
 values in `app/test/suite.jl`), or a reference implementation kept alongside the production path
 (`python/cecelia/utils/anisotropy_utils.py:tangent_tensor_field`) IS bridging code — its references
