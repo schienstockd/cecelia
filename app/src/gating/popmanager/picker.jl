@@ -32,6 +32,17 @@ function flatten_pop_tree(tree)::Vector{Tuple{String,String,String,String}}
 end
 
 """
+    pop_run(m, path) -> String
+
+The clustering run a population of `m` picks its clusters from — `cluster_pop_suffix`, so `tissues`
+for a `clusters.tissues` filter — or `""` for a gate, a derived pop, a path `m` lacks, or anything that
+is not a population tree. The viewer and the summary-canvas picker group cluster pops by it, so a
+second clustering run's populations can be shown or hidden as one.
+"""
+pop_run(m, path::AbstractString)::String =
+    m isa PopulationTree && has_pop(m, path) ? something(cluster_pop_suffix(pop_at(m, path)), "") : ""
+
+"""
     plot_pop_types(pop_type, granularity) -> Vector{String}
 
 Pop types the summary picker surfaces for a plot's granularity. A **track**-granularity plot unions
@@ -69,25 +80,26 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
             v = String(vn); v in vn_order || push!(vn_order, v)
         end
         return [(value_name = v,
-                 populations = [(path = "/labels", name = v, colour = "#7c93b8", pop_type = "labels", uid = "")])
+                 populations = [(path = "/labels", name = v, colour = "#7c93b8", pop_type = "labels", uid = "", run = "")])
                 for v in vn_order]
     end
     vn_order = String[]
     order = Dict{String,Vector{Tuple{String,String}}}()                       # vn → ordered (pt, path)
-    # vn → key → (name, colour, pt, uid). `uid` is empty for derived pops (they aren't in the gating
-    # map) and for legacy trees whose sidecar predates pop uids.
-    meta  = Dict{String,Dict{Tuple{String,String},NTuple{4,String}}}()
+    # vn → key → (name, colour, pt, uid, run). `uid` is empty for derived pops (they aren't in the gating
+    # map) and for legacy trees whose sidecar predates pop uids. `run` is the clustering run a cluster
+    # pop picks from (`pop_run`), empty for every other pop — the picker filters by it.
+    meta  = Dict{String,Dict{Tuple{String,String},NTuple{5,String}}}()
     for img in imgs
         for vn in value_names_for(img)
             v = String(vn)
             haskey(order, v) || (push!(vn_order, v); order[v] = Tuple{String,String}[];
-                                  meta[v] = Dict{Tuple{String,String},NTuple{4,String}}())
+                                  meta[v] = Dict{Tuple{String,String},NTuple{5,String}}())
             for pt in pop_types
                 m = try; load_map(img, v, pt); catch; nothing; end
                 m === nothing && continue
                 for (path, name, colour, uid) in flatten_pop_tree(to_tree(m))
                     key = (pt, path); haskey(meta[v], key) && continue
-                    push!(order[v], key); meta[v][key] = (name, colour, pt, uid)
+                    push!(order[v], key); meta[v][key] = (name, colour, pt, uid, pop_run(m, path))
                 end
             end
         end
@@ -103,7 +115,7 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
         for pt in pop_types, dpath in derived_pop_paths(pt)              # root-level derived, at the top
             derived_ok(v, pt, "", dpath) || continue                     # e.g. hide root /_tracked when gated
             key = (pt, dpath)
-            haskey(meta[v], key) || (meta[v][key] = (pop_name(dpath), "#7c93b8", pt, ""))
+            haskey(meta[v], key) || (meta[v][key] = (pop_name(dpath), "#7c93b8", pt, "", ""))
             key in rebuilt || push!(rebuilt, key)
         end
         for (pt, path) in order[v]                                       # each stored pop, then its derived children
@@ -116,14 +128,14 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
                 # …so a derived child (e.g. /qc/_tracked) shows in its parent's colour rather than a
                 # generic grey. The parent's colour IS editable (gating page) but the derived child's
                 # isn't (read-only on the behaviour page), so propagating keeps them visually paired.
-                meta[v][key] = (pop_name(dpath), parent_colour, pt, ""); push!(rebuilt, key)
+                meta[v][key] = (pop_name(dpath), parent_colour, pt, "", ""); push!(rebuilt, key)
             end
         end
         order[v] = rebuilt
     end
     [(value_name = v,
       populations = [(path = p, name = meta[v][(pt, p)][1], colour = meta[v][(pt, p)][2],
-                      pop_type = pt, uid = meta[v][(pt, p)][4])
+                      pop_type = pt, uid = meta[v][(pt, p)][4], run = meta[v][(pt, p)][5])
                      for (pt, p) in order[v]])
      for v in vn_order]
 end

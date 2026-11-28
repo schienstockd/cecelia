@@ -159,7 +159,8 @@ function _load_palettes()
                 heat     = collect(_HEAT_STOPS_FALLBACK),
                 branch   = RGB{N0f8}[],
                 no_value = _NO_VALUE_FALLBACK,
-                mixed    = _hex_to_rgb_strict(OVERLAY_GREY))
+                mixed    = _hex_to_rgb_strict(OVERLAY_GREY),
+                region_edge = "#ffd33d")
     end
     doc = JSON3.read(read(_PALETTES_JSON_PATH, String))
     pal = [_hex_to_rgb_strict(String(h)) for h in doc.palettes.cecelia]
@@ -168,7 +169,9 @@ function _load_palettes()
     branch = [_hex_to_rgb_strict(String(h)) for h in get(doc, :branchTypeColours, String[])]
     no_value = _hex_to_rgb_strict(String(get(doc, :noValue, "#1A1A1A")))
     mixed = _hex_to_rgb_strict(String(get(doc, :trackMixed, "#9ca3af")))
-    (palette = pal, modes = modes, heat = heat, branch = branch, no_value = no_value, mixed = mixed)
+    region_edge = String(get(doc, :regionEdge, "#ffd33d"))
+    (palette = pal, modes = modes, heat = heat, branch = branch, no_value = no_value, mixed = mixed,
+     region_edge = region_edge)
 end
 
 const _PALETTES_DATA = _load_palettes()
@@ -904,8 +907,8 @@ The plan half of an overlays dict (`_overlays_raw_from_config`, either key spell
     *Colour* on track clusters: `["trackclust"]`); empty = `pop_types` (`mask_pop_scope`);
   * `track_colours` — the viewer's Tracks-legend colours, keyed as its sources are (`vn`,
     `vn::path`, `vn::popType::path`, `vn::trackclust::path`);
-  * `skeletons` / `spatial_graphs` — `(name, colour)` lines drawn static: a look's skeletons and
-    neighbour graphs (`plan_draws_lines`);
+  * `skeletons` / `spatial_graphs` / `region_edges` — `(name, colour)` lines drawn static: a look's
+    skeletons, neighbour graphs and region boundaries (`plan_draws_lines`);
   * `pop_eyes` / `ribbon_eyes` — a viewer look's point and ribbon eyes (`parse_look_eyes`); empty for
     a batch. A pop with an eye draws by it, whatever its `show`; a ribbon eye outranks
     `hidden_track_pops`, which is path-only.
@@ -949,11 +952,19 @@ function overlay_track_plan(ov)
     spatial_graph_width = gw isa Real && gw > 0 ? Float64(gw) : SPATIAL_GRAPH_WIDTH
     # only the edges between cells of the pops drawn (a look's `spatialGraphPopsOnly`)
     spatial_graph_pops_only = Bool(something(g("spatialGraphPopsOnly", false), false))
+    # the region boundaries drawn as lines, `{name => colour}` (a look's `regionEdges`, `region_edge_segments`)
+    re_raw = g("regionEdges", nothing)
+    region_edges = re_raw isa AbstractDict ?
+        sort!(Tuple{String,String}[(String(k), v isa AbstractString ? String(v) : "") for (k, v) in re_raw]) :
+        Tuple{String,String}[]
+    rw = g("regionEdgeWidth", nothing)
+    region_edge_width = rw isa Real && rw > 0 ? Float64(rw) : REGION_EDGE_WIDTH
     # "Tracked only": the segmentations whose untracked cells' dots are dimmed (a viewer look's)
     du_raw = g("dimUntracked", nothing)
     dim_untracked = du_raw isa AbstractVector ? Set{String}(String(x) for x in du_raw) : Set{String}()
     rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes,
-              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width, spatial_graph_pops_only, dim_untracked)
+              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width, spatial_graph_pops_only,
+              region_edges, region_edge_width, dim_untracked)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -1134,6 +1145,14 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         push!(skels, (segs_g, rgb(isempty(col) ? SPATIAL_GRAPH_COLOUR : col),
                       static_line_t1(get(plan, :spatial_graph_width, SPATIAL_GRAPH_WIDTH))))
     end
+    # Region boundaries — the same static lines (`region_edge_segments`, the viewer's reader)
+    for (name, col) in get(plan, :region_edges, Tuple{String,String}[])
+        es = region_edge_segments(img, name)
+        es === nothing && (@warn "region edge '$name' is gone — re-run it" image = img.uid; continue)
+        length(es) == 0 && continue
+        push!(skels, (es, rgb(isempty(col) ? REGION_EDGE_COLOUR : col),
+                      static_line_t1(get(plan, :region_edge_width, REGION_EDGE_WIDTH))))
+    end
 
     sources = vcat(seg_srcs, gated_srcs, tc_srcs)
     (isempty(pts) && all(s -> isempty(s.hops), sources) && isempty(skels)) && return nothing
@@ -1152,6 +1171,9 @@ end
 
 # A neighbour graph's line colour when a look names none — the viewer's `SPATIAL_GRAPH_COLOUR`.
 const SPATIAL_GRAPH_COLOUR = "#ffffff"
+# A region boundary's line colour when a look names none — `palettes.json` → `regionEdge`, the
+# viewer's `REGION_EDGE_COLOUR`.
+const REGION_EDGE_COLOUR = _PALETTES_DATA.region_edge
 # (its default width, `SPATIAL_GRAPH_WIDTH`, is shared with the viewer through `shader_constants.jl`)
 
 """
@@ -1166,10 +1188,11 @@ static_line_t1(width) = width isa Real && width > 0 ? -(1.0 + width) : -1.0
 """
     plan_draws_lines(plan) -> Bool
 
-Whether an `overlay_track_plan` draws static lines — skeletons or neighbour graphs — which, like
-tracks, need the overlay closure even with no pops or mask.
+Whether an `overlay_track_plan` draws static lines — skeletons, neighbour graphs or region boundaries
+— which, like tracks, need the overlay closure even with no pops or mask.
 """
-plan_draws_lines(plan) = !isempty(plan.skeletons) || !isempty(get(plan, :spatial_graphs, ()))
+plan_draws_lines(plan) = !isempty(plan.skeletons) || !isempty(get(plan, :spatial_graphs, ())) ||
+                         !isempty(get(plan, :region_edges, ()))
 
 # A look's skeleton colour meaning "by branch type" — the viewer's `SKELETON_BY_TYPE`, and what it
 # always sends: each line takes its branch's skan type colour (`branch_type_colour`).

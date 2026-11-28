@@ -115,6 +115,8 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "spatialAnalysis.cellContacts"     => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.contactsMeshes"   => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.aggregatesMeshes" => ["nCells", "nAggregates", "fracAggregated"],
+    # region edge: a region in far more pieces, or far fewer cells inside, than its peers' is worth a look
+    "spatialAnalysis.regionEdge"       => ["nRegionCells", "fracInside", "fracInSmallPieces"],
     # ROI discovery: an image whose mask covers far more of the volume than its peers is thresholding
     # bleed-through, and one with far more/fewer ROIs is worth a look (ROI_TRIAGE_PLAN §4).
     "spatialAnalysis.roiDiscovery"     => ["nCandidates", "nRois", "maskCoverage"],

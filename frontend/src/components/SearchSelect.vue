@@ -33,7 +33,9 @@ const highlight = ref(-1)
 const shown = computed(() => filterGroups(props.groups, query.value))
 const flat = computed(() => flatOptions(shown.value))
 const label = computed(() => labelFor(props.groups, props.modelValue))
-const width = computed(() => (trigger.value ? `${Math.max(trigger.value.offsetWidth, 160)}px` : undefined))
+// the open list is at least the control's width, and grows to its longest name (capped by `.ss-menu`):
+// a narrow panel's control must not cut `flow.cell.edge_dist#regions.loc` to `flow.cell.edge_dist#re…`
+const minWidth = computed(() => (trigger.value ? `${Math.max(trigger.value.offsetWidth, 160)}px` : undefined))
 
 function scrollToHot() {
   nextTick(() => listEl.value?.querySelector('.ss-hot')?.scrollIntoView({ block: 'nearest' }))
@@ -76,7 +78,7 @@ function onKeydown(e: KeyboardEvent) {
             @click="open = !open"
             @keydown.down.prevent="open = true">{{ label || placeholder }}</button>
     <TeleportPopover v-model="open" :anchor="trigger" placement="bottom-start" flush>
-      <div class="ss-menu" :style="{ width }">
+      <div class="ss-menu" :style="{ minWidth }">
         <input ref="filterEl" v-model="query" type="search" class="cc-input-xs ss-filter"
                placeholder="Search" aria-label="Search the list"
                v-tooltip.top="'Type to narrow; Enter picks'" @keydown="onKeydown" />
@@ -100,7 +102,8 @@ function onKeydown(e: KeyboardEvent) {
 .ss { display: inline-flex; min-width: 0; }
 .ss-trigger { flex: 1; min-width: 0; text-align: left;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ss-menu { display: flex; flex-direction: column; gap: 0.25rem; }   /* padding: TeleportPopover (flush) */
+.ss-menu { display: flex; flex-direction: column; gap: 0.25rem;      /* padding: TeleportPopover (flush) */
+  width: max-content; max-width: min(34rem, calc(100vw - 2rem)); }
 .ss-filter { width: 100%; box-sizing: border-box; }
 /* Block flow, not a flex column: flex items with overflow:hidden shrink to 0 to fit max-height, so a
    40-channel list collapsed into overlapping slivers. */

@@ -207,3 +207,11 @@ function _unregister_task!(fun_name::AbstractString)::Bool
         true
     end
 end
+
+# A task instance -> the `fun_name` it was registered under (falls back to the type name for a task
+# with no spec). Used by the scheduler, validation and the HPC dispatch to key logs / records.
+function _fun_name_from_task(task::CciaTask)::String
+    spec = _task_spec(task)
+    isnothing(spec) && return string(typeof(task))
+    string(get(spec, "fun_name", string(typeof(task))))
+end

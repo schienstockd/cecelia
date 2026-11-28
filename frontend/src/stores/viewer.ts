@@ -45,6 +45,8 @@ export interface OpenImage {
   branchNames?: string[]
   /** the neighbour graphs it can draw as lines (`meta.spatialGraphNames`) */
   spatialGraphNames?: string[]
+  /** the region boundaries it can draw as lines (`meta.regionEdgeNames`) */
+  regionEdgeNames?: string[]
 }
 
 const K_OPEN_IMAGE       = 'cc.viewer.openImage'

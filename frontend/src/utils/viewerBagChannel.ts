@@ -13,7 +13,7 @@
 
 import { POP_EYES_KEYS } from './viewer/popEyes'
 
-export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'graphVis' | 'graphPopsOnly' | 'setPrefs' | 'imageVersion' | 'trackPopHidden'
+export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'graphVis' | 'graphPopsOnly' | 'edgeVis' | 'setPrefs' | 'imageVersion' | 'trackPopHidden'
   | 'popEyes' | 'ribbonEyes' | 'roiChecked' | 'labelFilesHidden'
 
 export interface ViewerBagEvent {
@@ -45,6 +45,7 @@ export function decodeViewerBagEvent(
     case 'cc.viewerBranchVisibility': return { kind: 'branchVis',    value }
     case 'cc.viewerGraphVisibility':  return { kind: 'graphVis',     value }
     case 'cc.viewerGraphPopsOnly':    return { kind: 'graphPopsOnly', value }
+    case 'cc.viewerEdgeVisibility':   return { kind: 'edgeVis',      value }
     case 'cc.viewerSetPrefs':         return { kind: 'setPrefs',     value }
     case 'cc.viewerImageVersion':     return { kind: 'imageVersion', value }
     case 'cc.viewerTrackPopHidden':   return { kind: 'trackPopHidden', value }

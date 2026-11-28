@@ -83,6 +83,7 @@ export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
 export img_pattern_dir, img_pattern_path, img_pattern_suffixes
 export img_proximity_dir, img_proximity_path, img_proximity_suffixes
+export img_region_edge_dir, img_region_edge_path, img_region_edge_suffixes
 export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
 export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
@@ -119,6 +120,7 @@ export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
 export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df, branch_paths
 export SkeletonSegments, skeleton_segments, skeleton_segments_at
+export region_edge_segments
 export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between, spatial_graph_window_grid, window_grid_segments
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
@@ -242,7 +244,7 @@ export stale_artefacts_for, staleness_sidecar_path, stale_outputs_for
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions, LensQuery, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes, ProximityProfile
+export CellNeighbours, ClustRegions, LensQuery, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes, ProximityProfile, RegionEdge
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
@@ -266,7 +268,7 @@ export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance
 export start_job!, claim_job!, job_active, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
 export resize_pool!, set_pool_limit!
-# Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
+# Sink-agnostic execution (tasks/scheduler/execute.jl) — one implementation, driven by the API server today and
 # by the detached runner next. See docs/todo/TASK_RUNNER_PLAN.md.
 export TaskRequest, execute_task, task_request, task_request_dict
 export ChainRequest, execute_chain, chain_request, chain_request_dict
@@ -346,6 +348,7 @@ include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (notebooks)
 include("skeleton_lines.jl")   # a skeleton's branch polylines as segments (viewer + movies)
 include("spatial_graph_lines.jl")   # a neighbour graph's edges as segments (viewer + movies)
+include("region_edge_lines.jl")   # a region's boundary as segments (viewer + movies)
 include("plotting/plot_data.jl")
 include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "elbow") from the hmmfit records
 include("plotting/stats.jl")
@@ -458,12 +461,14 @@ include("tasks/spatialAnalysis/proximity_bands.jl")
 include("tasks/spatialAnalysis/proximityProfile.jl")
 include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")
+include("tasks/spatialAnalysis/regionEdge.jl")
 include("tasks/clustRegions/graph.jl")
 include("tasks/clustRegions/cluster.jl")
 include("region_lens_query.jl")   # "find regions like this one" from a lens (LENS_QUERY_PLAN)
 include("tasks/clustRegions/lensQuery.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")
+include("rename_value_name.jl")   # rename_value_name! (jobs tier: calls gating, ROI sets, scheduler)
 include("figures.jl")         # paper figures from a spec (FIGURES_PLAN); the renderer is render_figure.py
 include("analysis_runs.jl")   # per-run delete registry (IMAGE_DELETE_PLAN Decision 14); after the task files it names
 include("tasks/task_registry.jl")
@@ -478,7 +483,7 @@ include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
 # Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
 # detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
-include("runner/execute.jl")
+include("tasks/scheduler/execute.jl")
 # Chain events -> wire frames, shared by the API server and the runner (one builder, one bank).
 include("runner/chain_frames.jl")
 # Task preview — the resident preview worker's lifecycle + request shape. Shares the resident-WS-
@@ -503,7 +508,7 @@ include("project_io.jl")
 include("ai/agent_runner.jl")
 include("ai/observer_plugin.jl")   # the terminal plugin: observer MCP + caller hook
 include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log out
-# Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
+# Per-profile settings (`active_profile_name()` itself is in config.jl).
 include("config/profile_settings.jl")
 include("ai/claude_conversations.jl")   # delete a profile's Claude conversations (shared workstation)
 include("ai/ai_switch.jl")   # is AI allowed for this profile? workstation ceiling + profile preference

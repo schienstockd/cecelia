@@ -89,6 +89,15 @@ fn lineWidth(tEnd: f32, tailWidth: f32) -> f32 {
   return select(tailWidth, -tEnd - 1.0, tEnd < -1.0);
 }
 
+// A segment's screen px. A static line with its own width (a graph, a region edge) is never thinner
+// than that many screen px: zoomed out over a whole tissue its image-unit width falls under the floor,
+// and its width setting would otherwise change nothing. Zoomed in it grows with the image, as before.
+fn linePx(tEnd: f32, tailWidth: f32, umPerSize: f32, pxPerUm: f32) -> f32 {
+  let w = lineWidth(tEnd, tailWidth);
+  let px = overlayPx(w, umPerSize, pxPerUm);
+  return select(px, max(px, w), tEnd < -1.0);
+}
+
 // Corner `vi` of a tail quad from NDC `pa` to `pb`, `widthPx` wide. Widened perpendicular to the
 // SCREEN-space direction, in pixels, so the width stays constant under perspective.
 fn ribbonPos(pa: vec2<f32>, pb: vec2<f32>, vi: u32, widthPx: f32, canvas: vec2<f32>) -> vec4<f32> {

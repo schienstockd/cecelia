@@ -133,6 +133,10 @@ export interface BatchMovieCfg {
   spatialGraphWidth?: number
   // only the edges between cells of the pops drawn (`spatial_graph_between`)
   spatialGraphPopsOnly?: boolean
+  // The region boundaries drawn as lines, `{run name → colour}` (`region_edge_segments`). Absent = none.
+  regionEdges?: Record<string, string>
+  // their lines' width, in the tail width's units; absent = `REGION_EDGE_WIDTH`
+  regionEdgeWidth?: number
   // the segmentations whose untracked cells' dots are dimmed — a viewer look's "Tracked only"
   dimUntracked?: string[]
   /** the viewer's scale bar / timestamp (on / off, text px on its canvas of `textCanvasPx` height)
@@ -221,6 +225,8 @@ export interface BatchMovieRequestConfig {
   spatialGraphs?: Record<string, string>
   spatialGraphWidth?: number
   spatialGraphPopsOnly?: boolean
+  regionEdges?: Record<string, string>
+  regionEdgeWidth?: number
   dimUntracked?: string[]
   showScaleBar?: boolean
   showTimestamp?: boolean
@@ -380,6 +386,9 @@ export function buildBatchMovieConfig(
       ? { spatialGraphs: { ...cfg.spatialGraphs },
           ...(cfg.spatialGraphWidth ? { spatialGraphWidth: cfg.spatialGraphWidth } : {}),
           ...(cfg.spatialGraphPopsOnly ? { spatialGraphPopsOnly: true } : {}) } : {}),
+    ...(cfg.regionEdges && Object.keys(cfg.regionEdges).length
+      ? { regionEdges: { ...cfg.regionEdges },
+          ...(cfg.regionEdgeWidth ? { regionEdgeWidth: cfg.regionEdgeWidth } : {}) } : {}),
     ...(cfg.dimUntracked?.length ? { dimUntracked: [...cfg.dimUntracked] } : {}),
     ...(cfg.scaleBarPx ? { scaleBarPx: cfg.scaleBarPx } : {}),
     ...(cfg.timestampPx ? { timestampPx: cfg.timestampPx } : {}),

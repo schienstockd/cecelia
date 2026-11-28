@@ -418,6 +418,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "A contact target has no cells",
         long  = "No contact columns were written for it — check that population's gate, or pick another target."),
 
+    # region edge (spatialAnalysis.regionEdge `region_edge_qc_findings`)
+    "regionEdge.no_boundary" => (
+        short = "No region edge in view",
+        long  = "The region fills the whole image, so no distance could be measured."),
+    "regionEdge.scattered" => (
+        short = "Region is scattered, not one area",
+        long  = "Most of its cells sit in small pieces; raise the radius, or use Cell contacts instead."),
+
     # neighbour graph (spatialAnalysis.cellNeighbours `_neighbours_qc_findings`): mean degree under
     # SPARSE_GRAPH_MEAN_DEGREE — composition vectors too coarse for region clustering, too few contacts
     # per cell for interaction stats. Re-judged on the graph's consumers (clustRegions, neighbourStats).

@@ -64,17 +64,13 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
 
     # Intra-task workers capped at the CPU pool's current headroom. `in_flight` already includes
     # this task, so `limit - in_flight + 1` is the total worker budget it can safely spend. Racy
-    # (a peer may submit between here and worker spawn), but the cap moves down when the user
+    # (read as the job starts; a peer may submit before the workers spawn), but the cap moves down when the user
     # tightens the PoolThrottle. Also capped at 8: each worker is a process holding one block
     # (~0.4 GB measured), and more would just steal from peers. No tiling params: the block is a
     # fixed, chunk-aligned size in `measure_utils` (docs/todo/MEASURE_TILING_PLAN.md, Decision 8).
-    pool_headroom = try
-        cpu = filter(x -> x.name == "cpu", pool_status())
-        isempty(cpu) ? 1 : max(1, cpu[1].limit - cpu[1].running + 1)
-    catch; 1 end
-    n_threads = min(pool_headroom, 8)
     # On a cluster the job's own allocation is the budget, not this machine's pool (HPC_PLAN code reality 7).
-    n_threads = something(hpc_task_cpus(), n_threads)
+    # The scheduler / HPC dispatch bind both as `RUN_CPU_BUDGET` (run_usage.jl).
+    n_threads = run_cpu_threads(; cap = 8)
     h5ad_path = joinpath(task_dir, "labelProps", "$(p.outputValueName).h5ad")
     had_af    = af_cells_had_columns(h5ad_path)   # the rebuilt table drops them; put back after
 

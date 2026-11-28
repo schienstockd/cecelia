@@ -313,6 +313,7 @@ include(joinpath(@__DIR__, "suite", "movie_rail_translators.jl"))
 include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
 include(joinpath(@__DIR__, "suite", "skeleton_lines.jl"))
 include(joinpath(@__DIR__, "suite", "spatial_graph_lines.jl"))
+include(joinpath(@__DIR__, "suite", "region_edge_lines.jl"))
 include(joinpath(@__DIR__, "suite", "spatial_graph_stale.jl"))   # RESULT-REVIEW result-090b69ae
 include(joinpath(@__DIR__, "suite", "spatial_graph_pops.jl"))
 include(joinpath(@__DIR__, "suite", "tracked_only_dots.jl"))

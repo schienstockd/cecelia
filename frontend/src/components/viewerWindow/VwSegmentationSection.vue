@@ -1,6 +1,6 @@
 <!--
   The viewer window's Segmentation section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): what
-  mask is on screen, its visibility, opacity, outline and colour mode; and the neighbour graph's colour. No picker — which segmentation
+  mask is on screen, its visibility, opacity, outline and colour mode; and the neighbour graph's and region edge's colour. No picker — which segmentation
   is shown is picked under "On the image" (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, Decision 2).
   The window owns the mask state; this renders it and asks for a redraw.
 -->
@@ -31,6 +31,8 @@ const props = defineProps<{
   timecourse: boolean
   /** a neighbour graph is drawn ("On the image") — its lines' colour is picked here */
   graphShown: boolean
+  /** a region boundary is drawn ("On the image") — its lines' colour is picked here */
+  edgeShown?: boolean
 }>()
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
@@ -118,6 +120,15 @@ const colourTip = computed(() => colourOptions.value.find(o => o.value === shown
              v-model.lazy.number="settings.viewerGraphWidth" aria-label="Graph line width"
              v-tooltip.bottom="'Edge width'">
       <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerGraphWidth }}</span>
+    </div>
+    <div v-if="edgeShown" class="cc-row cc-row-tight">
+      <span class="cc-muted cc-fs-2xs cc-lbl-col">Edge</span>
+      <ColourPicker v-model="settings.viewerEdgeColour" tip="Colour of the region boundary" />
+      <!-- `.lazy`: written on release — each write rebuilds the whole line buffer -->
+      <input type="range" class="vw-grow" :min="0.5" :max="6" :step="0.5"
+             v-model.lazy.number="settings.viewerEdgeWidth" aria-label="Region edge line width"
+             v-tooltip.bottom="'Boundary width'">
+      <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerEdgeWidth }}</span>
     </div>
 
   </CollapsibleSection>

@@ -71,6 +71,8 @@ export interface OverlayPop {
    *  (see `filterPayloadByTrackSource`). Absent on payloads from older servers → the caller falls
    *  back to labels-only filtering. */
   uid?: string
+  /** The clustering run a cluster pop picks from ("" or absent for a gate) — the run filter (`utils/popRuns.ts`). */
+  run?: string
   labels: number[]
 }
 
@@ -213,6 +215,30 @@ export const SPATIAL_GRAPH_COLOUR = WHITE
 /** Its lines' width until one is picked, in the tail width's units (image px in the viewer) — a quarter
  *  of the default tail: a graph has ~3 lines per cell. `shaders/constants.json`, which the movie reads too. */
 export const SPATIAL_GRAPH_WIDTH: number = SHADER_CONSTANTS.SPATIAL_GRAPH_WIDTH
+
+/** `/api/viewer/region-edges` — a region's boundary (`spatialAnalysis.regionEdge`) as segments, the
+ *  skeleton payload's shape and units (`region_edge_segments`). The image frame is never part of it. */
+export interface RegionEdgePayload {
+  suffix: string
+  flat: boolean
+  nSegments: number
+  t: number[]
+  plane: number[]
+  x0: number[]; y0: number[]; z0: number[]
+  x1: number[]; y1: number[]; z1: number[]
+  note?: string
+}
+
+export function regionEdgesUrl(q: { projectUid: string; imageUid: string; suffix: string }): string {
+  return '/api/viewer/region-edges?' + new URLSearchParams(q).toString()
+}
+
+/** A region boundary's line colour until one is picked — `palettes.json` → `regionEdge`, which the
+ *  movie reads too. Yellow: it must stand apart from white graph edges and grey tails. */
+export const REGION_EDGE_COLOUR: string = palettesJson.regionEdge
+/** Its width until one is picked, in the tail width's units — `shaders/constants.json`, which the movie
+ *  reads too. Twice a graph edge's: one outline per region, so it can be bolder without burying cells. */
+export const REGION_EDGE_WIDTH: number = SHADER_CONSTANTS.REGION_EDGE_WIDTH
 
 /** A static line's end-timepoint lane: -1 (drawn unfaded, at the tail width), or -(1 + width) for a
  *  line with its own width (`lineWidth` in `shaders/overlay_quads.wgsl`; the movie's `static_line_t1`). */

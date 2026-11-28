@@ -170,8 +170,10 @@ export interface SegmentationPops {
   // `plots/reresolvePops` to keep a plot capture's populations selectable across a pop rename.
   // `granularity` is what ONE row of this pop is on a plot (server `is_track_pop`): `track` for a
   // track-gated pop and a derived `_tracked` set, `cell` for a plain gate.
+  // `run` is the clustering run a cluster pop picks from ("" for a gate) — the picker's run filter
+  // (`utils/popRuns.ts`).
   populations: { path: string; name: string; colour: string; popType: string; uid: string
-                 granularity?: 'cell' | 'track' }[]
+                 granularity?: 'cell' | 'track'; run?: string }[]
 }
 
 // one heatmap cell — value is the mean (profile) / count|rate (crosstab); n/count carry the sample size

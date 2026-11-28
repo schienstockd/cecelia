@@ -23,7 +23,7 @@ end
     # no list of task types. So every concrete CciaTask the package defines must have registered
     # exactly once, under one fun_name, with a spec that exists.
     reg = Cecelia._fun_name_map()
-    @test length(reg) == 68                                  # 59 task types + 9 composites
+    @test length(reg) == 69                                  # 60 task types + 9 composites
     src = joinpath(pkgdir(Cecelia), "src")
     pkg_types = Set(S for S in (getfield(Cecelia, n) for n in names(Cecelia; all = true)
                                 if isdefined(Cecelia, n))
@@ -31,7 +31,7 @@ end
                        S !== Cecelia.CompositeTask && parentmodule(S) === Cecelia &&
                        startswith(string(first(methods(S)).file), src))
     reg_types = [typeof(t) for t in values(reg) if !(t isa Cecelia.CompositeTask)]
-    @test length(reg_types) == length(unique(reg_types)) == 59
+    @test length(reg_types) == length(unique(reg_types)) == 60
     @test Set(reg_types) == pkg_types                         # none forgotten, none extra
     for (fn, t) in reg
         @test isfile(Cecelia._spec_path(t))
