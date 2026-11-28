@@ -946,7 +946,7 @@ function handle_task_run(ws, data)
     _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
     # Everything above is the ASKING side — guards and project-state edits this process owns. The run
-    # itself is `execute_task` (app/src/runner/execute.jl), which knows nothing about sockets: scope
+    # itself is `execute_task` (app/src/tasks/scheduler/execute.jl), which knows nothing about sockets: scope
     # dispatch, the pre-job throw guard, and the result→terminal-status ordering all live there, so the
     # detached runner executes the identical code rather than a second copy of it.
     # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).

@@ -58,13 +58,7 @@ function _custom_module_sources(root::AbstractString, dev_dir::Union{String,Noth
     vcat(filter(!is_plugin, files), filter(is_plugin, files))
 end
 
-"""
-    custom_modules_dir([dev_dir]) -> String
-
-The per-user custom-modules root, `<config_dir>/modules` (see [`config_dir`](@ref)).
-"""
-custom_modules_dir(dev_dir::Union{String,Nothing} = nothing)::String =
-    joinpath(config_dir(dev_dir), "modules")
+# `custom_modules_dir([dev_dir])` — `<config_dir>/modules` — lives in config.jl.
 
 """
     load_custom_modules!(; dev_dir=nothing) -> (; loaded, skipped, failed, removed)

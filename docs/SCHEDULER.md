@@ -409,7 +409,7 @@ nothing` and skip the kill. `_execute_job!`'s `on_process` wrapper closes this: 
 
 ### Chain nodes run through `execute_task`
 
-**`execute_task` (`app/src/runner/execute.jl`) is the canonical single-task pathway**, and a chain node
+**`execute_task` (`app/src/tasks/scheduler/execute.jl`) is the canonical single-task pathway**, and a chain node
 is a task. It resolves the `fun_name`, dispatches on the task's own `scope` (so a set node lands in
 `_execute_set_task` and its members still get one joint fit), wires `on_log`/`on_progress`/`on_status`/
 `on_result`, and guarantees a terminal status on every exit path. The API server (`handle_task_run` →

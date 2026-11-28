@@ -93,6 +93,32 @@ Run `f` with `acc` as the run's usage accumulator; read it afterwards with `run_
 """
 with_run_usage(f::Function, acc::RunUsage = RunUsage()) = Base.ScopedValues.with(f, RUN_USAGE => acc)
 
+# ── The run's CPU budget — bound above, read below ───────────────────────────────────────────────
+#
+# A task sizing its own parallelism (a worker pool, `nThreads`) needs the scheduler's pool headroom
+# and, on a cluster, the job's allocation — both owned by layers ABOVE the tasks. So those layers bind
+# the answer here, per job, and a task reads it: the scheduler binds the cpu pool's headroom around
+# `_run_task` (scheduler/jobs.jl), and the HPC dispatch rebinds it to the job's CPUs inside that
+# (`_with_run_target`, hpc/dispatch.jl). Same inversion as `HPC_DISPATCH` / `_run_py_remote`.
+
+"""
+`(; cpus, dedicated)` — the CPUs the running task may spread its own work over — or `nothing` outside a
+scheduled run (a task body called directly). `dedicated = false`: the cpu pool's headroom, a share of
+this machine; `true`: a cluster job's own allocation. Read it through `run_cpu_threads`.
+"""
+const RUN_CPU_BUDGET = Base.ScopedValues.ScopedValue{Union{Nothing,@NamedTuple{cpus::Int, dedicated::Bool}}}(nothing)
+
+"""
+    run_cpu_threads(; cap) -> Int
+
+Threads for a task's own parallelism: a cluster job's whole allocation, else this machine's cpu-pool
+headroom capped at `cap`; `1` outside a scheduled run.
+"""
+function run_cpu_threads(; cap::Integer)::Int
+    b = RUN_CPU_BUDGET[]
+    isnothing(b) ? 1 : b.dedicated ? b.cpus : min(b.cpus, Int(cap))
+end
+
 """
     read_local_py_usage(path) -> Dict{String,Any}
 

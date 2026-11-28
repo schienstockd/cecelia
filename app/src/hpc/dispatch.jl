@@ -93,7 +93,7 @@ function hpc_apply_site_rules(r::HpcResources, cls::HpcClass)::Tuple{HpcResource
 end
 
 """Everything a dispatched `run_py` needs, fixed when the job starts."""
-struct HpcDispatch
+struct HpcDispatch <: PyDispatch
     task_id::String
     conn::HpcConn
     backend::HpcBackend
@@ -112,8 +112,8 @@ HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, clas
     HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account,
                 on_stage, "")
 
-"""The active dispatch, `nothing` for a local run. Set by `_with_run_target`."""
-const HPC_DISPATCH = Base.ScopedValues.ScopedValue{Union{Nothing,HpcDispatch}}(nothing)
+# `HPC_DISPATCH` — the active dispatch, `nothing` for a local run — is defined in py_runner.jl (the layer
+# that reads it) and bound here by `_with_run_target`.
 
 """The cluster job's CPU count while a task is dispatched, else `nothing` (code reality 7)."""
 hpc_task_cpus()::Union{Int,Nothing} = (d = HPC_DISPATCH[]; isnothing(d) ? nothing : d.resources.cpus)
@@ -173,7 +173,9 @@ function _with_run_target(f::Function, rec::TaskRecord, task::CciaTask, img::Cci
            "$(d.resources.mem_gb) GB, $(d.resources.gpus) GPUs, $(d.resources.walltime_min) min")
     isempty(d.rule_note) || on_log("[HPC] " * d.rule_note)
     try
-        Base.ScopedValues.with(f, HPC_DISPATCH => d)
+        # The job's CPUs are the task's whole budget (`RUN_CPU_BUDGET`, run_usage.jl), not the pool's.
+        Base.ScopedValues.with(f, HPC_DISPATCH => d,
+                               RUN_CPU_BUDGET => (; cpus = d.resources.cpus, dedicated = true))
     finally
         stage!(HPC_STAGE_NONE, "")
     end
@@ -560,4 +562,8 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
         false
     end
 end
+
+# The `PyDispatch` hook (py_runner.jl): a cluster-dispatched task's `run_py` lands in `_run_py_hpc`.
+_run_py_remote(script_rel::AbstractString, params, task_dir::AbstractString, d::HpcDispatch; kw...)::Bool =
+    _run_py_hpc(script_rel, params, task_dir, d; kw...)
 
