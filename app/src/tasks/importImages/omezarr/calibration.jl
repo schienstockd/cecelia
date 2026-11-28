@@ -176,8 +176,51 @@ end
 # metadata editor so the field→axis/XML mapping never lives in two places.
 const _CALIBRATION_META_KEYS = (
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
+    AXIS_UNIT_META_KEYS...,
     "TimeIncrement", "TimeIncrementUnit",
 )
+
+"""
+    _set_corrected_z_um!(meta, z_um) -> meta
+
+Store a Z spacing measured in µm (the import's ImageJ Z fix) in `meta`'s shared `PhysicalSizeUnit`,
+and drop a per-axis `PhysicalSizeZUnit` the reader left for the raw value — else the µm number is
+relabelled with Z's old unit. A shared unit with no known factor gets Z labelled µm explicitly.
+"""
+function _set_corrected_z_um!(meta::AbstractDict, z_um::Real)
+    delete!(meta, "PhysicalSizeZUnit")
+    f = length_unit_um(get(meta, "PhysicalSizeUnit", nothing))
+    if isnothing(f)
+        meta["PhysicalSizeZ"] = Float64(z_um)
+        meta["PhysicalSizeZUnit"] = "micrometer"
+    else
+        meta["PhysicalSizeZ"] = z_um / f
+    end
+    meta
+end
+
+"""
+    apply_calibration_edit!(meta, fields) -> sync_fields
+
+Merge a metadata edit (`fields`, a JSON `null` deletes) into `meta`, and return what to hand
+`sync_zarr_calibration!`. An edited `PhysicalSize{X,Y,Z}` with no unit of its own is in the shared
+`PhysicalSizeUnit`, so that axis's per-axis unit is dropped — left in place it would relabel the new
+value. A per-axis unit the edit didn't touch rides along to the sync, so the store keeps it too.
+"""
+function apply_calibration_edit!(meta::AbstractDict, fields::AbstractDict)::Dict{String,Any}
+    for A in ("X", "Y", "Z")
+        haskey(fields, "PhysicalSize$A") && !haskey(fields, "PhysicalSize$(A)Unit") &&
+            delete!(meta, "PhysicalSize$(A)Unit")
+    end
+    for (k, v) in fields
+        isnothing(v) ? delete!(meta, k) : (meta[k] = v)
+    end
+    sync_fields = Dict{String,Any}(fields)
+    for k in AXIS_UNIT_META_KEYS
+        !haskey(sync_fields, k) && haskey(meta, k) && (sync_fields[k] = meta[k])
+    end
+    sync_fields
+end
 
 """Whether `meta` carries any calibration value worth syncing into the zarr (a `nothing` — a JSON
 `null` clear — doesn't count). Lets a caller skip the (non-trivial) object load when there's
@@ -207,11 +250,14 @@ function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
         v isa Real && (axis_updates[axis] = Float64(v))
     end
 
-    # NGFF axis units — one PhysicalSizeUnit covers x/y/z; TimeIncrementUnit is the t axis
+    # NGFF axis units — a per-axis `PhysicalSize{X,Y,Z}Unit` when the meta has one (a z in nm beside
+    # x/y in µm), else the shared PhysicalSizeUnit; TimeIncrementUnit is the t axis. Writing the
+    # shared unit onto an axis whose value is in its own unit relabels it (off by the unit factor).
     unit_updates = Dict{String,String}()
     spatial_unit = get(meta, "PhysicalSizeUnit", nothing)
-    if spatial_unit isa AbstractString
-        for axis in ("x", "y", "z"); unit_updates[axis] = spatial_unit; end
+    for (axis, A) in (("x", "X"), ("y", "Y"), ("z", "Z"))
+        u = _meta_axis_length_unit(meta, A)
+        u isa AbstractString && (unit_updates[axis] = u)
     end
     time_unit = get(meta, "TimeIncrementUnit", nothing)
     time_unit isa AbstractString && (unit_updates["t"] = time_unit)
@@ -219,14 +265,18 @@ function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
     # OME-XML <Pixels> attributes (napari reads the time interval only from here)
     # A unit with no OME symbol drops its values from the XML (the NGFF half above still lands).
     xml_attrs   = Dict{String,String}()
-    ome_spatial = spatial_unit isa AbstractString ? ome_xml_unit_name(spatial_unit) : nothing
-    spatial_ok  = !(spatial_unit isa AbstractString) || !isnothing(ome_spatial)
-    for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
-                            ("PhysicalSizeZ", "PhysicalSizeZUnit"))
+    spatial_ok  = true
+    unmapped    = nothing        # the spatial unit with no OME symbol, for the warning
+    for A in ("X", "Y", "Z")
+        key, unit_key = "PhysicalSize$A", "PhysicalSize$(A)Unit"
+        u       = _meta_axis_length_unit(meta, A)
+        ome_u   = u isa AbstractString ? ome_xml_unit_name(u) : nothing
+        unit_ok = !(u isa AbstractString) || !isnothing(ome_u)
         v = get(meta, key, nothing)
-        if v isa Real && spatial_ok
+        v isa Real && !unit_ok && (spatial_ok = false; unmapped = u)
+        if v isa Real && unit_ok
             xml_attrs[key] = string(Float64(v))
-            isnothing(ome_spatial) || (xml_attrs[unit_key] = ome_spatial)
+            isnothing(ome_u) || (xml_attrs[unit_key] = ome_u)
         end
     end
     tv       = get(meta, "TimeIncrement", nothing)
@@ -236,7 +286,7 @@ function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
         isnothing(ome_time) || (xml_attrs["TimeIncrementUnit"] = ome_time)
     end
     (spatial_ok && (!(time_unit isa AbstractString) || !isnothing(ome_time))) ||
-        @warn "Left a calibration value out of the OME-XML: no OME symbol for its unit" spatial_unit time_unit
+        @warn "Left a calibration value out of the OME-XML: no OME symbol for its unit" spatial_unit = something(unmapped, spatial_unit, Some(nothing)) time_unit
 
     (isempty(axis_updates) && isempty(unit_updates)) ||
         update_ome_scale!(zarr_path, axis_updates; units = unit_updates)

@@ -445,6 +445,13 @@ end
         "TimeIncrement" => 500.0, "TimeIncrementUnit" => "millisecond"))["TimeIncrementUnit"] == "ms"
     @test cal["PhysicalSizeX"] == 0.325 && cal["PhysicalSizeXUnit"] == "µm"
     @test cal["TimeIncrement"] == 10.0 && cal["TimeIncrementUnit"] == "s"
+    # A Z stored in its own unit (`PhysicalSizeZUnit`, beside a shared µm) is exported in THAT unit —
+    # labelled with the shared one, 2000 nm would reach Imaris as 2000 µm.
+    zcal = Cecelia._export_calibration(Dict{String,Any}(
+        "PhysicalSizeX" => 0.5, "PhysicalSizeZ" => 2000.0,
+        "PhysicalSizeUnit" => "micrometer", "PhysicalSizeZUnit" => "nanometer"))
+    @test zcal["PhysicalSizeZ"] == 2000.0 && zcal["PhysicalSizeZUnit"] == "nm"
+    @test zcal["PhysicalSizeXUnit"] == "µm"
 
     # A Z-MIP has no z extent left and a single frame has no interval — writing either would state a
     # geometry the file doesn't have.

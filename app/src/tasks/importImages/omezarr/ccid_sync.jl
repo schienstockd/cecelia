@@ -14,7 +14,7 @@ end
 # failed probe) is a real "we found nothing" that a plain additive merge would mask with a zombie value.
 const _OME_DERIVED_META_KEYS = (
     "SizeC", "SizeT", "SizeZ",
-    "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
+    "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw", AXIS_UNIT_META_KEYS...,
     "TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared", "TimeIncrementIrregular",
     # Read from the SOURCE file, same rule; and the new store runs in the file's plane order.
     "acquisition", "acquisitionMissing", ORI_Z_REVERSED_KEY,

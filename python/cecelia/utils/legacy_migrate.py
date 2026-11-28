@@ -20,6 +20,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from cecelia.utils.units import length_unit_um
+
 # Excluded, re-derivable obs columns (substring match): HMM states/transitions + any clustering col.
 EXCLUDE_PATTERNS = (".hmm.", "clust")
 _IGNORE = shutil.ignore_patterns("._*", ".DS_Store")
@@ -89,6 +91,20 @@ def read_ome_meta(ome_xml: Path) -> dict:
             meta[k] = float(a[k])
     if "PhysicalSizeXUnit" in a:
         meta["PhysicalSizeUnit"] = a["PhysicalSizeXUnit"]
+    # One shared `PhysicalSizeUnit` (X's): a Y/Z in a different unit (Z in nm beside X in µm) is
+    # converted into it, else the NGFF write in the migrate labels 2000 nm as 2000 µm. An unknown unit
+    # can't be converted — it keeps its value and says so in `PhysicalSize{Y,Z}Unit`. OME defaults to µm.
+    shared = a.get("PhysicalSizeXUnit", "µm")
+    for ax in ("Y", "Z"):
+        # a missing unit attribute is OME's default µm on THIS axis too, not "same as X"
+        key, unit = "PhysicalSize" + ax, a.get("PhysicalSize" + ax + "Unit", "µm")
+        if unit == shared or key not in meta:
+            continue
+        f_axis, f_shared = length_unit_um(unit, default=None), length_unit_um(shared, default=None)
+        if f_axis is not None and f_shared is not None:
+            meta[key] = meta[key] * f_axis / f_shared
+        else:
+            meta[key + "Unit"] = unit
     if "TimeIncrementUnit" in a:
         meta["TimeIncrementUnit"] = a["TimeIncrementUnit"]
     return meta
@@ -394,7 +410,8 @@ def migrate_image(src_proj: str, uid: str, dst_zero_dir: str, dst_meta_dir: str,
                        "z": meta.get("PhysicalSizeZ", 1.0),
                        "y": meta.get("PhysicalSizeY", 1.0),
                        "x": meta.get("PhysicalSizeX", 1.0)},
-                units={"z": sp, "y": sp, "x": sp, "t": meta.get("TimeIncrementUnit")},
+                units={"z": meta.get("PhysicalSizeZUnit", sp), "y": meta.get("PhysicalSizeYUnit", sp),
+                       "x": sp, "t": meta.get("TimeIncrementUnit")},
                 channels=r.get("channels", {}).get(active_fp) or r.get("channels", {}).get("default"))
             _log(f"upgraded NGFF axes (TCZYX) on {img_file}" if okx
                  else f"! NGFF axis upgrade skipped (shape mismatch) on {img_file}")

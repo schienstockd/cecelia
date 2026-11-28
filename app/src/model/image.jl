@@ -987,6 +987,10 @@ length_unit_um(u) = (k = _unit_key(u); k === nothing ? 1.0 : get(_LENGTH_UNIT_UM
 """`time_unit_seconds(unit)` → seconds per `unit`; `1.0` when no unit is recorded; `nothing` when unknown."""
 time_unit_seconds(u) = (k = _unit_key(u); k === nothing ? 1.0 : get(_TIME_UNIT_S, k, nothing))
 
+# Per-axis length units: present only for an axis the reader couldn't convert into the shared unit.
+# A writer that copies an axis's PhysicalSize* copies these too, or the value is read in the wrong unit.
+const AXIS_UNIT_META_KEYS = ("PhysicalSizeXUnit", "PhysicalSizeYUnit", "PhysicalSizeZUnit")
+
 # a per-axis unit (PhysicalSizeXUnit) when the meta has one, else the shared PhysicalSizeUnit
 _meta_axis_length_unit(m, axis) = something(get(m, "PhysicalSize$(axis)Unit", nothing), get(m, "PhysicalSizeUnit", nothing), Some(nothing))
 

@@ -142,6 +142,37 @@ class TestRmtreeRetry(unittest.TestCase):
             self.assertEqual(calls["n"], 1)   # no retry
 
 
+class TestReadOmeMetaUnits(unittest.TestCase):
+    # A legacy OME-XML with Z in a different unit from X: `read_ome_meta` returns ONE shared
+    # `PhysicalSizeUnit` (X's), so a Z left in its own unit would be labelled 1000x off by the
+    # migrate's NGFF axis write. The expected values are the unit definitions (1 nm = 1e-3 um).
+    def _meta(self, pixels_attrs):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "METADATA.ome.xml"
+            p.write_text(f"<OME><Image><Pixels {pixels_attrs}/></Image></OME>", encoding="utf-8")
+            return lm.read_ome_meta(p)
+
+    def test_z_in_nm_is_converted_into_the_x_unit(self):
+        m = self._meta('PhysicalSizeX="0.5" PhysicalSizeXUnit="µm" PhysicalSizeY="0.5" '
+                       'PhysicalSizeYUnit="µm" PhysicalSizeZ="2000" PhysicalSizeZUnit="nm"')
+        self.assertEqual(m["PhysicalSizeUnit"], "µm")
+        self.assertAlmostEqual(m["PhysicalSizeZ"], 2.0)
+        self.assertEqual(m["PhysicalSizeY"], 0.5)
+        self.assertNotIn("PhysicalSizeZUnit", m)
+
+    def test_unknown_z_unit_keeps_its_value_and_names_it(self):
+        m = self._meta('PhysicalSizeX="0.5" PhysicalSizeXUnit="µm" '
+                       'PhysicalSizeZ="3" PhysicalSizeZUnit="pc"')
+        self.assertEqual(m["PhysicalSizeZ"], 3.0)
+        self.assertEqual(m["PhysicalSizeZUnit"], "pc")
+
+    def test_same_unit_is_untouched(self):
+        m = self._meta('PhysicalSizeX="0.5" PhysicalSizeXUnit="µm" '
+                       'PhysicalSizeZ="3" PhysicalSizeZUnit="µm"')
+        self.assertEqual(m["PhysicalSizeZ"], 3.0)
+        self.assertNotIn("PhysicalSizeZUnit", m)
+
+
 class TestRHelperCoLocated(unittest.TestCase):
     # read_rds resolves the R helper via Path(__file__).with_name(...). A tree refactor once moved
     # the helper out from beside the module and Rscript then died with exit 2 ("cannot open input
