@@ -124,7 +124,7 @@ so today every classification below is a *change* from the status quo.
 `viewerAutoUpdate`, `preferDevChannel`, `importPyramidAdvisor`, `animationSyncViewer`,
 `viewerAutoSaveLayerProps`, `viewerScaleBar`, `viewerTimestamp`, `viewerGrid`,
 `viewerLandscape`, `viewerLandscapeLabels`, `viewerMaskColour`, `viewProfile`, `colourScheme`, `csvIncludeAttrs`,
-`plotPickerPreviews`.
+`plotPickerPreviews`, `gestureLines`.
 
 ### Personal overlay sizes → **per-profile** (~6)
 
