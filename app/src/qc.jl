@@ -330,7 +330,7 @@ function metadata_qc_findings(meta::AbstractDict)
         # Read from an irregular series' steady part (`_recover_ims_time_increment!`): say which
         # timepoints don't run at it. Cleared when a human re-enters the interval.
         push!(fs, qc_finding("warn", "metadata.frame_interval_irregular";
-                             interval = string(round(t_incr; sigdigits = 3), " ", something(ome_xml_unit_name(t_unit), t_unit)),
+                             interval = string(round(t_incr * time_unit_seconds(t_unit); sigdigits = 3), " s"),
                              frames = _frame_ranges_text(something(get(irr, "frames", nothing), [])),
                              detail = Dict{String,Any}("field" => "t", "frames" => get(irr, "frames", []),
                                                        "steadyFrames" => get(irr, "steadyFrames", []))))
