@@ -48,15 +48,17 @@ end
         save_pop_tree!(m, img)
 
         # the tissue: every cell, so only a distance column
-        res = Cecelia._run_task(RegionEdge(), img, Dict{String,Any}("regionPops" => ["B/"], "closeRadius" => 20.0);
+        # 40 µm, not the 20 a sparse movie might suggest: this is a 3D stack, and the grid (radius / 15) grows
+        # with the cube of 1/radius — 20 µm costs ~15 s a frame, 40 µm under one
+        res = Cecelia._run_task(RegionEdge(), img, Dict{String,Any}("regionPops" => ["B/"], "closeRadius" => 40.0);
                                 on_log = _ -> nothing)
         @test res !== nothing && img_region_edge_suffixes(img) == ["tissue"]
         cols = col_names(label_props(img; value_name = "B"); data_type = :obs)
         @test "flow.cell.edge_dist#tissue" in cols && !("flow.cell.inside#tissue" in cols)
 
         # the preview gets what the run computes from: the region's labels, the resolved hole setting
-        pp = Cecelia.preview_params(RegionEdge(), Dict{String,Any}("regionPops" => ["B/hi"], "closeRadius" => 20.0), img)
-        @test pp["fillHoles"] == false && pp["closeRadius"] == 20.0 && pp["propsPath"] == img_label_props_path(img, "B")
+        pp = Cecelia.preview_params(RegionEdge(), Dict{String,Any}("regionPops" => ["B/hi"], "closeRadius" => 40.0), img)
+        @test pp["fillHoles"] == false && pp["closeRadius"] == 40.0 && pp["propsPath"] == img_label_props_path(img, "B")
         @test sort(pp["regionLabels"]) == sort(Int.(label_props(img; value_name = "B") |> select_cols(["mean_intensity_0"]) |>
                                                     as_df |> d -> d[d.mean_intensity_0 .>= cut, :label]))
         pt = Cecelia.preview_params(RegionEdge(), Dict{String,Any}("regionPops" => ["B/"]), img)
@@ -64,7 +66,7 @@ end
 
         # a region: its own cells are always inside; distances are µm ≥ 0
         res = Cecelia._run_task(RegionEdge(), img,
-                                Dict{String,Any}("regionPops" => ["B/hi"], "edgeName" => "hi", "closeRadius" => 20.0);
+                                Dict{String,Any}("regionPops" => ["B/hi"], "edgeName" => "hi", "closeRadius" => 40.0);
                                 on_log = _ -> nothing)
         @test res !== nothing
         df = label_props(img; value_name = "B") |>
@@ -77,7 +79,7 @@ end
 
         # the boundary file: lines in native pixels, each on its frame and plane
         edge = JSON3.read(read(img_region_edge_path(img, "hi"), String))
-        @test edge.closeRadius == 20.0 && !isempty(edge.lines)
+        @test edge.closeRadius == 40.0 && !isempty(edge.lines)
         @test all(l -> l.t >= 0 && l.plane >= 0 && length(l.x) == length(l.y) >= 2, edge.lines)
         qc = Cecelia.read_qc(img, "spatialAnalysis.regionEdge", "hi")
         @test qc !== nothing && qc["metrics"]["nRegionCells"] == count(members)

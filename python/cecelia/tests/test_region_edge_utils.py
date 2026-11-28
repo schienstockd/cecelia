@@ -111,5 +111,26 @@ class TestEdgeContours(unittest.TestCase):
         self.assertGreater(pts[:, 1].min(), 400)
 
 
+class TestClosingByDistance(unittest.TestCase):
+    """`_dilate` / `_erode` are the binary dilation / erosion by `_ball(r)` (every grid point within r,
+    outside the array unset) — checked against scipy's morphology with that same ball as reference."""
+
+    def test_matches_morphology_with_the_ball(self):
+        from scipy import ndimage as ndi
+        rng = np.random.default_rng(0)
+        for nd, r in ((2, 1), (2, 2), (2, 7), (3, 1), (3, 3)):
+            m = rng.random((24,) * nd) < 0.08
+            ball = reu._ball(r, nd)
+            np.testing.assert_array_equal(reu._dilate(m, r), ndi.binary_dilation(m, ball))
+            np.testing.assert_array_equal(reu._erode(~m, r), ndi.binary_erosion(~m, ball))
+
+    def test_the_diagonal_neighbour_is_outside_radius_one(self):
+        m = np.zeros((5, 5), bool); m[2, 2] = True
+        d = reu._dilate(m, 1)
+        self.assertTrue(d[2, 3] and not d[3, 3])            # distance 1 in, √2 out
+        e = reu._erode(~m, 1)
+        self.assertFalse(e[2, 3]) ; self.assertTrue(e[3, 3])
+
+
 if __name__ == "__main__":
     unittest.main()

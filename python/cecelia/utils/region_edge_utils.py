@@ -8,8 +8,9 @@ image (a split tissue, a crop mid-section, a timecourse) and on any channel pane
 1. the centroids are rasterised on a grid of `step` µm (`close_um / GRID_PER_RADIUS`, at least 1 µm);
 2. closed with a disk (2D) or ball (3D) of radius `close_um` — a gap narrower than about twice the
    radius between cells is inside the region, a wider one is not (the erosion is one step smaller, so
-   no cell is left behind as a lone pixel). During the erosion the image FRAME
-   counts as region, so a region running off the frame is not eaten back from that side;
+   no cell is left behind as a lone pixel). The closing runs as if the image went on past the frame
+   (empty there), so a region running off the frame is not eaten back from that side, and a region
+   within `FRAME_SNAP_UM` of the frame is extended to it — it runs off the image there;
 3. holes are filled when `fill_holes` (default): in a tissue a hole is a tear, not a boundary.
 
 Then, per cell: `inside` (the cell's grid point is in the shape) and `dist` (µm to the boundary, from
@@ -65,10 +66,39 @@ def _snap_to_frame(mask, step):
     out = mask.copy()
     for ax, n in enumerate(mask.shape):
         line = np.zeros((2 * k + 1,) + (1,) * (mask.ndim - 1), bool); line[:] = True
-        grown = ndi.binary_dilation(out, np.moveaxis(line, 0, ax))   # sequential: corners too
-        band = np.zeros(n, bool); band[:k] = True; band[max(0, n - k):] = True
-        out |= grown & band.reshape([-1 if a == ax else 1 for a in range(mask.ndim)])
+        line = np.moveaxis(line, 0, ax)
+        # only the k grid steps at each end can change, and they see at most 2k steps in: dilate those
+        # slabs alone, not the volume (sequential over axes, so corners fill too)
+        w = min(n, 2 * k + 1)
+        before = out.copy()                       # both ends grow from the same state (they may overlap)
+        for lo, hi, keep in ((0, w, slice(0, min(k, n))), (n - w, n, slice(max(0, w - k), w))):
+            sl = [slice(None)] * mask.ndim; sl[ax] = slice(lo, hi)
+            grown = ndi.binary_dilation(before[tuple(sl)], line)
+            dst = [slice(None)] * mask.ndim; dst[ax] = slice(lo + keep.start, lo + keep.stop)
+            src = [slice(None)] * mask.ndim; src[ax] = keep
+            out[tuple(dst)] |= grown[tuple(src)]
     return out
+
+
+# Dilation / erosion by `_ball(r)` through a distance transform: the same ball (every grid point within
+# r), but in time linear in the grid. A structuring element's cost grows with the ball's volume — on a
+# 3D stack at a fine step (~14k voxels) that took tens of minutes for a few thousand cells.
+def _dilate(mask, r):
+    """``mask`` dilated by `_ball(r)`: every grid point within ``r`` steps of a set one."""
+    from scipy import ndimage as ndi
+    if not mask.any():
+        return mask.copy()
+    d = ndi.distance_transform_edt(~mask)
+    return d * d <= r * r + 0.5          # squared distances are integers: exact, no float edge
+
+
+def _erode(mask, r):
+    """``mask`` eroded by `_ball(r)`, everything outside the array unset: a point stays when no unset
+    point lies within ``r`` steps. One unset layer around the array stands for all of outside (the
+    nearest outside point to any inside one lies in it); the distance transform alone ignores outside."""
+    from scipy import ndimage as ndi
+    d = ndi.distance_transform_edt(np.pad(mask, 1))[tuple(slice(1, -1) for _ in range(mask.ndim))]
+    return d * d > r * r + 0.5
 
 
 def region_mask(coords_um, extent_um, close_um=75.0, fill_holes=True):
@@ -92,11 +122,10 @@ def region_mask(coords_um, extent_um, close_um=75.0, fill_holes=True):
     # (`border_value=1`) glued any region within ~a radius of the frame to it, erasing that real edge.
     if r > 1:
         pad = r + 1
-        closed = ndi.binary_erosion(ndi.binary_dilation(np.pad(pts, pad), _ball(r, len(shape))),
-                                    _ball(r - 1, len(shape)))
+        closed = _erode(_dilate(np.pad(pts, pad), r), r - 1)
         mask = closed[tuple(slice(pad, pad + n) for n in shape)]
     else:
-        mask = ndi.binary_dilation(pts, _ball(1, len(shape)))
+        mask = _dilate(pts, 1)
     mask |= pts
     mask = _snap_to_frame(mask, step)
     if fill_holes:

@@ -29,7 +29,7 @@
                       "app/src/correction_staleness.jl"]
 "gating"           = ["app/src/gating/", "app/src/qc_gating.jl"]
 "tracking+spatial" = ["app/src/tracking/", "app/src/behaviour/", "app/src/spatial.jl",
-                      "app/src/spatial_graph_lines.jl", "app/src/skeleton_lines.jl", "app/src/anisotropy.jl",
+                      "app/src/spatial_graph_lines.jl", "app/src/region_edge_lines.jl", "app/src/skeleton_lines.jl", "app/src/anisotropy.jl",
                       "app/src/region_lens_query.jl", "app/src/rois.jl"]
 "qc+checks"        = ["app/src/qc/", "app/src/qc.jl", "app/src/qc_cohort.jl", "app/src/acq_check.jl",
                       "app/src/acq_sampling.jl", "app/src/claim_checks.jl", "app/src/experiment_design.jl"]
