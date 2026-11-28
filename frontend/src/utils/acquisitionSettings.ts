@@ -190,6 +190,14 @@ function brightZRamp(bz: NonNullable<AcquisitionSettings['brightZ']>): string {
     .join('; ') + ` over ${depths} µm`
 }
 
+/** "subtracted by the scanner", or "… on N of M channels" when only some were (a cyclic run's blank
+ *  cycles are not); null when none were. One wording for the Acquisition rows and the light path. */
+export function afSubtractedText(chs: { afSubtracted?: boolean | null }[]): string | null {
+  const on = chs.filter(c => c.afSubtracted === true).length
+  if (on === 0) return null
+  return on === chs.length ? 'subtracted by the scanner' : `subtracted by the scanner on ${on} of ${chs.length} channels`
+}
+
 export function acquisitionRows(acq: AcquisitionSettings | null | undefined): AcquisitionRow[] {
   if (!acq) return []
   const rows: AcquisitionRow[] = []
@@ -229,8 +237,8 @@ export function acquisitionRows(acq: AcquisitionSettings | null | undefined): Ac
   const cyc = acq.cycles
   if (cyc) rows.push({ k: 'Cycles', v: join([`${n(cyc.count)} imaged`, cyc.planned != null && `${n(cyc.planned)} planned`,
     cyc.blank != null && `${n(cyc.blank)} blank`, cyc.experiment ?? cyc.experiments?.filter(Boolean).join(', ')]) })
-  const chs = acq.channels ?? []
-  if (chs.length > 0 && chs.every(c => c.afSubtracted === true)) rows.push({ k: 'Autofluorescence', v: 'subtracted by the scanner' })
+  const af = afSubtractedText(acq.channels ?? [])
+  if (af) rows.push({ k: 'Autofluorescence', v: af })
   if (acq.autoHV != null) rows.push({ k: 'Auto HV', v: acq.autoHV ? 'on' : 'off' })
   const ph = pinholeText(acq.pinholeAiry, acq.pinholeUm)
   if (ph) rows.push({ k: 'Pinhole', v: ph })
