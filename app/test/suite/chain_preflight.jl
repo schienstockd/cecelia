@@ -38,6 +38,23 @@
                                           "targetChannel" => ["ch1"])], ChainEdge[], String[])
         @test isempty(chain_preflight(proj, clean, ["KDIeEm"]))
 
+        # a region clustering re-run under a taken suffix: regions are not on the image, so only the run
+        # log knows — the pre-flight used to stay silent here
+        rp = Dict{String,Any}("valueNameSuffix" => "gBT")
+        rt = ChainTemplate("rg", [chain_node("clustRegions.cluster"; id = "rg", params = rp)], ChainEdge[], String[])
+        @test !any(p -> occursin("replaces", p["message"]), chain_preflight(proj, rt, ["KDIeEm"]))
+        img = init_object("testpr", "KDIeEm"); tid = "pfr-$(rand(1000:9999))"   # MAINT-EXEMPT: the testpr copy this testset set up above
+        Cecelia.open_run_log!(img, "clustRegions.cluster", "default", rp; task_id = tid)
+        close_run_log!(img, tid, "done")
+        ps = chain_preflight(proj, rt, ["KDIeEm"])
+        @test any(p -> p["level"] == "warn" && occursin("replaces the existing 'gBT'", p["message"]), ps)
+        # a node that leaves the suffix out runs under the spec default (`default`) — warned the same
+        dp = Dict{String,Any}("valueNameSuffix" => "default"); td = "pfd-$(rand(1000:9999))"
+        Cecelia.open_run_log!(img, "clustRegions.cluster", "default", dp; task_id = td)
+        close_run_log!(img, td, "done")
+        rd = ChainTemplate("rd", [chain_node("clustRegions.cluster"; id = "rd", params = Dict{String,Any}())], ChainEdge[], String[])
+        @test any(p -> occursin("replaces the existing 'default'", p["message"]), chain_preflight(proj, rd, ["KDIeEm"]))
+
         # keepPreviousVersion keeps image versions only: a label set is still overwritten, so it still warns
         zarr = get!(Cecelia.cecelia_conf(), "zarr", Dict{String,Any}())
         had_kpv = haskey(zarr, "keepPreviousVersion"); old_kpv = get(zarr, "keepPreviousVersion", nothing)
@@ -55,6 +72,15 @@
             @test !any(p -> p["nodeId"] == "sm" && occursin("replaces", p["message"]), ps)
             @test any(p -> p["nodeId"] == "seg" && p["level"] == "warn" &&
                            occursin("replaces the existing 'B'", p["message"]), ps)
+            # the composite with its output name left out writes its step's default — `default`,
+            # registered here as a label set — and is warned like the spelled-out one
+            raw = JSON3.read(read(ccid, String), Dict{String,Any})
+            get!(raw, "labels", Dict{String,Any}())["default"] = "default.zarr"
+            write(ccid, JSON3.write(raw))
+            dt = ChainTemplate("dflt", [node("seg", "segment.cellposeMeasure", "valueName" => "default")],
+                               ChainEdge[], String[])
+            @test any(p -> p["level"] == "warn" && occursin("replaces the existing 'default'", p["message"]),
+                      chain_preflight(proj, dt, ["KDIeEm"]))
         finally
             had_kpv ? (zarr["keepPreviousVersion"] = old_kpv) : delete!(zarr, "keepPreviousVersion")
         end

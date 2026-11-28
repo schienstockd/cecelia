@@ -152,6 +152,10 @@ end
         @test c["replaces"][img.uid]["name"] == "B"
         @test c["free"] == "B_2"
 
+        # a composite leaves its output name out: the step's default (`default`) is a label set it writes
+        c = run_write_check("segment.cellposeMeasure", [img], Dict{String,Any}("valueName" => "default"))
+        @test c["output"]["name"] == "default" && c["output"]["ns"] == "labels"
+
         # regions: not on the image, so only the run log can say a suffix is taken
         rp = Dict{String,Any}("valueNameSuffix" => "gBT")
         c = run_write_check("clustRegions.cluster", [img], rp)
