@@ -11,7 +11,7 @@ flowchart LR
   subgraph V["viewer"]
     components_viewerWindow["components/viewerWindow<br/><small>14 files</small>"]
     lib_webgpu["lib/webgpu<br/><small>15 files</small>"]
-    utils_viewer["utils/viewer<br/><small>23 files</small>"]
+    utils_viewer["utils/viewer<br/><small>24 files</small>"]
   end
   utils_viewer -->|20| utils__flat_["utils (flat)"]
   lib_webgpu -->|14| utils__flat_["utils (flat)"]
@@ -25,10 +25,10 @@ flowchart LR
   components_viewerWindow -->|1| components__other_["components (other)"]
   utils_viewer -->|1| lib__flat_["lib (flat)"]
   utils_viewer -->|1| plots["plots"]
-  modules["modules"] -.->|40| V
-  composables["composables"] -.->|7| V
+  modules["modules"] -.->|41| V
+  composables["composables"] -.->|8| V
   stores["stores"] -.->|5| V
-  components__other_["components (other)"] -.->|3| V
+  components__other_["components (other)"] -.->|4| V
   components_plots["components/plots"] -.->|3| V
   components__flat_["components (flat)"] -.->|2| V
   utils__flat_["utils (flat)"] -.->|2| V

@@ -195,6 +195,32 @@ end
     @test store_rev(joinpath(tempdir(), "no-such-store.zarr")) == ""
 end
 
+@testset "ngff_version + store_written_at on hand-built stores" begin
+    # NGFF spec: 0.5 declares `version` on the `ome` group attribute (zarr v3 `zarr.json`); 0.4 declares it
+    # per multiscales entry (zarr v2 `.zattrs`). A store declaring neither has no version.
+    mktempdir() do d
+        v5 = joinpath(d, "v5.zarr"); mkpath(v5)
+        write(joinpath(v5, "zarr.json"), """{"zarr_format": 3, "node_type": "group",
+            "attributes": {"ome": {"version": "0.5", "multiscales": [{"datasets": [{"path": "0"}]}]}}}""")
+        @test ngff_version(v5) == "0.5"
+        v4 = joinpath(d, "v4.zarr"); mkpath(v4)
+        write(joinpath(v4, ".zattrs"), """{"multiscales": [{"version": "0.4", "datasets": [{"path": "0"}]}]}""")
+        @test ngff_version(v4) == "0.4"
+        nov = joinpath(d, "nov.zarr"); mkpath(nov)
+        write(joinpath(nov, ".zattrs"), """{"multiscales": [{"datasets": [{"path": "0"}]}]}""")
+        @test isnothing(ngff_version(nov))
+        noms = joinpath(d, "noms.zarr"); mkpath(noms)
+        write(joinpath(noms, ".zattrs"), """{"omero": {}}""")
+        @test isnothing(ngff_version(noms))
+        @test isnothing(ngff_version(joinpath(d, "absent.zarr")))
+
+        # store_written_at: 0.0 when absent, else the newest mtime among the fingerprinted files.
+        @test store_written_at(joinpath(d, "absent.zarr")) == 0.0
+        @test store_written_at(v4) == max(mtime(v4), mtime(joinpath(v4, ".zattrs")))
+        @test store_written_at(v4) > 0.0
+    end
+end
+
 @testset "bioformats2raw chunk flags" begin
     # These flags were the bug: `chunkSizeX`/`chunkSizeY` existed in omezarr.json and were read by
     # NOTHING — no tile flag ever reached the CLI, so a user who chose 512 still got bioformats2raw's
