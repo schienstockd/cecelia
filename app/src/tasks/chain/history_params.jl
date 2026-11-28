@@ -18,6 +18,18 @@ The Methods table and the claim checks leave it out; a chain still replays it.
 const BOOKKEEPING_PARAMS = ("overwrite",)
 is_bookkeeping_param(key::AbstractString) = last(split(key, '.')) in BOOKKEEPING_PARAMS
 
+# `tkey` (frontend plots/series.ts), a plotted series' key: "popType::valueName/pop" — split on the
+# first "::" then the first "/". pop_types and value_names contain no "::", and a pop path always starts
+# with "/". Here, the lowest caller; the board readers (ai/lineage.jl, ai/methods_populations.jl,
+# analysis_export_provenance.jl) use it too.
+function _parse_tkey(k::AbstractString)
+    c = findfirst("::", k)
+    pop_type, rest = c === nothing ? ("live", String(k)) : (String(k[1:first(c)-1]), String(k[last(c)+1:end]))
+    i = findfirst('/', rest)
+    i === nothing ? (; popType = pop_type, valueName = rest, pop = "") :
+                    (; popType = pop_type, valueName = String(rest[1:i-1]), pop = String(rest[i:end]))
+end
+
 """Flat spec defaults of task `fn` — `key => default`; a repeatable group is `key => (params, entry)`."""
 function _history_param_defaults(fn::String)::Dict{String,Any}
     task = try _task_from_fun_name(fn) catch; nothing end

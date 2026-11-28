@@ -6,7 +6,7 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 | Section | Kind | Count |
 |---|---|---|
-| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 55 |
+| Layers | [A Julia function called from an area below its own in the declared order](#julia-upward) | 49 |
 
 ## Layers
 
@@ -15,8 +15,8 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 
 `julia-upward` · to close: move it down to the lowest tier that calls it (or a shared lower area), or — if the order is wrong — change `[layers]` in `scripts/architecture/julia_areas.toml`. Most callers first: one move closes every listed call.
 
+- **`active_profile_name`** — defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), model (tier 2), scheduler+chains (tier 7), task framework (tier 5)
 - **`_history_leaves`** — defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)
-- **`active_profile_name`** — defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), scheduler+chains (tier 7), task framework (tier 5)
 - **`_composite_step_names`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
 - **`_history_output`** — defined in scheduler+chains (tier 7), called from qc+checks (tier 4), run records (tier 2)
 - **`_task_from_fun_name`** — defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)
@@ -32,7 +32,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`_fun_name_from_task`** — defined in scheduler+chains (tier 7), called from task framework (tier 5)
 - **`_keyed_strings`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
 - **`_label_name_taken`** — defined in cell data (tier 3), called from model (tier 2)
-- **`_parse_tkey`** — defined in ai+lab log (tier 8), called from scheduler+chains (tier 7)
 - **`_preflight_fields`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
 - **`_preflight_has`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
 - **`_run_py_hpc`** — defined in hpc (tier 7), called from python bridge (tier 3)
@@ -41,7 +40,6 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`_tar_available`** — defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)
 - **`_tar_unpack_cmd`** — defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)
 - **`_task_spec`** — defined in task framework (tier 5), called from cell data (tier 3)
-- **`append_lab_log!`** — defined in ai+lab log (tier 8), called from qc+checks (tier 4)
 - **`corrections_dir`** — defined in tracking+spatial (tier 4), called from cell data (tier 3)
 - **`default_export_dir`** — defined in jobs (export, import, maintenance) (tier 7), called from tasks (tier 6)
 - **`execute_task`** — defined in runner (tier 8), called from scheduler+chains (tier 7)
@@ -49,19 +47,15 @@ Where the code breaks the rules in [`README.md`](README.md#rules-and-how-they-ar
 - **`gated_pop_refs`** — defined in scheduler+chains (tier 7), called from run records (tier 2)
 - **`gating_history_path`** — defined in gating (tier 4), called from model (tier 2)
 - **`hpc_task_cpus`** — defined in hpc (tier 7), called from tasks (tier 6)
-- **`img_project_dir`** — defined in model (tier 2), called from config (tier 1)
-- **`img_project_uid`** — defined in model (tier 2), called from config (tier 1)
 - **`is_bookkeeping_param`** — defined in scheduler+chains (tier 7), called from qc+checks (tier 4)
 - **`is_gating_pop_type`** — defined in gating (tier 4), called from run records (tier 2)
 - **`is_track_grained`** — defined in gating (tier 4), called from cell data (tier 3)
-- **`json_native`** — defined in model (tier 2), called from config (tier 1)
 - **`list_tasks`** — defined in scheduler+chains (tier 7), called from task framework (tier 5)
 - **`load_roi_set`** — defined in tracking+spatial (tier 4), called from model (tier 2)
 - **`plugin_roots`** — defined in task framework (tier 5), called from python bridge (tier 3)
 - **`pool_status`** — defined in scheduler+chains (tier 7), called from tasks (tier 6)
 - **`pop_gate_hashes`** — defined in gating (tier 4), called from run records (tier 2)
 - **`qc_finding`** — defined in qc+checks (tier 4), called from cell data (tier 3)
-- **`read_state_json`** — defined in model (tier 2), called from config (tier 1)
 - **`rename_label_set_in_params`** — defined in scheduler+chains (tier 7), called from model (tier 2)
 - **`resolve_pop_type`** — defined in gating (tier 4), called from run records (tier 2)
 - **`save_pop_tree!`** — defined in gating (tier 4), called from model (tier 2)

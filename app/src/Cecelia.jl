@@ -371,7 +371,7 @@ include("data_source.jl")   # after CciaSet/CciaProject — where a set's images
 include("claim_checks.jl")   # after qc_cohort.jl — claim recital S0/S1 over a set
 include("acq_sampling.jl")   # pixel size / z-step / pinhole against the optics (acq_check.jl reads it)
 include("acq_check.jl")      # test-acquisition check over a set (reads meta only)
-include("lab_log.jl")
+include("model/lab_log.jl")
 include("lab_log_context.jl")
 # the one reader/writer of settings/analysisBoards.json — after CciaProject (model/project.jl), and
 # before ai/lineage.jl, whose board_summaries reads through it
@@ -527,7 +527,7 @@ include("hpc/dispatch.jl")
 include("hpc/job.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
-include("analysis_export_provenance.jl")   # after ai/lineage.jl (`_parse_tkey`) and tasks/chain.jl
+include("analysis_export_provenance.jl")   # after ai/lineage.jl and tasks/chain.jl (`_parse_tkey`)
 include("ai/methods_text.jl")          # a step as a sentence: `methodsText`, value phrases, references
 include("ai/methods_populations.jl")   # how the populations were defined, for the Methods report
 include("ai/methods_report.jl")   # after analysis_export_provenance.jl: the draft Methods section

@@ -122,16 +122,6 @@ _board_tabs(proj::CciaProject) = String[string(b["name"]) for b in board_summari
 # The file is written by the frontend and read here, so EVERY field is optional by construction: a board
 # from an older schema, or one mid-migration, must degrade to fewer fields rather than throw.
 
-# `tkey` (frontend plots/series.ts): "popType::valueName/pop" — split on the first "::" then the first
-# "/". pop_types and value_names contain no "::", and a pop path always starts with "/".
-function _parse_tkey(k::AbstractString)
-    c = findfirst("::", k)
-    pop_type, rest = c === nothing ? ("live", String(k)) : (String(k[1:first(c)-1]), String(k[last(c)+1:end]))
-    i = findfirst('/', rest)
-    i === nothing ? (; popType = pop_type, valueName = rest, pop = "") :
-                    (; popType = pop_type, valueName = String(rest[1:i-1]), pop = String(rest[i:end]))
-end
-
 _nonempty(x) = x !== nothing && !(x isa AbstractString && isempty(x))
 
 # One filled slot → what it plots. `kind` "summary" carries a plot-spec id in `ref` and its choices in
