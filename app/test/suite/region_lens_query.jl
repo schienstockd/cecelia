@@ -80,6 +80,8 @@ end
     # the region run's own composition columns are not lens scores, and vice versa
     @test Cecelia._obs_suffixes(["spatial.lens.lens1", "spatial.comp.cells_B.default", "regions.default"],
                                 Cecelia.LENS_SCORE_PREFIX) == ["lens1"]
+    # a column that IS the bare prefix names no run (`{prefix}{suffix}` needs a suffix)
+    @test Cecelia._obs_suffixes(["spatial.lens.", "spatial.lens.a"], "spatial.lens.") == ["a"]
     drops, _ = Cecelia._clust_run_keys("regions", :cell, "default", ["regions.default", "spatial.lens.lens1"], false)
     @test !("spatial.lens.lens1" in drops)
 end

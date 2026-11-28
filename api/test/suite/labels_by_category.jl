@@ -6,7 +6,7 @@
 # never reaches the reader.
 #
 # The `_catkey_local` clone at the top of `labels_by_category_api.jl` stays in sync with
-# `_catkey` (`app/src/plotting/plot_data.jl` line 42) by inspection — a one-liner both sides;
+# `_catkey` (`app/src/gating/density.jl`) by inspection — a one-liner both sides;
 # the endpoint's file docstring calls out the exact source line so a future edit lands here.
 
 @testset "API: /api/labels/by_category — validation guards" begin

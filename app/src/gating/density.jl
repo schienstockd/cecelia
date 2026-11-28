@@ -79,6 +79,27 @@ function extrema_or(v::AbstractVector, lo_default::Float64, hi_default::Float64)
     lo <= hi ? (lo, hi) : (lo_default, hi_default)
 end
 
+# ── Category keys — the categorical axis rule for summary and track plots ────────
+
+# category key for a categorical value: integers render as "1"/"2"/… (hmm.state, generation),
+# everything else stringified. obs columns are Float64, so integer states arrive as 1.0/2.0/…
+_catkey(v) = (v isa Real && isfinite(v) && v == round(v)) ? string(Int(round(v))) : string(v)
+
+# sort category keys numerically when they're all numbers, else lexically (stable category axis)
+function _sort_cats(keys::Vector{String})::Vector{String}
+    nums = tryparse.(Float64, keys)
+    all(!isnothing, nums) ? keys[sortperm(Float64.(nums))] : sort(keys)
+end
+
+# `keys` in the user's `wanted` order (those it names, in its order), then the rest by `_sort_cats`.
+# `nothing`/empty `wanted` = `_sort_cats` alone.
+function _ordered_cats(keys::Vector{String}, wanted)::Vector{String}
+    (wanted === nothing || isempty(wanted)) && return _sort_cats(keys)
+    have = Set(keys)
+    first_ = unique(String[String(w) for w in wanted if String(w) in have])
+    vcat(first_, _sort_cats(String[k for k in keys if !(k in Set(first_))]))
+end
+
 # ── Distribution summary (what a gate is chosen from) ───────────────────────────
 #
 # The numbers a reader that cannot drag a gate reasons from — today the autonomous agent through
