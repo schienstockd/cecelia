@@ -329,6 +329,9 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                   aria-label="Colour scheme"
                   v-tooltip.bottom="'App colours only — images and exports stay as they are'"
                   @update:model-value="settings.colourScheme = $event as ColourScheme" />
+      <CcToggle v-model="settings.gestureLines"
+                label="Show gesture hints"
+                v-tooltip.bottom="'The Ctrl-click / Shift-drag lines under tables and plots'" />
 
       <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Task Manager</div>
       <CcToggle v-model="settings.taskListAutoFollow"

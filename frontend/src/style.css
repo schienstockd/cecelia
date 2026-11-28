@@ -617,6 +617,8 @@ body {
 /* …pinned to the bottom-left corner of a plot, on a surface chip so it reads over dots and paper */
 .cc-gesture-line-overlay { position: absolute; left: 4px; bottom: 2px; padding: 0 3px;
   border-radius: var(--cc-radius-xs); background: color-mix(in srgb, var(--cc-surface-1) 85%, transparent); }
+/* Preferences → Interface → "Show gesture hints" off (`settings.gestureLines`) */
+.cc-hide-gestures .cc-gesture-line { display: none; }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).

@@ -1100,6 +1100,8 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   many. An ordinary button is named by its tooltip and is not covered. Put the surface where the
   gesture happens, and show it only in the state it applies to (a gate's edit gestures while a gate is
   selected), so the page at rest does not grow. One short line, per [`docs/ui/COPY.md`](ui/COPY.md).
+  Always use `.cc-gesture-line`: Preferences → Interface → *Show gesture hints* (`settings.gestureLines`)
+  hides every one of them through that class, for users who know the gestures.
 
   **There are no pop-up hints, and that is the intended state.** `HintCallout.vue` and `ModuleLayout`'s
   `hint` / `hint-key` props were deleted with zero callers (2026-11-25). The `ONBOARDING_PLAN.md` P4 set was retired on 2026-08-13: each was a static sentence fired on first
