@@ -44,6 +44,10 @@ These change results when old work is re-run:
 - **Box and strip points** subsample to 500 per series by default (Points → Subsample; off draws every point). Point opacity now fades the dot outlines too.
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).
 
+### Fixed
+
+- **Chain pre-flight** now warns before a run overwrites a region, cluster or HMM result of the same name, not only images and label sets.
+
 ## [0.2.13] — 2026-11-17
 
 ### Read this first

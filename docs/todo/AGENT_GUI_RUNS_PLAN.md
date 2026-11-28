@@ -2,7 +2,7 @@
 
 **Status:** built (2026-11-28) — P1–P3 in one PR; not yet used in a real session. Checked against the
 code twice before building; the second pass found D4 mostly built and the chain pre-flight weaker than
-`run_replaces` (see *Second check*). Open questions answered by the builder's defaults (end of file).
+`run_replaces` (see *Second check*; the pre-flight now uses it too). Open questions answered by the builder's defaults (end of file).
 Code: `mcp/cecelia_mcp/gui_mode.py`, `autonomous.py` (`gui_project`, `check_writes`), `run_write_check`
 (`app/src/tasks/chain/preflight.jl`) behind `POST /api/tasks/write-check`, `adoptsForeignTask`
 (`frontend/src/utils/runningTasks.ts`), the plugin's second server (`plugin.json` 1.1.0).
@@ -15,12 +15,11 @@ Code: `mcp/cecelia_mcp/gui_mode.py`, `autonomous.py` (`gui_project`, `check_writ
   scheduler's in-flight set into the list, but only on (re)connect and project switch. The gap is single
   tasks only: `task:status` for an unknown id hits `setStatus`'s `if (!t) return`. Fix = an unknown id
   triggers a (debounced) `adoptInFlight()`.
-- **The chain pre-flight does not catch the case that started this.** `/api/chains/preflight`
-  (`tasks/chain/preflight.jl`) warns "replaces the existing" only for image versions and label sets
+- **The chain pre-flight did not catch the case that started this** (fixed since: it calls
+  `run_replaces` with the resolved params). `/api/chains/preflight` warned "replaces the existing" only for image versions and label sets
   (`_preflight_fields` returns `nothing` for other namespaces), so a `clustRegions` / clustering / HMM
-  re-run under an existing name passes silently — for the user's own chain runs too. `run_replaces`
-  covers those (it also reads the run log). So D3 uses `run_replaces`; the pre-flight should switch to
-  it as well (separate fix).
+  re-run under an existing name passed silently — for the user's own chain runs too. `run_replaces`
+  covers those (it also reads the run log), so D3 and the pre-flight both use it.
 - **D2 holds.** `caller_hook.py` never emits `permissionDecision`, and `observer_plugin.jl` writes
   `enabledPlugins` / `pluginConfigs`, no allow-list.
 - **New cost for D1:** `autonomous_server.py` also registers the whole gating and figure toolsets
@@ -131,8 +130,9 @@ GUI user's session") and `HEADLESS_MODE_PLAN.md` gap 2. Kiwi is unaffected: it g
 
 ## What D3 refuses, as built
 
-`gui_mode.write_refusals` on `/api/tasks/write-check`'s answer (`run_write_check`, which merges the spec
-defaults so an omitted name is the default name):
+`gui_mode.write_refusals` on `/api/tasks/write-check`'s answer (`run_write_check`, whose params go
+through `_will_run_params`: `resolve_run_params` as `run_task` does, plus a composite's step defaults,
+so an omitted name is the default name the run will write):
 - an output in the `labels` namespace, written or written into (segmentation, measure, tracking, AF
   cells) — covers `labels` / `label_props`;
 - an image version (namespace "") other than a fixed `default` that is not written into (that is a new
@@ -143,5 +143,8 @@ target images before `chain:run` is sent. `overwrite: true` stays refused (no pr
 Limits: a namespace not on the image (regions, clusters, models, …) is "replaced" only if the run log
 (or its archive) records the run that made it; an output from before the run log is not seen.
 
-Not done here: the chain pre-flight's own replace warning still misses those namespaces (see *Second
-check*) — it should call `run_replaces` too.
+The chain pre-flight's own replace warning now calls `run_replaces` too, on each node's resolved params
+(follow-up PR), so the user's chain runs see a taken regions / clusters / HMM name as well, spelled out
+or left at its default. Known gap, not changed: the run log's own stamp at open (`run_provenance` from
+`scheduler/jobs.jl`) resolves a composite without its step defaults, so a composite run with its name
+left out records no `replaces` and its entry names no output for a later `run_replaces` to match.
