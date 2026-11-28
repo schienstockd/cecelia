@@ -254,6 +254,25 @@ test whether an agent can actually use the framework.
    pattern. A finding logged before its section last changed (`git log -L` over the section) doesn't
    count: once a section is tightened, its proposal doesn't recur from the old findings.
 
+   **Plan post-mortem** (`plan_postmortem.py`). What later edits to parked plans say about the plan
+   review (`PLAN_REVIEW.md`). Each merged change on main in the last 90 days that modified an existing
+   `docs/todo/*_PLAN.md` (a merge diffs against its first parent, so a PR is one change; creating a plan
+   isn't an edit) is judged once, by one tool-less call, if a plan review ran on that plan before it.
+   The call sorts what the diff shows into cases:
+   - `vindicated`: a finding tagged `false_positive` / `shipped_with_finding` / `dropped_no_action` or
+     left untagged, which this edit fixed after all. The judge may only name a slug the brief listed.
+   - `miss`: the edit corrects an error (`wrong claim`, `already exists`, `design flaw`) that was in the
+     plan when it was reviewed and that no finding flagged. A design revised by choice is not a miss.
+
+   `noise` is counted without a call: a `false_positive` plan finding no edit has vindicated. Cases
+   are kept on the record (`plan_postmortem.cases`, with the SHAs judged) and add up across passes.
+   One kind on one marker in **2 or more plans** (noise: and 3 findings) gets an `M` proposal:
+   `plan_miss` / `plan_noise` edit the reviewer prompt in `PLAN_REVIEW.md`, `plan_dismissed` the
+   authors' conventions in `docs/todo/README.md`. As in the rules step, a case counts only after the
+   target doc's last edit and your last answer to a proposal for it. The record lists every case, so a
+   proposal shows its grounds. A failed call stops the step; the changes not judged wait for the next
+   pass. Standalone: `pixi run judge-plans`.
+
    **Coherence counts** (`coherence.py`). Whole-repo numbers at the pinned SHA, each from a
    deterministic tool: copied blocks (`jscpd`), frontend import cycles without type-only or `import()`
    edges (`madge`), Python dead code without unused imports (`vulture`), Julia routes nothing outside
@@ -381,7 +400,9 @@ than the screen, and a resize repaints it at once:
    takes them all back. `[s] one by one` splits the bundle into single cards for this session. A
    decide bug you answer joins its file's or branch's bundle at once.
 3. **Rules.** The pass's rule proposals, one per screen: the section, what to do (`tighten` or
-   `ratchet`), and the findings that broke it. `[e] edit the rule` starts a session briefed on them,
+   `ratchet`), and the findings that broke it. The plan post-mortem's `M` proposals come after them,
+   with their cases in place of findings; `[e]` briefs a session to edit `PLAN_REVIEW.md` or the plan
+   conventions. `[e] edit the rule` starts a session briefed on them,
    in its own worktree (`rule-<id>-<date>`); it first says what the findings share, and stops if a
    rule can't fix it. `[r] reject` drops the proposal. Either answer resets the count (step 5).
 
@@ -543,6 +564,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
+| `pixi run judge-plans` | The plan post-mortem: cases + `M` proposals, printed (makes judge calls for unjudged plan edits) |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`); `--date D` an older record, flagged superseded on every screen |
 | `pixi run judge-review --auto` | Work the `fix` bugs and the `decide` ones you answered, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background, `--resume-stopped` for worktrees a run fixed but stopped before recital) |

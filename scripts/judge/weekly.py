@@ -71,6 +71,7 @@ _judge = _load_sibling("judge")
 _run_reviews = _load_sibling("run_reviews")
 _fixture_requests = _load_sibling("fixture_requests")
 _coherence = _load_sibling("coherence")
+_plan_postmortem = _load_sibling("plan_postmortem")
 _issues = _load_sibling("issues")
 _chart = _load_sibling("chart")
 
@@ -270,11 +271,16 @@ def _pr_body(record: dict) -> str:
     waiting = _record.verify_waiting(record["run"]["spend"])
     if waiting:
         lines += ["", f"**Verify:** {waiting}; the next pass verifies them."]
-    props = record["proposals"]
+    props = _record.rule_proposals(record)
     lines += ["", f"**Rules: {len(props)} proposal(s).**" if props else
               f"**Rules: the judge failed** (`{_record.one_line(failed['rules'])}`), nothing tallied."
               if failed.get("rules") else "**Rules:** nothing broken in enough sessions."]
     lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in props]
+    plan_props = _record.plan_proposals(record)
+    if plan_props or failed.get("plan_postmortem"):
+        lines += ["", f"**Plan review: {len(plan_props)} proposal(s).**" if plan_props else
+                  f"**Plan post-mortem: the judge failed** (`{_record.one_line(failed['plan_postmortem'])}`)."]
+        lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in plan_props]
     lines += ["", f"- Tokens: {_record.tokens_line(record['run']['spend'])}",
               f"- Spend (list price): {_record.spend_line(record['run']['spend'])}", "", _footer(record)]
     return "\n".join(lines) + "\n"
@@ -291,10 +297,12 @@ def _rules_title(record: dict) -> str:
 
 def _rules_body(record: dict) -> str:
     """The rules-only PR (issue layout): the proposals, and the rollup this PR carries to main."""
-    lines = [f"Weekly judge, {record['date']}: **{len(record['proposals'])} rule proposal(s)**, from findings "
-             "broken in enough different sessions. The bugs are issues (label `judge-bug`); the pinned "
+    rules, plans = _record.rule_proposals(record), _record.plan_proposals(record)
+    lines = [f"Weekly judge, {record['date']}: **{len(rules)} rule proposal(s)**, from findings broken in enough "
+             "different sessions" + (f", and **{len(plans)} plan review proposal(s)**, from the plan post-mortem"
+                                     if plans else "") + ". The bugs are issues (label `judge-bug`); the pinned "
              "*Judge status* issue has this pass's summary.", ""]
-    lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in record["proposals"]]
+    lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in (*rules, *plans)]
     lines += ["", "Answer them in `pixi run judge-review`, after the bugs: *edit the rule* starts a session on "
               "it, *reject* drops it. This PR only carries `docs/ai-assist/EFFECTIVENESS.md` (`pixi run "
               "audit-rollup`) to main; merge it whenever. The full record, with each proposal's sources, is "
@@ -360,7 +368,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
            merged_prs: _t.Callable | None = None, verifier: _t.Callable | None = None,
            assign: _t.Callable | None = None, state: dict | None = None,
            projects: pathlib.Path | None = None, fixture_projects: pathlib.Path | None = None,
-           coherence: _t.Callable[[pathlib.Path], dict] | None = None) -> dict:
+           coherence: _t.Callable[[pathlib.Path], dict] | None = None,
+           plan_judge: _t.Callable | None = None) -> dict:
     """Run one pass; returns its record, unwritten.
 
     `live=False` checks the local `ref` without fetching or preparing the worktree (a re-run, a test).
@@ -369,7 +378,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     `fixture_projects`: where to look for images meeting fixture requests (default: the
     `fixture_requests.ENV` variable, else the Cecelia config's projects dir; none → the step only lists
     the open requests). `coherence`: counts the checkout (default `coherence.run` on a live pass; a
-    pass that isn't live counts nothing unless given one). With `persist`, it also stages a cut per matched request outside the repo
+    pass that isn't live counts nothing unless given one). `plan_judge`: the plan post-mortem's judge
+    call (default `plan_postmortem.default_judge`). With `persist`, it also stages a cut per matched request outside the repo
     (`fixture_requests.stage_cuts`). `state` is
     updated as it goes (`stage`, `sha`), so a crash can say where it stopped.
     """
@@ -427,17 +437,26 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     rows, proposals, bins, rules_usd = _rules.propose(events, date=date, assign=assign, meter=rules_tokens,
                                                       failures=failed,
                                                       answered=_review.rule_answers(history, reviews))
-    steps = {"sweep": sweep_tokens, "verify": verified.get("tokens") or {}, "rules": rules_tokens}
+    # what later plan edits say about the plan reviews: cases, and proposals beside the rules step's
+    state["stage"] = "plan post-mortem"
+    plan_tokens: dict = {}
+    plan_pm, plan_props, plan_usd = _plan_postmortem.run(
+        events, date=date, sha=sha, history=history, judge=plan_judge, meter=plan_tokens, failures=failed,
+        answered=_review.rule_answers(history, reviews))
+    proposals = [*proposals, *plan_props]
+    steps = {"sweep": sweep_tokens, "verify": verified.get("tokens") or {}, "rules": rules_tokens,
+             **({"plan_postmortem": plan_tokens} if plan_tokens else {})}
     total: dict = {}
     for t in steps.values():
         _judge.add_tokens(total, t)
     spend = {"sweep_usd": round(sweep_usd, 4), "verify_usd": verified["usd"], "rules_usd": round(rules_usd, 4),
-             "total_usd": round(sweep_usd + verified["usd"] + rules_usd, 4), "verify": verified,
+             **({"plan_postmortem_usd": round(plan_usd, 4)} if plan_usd else {}),
+             "total_usd": round(sweep_usd + verified["usd"] + rules_usd + plan_usd, 4), "verify": verified,
              "tokens": {**steps, "total": total},
              "finding_bins": bins}
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend,
                            agent_causes=_run_reviews.agent_causes(reviewed), fixture_requests=fixtures,
-                           coherence=counts)
+                           coherence=counts, plan_postmortem=plan_pm)
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
                          swept=list(_bugs.SOURCES),
                          backlog_last=_record.backlog(previous["bugs"]) if previous else None,
@@ -556,7 +575,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         path = _record.write(record, force=True)[0]   # a rerun the same day replaces that day's record
         n = sum(b["status"] == "open" for b in record["bugs"])
-        print(f"{record['date']}: {n} open bug(s), {len(record['proposals'])} rule proposal(s)\n"
+        print(f"{record['date']}: {n} open bug(s), {len(_record.rule_proposals(record))} rule proposal(s), "
+              f"{len(_record.plan_proposals(record))} plan review proposal(s)\n"
               f"  tokens: {_record.tokens_line(record['run']['spend'])}\n"
               f"  spend (list price): {_record.spend_line(record['run']['spend'])}\n  wrote {path}")
         if issues_on(args):

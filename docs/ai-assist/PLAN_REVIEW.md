@@ -40,6 +40,11 @@ the counter-argument when the reviewer is wrong. **The weekly bug sweep does not
 findings** (it judges code, and `scripts/judge/rules.py` and `flow_chart.py` leave them out), so a
 `false_positive` reason here is read only by the maintainer, in the commit and the PR. Write it for them.
 
+**After the fact, the weekly judge holds the review to account** (`WEEKLY_JUDGE.md` → *Plan
+post-mortem*): when a merged change later edits a reviewed plan, it asks whether the edit fixed a
+finding that was tagged through, or corrected an error no finding flagged. A pattern across plans
+becomes a proposal to edit this prompt or the plan conventions, decided in `judge-review`.
+
 ## Escape valves
 
 - The diff adds no lines to any `docs/todo/*_PLAN.md` (a deletion, a rename, no plan at all).
