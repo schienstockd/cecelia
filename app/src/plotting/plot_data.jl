@@ -1546,16 +1546,29 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                          pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
         pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
+    shares_changed = _freeze_cluster_shares!(df, [img], pop_type, sfx)
     df, named = _named_cluster_frame(df, [img], [""], [eff_vn], measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
-    _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
+    _attach_shares_changed!(_attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, eff_vn), pop_order=pops,
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                 stats_enabled=stats_enabled, stats_test=stats_test), fit) |>
+                 stats_enabled=stats_enabled, stats_test=stats_test), fit), shares_changed) |>
         r -> _attach_cluster_names!(r, named)
 end
+
+# A track run's share rows (`popfrac:`) read back as the run saved them (`freeze_run_pop_fractions!`):
+# a cluster pop's rows from its own run, a per-cluster heatmap's (`sfx`, from the category) from that
+# run. Any other pop (the root on a board) keeps today's — its tracks need not all be in a run. True
+# when today's gates give other shares — the panel says so.
+function _freeze_cluster_shares!(df, imgs, pop_type, sfx)::Bool
+    (_is_cluster_pop_type(pop_type) && is_track_grained(pop_type)) || return false
+    freeze_run_pop_fractions!(df, imgs, sfx; pop_type = pop_type)
+end
+
+_attach_shares_changed!(result::Dict{String,Any}, changed::Bool) =
+    (changed && (result["popFractionsChanged"] = true); result)
 
 # A heatmap names intensity rows by channel NAME (docs/todo/CHANNEL_NAMES_PLAN.md): a legacy raw request
 # (`mean_intensity_N`, a saved panel) is named against the first image, and each image's reader resolves
@@ -1617,6 +1630,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
                                 pop_cols=cols) :
         pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity, pop_cols=cols)
+    shares_changed = _freeze_cluster_shares!(df, imgs, pop_type, sfx)
     df, named = _named_cluster_frame(df, imgs, uids, [eff_vn], measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
@@ -1629,6 +1643,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     _attach_hmm_fit!(result, fit)
+    _attach_shares_changed!(result, shares_changed)
     _attach_cluster_names!(result, named)
 end
 
@@ -1782,14 +1797,15 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
                pop_cols=pcols, raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
+    shares_changed = _freeze_cluster_shares!(df, [img], pop_type, _cluster_matrix_suffix(chart_type, category, matrix_mode))
     df, named = _named_cluster_frame(df, [img], [""], first.(targets), measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
-    _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
+    _attach_shares_changed!(_attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
                  pop_order=targets, collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                 stats_enabled=stats_enabled, stats_test=stats_test), fit) |>
+                 stats_enabled=stats_enabled, stats_test=stats_test), fit), shares_changed) |>
         r -> _attach_cluster_names!(r, named)
 end
 
@@ -1837,6 +1853,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                                 pop_cols=pcols, expand_cluster_pops=false) :
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
                expand_cluster_pops=false))
+    shares_changed = _freeze_cluster_shares!(df, imgs, pop_type, _cluster_matrix_suffix(chart_type, category, matrix_mode))
     df, named = _named_cluster_frame(df, imgs, uids, first.(targets), measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
@@ -1850,5 +1867,6 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     _attach_hmm_fit!(result, fit)
+    _attach_shares_changed!(result, shares_changed)
     _attach_cluster_names!(result, named)
 end

@@ -19,6 +19,7 @@ import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import PlotChart from '../../components/plots/PlotChart.vue'
 import PlotSpinner from '../../components/plots/PlotSpinner.vue'
 import CcToggle from '../../components/CcToggle.vue'
+import PlotNotice from '../../components/canvas/PlotNotice.vue'
 import { defaultVis, plotDataToCsv, type BuildOpts, type VisProps } from '../../plots/plot'
 import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
@@ -249,6 +250,9 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel / the HMM panels -->
     <template #footer>
+      <!-- share rows show what the run clustered on; the clusters predate a gate edit (freeze_run_pop_fractions!) -->
+      <PlotNotice v-if="heatmap?.popFractionsChanged" icon-only text="Gates changed since this run"
+                  tip="Shares show the values clustered on. Re-run clustering to update" />
       <button class="hm-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same features) to tweak one thing'"><i class="pi pi-copy" /></button>
       <!-- per-plot export dropped in a docked slot (the board exports to PDF); kept when floating -->

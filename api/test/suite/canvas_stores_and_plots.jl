@@ -363,6 +363,12 @@ end
             @test all(i -> isequal(got[i], Float32(get(fr, Int(labels[i]), NaN))), eachindex(labels))
             # an image without the population → all NaN, never an error
             @test all(isnan, _cluster_map_values(img, vn, tpath, "popfrac:/nope", length(labels); labels = labels))
+            # a run that saved its shares colours its points by those, not by today's gates
+            Cecelia._write_clust_features!(tpath, "frz", ["popfrac:/big"], [img.uid];
+                pop_fractions = Dict{String,Any}("trackIds" => Int.(labels),
+                                                 "shares" => Dict{String,Any}("popfrac:/big" => fill(0.25, length(labels)))))
+            @test all(==(0.25f0), _cluster_map_values(img, vn, tpath, "popfrac:/big", length(labels); labels = labels, suffix = "frz"))
+            @test isequal(_cluster_map_values(img, vn, tpath, "popfrac:/big", length(labels); labels = labels, suffix = "other"), got)
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

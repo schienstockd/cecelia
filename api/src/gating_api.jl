@@ -1251,9 +1251,13 @@ _cluster_map_key(basis, suffix) = basis in Cecelia.CLUSTER_MAP_BASES ? "X_$(basi
 
 # One `colourFeature` value per obs row of `path` (obs order, like the embedding), NaN where a row has
 # none — or for every row when this segmentation lacks the column or its name is ambiguous here.
-function _cluster_map_values(img, vn, path, feature, n; labels = nothing)::Vector{Float32}
-    # a track's population share (`popfrac:<path>`) is in no table — computed per track, obs order
+function _cluster_map_values(img, vn, path, feature, n; labels = nothing, suffix = nothing)::Vector{Float32}
+    # a track's population share (`popfrac:<path>`) is in no table: the share run `suffix` saved when
+    # it clustered (what its points were placed by), else today's, computed per track — obs order
     if Cecelia.is_pop_fraction(feature) && labels !== nothing
+        saved = suffix === nothing ? nothing : Cecelia.run_pop_fractions(path, suffix)
+        s = saved === nothing ? nothing : get(saved, feature, nothing)
+        s === nothing || return Float32[get(s, Int(l), NaN) for l in labels]
         v = Cecelia.track_pop_fraction_column(img, vn, feature, labels)
         return v === nothing ? fill(NaN32, n) : Float32.(v)
     end
@@ -1355,7 +1359,7 @@ function api_plots_cluster_map(req::HTTP.Request)
             (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
         end
         vals = with_value ? _cluster_map_values(img, vn, path, feature, size(xy, 1);
-                                                 labels = track ? cdf.label : nothing) : Float32[]
+                                                 labels = track ? cdf.label : nothing, suffix = suffix) : Float32[]
         # per-point popIdx from the resolved (value_name, label) → popIdx map (colour/facet-by-population),
         # narrowed to this segmentation once so the per-row lookup is a plain Int key
         vn_pop = Dict{Int,Int}(l => k for ((v, l), k) in pop_of if v == vn)

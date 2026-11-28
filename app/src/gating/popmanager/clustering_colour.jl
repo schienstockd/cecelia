@@ -41,6 +41,8 @@ _clustfeatures_key(suffix::AbstractString, family::AbstractString) = "$(family).
 # `at` = when the run ran, one value for all its segments — a cluster pop's staleness (`cluster_run_at`).
 # `params` = the task params that shaped the run (resolution, normalisation); `refines` = the cluster
 # population a refine run was restricted to (`refine_source`). docs/todo/CLUSTER_REFINE_PLAN.md
+# `pop_fractions` (track runs with share features) = the shares the run clustered on, for this
+# segment's tracks (`pop_fraction_record`), read back by `run_pop_fractions`.
 function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
                                 features::Vector{String}, part_of::Vector{String};
                                 family::AbstractString = "clusters",
@@ -48,12 +50,14 @@ function _write_clust_features!(props_path::AbstractString, suffix::AbstractStri
                                 behaviour_axes::Union{Nothing,AbstractDict} = nothing,
                                 at::AbstractString = string(Dates.now()),
                                 params::AbstractDict = Dict{String,Any}(),
-                                refines::Union{Nothing,AbstractDict} = nothing)
+                                refines::Union{Nothing,AbstractDict} = nothing,
+                                pop_fractions::Union{Nothing,AbstractDict} = nothing)
     entry = Dict{String,Any}("features" => features, "partOf" => part_of,
                              "family" => String(family), "labels" => Dict{String,Any}(labels), "at" => String(at))
     behaviour_axes === nothing || (entry["behaviourAxes"] = behaviour_axes)
     isempty(params) || (entry["params"] = Dict{String,Any}(params))   # CLUSTER_REFINE_PLAN Decision 3
     refines === nothing || (entry["refines"] = refines)               # …and Decision 1 (cluster_refine.jl)
+    pop_fractions === nothing || (entry["popFractions"] = pop_fractions)
     put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
 end
 
@@ -148,6 +152,25 @@ function _clustfeatures_part_of(entry, own_uid::Union{AbstractString,Nothing}=no
     v = entry === nothing ? nothing : get(entry, "partOf", get(entry, :partOf, nothing))
     part = v isa AbstractVector ? String[string(x) for x in v] : String[]
     (isempty(part) && own_uid !== nothing) ? [String(own_uid)] : part
+end
+
+"""
+    run_pop_fractions(props_path, suffix; family="clusters") -> Union{Nothing, Dict{String,Dict{Int,Float64}}}
+
+The population shares a track run clustered on, as saved when it ran: `popfrac:` token → track id →
+share (NaN where the track had none). `nothing` for a run that saved none — no share features, or a
+run from before the shares were saved.
+"""
+function run_pop_fractions(props_path::AbstractString, suffix::AbstractString;
+                           family::AbstractString = "clusters")::Union{Nothing,Dict{String,Dict{Int,Float64}}}
+    e = _clustfeatures_entry(props_path, suffix; family = family)
+    r = e === nothing ? nothing : get(e, "popFractions", get(e, :popFractions, nothing))
+    r isa AbstractDict || return nothing
+    ids = Int[Int(x) for x in get(r, "trackIds", get(r, :trackIds, Int[]))]
+    shares = get(r, "shares", get(r, :shares, Dict{String,Any}()))
+    Dict{String,Dict{Int,Float64}}(
+        String(tok) => Dict{Int,Float64}(zip(ids, Float64[v === nothing ? NaN : Float64(v) for v in vals]))
+        for (tok, vals) in shares)
 end
 
 """

@@ -266,4 +266,5 @@ export interface PlotDataResponse {
   // images whose same-named run measured something else (another structure / populations / bands) and
   // were left out — proximity plots only (`matching_run_images`, image_metrics.jl)
   nSkipped?: number
+  popFractionsChanged?: boolean   // a track run's share rows: today's gates give other shares than it clustered on
 }

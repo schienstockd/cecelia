@@ -138,6 +138,48 @@ end
             # which reads `track_props` directly: the share is in no table, so it must be added (#2557)
             gdf = pop_df(img, "track", [ROOT]; value_name = vn, granularity = :track, pop_cols = ["num_cells", tok])
             @test tok in names(gdf) && nrow(gdf) > 0 && all(r -> r[tok] ≈ fr[Int(r.label)], eachrow(gdf))
+            # a track run saves the shares it clustered on, and its heatmap reads those back: a gate edit
+            # after the run must not change the numbers its clusters are described by — but is flagged
+            tpath = Cecelia.img_track_props_path(img, vn)
+            run_df = DataFrame(uID = fill(img.uid, nrow(gdf)), value_name = fill(vn, nrow(gdf)), label = gdf.label)
+            @test isempty(Cecelia.add_track_pop_fractions!(run_df, [img], [tok]))
+            Cecelia._write_clust_features!(tpath, "frz", ["num_cells", tok], [img.uid];
+                                           pop_fractions = Cecelia.pop_fraction_record(run_df, img.uid, vn, [tok]))
+            saved = Cecelia.run_pop_fractions(tpath, "frz")
+            @test all(t -> saved[tok][Int(t)] ≈ fr[Int(t)], gdf.label)
+            @test Cecelia.run_pop_fractions(tpath, "nosuchrun") === nothing          # no saved shares → live
+            same = copy(gdf)
+            @test !Cecelia.freeze_run_pop_fractions!(same, [img], "frz") && isequal(same[!, tok], gdf[!, tok])
+            m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+            Cecelia.set_gate!(m, "/all/big", RectangleGate("area", "area", a[end], 1e12, -1e12, 1e12))   # only the largest cell(s)
+            save_pop_tree!(m, img)
+            edited = pop_df(img, "track", [ROOT]; value_name = vn, granularity = :track, pop_cols = ["num_cells", tok])
+            @test !isequal(edited[!, tok], gdf[!, tok])                              # today's shares moved
+            @test Cecelia.freeze_run_pop_fractions!(edited, [img], "frz")             # → flagged
+            @test all(r -> r[tok] ≈ fr[Int(r.label)], eachrow(edited))               # → shown as clustered
+            @test !Cecelia.freeze_run_pop_fractions!(copy(gdf), [img], "nosuchrun")   # an older run keeps today's
+            # a board can show cluster pops of several runs: each row reads its own pop's run
+            Cecelia._write_clust_features!(tpath, "other", [tok], [img.uid];
+                pop_fractions = Dict{String,Any}("trackIds" => Int.(gdf.label),
+                                                 "shares" => Dict{String,Any}(tok => fill(0.5, nrow(gdf)))))
+            tc = PopulationTree(pop_type = "trackclust", value_name = vn)
+            add_pop!(tc, "C"; filter_measure = "clusters.other", filter_fun = "in", filter_values = [0])
+            save_pop_tree!(tc, img)
+            board = DataFrame(value_name = fill(vn, 2nrow(gdf)), label = vcat(gdf.label, gdf.label),
+                              pop = vcat(fill("/C", nrow(gdf)), fill(ROOT, nrow(gdf))))
+            board[!, tok] = vcat(gdf[!, tok], gdf[!, tok])
+            Cecelia.freeze_run_pop_fractions!(board, [img], "frz"; pop_type = "trackclust")
+            @test all(==(0.5), board[1:nrow(gdf), tok])                              # /C → run "other"
+            @test all(i -> board[nrow(gdf) + i, tok] ≈ fr[Int(gdf.label[i])], 1:nrow(gdf))   # root → "frz"
+            # a track the run left out (e.g. too short) has no clustered-on share: NaN, never today's
+            part = copy(gdf); part[!, tok] .= 0.75
+            Cecelia._write_clust_features!(tpath, "few", [tok], [img.uid];
+                pop_fractions = Dict{String,Any}("trackIds" => [Int(gdf.label[1])], "shares" => Dict{String,Any}(tok => [0.5])))
+            Cecelia.freeze_run_pop_fractions!(part, [img], "few")
+            @test part[1, tok] == 0.5 && all(isnan, part[2:end, tok])
+            m = load_pop_tree(img; value_name = vn, pop_type = "flow")
+            Cecelia.set_gate!(m, "/all/big", RectangleGate("area", "area", cut, 1e12, -1e12, 1e12))
+            save_pop_tree!(m, img)
             # its own tracks are exactly those
             @test nrow(r.table) == nrow(track_classes(img; value_name = vn, parent = "/all").table)   # not a sub-population
         finally
