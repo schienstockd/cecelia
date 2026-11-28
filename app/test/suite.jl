@@ -397,6 +397,7 @@ include(joinpath(@__DIR__, "suite", "track_classes.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_pop_share_missing.jl"))
 
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
+include(joinpath(@__DIR__, "suite", "ome_xml_units_legacy.jl"))   # per-axis spatial units, legacy root OME-XML
 include(joinpath(@__DIR__, "suite", "import_bf2raw_run.jl"))
 include(joinpath(@__DIR__, "suite", "drift_partial_timepoint.jl"))
 include(joinpath(@__DIR__, "suite", "acquisition_settings.jl"))

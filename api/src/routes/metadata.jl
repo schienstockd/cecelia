@@ -261,12 +261,11 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
 
     for (image_uid, fields_raw) in values_raw
         fields = Dict{String,Any}(String(k) => v for (k, v) in fields_raw)
+        sync_fields = fields
         _mutate_images!(project_uid, [String(image_uid)]) do img
-            for (k, v) in fields
-                # a JSON `null` deletes the key (e.g. clearing a stale PhysicalSizeZ_raw marker
-                # once a trusted value replaces an auto-corrected one) rather than setting it
-                isnothing(v) ? delete!(img.meta, k) : (img.meta[k] = v)
-            end
+            # a JSON `null` deletes the key (e.g. clearing a stale PhysicalSizeZ_raw marker once a
+            # trusted value replaces an auto-corrected one); an edited axis drops its per-axis unit
+            sync_fields = Cecelia.apply_calibration_edit!(img.meta, fields)
         end
 
         # Copy any physical-size/timing edit INTO the zarr's own calibration (`.zattrs` scale/units
@@ -281,7 +280,7 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
             if img isa CciaImage
                 zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
                 (isnothing(zarr_path) || !isdir(zarr_path)) ||
-                    Cecelia.sync_zarr_calibration!(zarr_path, fields)
+                    Cecelia.sync_zarr_calibration!(zarr_path, sync_fields)
                 # recompute calibration QC from the saved meta so a fixed image clears its warning
                 # (or a bad edit re-flags it) — the image-table indicator reads this, not the payload.
                 Cecelia.write_metadata_qc!(img)

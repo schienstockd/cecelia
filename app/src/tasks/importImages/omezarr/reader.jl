@@ -7,15 +7,19 @@ The store's `OME/METADATA.ome.xml` sidecar, or `nothing`. It lives at the STORE 
 series subdir the multiscales sit in: bioformats2raw writes `<store>/OME/METADATA.ome.xml` and puts
 the multiscales in `<store>/0/` (or `<store>/N/` for a series pick), and callers pass either — the
 import's `resolved_zarr` and `img_filepath(img, "default")` are both the series subdir. Probes the
-given path first (store root, or a flat store), then its parent. The ONE lookup for reads and writes
+given path first (store root, or a flat store), then its parent; at each, `OME/METADATA.ome.xml`
+then the legacy root-level `METADATA.ome.xml` — the same four candidates, in the same order, as
+Python's `load_ome_xml`. The ONE lookup for reads and writes
 (`_delta_t_fallback`, `update_ome_xml_pixels!`); Python's twin is `ome_xml_utils.load_ome_xml`.
 Without the parent probe the writer silently skipped every bioformats2raw import and metadata edit.
 """
 function _ome_xml_file(zarr_path::AbstractString)::Union{String,Nothing}
     path = rstrip(zarr_path, ['/', '\\'])
     for root in (path, dirname(path))
-        f = joinpath(root, "OME", "METADATA.ome.xml")
-        isfile(f) && return f
+        # the legacy layout keeps the XML at the root with no `OME/` dir — Python reads it too
+        for f in (joinpath(root, "OME", "METADATA.ome.xml"), joinpath(root, "METADATA.ome.xml"))
+            isfile(f) && return f
+        end
     end
     nothing
 end
@@ -216,7 +220,12 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
                 isnothing(yi) || (result["PhysicalSizeY"] = scale[yi])
                 isnothing(zi) || (result["PhysicalSizeZ"] = scale[zi])
 
-                # spatial axes share one calibration unit in practice; take the first present
+                # ONE shared `PhysicalSizeUnit` (the first spatial axis with a unit). An axis in a
+                # different unit (z in nm, x/y in µm) is converted into it, so every PhysicalSize*
+                # is in that unit — `sync_zarr_calibration!` writes the shared unit onto all three
+                # axes, and a z left in its own unit would be relabelled (1000× off, no error). A
+                # unit with no known factor can't be converted: it keeps its own value and says so
+                # in `PhysicalSize{X,Y,Z}Unit` (`_meta_axis_length_unit` reads it).
                 spatial_unit = nothing
                 for i in (xi, yi, zi)
                     if !isnothing(i) && !isnothing(ax_units[i])
@@ -224,7 +233,19 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
                         break
                     end
                 end
-                isnothing(spatial_unit) || (result["PhysicalSizeUnit"] = spatial_unit)
+                if !isnothing(spatial_unit)
+                    result["PhysicalSizeUnit"] = spatial_unit
+                    shared_um = length_unit_um(spatial_unit)
+                    for (i, axis) in ((xi, "X"), (yi, "Y"), (zi, "Z"))
+                        (isnothing(i) || isnothing(ax_units[i]) || ax_units[i] == spatial_unit) && continue
+                        axis_um = length_unit_um(ax_units[i])
+                        if isnothing(axis_um) || isnothing(shared_um)
+                            result["PhysicalSize$(axis)Unit"] = ax_units[i]
+                        else
+                            result["PhysicalSize$(axis)"] = scale[i] * axis_um / shared_um
+                        end
+                    end
+                end
 
                 # bioformats2raw always writes a t-axis scale (defaulting to 1.0) even when it has
                 # no real timing for the file — but it only attaches a `unit` to the t axis when it

@@ -230,7 +230,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                     new_z = Float64(corrected[:PhysicalSizeZ])
                     on_log("[INFO] Corrected Z spacing from source ImageJ metadata (unit=$(get(corrected, :sourceUnit, "?"))): $raw_z -> $new_z um")
                     isnothing(raw_z) || (zarr_meta["PhysicalSizeZ_raw"] = raw_z)
-                    zarr_meta["PhysicalSizeZ"] = new_z
+                    _set_corrected_z_um!(zarr_meta, new_z)
                 end
             catch e
                 @warn "Could not read ImageJ physical-size result" exception = e

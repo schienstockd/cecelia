@@ -28,7 +28,7 @@ end
 # out of `_run_task` so it's unit-testable without a project/zarr on disk.
 function _bin_inherited_meta(src_meta::AbstractDict, factor_x::Int, factor_y::Int)::Dict{String,Any}
     out = Dict{String,Any}()
-    for k in ("PhysicalSizeUnit", "PhysicalSizeZ", "PhysicalSizeZ_raw",
+    for k in ("PhysicalSizeUnit", AXIS_UNIT_META_KEYS..., "PhysicalSizeZ", "PhysicalSizeZ_raw",
               TIME_META_KEYS..., "SizeC", "SizeZ", "SizeT")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end

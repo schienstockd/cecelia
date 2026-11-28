@@ -43,11 +43,12 @@ function _export_calibration(meta::AbstractDict; z_mip::Bool = false, one_frame:
     # Writing "micrometer" is exactly the bug this task exists to prevent, one layer down.
     # A unit with no OME symbol (`ome_xml_unit_name` → nothing) leaves its values out: written bare,
     # OME would read them in its default unit.
-    raw_unit = get(meta, "PhysicalSizeUnit", nothing)
-    unit = raw_unit isa AbstractString && !isempty(raw_unit) ? ome_xml_unit_name(raw_unit) : nothing
-    spatial_ok = !(raw_unit isa AbstractString && !isempty(raw_unit)) || !isnothing(unit)
+    # Each axis in its own unit: a per-axis `PhysicalSize{X,Y,Z}Unit` when the meta has one (a Z the
+    # reader couldn't convert into the shared unit), else the shared `PhysicalSizeUnit`.
     for (k, ax) in (("PhysicalSizeX", "X"), ("PhysicalSizeY", "Y"), ("PhysicalSizeZ", "Z"))
-        spatial_ok || break
+        raw_unit = _meta_axis_length_unit(meta, ax)
+        unit = raw_unit isa AbstractString && !isempty(raw_unit) ? ome_xml_unit_name(raw_unit) : nothing
+        (raw_unit isa AbstractString && !isempty(raw_unit) && isnothing(unit)) && continue
         (ax == "Z" && z_mip) && continue
         v = get(meta, k, nothing)
         (isnothing(v) || v == "") && continue
