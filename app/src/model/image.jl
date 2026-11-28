@@ -304,6 +304,23 @@ function img_proximity_suffixes(img::CciaImage)::Vector{String}
 end
 
 """
+    img_region_edge_path(img, name) / img_region_edge_suffixes(img)
+
+Region-edge runs (`spatialAnalysis.regionEdge`): `{img._dir}/regionEdges/{name}.json`, the region's
+boundary lines (native pixels, per frame and plane) that the viewer and recordings draw
+(`region_edge_lines.jl`). The per-cell distances live in the cell table. Listed from disk like the
+proximity runs above; no ccid.json registration.
+"""
+img_region_edge_dir(img::CciaImage)::String = joinpath(img._dir, "regionEdges")
+img_region_edge_path(img::CciaImage, name::AbstractString)::String =
+    joinpath(img_region_edge_dir(img), "$(name).json")
+function img_region_edge_suffixes(img::CciaImage)::Vector{String}
+    d = img_region_edge_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".json")])
+end
+
+"""
     img_rois_path(img, suffix) / img_roi_reviews_path(img, suffix) / img_rois_suffixes(img)
 
 ROI auto-discovery (`docs/todo/ROI_TRIAGE_PLAN.md`): the ROI SET a `spatialAnalysis.roiDiscovery`

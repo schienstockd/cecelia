@@ -32,6 +32,12 @@ describe('population positions — layers', () => {
     expect([...l.pops[0]!]).toEqual([1, 2, 7, 8])
   })
 
+  it('a measure on the picked populations only: their cells keep it, every other cell is missing', () => {
+    const l = positionLayers(WIRE, 1, 2, true)
+    expect([...l.base]).toEqual([5, 6, 7, 8, 9, 10])   // every cell still drawn (grey where missing)
+    expect([...l.values]).toEqual([4, -2, NaN])
+  })
+
   it('a frame the data lacks is empty, not every cell', () => {
     expect(positionLayers(WIRE, 7, 2).n).toBe(0)
   })

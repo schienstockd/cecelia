@@ -270,7 +270,9 @@ def _cellpose_imports():
 #: 23: new backend `editImages.splitTissues` — the WHOLE image, whatever the view, since tissues are
 #:     found slide-wide; the reply names what it counted (`countNoun`). A protocol-22 worker answers
 #:     "no preview backend" for it.
-PROTOCOL = 23
+#: 24: new backend `spatialAnalysis.regionEdge` — the shape the run measures from, whole image, one
+#:     colour per piece. A protocol-23 worker answers "no preview backend" for it.
+PROTOCOL = 24
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -1524,6 +1526,62 @@ def _preview_split_tissues(ctx):
     }
 
 
+def _preview_region_edge(ctx):
+    """The shape `spatialAnalysis.regionEdge` would measure from — the run's own `region_mask` on the
+    same centroids, radius and hole setting — as a whole-image mask, one colour per piece, so the radius
+    and Fill holes can be judged before the run. Its outline is the boundary line the run draws.
+
+    The current frame only on a timecourse; on a stack, the 3D shape cut at the current plane and shown
+    on every plane (`fallback2d`). The cells come from the cell table, not the pixels."""
+    from scipy import ndimage as ndi
+    from cecelia.utils import region_edge_utils as reu
+    from cecelia.utils.label_props_utils import LabelPropsView, scale_centroids
+    from cecelia.utils.tissue_split_utils import Detection
+
+    p = ctx.params
+    sizes = [float(v) for v in p['physicalSizes']]
+    close_um, fill = float(p['closeRadius']), bool(p['fillHoles'])
+    view = LabelPropsView(p['propsPath']).only_centroid_cols()
+    d = view.as_df(); ccols = view.centroid_columns(order=['z', 'y', 'x']); tcols = view.temporal_columns(); view.close()
+    if tcols and tcols[0] in d.columns:
+        d = d[d[tcols[0]].to_numpy() == _preview_t(ctx)]
+    has_z = 'centroid_z' in ccols and int(ctx.axis_len.get('Z', 1)) > 1
+    if not has_z:
+        ccols = [c for c in ccols if c != 'centroid_z']
+    labels = d['label'].to_numpy(dtype=np.int64)
+    sel = np.ones(len(labels), bool) if p.get('regionLabels') is None else \
+        np.isin(labels, np.asarray(p['regionLabels'], dtype=np.int64))
+    coords = scale_centroids(d, sizes)[ccols].to_numpy(dtype=np.float64)
+    size_of = {'centroid_z': sizes[0], 'centroid_y': sizes[1], 'centroid_x': sizes[2]}
+    axis_of = {'centroid_z': 'Z', 'centroid_y': 'Y', 'centroid_x': 'X'}
+    extent = [int(ctx.axis_len.get(axis_of[c], 1)) * size_of[c] for c in ccols]
+    mask, step = reu.region_mask(coords[sel], extent, close_um, fill)
+    plane = mask
+    if has_z:                                    # the 3D shape at the plane on screen
+        z = int(ctx.bounds.get('Z', (0, 1))[0])
+        plane = mask[min(int(np.floor(z * sizes[0] / step)), mask.shape[0] - 1)]
+    pieces, n = ndi.label(plane)
+    full_yx = (int(ctx.axis_len['Y']), int(ctx.axis_len['X']))
+    det = Detection(labels=pieces.astype(np.uint32), level=0, factor_yx=(step / sizes[1], step / sizes[2]),
+                    full_yx=full_yx, px_um=step, tissues=[])
+    axes = [ax for ax in ctx.dim_utils.im_dim_order if ax != 'C']
+    full_shape = [int(ctx.axis_len.get(ax, 1)) for ax in axes]
+    path = _stage_detection_labels(det, axes, full_shape, ctx.task_dir, ctx.value_name, ctx.im_path)
+    out = {
+        'counts': {'base': int(n)},
+        'countNoun': 'piece',
+        'wholeImage': True,
+        'passes': [],
+        'derived': {'regionCells': int(sel.sum()), 'gridUm': step,
+                    'fracInSmallPieces': reu.frac_in_small_pieces(mask, step, coords[sel])},
+        'region': {'Y': [0, full_yx[0]], 'X': [0, full_yx[1]]},
+        'layers': [_layer_disk('labels', 'Preview', ctx.value_name, path, axes, full_shape)],
+    }
+    if has_z:
+        out['fallback2d'] = True
+    return out
+
+
 def _px_um_x(im_path):
     """Full-resolution X pixel size in µm, or None when the store records none."""
     scale = zarr_utils.read_scale_um(im_path)
@@ -1591,6 +1649,7 @@ _BACKENDS = {
     'cleanupImages.afCorrect': _preview_af,
     'cleanupImages.smooth': _preview_smooth,
     'editImages.splitTissues': _preview_split_tissues,
+    'spatialAnalysis.regionEdge': _preview_region_edge,
 }
 
 
@@ -1623,7 +1682,7 @@ def preview(msg):
     out.setdefault('noSignalWhy', '')
     # a backend that previews more than the view (the whole slide) reports its own region
     out.setdefault('region', {ax: list(v) for ax, v in bounds.items()})
-    out['fallback2d'] = fallback2d
+    out['fallback2d'] = fallback2d or bool(out.get('fallback2d'))
     out['valueName'] = value_name
     out['funName'] = fun_name
     return out

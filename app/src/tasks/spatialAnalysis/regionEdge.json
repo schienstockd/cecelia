@@ -1,0 +1,65 @@
+{
+  "task": "regionEdge",
+  "fun_name": "spatialAnalysis.regionEdge",
+  "label": "Distance to region edge",
+  "methodsText": ["Each cell's distance to the edge of a region outlined from {regionPops} cells (closing radius {closeRadius}) was measured; the image border was not counted as an edge."],
+  "purpose": "Each cell's distance to a region's edge, and whether it is inside",
+  "useWhen": [
+    "Distance of cells from the tissue edge: pick the all-cells root",
+    "Inside or outside a follicle, region or aggregate, and how far"
+  ],
+  "notWhen": [
+    "Distance to the nearest cell of a population: use Cell contacts",
+    "Population shares in bands around a structure: Proximity profile"
+  ],
+  "category": "Spatial analysis",
+  "group": "Contacts",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "requires": { "scale": ["xy"] },
+  "params": [
+    {
+      "key": "edgeName",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "regionEdges",
+      "default": "tissue",
+      "tip": "Output name; names the columns and the boundary line"
+    },
+    {
+      "key": "regionPops",
+      "required": true,
+      "requiredMessage": "Select the cells that make the region",
+      "label": "Region",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "Cells that make the region; the all-cells root = the tissue"
+    },
+    {
+      "key": "closeRadius",
+      "label": "Closing radius (µm)",
+      "unit": "um",
+      "type": "float",
+      "min": 5,
+      "max": 1000,
+      "step": 5,
+      "default": 75,
+      "tip": "Gaps between cells up to about twice this count as inside"
+    },
+    {
+      "key": "fillHoles",
+      "label": "Fill holes",
+      "type": "select",
+      "default": "auto",
+      "options": [
+        { "value": "auto", "label": "Auto" },
+        { "value": "on",   "label": "On" },
+        { "value": "off",  "label": "Off" }
+      ],
+      "tip": "Auto: filled for the tissue (tears), kept for a region"
+    }
+  ]
+}

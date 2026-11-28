@@ -113,8 +113,8 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks, trackedLabelCount,
-  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween,
-  type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween, regionEdgesUrl,
+  type SkeletonPayload, type SpatialGraphPayload, type RegionEdgePayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
   type OverlayPopsPayload,
 } from '../utils/viewerOverlays'
 import { OVERLAY_TICK_KEY, parseOverlayTick, patchPopsLook, layerFetches, type OverlayTick, type PopLook } from '../utils/viewer/overlayTick'
@@ -882,6 +882,7 @@ const specSource: DrawSpecSource = {
   get trackNames() { return cellTableNames() },
   get branchNames() { return meta.value?.branchNames ?? [] },
   get spatialGraphNames() { return meta.value?.spatialGraphNames ?? [] },
+  get regionEdgeNames() { return meta.value?.regionEdgeNames ?? [] },
   get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
   get nZ() { return meta.value?.nZ ?? 0 },
   get nT() { return meta.value ? meta.value.nT : undefined },
@@ -2161,7 +2162,7 @@ function rebuildOverlays() {
     trackSpeedRange.value = null
   }
   // the skeletons ride in the same buffer, after the tracks (`appendSkeletonLines`)
-  segments = appendSkeletonLines(segments, [...shownSkeletons(), ...shownGraphs()], meta.value)
+  segments = appendSkeletonLines(segments, [...shownSkeletons(), ...shownGraphs(), ...shownEdges()], meta.value)
   segCount.value = segments.count
   // Whichever renderer owns the canvas draws them — the volume ones or the 2D tile one.
   if (renderer.value) seedRendererOverlays(renderer.value, points, segments)
@@ -2428,6 +2429,37 @@ watch(() => graphSuffixes.value.join('\n'), () => { void loadGraphs() })
 const graphRestyle = rafCoalesce(() => { if (graphSuffixes.value.length) rebuildOverlays() })
 watch(() => [spec.graphColour, spec.graphWidth, spec.graphPopsOnly], () => graphRestyle.schedule())
 onUnmounted(() => graphRestyle.cancel())
+
+/** Each shown region boundary (`/api/viewer/region-edges`), by run name — the graphs' lifecycle:
+ *  fetched once per run, dropped when its switch goes off, refetched after a task. */
+const edgePayloads = ref<Map<string, RegionEdgePayload>>(new Map())
+const edgeNames = computed(() => {
+  const vis = spec.edgeVisible
+  return (meta.value?.regionEdgeNames ?? []).filter(n => vis[n])
+})
+const shownEdges = () => edgeNames.value.flatMap(n => {
+  const payload = edgePayloads.value.get(n)
+  return payload ? [{ payload, colour: spec.edgeColour, width: spec.edgeWidth }] : []
+})
+async function loadEdges(force = false) {
+  if (!projectUid || !imageUid) return
+  const want = edgeNames.value
+  const next = new Map<string, RegionEdgePayload>()
+  await Promise.all(want.map(async n => {
+    const cached = force ? undefined : edgePayloads.value.get(n)
+    if (cached) { next.set(n, cached); return }
+    try {
+      next.set(n, await getJson<RegionEdgePayload>(regionEdgesUrl({ projectUid, imageUid, suffix: n }), { cache: 'no-store' }))
+    } catch { /* no line for this one; the rest still draw */ }
+  }))
+  if (want.join('\n') !== edgeNames.value.join('\n')) return
+  edgePayloads.value = next
+  rebuildOverlays()
+}
+watch(() => edgeNames.value.join('\n'), () => { void loadEdges() })
+const edgeRestyle = rafCoalesce(() => { if (edgeNames.value.length) rebuildOverlays() })
+watch(() => [spec.edgeColour, spec.edgeWidth], () => edgeRestyle.schedule())
+onUnmounted(() => edgeRestyle.cancel())
 
 async function loadTracks() {
   if (!projectUid || !imageUid) return
@@ -5759,6 +5791,7 @@ watch(meta, m => {
     trackNames: cellTableNames(),
     branchNames: m.branchNames ?? [],
     spatialGraphNames: m.spatialGraphNames ?? [],
+    regionEdgeNames: m.regionEdgeNames ?? [],
   })
 })
 
@@ -6053,6 +6086,8 @@ async function applyCacheClear(job: CacheClearJob): Promise<void> {
     void loadSkeletons(true)
     // a re-run neighbour graph rewrites its edges under the same suffix
     void loadGraphs(true)
+    // a re-run region edge rewrites its boundary under the same name
+    void loadEdges(true)
     // A rewritten mask: its new stamp moves `maskSourceId`, whose watcher refetches the mask alone.
     if (reload === 'mask') maskRev.value = job.rev
     return
@@ -6963,6 +6998,7 @@ onUnmounted(() => {
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :branch-names="meta.branchNames ?? []"
                         :graph-names="meta.spatialGraphNames ?? []"
+                        :edge-names="meta.regionEdgeNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes"
                         :columns-tick="lensQuery.columnsTick.value" />
@@ -7078,7 +7114,7 @@ onUnmounted(() => {
                                :label-name="labelName" :colour-note="maskColourNote"
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
                                :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1"
-                               :graph-shown="graphSuffixes.length > 0" @redraw="frame.redraw()" />
+                               :graph-shown="graphSuffixes.length > 0" :edge-shown="edgeNames.length > 0" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
                               :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"

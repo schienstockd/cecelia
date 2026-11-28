@@ -63,17 +63,19 @@ export function framesIn(buf: Float32Array): number[] {
 /**
  * One image's cells as drawable layers: `base` = every cell of `frame` as xy pairs (null = every frame),
  * `pops[k]` = the cells of population `k` among them. A cell sits in at most one population layer
- * (the server picks which), so the colours never stack.
+ * (the server picks which), so the colours never stack. `valuesInPopsOnly`: a colour-by value only on
+ * the cells of a picked population (NaN elsewhere, drawn as missing) — the measure for those populations.
  */
-export function positionLayers(buf: Float32Array, frame: number | null, nPops: number):
+export function positionLayers(buf: Float32Array, frame: number | null, nPops: number, valuesInPopsOnly = false):
     { base: Float32Array; values: Float32Array; pops: Float32Array[]; n: number } {
   const base: number[] = [], values: number[] = []
   const pops: number[][] = Array.from({ length: nPops }, () => [])
   for (let i = 0; i + POS_STRIDE <= buf.length; i += POS_STRIDE) {
     if (frame !== null && buf[i + 2] !== frame) continue
     const x = buf[i]!, y = buf[i + 1]!, k = buf[i + 3]!
-    base.push(x, y); values.push(buf[i + 4]!)
-    if (k >= 0 && k < nPops) pops[k]!.push(x, y)
+    const inPop = k >= 0 && k < nPops
+    base.push(x, y); values.push(valuesInPopsOnly && !inPop ? NaN : buf[i + 4]!)
+    if (inPop) pops[k]!.push(x, y)
   }
   return { base: Float32Array.from(base), values: Float32Array.from(values),
            pops: pops.map(p => Float32Array.from(p)), n: base.length / 2 }

@@ -418,6 +418,8 @@ function api_viewer_meta(req::HTTP.Request)
                             branchNames = try img_branch_value_names(init_object(pu, iu)) catch; String[] end,
                             # the neighbour graphs (`spatialGraph/{suffix}.h5ad`) — what `/api/viewer/spatial-graphs` draws
                             spatialGraphNames = try img_spatial_graph_suffixes(init_object(pu, iu)) catch; String[] end,
+                            # the region boundaries (`regionEdges/{name}.json`) — what `/api/viewer/region-edges` draws
+                            regionEdgeNames = try img_region_edge_suffixes(init_object(pu, iu)) catch; String[] end,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -1058,6 +1060,35 @@ function api_viewer_spatial_graphs(req::HTTP.Request)
                         nCrossFrame = g.n_cross_frame, nUnplaced = g.n_unplaced, stale = g.stale, note,
                         vns, aVn = [vix[v] for v in g.a_vn], aLabel = g.a_label,
                         bVn = [vix[v] for v in g.b_vn], bLabel = g.b_label))
+end
+
+# ── GET /api/viewer/region-edges ──────────────────────────────────────────────────
+# ?projectUid=&imageUid=&suffix= → {suffix, flat, nSegments, t, plane, x0, y0, z0, x1, y1, z1}
+#
+# A region's boundary (`spatialAnalysis.regionEdge`) as line segments (`region_edge_segments` — the
+# reader the movie overlay closure uses too). The skeleton route's shape and units: µm, `t` a frame
+# index (-1 = every frame), `plane` computed when the run wrote the lines.
+function api_viewer_region_edges(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    sfx = get(q, "suffix", "")
+    isempty(sfx) && return 400, JSON3.write((; error = "suffix is required"))
+    s = try
+        region_edge_segments(img, sfx)
+    catch e
+        @warn "viewer region edge: unreadable" suffix = sfx exception = e
+        return 500, JSON3.write((; error = "could not read the region edge '$sfx': $(sprint(showerror, e))"))
+    end
+    s === nothing && return 404, JSON3.write((; error = "no region edge '$sfx' on this image"))
+    n = length(s)
+    n > SKELETON_MAX_SEGMENTS && return 413, JSON3.write((;
+        error = "$n boundary segments is past the limit of $SKELETON_MAX_SEGMENTS"))
+    sz = first(img_physical_sizes(img))
+    ux, uy, uz = (Float32(physical_size_for_axis(sz, a)) for a in (:x, :y, :z))
+    200, JSON3.write((; suffix = sfx, flat = s.flat, nSegments = n, t = s.t, plane = s.plane,
+                        x0 = s.x0 .* ux, y0 = s.y0 .* uy, z0 = s.z0 .* uz,
+                        x1 = s.x1 .* ux, y1 = s.y1 .* uy, z1 = s.z1 .* uz))
 end
 
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
