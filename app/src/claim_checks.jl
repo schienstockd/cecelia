@@ -36,23 +36,12 @@ ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString;
            unit_attrs = String[], group_attrs = String[], design = experiment_design(set)) =
     ClaimScope(set, String.(populations), String(measure), claim_unit_attrs(unit_attrs), claim_unit_attrs(group_attrs), design)
 
-"""
-    claim_unit_attrs(v) -> Vector{String}
+# `claim_unit_attrs` (a replicate's attributes, normalised) and `_claim_unit_of` (an image's replicate)
+# live in experiment_design.jl, which keys a design's replicates by the same rule.
 
-A replicate's attributes, normalised: a list or one string (`nothing` = none), trimmed, blanks and
-repeats dropped. The one rule for every scope that is stored, compared or checked.
-"""
-claim_unit_attrs(v) = unique!(String[strip(string(a)) for a in (v isa AbstractVector ? v : v === nothing ? () : (v,))
-                                     if !isempty(strip(string(a)))])
-
-# The replicate's name for text ("Mouse × Location") and an image's replicate ("M1 × left"; "" when
-# any of its attributes is blank — a half-named replicate can't be counted).
+# The replicate's name for text ("Mouse × Location").
 _claim_unit_label(scope::ClaimScope) = join(scope.unit_attrs, " × ")
 _claim_group_label(scope::ClaimScope) = join(scope.group_attrs, " × ")
-function _claim_unit_of(img, attrs)
-    vals = String[string(get(img.attr, a, "")) for a in attrs]
-    any(isempty ∘ strip, vals) ? "" : join(vals, " × ")
-end
 
 # What a row is compared as: its population; its attribute group (panel "A") when the claim compares
 # groups of images; both ("B/qc · A") when it compares several populations across those groups. ""

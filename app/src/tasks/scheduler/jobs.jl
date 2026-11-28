@@ -101,6 +101,7 @@ function _execute_job!(job::TaskJob)
     log_targets = all_images(job.target)
     fun_name    = _fun_name_from_task(job.task)
     value_name  = string(get(job.params, "valueName", ""))
+    source      = try task_source_stamp(fun_name) catch; nothing end   # the run log's `source` (run_log.jl)
     # Scales this run computes with no recorded value for (`run_scale_defaults`: a 3D image's missing or
     # invalid z step, an unknown unit) and the value it uses instead — the gate only blocks a missing
     # DECLARED scale. Warned in the task log now, stamped on the
@@ -134,7 +135,7 @@ function _execute_job!(job::TaskJob)
                 prov = run_provenance(fun_name, tgt, job.params)
                 open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id, pool = rec.pool_name,
                               by = rec.by, caller = rec.caller, inputs = prov.inputs, replaces = prov.replaces,
-                              gates = prov.gates)
+                              gates = prov.gates, source)
             end
         catch e
             @warn "run-log open failed" task_id = job.id exception = e
@@ -205,7 +206,7 @@ function _execute_job!(job::TaskJob)
                                fun_name = fun_name, value_name = value_name, params = job.params,
                                pool = rec.pool_name, by = rec.by, caller = rec.caller,
                                env = _run_env_with_scale(run_env_of(result), get(defaulted, tgt.uid, nothing)),
-                               usage = run_usage(usage),
+                               usage = run_usage(usage), source,
                                unchanged = final === TASK_DONE && run_unchanged(result))
             end
         catch e
@@ -240,7 +241,7 @@ function _execute_job!(job::TaskJob)
                                fun_name = fun_name, value_name = value_name, params = job.params,
                                pool = rec.pool_name, by = rec.by, caller = rec.caller,
                                env = _run_env_with_scale(Dict{String,Any}(), get(defaulted, tgt.uid, nothing)),
-                               usage = run_usage(usage))
+                               usage = run_usage(usage), source)
             end
         catch; end
     finally

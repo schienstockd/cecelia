@@ -10,7 +10,7 @@
 #     in it: a rename or recolour keeps the hash. It names the gate, not the data it is applied to: a
 #     re-segmentation or a corrected pixel size changes the cells under the same hash (the run log's
 #     `inputs` / `replaces` record those). The scheduler stamps the hashes of the pops a
-#     run reads into its run-log entry (`gates`, `run_gates` in run_log.jl).
+#     run reads into its run-log entry (`gates`, `run_gates` in run_provenance.jl).
 #   • `gating/{vn}[__type].history.jsonl` — `save_pop_tree!` (the ONE gating writer: GUI routes, the MCP
 #     gate tools, gate copy, tasks and the REPL all reach the file through it) appends the PREVIOUS
 #     state there whenever a write changes any population's definition: `{at, author, valueName,

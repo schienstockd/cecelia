@@ -348,7 +348,7 @@ end
 # keeps the previous journal. Append-only: this is the durable, per-image edit history that old R
 # kept only in Shiny session state (CORRECTION_PLAN.md Decision 7).
 
-corrections_dir(task_dir::AbstractString) = joinpath(task_dir, "corrections")
+# `corrections_dir` (shared with the label-correction journal) is in label_correction.jl.
 corrections_path(task_dir::AbstractString, value_name::AbstractString) =
     joinpath(corrections_dir(task_dir), string(value_name) * ".json")
 

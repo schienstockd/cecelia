@@ -53,8 +53,9 @@ function run_task_logged!(task, img::CciaImage, fun_name::AbstractString, value_
                           on_process::Function = _ -> nothing)
     pv  = run_provenance(fun_name, img, params)
     tid = "$(id_prefix)-" * string(rand(UInt32); base = 16)
+    src = try task_source_stamp(fun_name) catch; nothing end
     open_run_log!(img, fun_name, value_name, params; task_id = tid, by, caller,
-                  inputs = pv.inputs, replaces = pv.replaces, gates = pv.gates)
+                  inputs = pv.inputs, replaces = pv.replaces, gates = pv.gates, source = src)
     res = try
         _run_task(task, img, params; on_log, on_progress, on_process)
     catch
@@ -69,6 +70,7 @@ include("task/registry.jl")
 include("task/validate.jl")
 include("task/sections.jl")
 include("task/composite.jl")
+include("task/spec_leaves.jl")   # what a spec's params read and write (`_history_leaves`, …)
 include("task/spec_tests.jl")
 
 """

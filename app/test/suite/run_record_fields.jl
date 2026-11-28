@@ -53,8 +53,11 @@ end
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
         Cecelia._CECELIA_COMMIT[] = sha
         img = init_object("testpr", "KDIeEm")
-        Cecelia.open_run_log!(img, pfn, "", Dict{String,Any}(); task_id = "cite-p")
-        Cecelia.open_run_log!(img, "importImages.remove", "", Dict{String,Any}(); task_id = "cite-b")
+        # the caller hands the log its `source`, as the scheduler and `run_task_logged!` do
+        Cecelia.open_run_log!(img, pfn, "", Dict{String,Any}(); task_id = "cite-p",
+                              source = Cecelia.task_source_stamp(pfn))
+        Cecelia.open_run_log!(img, "importImages.remove", "", Dict{String,Any}(); task_id = "cite-b",
+                              source = Cecelia.task_source_stamp("importImages.remove"))
         ep = _rl_find(img, "cite-p"); eb = _rl_find(img, "cite-b")
         @test ep["ceceliaCommit"] == sha && eb["ceceliaCommit"] == sha
         @test ep["source"]["plugin"] == "p-cite" && ep["source"]["version"] == "1.2.3"

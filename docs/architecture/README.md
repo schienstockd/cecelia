@@ -85,7 +85,11 @@ pixi run test-py            # includes test_architecture_docs.py — the pins an
   sees and what it misses.
 - Hand-kept: `system.md` and `flows/*.md` (every arrow and step pinned to a file and symbol), and the
   grouping of Julia files into areas, `scripts/architecture/julia_areas.toml`. The test fails when a
-  pin no longer matches the code, or when a Julia file belongs to no area.
+  pin no longer matches the code, or when a Julia file belongs to no area. The run log spans two areas:
+  **run records** (`run_log.jl` and the sidecars — writing the
+  record, tier 2) and **run history** (`run_provenance.jl`, `correction_staleness.jl`,
+  `claim_checks.jl` — reading it against the task specs, tier 5 beside the task framework whose
+  spec leaves it reads).
 - Diagrams are Mermaid and render on GitHub and in any Markdown preview with Mermaid support.
 
 ## Not here yet

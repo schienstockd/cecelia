@@ -50,14 +50,15 @@ Functions taking each object as their first argument, by area — where the code
 |---|---|---|---|
 | model | 31 | 10 | 72 |
 | ai+lab log | 40 |  | 22 |
-| qc+checks | 4 | 32 | 18 |
 | gating |  | 2 | 50 |
+| qc+checks | 4 | 32 | 14 |
 | plots+boards | 11 |  | 27 |
 | tracking+spatial |  |  | 26 |
 | scheduler+chains | 18 |  | 4 |
-| run records |  |  | 19 |
+| run records |  |  | 16 |
 | tasks |  |  | 15 |
-| cell data |  |  | 10 |
 | jobs (export, import, maintenance) | 1 |  | 9 |
+| run history |  |  | 9 |
+| cell data |  |  | 8 |
 | task framework |  |  | 3 |
 
