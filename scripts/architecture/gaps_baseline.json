@@ -5,7 +5,7 @@
  "route-uncalled": 0,
  "runner-unlaunched": 0,
  "shared-file-unguarded": 0,
- "julia-upward": 50,
+ "julia-upward": 44,
  "viewer-store": 0,
  "fetch-direct": 0,
  "py-cycle": 0,

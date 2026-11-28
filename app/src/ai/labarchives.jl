@@ -43,7 +43,7 @@ function read_la_doc(proj::CciaProject)::Dict{String,Any}
     p = la_doc_path(proj)
     isfile(p) || return merge(_la_base(), Dict{String,Any}("present" => false, "readable" => true))
     try
-        # json_native (helpers.jl) — JSON3 gives Symbol keys, and everything below indexes by string.
+        # json_native (utils.jl) — JSON3 gives Symbol keys, and everything below indexes by string.
         merge(_la_base(), json_native(JSON3.read(read(p, String))),
               Dict{String,Any}("present" => true, "readable" => true))
     catch

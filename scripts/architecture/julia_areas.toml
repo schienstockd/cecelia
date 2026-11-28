@@ -37,7 +37,7 @@
                       "app/src/analysis_runs.jl", "app/src/analysis_export_provenance.jl",
                       "app/src/figures.jl", "app/src/cell_cards.jl", "app/src/view_profiles.jl"]
 "hpc"              = ["app/src/hpc/"]
-"ai+lab log"       = ["app/src/ai/", "app/src/lab_log.jl", "app/src/lab_log_context.jl"]
+"ai+lab log"       = ["app/src/ai/", "app/src/lab_log_context.jl"]
 "logging"          = ["app/src/log_stream.jl"]
 "package root"     = ["app/src/Cecelia.jl"]
 

@@ -48,8 +48,8 @@ Functions taking each object as their first argument, by area — where the code
 
 | Area | `CciaProject` | `CciaSet` | `CciaImage` |
 |---|---|---|---|
-| model | 21 | 10 | 70 |
-| ai+lab log | 50 |  | 22 |
+| model | 31 | 10 | 72 |
+| ai+lab log | 40 |  | 22 |
 | qc+checks | 4 | 32 | 18 |
 | gating |  | 2 | 50 |
 | plots+boards | 11 |  | 27 |
