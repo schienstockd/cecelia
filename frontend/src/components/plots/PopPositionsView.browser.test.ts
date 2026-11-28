@@ -3,7 +3,7 @@
 // tile width, plus fixed axis padding — so a portrait image left ~100 px blank under the plot and its
 // y axis squashed (x and y µm drawn at different scales). Both are measured here, on the real CSS.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { h } from 'vue'
+import { h, reactive } from 'vue'
 import PopPositionsView from './PopPositionsView.vue'
 import { frames, mountInto } from '../../test/browser/mount'
 
@@ -77,5 +77,74 @@ describe('PopPositionsView fit', () => {
       const d = rect(c.querySelector('.panel-plot')!)
       expect(d.width / d.height).toBeCloseTo(5600 / 6500, 1)
     })
+  })
+})
+
+// Play: the button by the frame slider steps through the frames in a loop, holds while the cells are
+// being refetched (nothing advances past data that has not landed), and is gone with All frames on.
+describe('PopPositionsView play', () => {
+  const ext = { xMin: 0, xMax: 100, yMin: 0, yMax: 100 }
+  const meta = { n: 3, unit: 'µm', extents: ext, frames: [0, 2],
+                 xTicks: [{ pos: 0, label: '0' }], yTicks: [{ pos: 0, label: '0' }] }
+  // [x, y, t, popIdx, value] — one cell in each of frames 0, 1, 2
+  const data = new Float32Array([10, 10, 0, -1, NaN, 50, 50, 1, -1, NaN, 90, 90, 2, -1, NaN])
+  let hold: Promise<void> = Promise.resolve()
+  function servePlay() {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('colourBy=')) await hold
+      return String(url).includes('meta=1')
+        ? new Response(JSON.stringify(meta), { headers: { 'Content-Type': 'application/json' } })
+        : new Response(data.buffer.slice(0))
+    }))
+  }
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+  const readout = (host: HTMLElement) => host.querySelector('.ppv-frame .cc-fs-xs')!.textContent!.trim()
+  const playBtn = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('.ppv-frame button')
+
+  function mountState(state: Record<string, unknown>) {
+    return mountInto({ render: () => h('div', { style: 'width:460px;height:420px;display:flex;flex-direction:column' },
+      [h(PopPositionsView, { projectUid: 'p', imageUids: ['img1'], setUid: null, state })]) })
+  }
+
+  it('steps through the frames in a loop and pauses', async () => {
+    servePlay()
+    const host = mountState(reactive({}))
+    await settle(host)
+    expect(readout(host)).toBe('t 0')
+    playBtn(host)!.click()
+    const seen = new Set<string>()
+    for (let i = 0; i < 20 && seen.size < 3; i++) { await sleep(100); seen.add(readout(host)) }
+    expect([...seen].sort()).toEqual(['t 0', 't 1', 't 2'])
+    playBtn(host)!.click()
+    const at = readout(host)
+    await sleep(500)
+    expect(readout(host)).toBe(at)
+  })
+
+  it('holds on a frame while the cells are refetched', async () => {
+    servePlay()
+    const state = reactive<Record<string, unknown>>({})
+    const host = mountState(state)
+    await settle(host)
+    let release!: () => void
+    hold = new Promise(r => { release = r })
+    state.colourBy = 'area'          // a cell column: refetches, held until released
+    playBtn(host)!.click()
+    const seen = new Set<string>()
+    for (let i = 0; i < 7; i++) { await sleep(100); seen.add(readout(host)) }
+    expect([...seen]).toEqual(['t 0'])
+    release()
+    hold = Promise.resolve()
+    let moved = false
+    for (let i = 0; i < 20 && !moved; i++) { await sleep(100); moved = readout(host) !== 't 0' }
+    expect(moved).toBe(true)
+  })
+
+  it('no play button with All frames on', async () => {
+    servePlay()
+    const host = mountState(reactive({ frame: null }))
+    await settle(host)
+    expect(host.querySelector('.ppv-frame')).toBeNull()
+    expect(host.querySelector('[aria-label="Play"]')).toBeNull()
   })
 })

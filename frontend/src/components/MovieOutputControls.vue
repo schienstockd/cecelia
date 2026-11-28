@@ -12,7 +12,8 @@
 // Named v-models rather than one config object, because the three sites store these differently: the
 // viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
 import { computed } from 'vue'
-import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
+import { movieAxisPlaceholder, parseMovieAxis, movieSizeMode, movieSizePick, movieSizeTips, MAX_MOVIE_AXIS,
+         type MovieResolution, type MovieSizeMode, type MovieBlankSize } from '../utils/movieSize'
 import { useFieldDraft } from '../composables/useFieldDraft'
 import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
@@ -62,10 +63,17 @@ const props = withDefaults(defineProps<{
   // 3D ray-cast sample density (the 3D renderer's one quality knob — it always reads the full-res
   // volume). Pass it and the row appears while 3D is picked; omit it and the row is absent.
   renderQuality?: RenderQuality | null
+  // What blank sizes record at in 2D — the canvas (`screen`) or native image pixels (`full`). Pass it
+  // and a `res` row (screen / full / custom) replaces the bare size fields, which show under `custom`;
+  // omit it and the row is the px fields alone. 3D has no native pixel grid, so it is the fields there.
+  resolution?: MovieResolution | null
+  // What blank size fields record at here, for their placeholder and tooltips: the viewer's canvas
+  // (default), or the full image (a 2D batch, which has no canvas)
+  blankSize?: MovieBlankSize
 // `null` defaults for the two overlay props: a union alone does NOT suppress Vue's Boolean cast — the
 // cast-to-false branch fires whenever the prop is absent and has no `default`, whatever the union says.
 // Verified against Vue's own prop resolution rather than read off the docs.
-}>(), { timestamp: null, scaleBar: null, numbered: null })
+}>(), { timestamp: null, scaleBar: null, numbered: null, blankSize: 'canvas' })
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
   (e: 'update:sizeX', v: number | null): void
@@ -78,6 +86,7 @@ const emit = defineEmits<{
   (e: 'update:zSlice', v: number): void
   (e: 'update:zRange', v: [number, number] | null): void
   (e: 'update:renderQuality', v: RenderQuality): void
+  (e: 'update:resolution', v: MovieResolution): void
 }>()
 
 const hasOverlays = computed(() => props.timestamp !== null || props.scaleBar !== null)
@@ -142,6 +151,24 @@ const sizeYDraft  = useFieldDraft(() => props.sizeY)
 const hasQuality = computed(() => props.show3D === true && props.renderQuality != null)
 const QUALITY_OPTIONS: ChipOption[] = RENDER_QUALITIES.map(q => ({ value: q, label: q }))
 
+// The `res` row: screen / full / custom, the last showing the size fields
+const hasRes = computed(() => props.resolution != null && props.show3D !== true)
+const sizeMode = computed<MovieSizeMode>(() => movieSizeMode(props.sizeX, props.sizeY, props.resolution))
+const showSize = computed(() => !hasRes.value || sizeMode.value === 'custom')
+const RES_OPTIONS: ChipOption[] = [
+  { value: 'screen', label: 'screen' },
+  { value: 'full', label: 'full' },
+  { value: 'custom', label: 'custom' },
+]
+function setSizeMode(mode: MovieSizeMode) {
+  const pick = movieSizePick(mode, props.canvasX, props.canvasY)
+  emit('update:sizeX', pick.sizeX)
+  emit('update:sizeY', pick.sizeY)
+  if (pick.resolution) emit('update:resolution', pick.resolution)
+}
+
+const sizeTips = computed(() => movieSizeTips(props.blankSize))
+
 const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
   emit(`update:${axis}` as 'update:sizeX', parseMovieAxis(raw))
 </script>
@@ -163,14 +190,22 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
       <span class="mo-val cc-readout">{{ fps }}</span>
     </span>
 
-    <span class="cc-row-group">
-      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Output size in pixels; blank = canvas size'">px</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeXDraft"
-             :placeholder="movieAxisPlaceholder(canvasX)" v-tooltip.bottom="'Width; blank = canvas width'"
+    <span v-if="hasRes" class="cc-row-group mo-own-row">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">res</span>
+      <ChipSelect variant="segmented" :options="RES_OPTIONS" :model-value="sizeMode"
+                  aria-label="Movie resolution"
+                  v-tooltip.bottom="'Screen: canvas size · full: every image pixel · custom: set px'"
+                  @update:model-value="setSizeMode($event as MovieSizeMode)" />
+    </span>
+
+    <span v-if="showSize" class="cc-row-group">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="sizeTips.label">px</span>
+      <input type="number" min="2" :max="MAX_MOVIE_AXIS" step="2" class="cc-input-2xs mo-num" v-model="sizeXDraft"
+             :placeholder="movieAxisPlaceholder(canvasX, blankSize)" v-tooltip.bottom="sizeTips.x"
              @change="onAxis('sizeX', sizeXDraft)" />
       <span class="cc-muted cc-fs-2xs">×</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeYDraft"
-             :placeholder="movieAxisPlaceholder(canvasY)" v-tooltip.bottom="'Height; blank = canvas height'"
+      <input type="number" min="2" :max="MAX_MOVIE_AXIS" step="2" class="cc-input-2xs mo-num" v-model="sizeYDraft"
+             :placeholder="movieAxisPlaceholder(canvasY, blankSize)" v-tooltip.bottom="sizeTips.y"
              @change="onAxis('sizeY', sizeYDraft)" />
     </span>
 

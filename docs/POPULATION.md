@@ -1429,8 +1429,9 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   (so a plot with no other selection reverts from the dimmed backdrop to normal pseudocolour /
   contour). It is never persisted, so there is no pop to delete. The manager's per-pop `pi-images`
   column toggles a pop's viewer visibility (its `show` flag) and re-pushes via
-  `store.refreshViewerPops` (silent); the Options box has a **Point size** slider (per-set
-  `settings.get/setPointSize(setUid)`, re-pushes on release). The *Show populations* preference
+  `store.refreshViewerPops` (silent). Its Options box is plot-only (gate labels, line width, dot
+  size, axis; none in cluster mode): the viewer's point size (per-set `settings.get/setPointSize`)
+  is set in the viewer's Populations section, not here. The *Show populations* preference
   re-pushes live on every `gating:pop-tree` while on, so the viewer overlay tracks gate edits / pop
   add-remove as you gate — driven by `handleGatingChange` in `composables/useViewerAutoShow`, which
   `App.vue` mounts app-level. The

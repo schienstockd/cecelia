@@ -117,13 +117,8 @@ const log = useLogStore()
 const projectStore = useProjectStore()
 const settings = useSettingsStore()
 
-// viewer point size is a PER-SET viewer preference (keyed by the gated image's set), set once and
-// held across the set's images. Guard the setter so we never write under an empty set key.
+// the gated image's set — keys the per-run assign history below
 const viewerSetUid = computed(() => (g.imageUid ? projectStore.setUidOfImage(g.imageUid) : null) ?? '')
-const viewerPointSize = computed<number>({
-  get: () => settings.getPointSize(viewerSetUid.value),
-  set: v => { if (viewerSetUid.value) settings.setPointSize(viewerSetUid.value, v) },
-})
 
 // edit-in-place, shared with the model vault and the tables (composables/useInlineEdit). Adopting it
 // also fixed a real bug here: `@keyup.enter` and `@blur` both called `commitRename` straight through,
@@ -1023,14 +1018,13 @@ function addMenuPopsToKiwi() {
       </TeleportPopover>
 
 
-    <!-- ── gate / viewer options (host-specific, #options slot). In cluster mode there are no gates
-         (the plot group); trackclust has no viewer control either, so the whole block is hidden. ── -->
-    <template v-if="props.popType !== 'trackclust'" #options>
+    <!-- ── plot options (host-specific, #options slot). Cluster mode has no gates, so nothing to set.
+         No viewer controls here: they live in the viewer (point size → its Populations section). ── -->
+    <template v-if="!clusterMode" #options>
       <div class="pm-opts">
         <CollapsibleSection label="Options" :default-open="false" max-height="none"
                             storage-key="popManager.options">
         <div class="pm-opts-body">
-          <template v-if="!clusterMode">
           <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>plot</span></div>
           <div class="pm-opt-row">
             <span class="pm-opt-label cc-muted cc-fs-xs">Gate labels</span>
@@ -1046,7 +1040,7 @@ function addMenuPopsToKiwi() {
                    @input="emit('update:lineWidth', parseFloat(($event.target as HTMLInputElement).value))" />
             <span class="pm-opt-val cc-readout cc-fs-xs">{{ lineWidth.toFixed(1) }}</span>
           </div>
-          <!-- scatter dot size: the PLOT twin of the viewer point size below. The default (0.7 → a
+          <!-- scatter dot size: the PLOT twin of the viewer's point size. The default (0.7 → a
                1.4px square) is the FlowJo speckle, which reads on a dense cloud but is hard to see on a
                sparse one or when the dots carry a colour-by measure. Scales every dot on the plot. -->
           <div class="pm-opt-row">
@@ -1062,23 +1056,6 @@ function addMenuPopsToKiwi() {
                         :model-value="axisFromZero ? 'zero' : 'auto'" aria-label="Axis scale"
                         @update:model-value="v => emit('update:axisFromZero', v === 'zero')" />
           </div>
-          </template>
-
-          <!-- viewer-option group is popType-specific: flow/live/clust populations render as viewer
-               Points (size slider); track/trackclust render as Tracks ribbons (no point size — tail
-               width is a plot-panel concern), so the group is hidden for those. -->
-          <template v-if="props.popType !== 'track' && props.popType !== 'trackclust'">
-            <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>viewer</span></div>
-            <!-- viewer point size (re-renders the viewer overlay on release) -->
-            <div class="pm-opt-row">
-              <span class="pm-opt-label cc-muted cc-fs-xs">Point size</span>
-              <input type="range" min="1" max="20" step="1" :value="viewerPointSize"
-                     v-tooltip.top="'Viewer point size in image pixels (per experiment/set)'"
-                     @input="viewerPointSize = parseInt(($event.target as HTMLInputElement).value)"
-                     @change="g.refreshPops()" />
-              <span class="pm-opt-val cc-readout cc-fs-xs">{{ viewerPointSize }}</span>
-            </div>
-          </template>
         </div>
         </CollapsibleSection>
       </div>

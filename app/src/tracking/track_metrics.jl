@@ -16,8 +16,17 @@ using Statistics: mean, cov
 struct Track
     id::Int
     t::Vector{Float64}       # physical time (frame_index × time_step)
-    coords::Matrix{Float64}  # n_steps × n_dims; physical space (px × pixel_res)
+    coords::Matrix{Float64}  # n_steps × n_dims; physical space (px × pixel_res); columns = TRACK_AXES
 end
+
+# The axis order of `Track.coords` columns (present axes only: a 2D track has x, y). The loader reads
+# the centroids in THIS order and every consumer that needs a particular axis looks it up here
+# (`_track_axis_cols`) rather than assuming a position.
+const TRACK_AXES = (:x, :y, :z)
+
+# Column indices of `axes` in a track with `n_dims` columns (absent axes are skipped).
+_track_axis_cols(n_dims::Integer, axes...)::Vector{Int} =
+    [i for (i, a) in enumerate(TRACK_AXES[1:n_dims]) if a in axes]
 
 n_steps(tr::Track) = size(tr.coords, 1)
 

@@ -37,6 +37,7 @@
     {
       "key": "maxContactDist",
       "label": "Contact distance (µm)",
+      "unit": "um",
       "type": "float",
       "min": 0,
       "max": 50,

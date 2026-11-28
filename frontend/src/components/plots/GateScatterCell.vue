@@ -53,6 +53,7 @@ const props = withDefaults(defineProps<{
   // binned = the colour-by mean field
   renderMode?: RenderMode
   showPops?: boolean
+  baseGrey?: boolean                             // the base dots in one neutral grey (PlotLayers)
   mode?: 'off' | 'rectangle' | 'polygon' | 'slice' | 'quadrant' | 'range' | 'bisector'   // 'off' = read-only (no draw/edit)
   // a 1D plot: this histogram (the host bins it, plots/histGeometry.ts) instead of the dots
   hist?: HistData | null
@@ -356,7 +357,7 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
                   :flip-y="flipY"
                   :base-values="baseValues" :value-extent="valueExtent" :value-ticks="valueTicks"
                   :value-label="valueLabel" :value-legend="valueLegend" :dot-size="dotSize"
-                  :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
+                  :pop-layers="popLayers" :show-pops="showPops" :base-grey="baseGrey" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"
                    :flip-y="flipY"
                    :line-width="gateLineWidth" :show-labels="gateLabels" :readonly="readonly" :pending="pendingGate"

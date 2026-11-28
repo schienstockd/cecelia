@@ -44,6 +44,7 @@
     {
       "key": "rMax",
       "label": "Max distance (µm)",
+      "unit": "um",
       "type": "float",
       "min": 10,
       "max": 1000,

@@ -35,6 +35,8 @@ import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
+import { UM_SCALES, autoUmScale, finestPixelUm, hasUmParam, umAutoReason, umScaleKey, umScaleLabel,
+         parseUmScale } from './umRange'
 import TaskList from './TaskList.vue'
 import TaskSummaryLine from './TaskSummaryLine.vue'
 import { taskGatingReason } from '../utils/taskGating'
@@ -91,19 +93,39 @@ const projectStore = useProjectStore()
 const drafts       = useTaskDraftsStore()
 
 // Selected image objects — looked up from the store so ParamRenderer gets filepath metadata
+const contextImages = computed(() => props.selectedUids.flatMap(uid => {
+  for (const set of projectStore.sets) {
+    const img = set.images.find(i => i.uid === uid)
+    if (img) return [img]
+  }
+  return []
+}))
 const paramContext = computed<ParamContext>(() => ({
-  images: props.selectedUids.flatMap(uid => {
-    for (const set of projectStore.sets) {
-      const img = set.images.find(i => i.uid === uid)
-      if (img) return [img]
-    }
-    return []
-  }),
+  images: contextImages.value,
   projectUid: projectMeta.current?.uid ?? '',
   values: paramValues.value,     // showIf conditions + sibling lookups read these
   params: taskDef.value?.params, // so a widget finds its sibling by TYPE, not by a hardcoded key
   funName: taskDef.value?.fun_name, // which task a backend param advisory is asked about
+  umScale: umScaleShown.value,      // µm slider factor — picked, else auto (tasks/umRange.ts)
 }))
+
+// The µm slider factor: auto from the finest selected pixel size, or one the user picked for this
+// project (kept per profile, so it survives a reload). Shown only on a form with a `unit` param.
+const umScaleStore = computed(() => umScaleKey(projectMeta.current?.uid ?? ''))
+const umScalePicked = ref<number | null>(null)
+watch(umScaleStore, k => {
+  try { umScalePicked.value = parseUmScale(profileStorage.getItem(k)) } catch { umScalePicked.value = null }
+}, { immediate: true })
+function setUmScale(raw: string) {
+  umScalePicked.value = parseUmScale(raw)
+  try {
+    if (umScalePicked.value == null) profileStorage.removeItem(umScaleStore.value)
+    else profileStorage.setItem(umScaleStore.value, String(umScalePicked.value))
+  } catch { /* storage unavailable: the pick lasts this session */ }
+}
+const umScaleAuto = computed(() => autoUmScale(finestPixelUm(contextImages.value)?.um))
+const umScaleShown = computed(() => umScalePicked.value ?? umScaleAuto.value)
+const showUmScale = computed(() => hasUmParam(taskDef.value?.params))
 
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
@@ -192,7 +214,8 @@ const sweepParams = computed(() => sweepableParams(taskDef.value))
 // failed the run on the first image lacking it. Not written back: until the picker is edited, the form
 // keeps the full selection, so moving back to the images that have those channels finds it intact.
 const channelPrune = computed(() => pruneChannelSelections(
-  taskDef.value?.params, paramValues.value, sharedChannels(paramContext.value.images)))
+  taskDef.value?.params, paramValues.value, sharedChannels(paramContext.value.images),
+  paramContext.value.images))
 const runValues = computed(() => channelPrune.value.values)
 // A picker whose every channel is missing would be sent empty, which several tasks read as "all".
 const hiddenChannelsReason = computed(() => channelPrune.value.emptied.length
@@ -1107,6 +1130,13 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
           <button class="cc-btn cc-btn-bare cc-fs-2xs"
                   v-tooltip.left="'Copy settings from a previous run on another image'"
                   @click="copyOpen = true"><i class="pi pi-copy" /> Copy from…</button>
+          <select v-if="showUmScale" class="cc-input-2xs um-scale" aria-label="µm slider scale"
+                  :value="umScalePicked ?? ''"
+                  v-tooltip.bottom="`µm sliders ${umScaleLabel(umScaleShown)} · ${umAutoReason(contextImages)}`"
+                  @change="setUmScale(($event.target as HTMLSelectElement).value)">
+            <option value="">µm {{ umScaleLabel(umScaleAuto) }} auto</option>
+            <option v-for="s in UM_SCALES" :key="s" :value="String(s)">µm {{ umScaleLabel(s) }}</option>
+          </select>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   v-tooltip.left="'Reset to defaults'"
                   @click="resetParamsToDefaults"><i class="pi pi-refresh" /></button>
@@ -1267,6 +1297,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
   background: var(--cc-surface-2); color: var(--cc-text-dim);
 }
 .handoff-note span { flex: 1; }
+.um-scale { width: auto; }
 .task-runner {
   /* + .cc-side-panel: fills the host panel, which owns the width — see the note by the `pane` setup */
   overflow: hidden;

@@ -295,6 +295,22 @@ function track_pop_fraction_column(img::CciaImage, vn::AbstractString, token::Ab
 end
 
 """
+    add_pop_fraction_cols!(tab, img, vn, cols; key = :label) -> tab
+
+Add a `popfrac:<path>` column to a per-track table of one segmentation (track id in column `key`) for
+each such token in `cols` — NaN where the image lacks the population. The shares live in no table, so
+every per-track read that names one calls this: both track `pop_df` paths (the cluster heatmap, track
+plots) and the behaviour cards' pooled features.
+"""
+function add_pop_fraction_cols!(tab, img::CciaImage, vn::AbstractString, cols; key = :label)
+    for tok in String.(collect(cols))
+        is_pop_fraction(tok) || continue
+        tab[!, tok] = something(track_pop_fraction_column(img, vn, tok, tab[!, key]), fill(NaN, nrow(tab)))
+    end
+    tab
+end
+
+"""
     add_track_pop_fractions!(df, imgs, tokens) -> Vector{String}
 
 One column per `popfrac:<path>` token on a pooled per-track frame (`uID`, `value_name`, `label` =

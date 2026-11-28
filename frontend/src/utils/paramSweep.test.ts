@@ -27,6 +27,12 @@ describe('parseSweepValues', () => {
     expect(parseSweepValues('2:5:0', intP).error).toMatch(/Step/)
     expect(parseSweepValues('', intP).error).toBeTruthy()
   })
+  it('sweeps a length below its 2P span and refuses only a bad sign', () => {
+    const win: ParamDef = { key: 'windowSize', label: 'Window size (µm)', type: 'float', unit: 'um', min: 5, max: 500 }
+    expect(parseSweepValues('0.5:1.5:0.5', win).values).toEqual([0.5, 1, 1.5])
+    expect(parseSweepValues('900', win).values).toEqual([900])
+    expect(parseSweepValues('0', win).error).toMatch(/not a length/)
+  })
   it('caps the number of runs', () => {
     expect(parseSweepValues(`0.05:5:0.05`, floatP).error).toMatch(String(SWEEP_MAX_RUNS))
   })

@@ -365,7 +365,10 @@ image — the corrected version and the raw import — don't overwrite each othe
 
 `sizeX`/`sizeY` are the movie output size in pixels on all three of these; **absent or blank means the
 viewer's canvas size**, which is the default. One reader (`_movie_size_params`, `api/src/movie_helpers.jl`);
-the pixel rules (4096 clamp, even axes) are Python's, in `movie_io.coerce_movie_size`.
+the pixel rules (4096 clamp, even axes) are Python's, in `movie_io.coerce_movie_size`. On a 2D viewer
+record (single or compare grid), blank sizes with `resolution: "full"` record one movie pixel per image
+pixel of the visible region instead (up to 4096; `_record_max_px`, `api/src/movie_rail.jl`) — the movie
+options' `res` row (screen / full / custom). A batch has no canvas: blank there is native already.
 **`maintenance:run`** `{taskId,patchId,projectUid,apply}` (`handle_maintenance_run`, `api/src/sockets.jl`)
 runs a project-scoped **data patch** (Settings → Data patches; catalogue at `GET /api/maintenance/patches`)
 via `run_maintenance_patch` → `run_py`, streaming the same `task:log/progress/status` keyed by `taskId`;

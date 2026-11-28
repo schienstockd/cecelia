@@ -22,6 +22,7 @@
  */
 import type { ParamDef, ParamValues } from './types'
 import { savedValueFor } from './paramValues'
+import type { SceneAidRender } from '../lib/sceneAid'
 
 /**
  * How a quantity is drawn. Anything else in the spec's `vis` is ignored rather than guessed at.
@@ -31,8 +32,13 @@ import { savedValueFor } from './paramValues'
  * thing you need when what distinguishes two options is not their size but what they DO to an image,
  * which no circle can show. Only a hand-written producer can supply that, so only a hand-written
  * producer may ask for it.
+ *
+ * `scene` is the same kind of exception for a choice whose options differ in GEOMETRY rather than in
+ * what they do to pixels — which cells a neighbour graph links. A raster cannot draw a one-pixel edge
+ * between two dots legibly at 48px, so the cell carries a `SceneAidRender` (dots + lines, the
+ * vocabulary `SceneAid` already draws) instead of frames. Producer-only, like `grid`.
  */
-export type VisRole = 'text' | 'diameter' | 'blur' | 'distance' | 'area' | 'fraction' | 'grid'
+export type VisRole = 'text' | 'diameter' | 'blur' | 'distance' | 'area' | 'fraction' | 'grid' | 'scene'
 
 /** One frame of a `grid` row: rows of values in 0..1, drawn as cell opacity. Square is not assumed. */
 export type VisFrame = number[][]
@@ -72,6 +78,8 @@ export interface VisCell {
    * owns which index is showing.
    */
   frames?: VisFrame[]
+  /** `scene` only: the schematic to draw — dots and lines in 0..1 coordinates. */
+  scene?: SceneAidRender
 }
 
 export interface VisRow {
@@ -139,7 +147,7 @@ function magnitude(role: VisRole, value: number): number {
  */
 function dimension(role: VisRole): 'length' | 'area' | 'none' {
   if (role === 'area') return 'area'
-  return role === 'fraction' || role === 'text' || role === 'grid' ? 'none' : 'length'
+  return role === 'fraction' || role === 'text' || role === 'grid' || role === 'scene' ? 'none' : 'length'
 }
 
 /**
@@ -150,7 +158,7 @@ function dimension(role: VisRole): 'length' | 'area' | 'none' {
  */
 const RANK: Record<VisRole, number> = {
   // `grid` cannot reach here (`roleOf` rejects it) — a producer that builds one orders its own rows.
-  grid: 0, text: 0, diameter: 1, blur: 1, distance: 1, area: 1, fraction: 2,
+  grid: 0, scene: 0, text: 0, diameter: 1, blur: 1, distance: 1, area: 1, fraction: 2,
 }
 
 /**
@@ -243,7 +251,7 @@ function pxOf(role: VisRole, value: number, pxSize: number): number | null {
  */
 export function caption(role: VisRole, value: number): string {
   if (role === 'fraction') return trim(value)
-  if (role === 'text' || role === 'grid') return ''
+  if (role === 'text' || role === 'grid' || role === 'scene') return ''
   return value <= 0 ? 'off' : trim(value)
 }
 
@@ -254,7 +262,7 @@ export function caption(role: VisRole, value: number): string {
  * pixels can be checked against, so they belong here rather than nowhere.
  */
 export function pxCaption(role: VisRole, value: number, pxSize: number | null): string {
-  if (role === 'fraction' || role === 'text' || role === 'grid' || !pxSize || value <= 0) return ''
+  if (role === 'fraction' || role === 'text' || role === 'grid' || role === 'scene' || !pxSize || value <= 0) return ''
   const p = pxOf(role, value, pxSize) ?? 0
   return role === 'area' ? `${Math.round(p)} px²` : `${Math.round(p)} px`
 }

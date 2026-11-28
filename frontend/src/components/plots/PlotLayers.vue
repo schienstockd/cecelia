@@ -14,6 +14,8 @@
     • binned   → the SAME measure as a field: one cell per grid square, coloured by the MEAN of the
                  events in it (plots/density `valueGrid`). Overlapping dots hide each other, so a
                  dense colour-by dot plot reads as speckle; the mean per cell reads as a surface.
+    • baseGrey → the points base in ONE neutral ink (the themed dim text) instead of the density ramp,
+                 so a population overlay is the only colour on the plot (population positions).
   Subsets come from the server (plotdata?pop=…), so Julia still owns membership; we only colour.
 -->
 <script setup lang="ts">
@@ -56,6 +58,9 @@ const props = defineProps<{
   // population overlays and the outlier tail — by the same factor, so their relative sizes (an overlay
   // reads as bigger than the base it sits on) hold at any setting.
   dotSize?: number
+  // the points base in the themed neutral ink (`ink()`), not the density ramp — dimmed under the
+  // overlays like the ramp is. Ignored while colouring by a measure (that IS the base's colour).
+  baseGrey?: boolean
 }>()
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
@@ -196,7 +201,11 @@ function paintValueCells() {
 // raster renderer this replaced got it right for free: it was a single drawImage.)
 function drawDensityDots(points: Float32Array, alpha = 1) {
   // one paint for either base — speckle or binned field — so both dim through the same single composite
-  const paint = () => { binnedMode() ? paintValueCells() : paintDensityDots(points) }
+  const paint = () => {
+    if (binnedMode()) paintValueCells()
+    else if (props.baseGrey && !colourBy()) drawDots(points, ink(), baseR())
+    else paintDensityDots(points)
+  }
   if (alpha < 1) {
     const { w, h } = size()
     const host = ctx!
@@ -435,7 +444,7 @@ defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent }
 const painter = resizePaint(draw)
 watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick,
              props.baseValues, props.valueExtent, props.valueTicks, props.valueLabel, props.valueLegend,
-             props.dotSize],
+             props.dotSize, props.baseGrey],
       () => painter.paint(), { deep: true })
 onMounted(() => {
   ctx = canvasEl.value!.getContext('2d')
