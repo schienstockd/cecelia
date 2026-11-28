@@ -81,9 +81,9 @@ LOW_SESSIONS = 10
 MIN_LINE_WEEKS = 4
 #: The reviewer prompts (the rubric) and the rules they check against: an edit is noted on its week.
 PROMPT_DOCS = ("docs/ai-assist/FANOUT_AUDIT.md", "docs/ai-assist/CONVENTION_CHECK.md",
-               "docs/ai-assist/RESULT_REVIEW.md")
+               "docs/ai-assist/RESULT_REVIEW.md", "docs/ai-assist/PLAN_REVIEW.md")
 RULE_DOCS = ("CLAUDE.md",)
-_RUN_EVENTS = ("fanout_audit_run", "convention_check_run", "result_review_run")
+_RUN_EVENTS = ("fanout_audit_run", "convention_check_run", "result_review_run", "plan_review_run")
 #: Legend text and swatch per outcome in the log's closed vocabulary, plus `none`: no outcome logged,
 #: or one this map doesn't know. The chart never echoes a value from the log.
 _OUTCOME_LOOK = {
@@ -102,12 +102,13 @@ _OUTCOME_KEYS = set(_OUTCOME_LOOK)
 INK = _style.INK
 #: The reviewers: key, legend name, swatch, `_run` event.
 REVIEWERS = (("fanout", "Fan-out audit", "blue"), ("convention", "Convention check", "orange"),
-             ("result", "Result review", "bluish_green"))
-_RUN_OF = {"fanout_audit_run": "fanout", "convention_check_run": "convention", "result_review_run": "result"}
+             ("result", "Result review", "bluish_green"), ("plan", "Plan review", "sky_blue"))
+_RUN_OF = {"fanout_audit_run": "fanout", "convention_check_run": "convention", "result_review_run": "result",
+           "plan_review_run": "plan"}
 #: Merged PRs, beside the changes reviewed: how many checks went into each PR.
 PR_SWATCH = "reddish_purple"
 _REVIEWER_OF = {"fanout_audit_finding": "fanout", "convention_check_finding": "convention",
-                "result_review_finding": "result"}
+                "result_review_finding": "result", "plan_review_finding": "plan"}
 #: A pass's spend stages, stacked bottom-up in panel d: key, swatch.
 STAGES = (("verify", "blue"), ("sweep", "orange"), ("rules", "reddish_purple"))
 #: Age since a real bug was first flagged, in panel c: key, legend name, upper bound in days

@@ -198,9 +198,9 @@ class AggregateTest(_Fixture):
         rows += [_ev("fanout_audit_run", "2026-10-06T09:00:00Z", {"duration_s": 180, "error": "timeout"}),
                  _ev("convention_check_run", "2026-10-06T09:00:00Z", {"duration_s": 12.25})]
         [w] = self.c.aggregate(rows, [])["weeks"]
-        self.assertEqual(w["wait_s"], {"fanout": 25.0, "convention": 12.2, "result": None})
+        self.assertEqual(w["wait_s"], {"fanout": 25.0, "convention": 12.2, "result": None, "plan": None})
         [none] = self.c.aggregate([_ev("fanout_audit_run", "2026-10-06T00:00:00Z")], [])["weeks"]
-        self.assertEqual(none["wait_s"], {"fanout": None, "convention": None, "result": None})
+        self.assertEqual(none["wait_s"], {"fanout": None, "convention": None, "result": None, "plan": None})
 
     def test_reviewer_tokens_are_summed_per_week_from_when_logging_began(self):
         tok = {"input": 1, "cache_write": 10, "cache_read": 100, "output": 1000}
@@ -211,7 +211,7 @@ class AggregateTest(_Fixture):
         data = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 20))
         self.assertEqual(data["tokens_from"], "2026-10-07")
         self.assertEqual([w["reviewer_tokens"] for w in data["weeks"]],
-                         [None, {"fanout": 2222, "convention": 1111, "result": 0}])
+                         [None, {"fanout": 2222, "convention": 1111, "result": 0, "plan": 0}])
 
     def test_under_min_line_weeks_the_points_are_dots_with_their_values_not_joined(self):
         def weeks(n):

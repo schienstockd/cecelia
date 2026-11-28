@@ -68,6 +68,14 @@ EVENT_TYPES = frozenset({
     #: a `false_positive` tag (the commit hook's gate 4). Payload: `slug`, `file`, `reason`. The bug
     #: sweep sends it to the owner, whichever branch the finding came from.
     "result_review_test_edited",
+    #: Plan review — the fourth recital reviewer, for parked plans (`docs/ai-assist/PLAN_REVIEW.md`).
+    #: `_run` carries `escape_valve` (`no_plan` / `unchanged_diff`) when it didn't spawn, else
+    #: tokens/cost/models plus `plans`. `_finding` = a `wrong claim` / `already exists` / `design flaw`
+    #: bullet (outcome tag required); `_advisory` = `scope` / `answered` / `unverified` (listed only).
+    "plan_review_run",
+    "plan_review_finding",
+    "plan_review_finding_resolved",
+    "plan_review_advisory",
     #: Test value check — mechanical recital step (`test_value.py`, TEST_VALUE_PLAN.md → P4): the
     #: change's added tests run on the code before it (`passes on base`), mutants on its changed
     #: result lines (`untested`), and a `fix/*` rendering change with no browser test (`no browser
@@ -131,7 +139,7 @@ EVENT_TYPES = frozenset({
 
 #: A finding slug as recital's `_slug` writes it — the one grammar recital, the commit hook and the
 #: maintainability lint's repro-marker check match on.
-SLUG_PATTERN = r"(?:fanout|conv|result|tv)-[0-9a-f]{8}"
+SLUG_PATTERN = r"(?:fanout|conv|result|tv|plan)-[0-9a-f]{8}"
 
 #: The comment a committed result-review repro carries (`docs/ai-assist/RESULT_REVIEW.md`). The commit
 #: hook guards a file by it; the maintainability lint flags a marker this won't match.
@@ -294,9 +302,10 @@ def read_events(log_path: pathlib.Path | None = None) -> _t.Iterator[dict]:
 
 #: Per-finding rows the recital writes, and the rows the commit hook writes when a slug is tagged.
 FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding", "result_review_finding",
-                            "test_value_finding"})
+                            "test_value_finding", "plan_review_finding"})
 RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved",
-                             "result_review_finding_resolved", "test_value_finding_resolved"})
+                             "result_review_finding_resolved", "test_value_finding_resolved",
+                             "plan_review_finding_resolved"})
 
 
 def latest_resolutions_by_slug(events: _t.Iterable[dict],

@@ -38,7 +38,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/importImages/probe_series_run.py` | `api/src/routes/image.jl:102` | `imPath`, `maxPx`, `resultPath` |
 | `tasks/importImages/read_acquisition_settings_run.py` | `app/src/tasks/importImages/omezarr/acquisition.jl:47` | `imPath`, `resultPath`, `series` |
 | `tasks/importImages/read_imagej_physical_size_run.py` | `app/src/tasks/importImages/omezarr/task.jl:222` | `imPath`, `resultPath` |
-| `tasks/importImages/read_ims_time_interval_run.py` | `app/src/tasks/importImages/omezarr/source_timing.jl:89` | `imPath`, `resultPath` |
+| `tasks/importImages/read_ims_time_interval_run.py` | `app/src/tasks/importImages/omezarr/source_timing.jl:91` | `imPath`, `resultPath` |
 | `tasks/importImages/saturation_run.py` | `app/src/tasks/importImages/omezarr/saturation.jl:23` | `imPath`, `notPhotonCounting`, `photonsUntestable`, `resultPath` |
 | `tasks/importImages/scan_immunemap_run.py` | `api/src/routes/immunemap.jl:21` | `experiment`, `resultPath` |
 | `tasks/importImages/scan_legacy_run.py` | `api/src/routes/image.jl:186` | `imageUids`, `resultPath`, `rscript`, `sourceProjectDir` |
@@ -241,7 +241,7 @@ Files per language that name each kind of project file (a reference, not necessa
 | File kind | Julia | Python | TS/Vue |
 |---|---|---|---|
 | project.json | 11 |  |  |
-| ccid.json (image / set record) | 43 | 16 | 17 |
+| ccid.json (image / set record) | 44 | 16 | 17 |
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |
 | gating JSON | 28 |  | 4 |

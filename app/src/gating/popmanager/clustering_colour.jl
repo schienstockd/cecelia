@@ -7,15 +7,9 @@
 # ── Co-clustered segmentations + cluster-pop auto-share (docs/todo/CLUSTER_POOLING_PLAN.md) ────────
 # Clustering (clustPops/clustTracks) runs JOINTLY across the selected populations, which may span
 # several segmentations (value_names). The engine writes ONE shared `clusters.{suffix}` column + a
-# `{props}.clustfeatures.json` sidecar (keyed by suffix) into EVERY input segment. So the value_names
-# that took part in a run = those whose clustfeatures sidecar carries `suffix` — the single source of
-# truth for "which segmentations belong to this clustering".
-_clustfeatures_path(props_path::AbstractString) = props_sidecar_path(props_path, "clustfeatures")
-
-# The sidecar is keyed by the FULL obs column the run wrote — `{family}.{suffix}` (= the
-# `_cluster_measure_prefix` family + the run suffix), so a `clusters.immune` cell clustering and a
-# `regions.immune` region clustering coexist on one segmentation instead of clobbering each other.
-_clustfeatures_key(suffix::AbstractString, family::AbstractString) = "$(family).$(suffix)"
+# `{props}.clustfeatures.json` sidecar (keyed by suffix) into EVERY input segment. The sidecar's
+# readers (`_clustfeatures_entry` / `_suffixes` / `_part_of`) live in run_sidecars.jl beside the
+# generic sidecar helpers; the writer and the stale-run prune stay here.
 
 # Persist a clustering run's per-suffix manifest, so the cluster pages can offer EXACTLY the columns
 # the run used (heatmap) and know WHICH images were clustered together (the `partOf` set — mirrors the
@@ -57,20 +51,6 @@ function _write_clust_features!(props_path::AbstractString, suffix::AbstractStri
     put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
 end
 
-# Split a sidecar key back into (suffix, family). A LEGACY key is a bare suffix with no family prefix
-# (written before families existed); it returns `nothing` for the family and is then treated as matching
-# ANY requested family — preserving the old single-namespace behaviour for existing sidecars, so this
-# change is regression-free on data already on disk.
-const _CLUSTFEATURES_FAMILIES = ("clusters", "regions")
-function _clustfeatures_split_key(key::AbstractString)
-    for fam in _CLUSTFEATURES_FAMILIES
-        startswith(key, fam * ".") && return (String(key)[ncodeunits(fam)+2:end], fam)
-    end
-    (String(key), nothing)
-end
-
-_clustfeatures_raw(props_path::AbstractString) = read_props_sidecar(_clustfeatures_path(props_path))
-
 """
     prune_stale_clustfeatures!(props_path; on_log) -> Vector{String}
 
@@ -95,39 +75,6 @@ function prune_stale_clustfeatures!(props_path::AbstractString; on_log = _ -> no
     stale
 end
 
-# Suffixes recorded for `family` ("clusters" for clust/trackclust, "regions" for region). Legacy
-# family-less entries match every family (see `_clustfeatures_split_key`).
-function _clustfeatures_suffixes(props_path::AbstractString;
-                                 family::AbstractString = "clusters")::Set{String}
-    out = Set{String}()
-    for k in keys(_clustfeatures_raw(props_path))
-        sfx, fam = _clustfeatures_split_key(String(k))
-        (fam === nothing || fam == String(family)) && push!(out, sfx)
-    end
-    out
-end
-
-"""
-    _clustfeatures_entry(props_path, suffix; family="clusters") -> AbstractDict | nothing
-
-THE reader for one run's clustfeatures entry — do not index the raw sidecar JSON anywhere else. Prefers
-the family-qualified key (`{family}.{suffix}`) and falls back to the legacy bare-suffix key, normalising
-the OLDEST format (`{suffix => [features]}`, a bare array with no membership) to the current shape. Every
-consumer (the channels endpoint, the observer summaries) goes through this so there is one place that
-knows the sidecar's three historical layouts.
-"""
-function _clustfeatures_entry(props_path::AbstractString, suffix::AbstractString;
-                              family::AbstractString = "clusters")
-    raw = _clustfeatures_raw(props_path)
-    for k in (_clustfeatures_key(suffix, family), String(suffix))
-        v = get(raw, k, nothing)
-        v isa AbstractDict && return v
-        v isa AbstractVector && return Dict{String,Any}(     # oldest format: features only
-            "features" => String[string(x) for x in v], "partOf" => String[], "labels" => Dict{String,Any}())
-    end
-    nothing
-end
-
 """
     cluster_run_at(props_path, suffix; family="clusters") -> String | nothing
 
@@ -142,13 +89,6 @@ function cluster_run_at(props_path::AbstractString, suffix::AbstractString;
     v === nothing ? nothing : String(v)
 end
 
-# One run's `partOf` — the image uids clustered together — from a `_clustfeatures_entry`. A legacy entry
-# records none: with `own_uid` that reads as a single-image run on that image, without it as `String[]`.
-function _clustfeatures_part_of(entry, own_uid::Union{AbstractString,Nothing}=nothing)::Vector{String}
-    v = entry === nothing ? nothing : get(entry, "partOf", get(entry, :partOf, nothing))
-    part = v isa AbstractVector ? String[string(x) for x in v] : String[]
-    (isempty(part) && own_uid !== nothing) ? [String(own_uid)] : part
-end
 
 """
     run_channel_names(img, value_name) -> RunChannelNames

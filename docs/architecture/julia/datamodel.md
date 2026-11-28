@@ -48,7 +48,7 @@ Functions taking each object as their first argument, by area — where the code
 
 | Area | `CciaProject` | `CciaSet` | `CciaImage` |
 |---|---|---|---|
-| model | 31 | 10 | 81 |
+| model | 31 | 10 | 72 |
 | ai+lab log | 40 |  | 22 |
 | gating |  | 2 | 50 |
 | qc+checks | 4 | 32 | 14 |
@@ -57,8 +57,8 @@ Functions taking each object as their first argument, by area — where the code
 | scheduler+chains | 18 |  | 4 |
 | run records |  |  | 16 |
 | tasks |  |  | 15 |
+| jobs (export, import, maintenance) | 1 |  | 9 |
 | run history |  |  | 9 |
 | cell data |  |  | 8 |
 | task framework |  |  | 3 |
-| jobs (export, import, maintenance) | 1 |  |  |
 

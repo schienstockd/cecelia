@@ -465,6 +465,7 @@ include("region_lens_query.jl")   # "find regions like this one" from a lens (LE
 include("tasks/clustRegions/lensQuery.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")
+include("rename_value_name.jl")   # rename_value_name! (jobs tier: calls gating, ROI sets, scheduler)
 include("figures.jl")         # paper figures from a spec (FIGURES_PLAN); the renderer is render_figure.py
 include("analysis_runs.jl")   # per-run delete registry (IMAGE_DELETE_PLAN Decision 14); after the task files it names
 include("tasks/task_registry.jl")
