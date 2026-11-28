@@ -25,7 +25,9 @@ def run(params):
 
     result = time_increment(im_path)
     if 'TimeIncrement' in result:
-        log.log(f'>> frame interval {result["TimeIncrement"]} s from {result["source"]}')
+        steady = (f' (irregular: steady frames {result["steadyFrames"]}, deviating {result["irregularFrames"]})'
+                  if result.get('uniform') is False else '')
+        log.log(f'>> frame interval {result["TimeIncrement"]} s from {result["source"]}{steady}')
     else:
         log.log(f'>> no frame interval: {result.get("reason", "unknown")}')
     write_json_atomic(result_path, result)

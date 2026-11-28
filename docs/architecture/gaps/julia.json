@@ -2,8 +2,8 @@
     {
         "kind": "julia-upward",
         "subject": "`_history_leaves`",
-        "rank": -4,
-        "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)",
+        "rank": -3,
+        "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), qc+checks (tier 4), run records (tier 2)",
         "where": [
         ]
     },
@@ -33,65 +33,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`gating_path`",
-        "rank": -2,
-        "detail": "defined in gating (tier 4), called from cell data (tier 3), model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`load_pop_tree`",
-        "rank": -2,
-        "detail": "defined in gating (tier 4), called from model (tier 2), run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`roi_suffixes_on`",
-        "rank": -2,
-        "detail": "defined in tracking+spatial (tier 4), called from cell data (tier 3), model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`task_params_name`",
         "rank": -2,
         "detail": "defined in task framework (tier 5), called from qc+checks (tier 4), run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_catkey`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_clustfeatures_entry`",
-        "rank": -1,
-        "detail": "defined in gating (tier 4), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_clustfeatures_part_of`",
-        "rank": -1,
-        "detail": "defined in gating (tier 4), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_clustfeatures_suffixes`",
-        "rank": -1,
-        "detail": "defined in gating (tier 4), called from model (tier 2)",
         "where": [
         ]
     },
@@ -113,30 +57,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`_label_name_taken`",
-        "rank": -1,
-        "detail": "defined in cell data (tier 3), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_obs_suffixes`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_ordered_cats`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_preflight_fields`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
@@ -148,14 +68,6 @@
         "subject": "`_preflight_has`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_rm_if`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
         "where": [
         ]
     },
@@ -185,14 +97,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`free_label_name`",
-        "rank": -1,
-        "detail": "defined in cell data (tier 3), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`gated_pop_refs`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from run records (tier 2)",
@@ -201,9 +105,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`gating_history_path`",
+        "subject": "`gating_path`",
         "rank": -1,
-        "detail": "defined in gating (tier 4), called from model (tier 2)",
+        "detail": "defined in gating (tier 4), called from cell data (tier 3)",
         "where": [
         ]
     },
@@ -233,9 +137,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`load_roi_set`",
+        "subject": "`load_pop_tree`",
         "rank": -1,
-        "detail": "defined in tracking+spatial (tier 4), called from model (tier 2)",
+        "detail": "defined in gating (tier 4), called from run records (tier 2)",
         "where": [
         ]
     },
@@ -249,25 +153,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`prune_stale_hmmfit!`",
-        "rank": -1,
-        "detail": "defined in plots+boards (tier 8), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`qc_finding`",
         "rank": -1,
         "detail": "defined in qc+checks (tier 4), called from cell data (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`rename_label_set_in_params`",
-        "rank": -1,
-        "detail": "defined in scheduler+chains (tier 7), called from model (tier 2)",
         "where": [
         ]
     },
@@ -281,9 +169,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`save_pop_tree!`",
+        "subject": "`roi_suffixes_on`",
         "rank": -1,
-        "detail": "defined in gating (tier 4), called from model (tier 2)",
+        "detail": "defined in tracking+spatial (tier 4), called from cell data (tier 3)",
         "where": [
         ]
     },
@@ -300,14 +188,6 @@
         "subject": "`task_writes_into_key`",
         "rank": -1,
         "detail": "defined in task framework (tier 5), called from run records (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`with_pop_tree_lock`",
-        "rank": -1,
-        "detail": "defined in gating (tier 4), called from model (tier 2)",
         "where": [
         ]
     },

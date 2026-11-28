@@ -187,6 +187,7 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     "sibling_audit": ("fnut", _BLUE),  # pre-rename rows fold under the same header (see rollup.py)
     "convention_check": ("conv", _MAGENTA),
     "result_review": ("rslt", _BLUISH_GREEN),
+    "plan_review": ("plnr", _ORANGE),
     # Grey, not sky blue: sky blue is the console's "good" (`_GOOD`), and a label in it read as a pass.
     "inventory_coverage": ("invt", _GREY),
     "maintainability_lint": ("mlnt", _GREY),
@@ -282,6 +283,12 @@ _MARKER_COLOUR: dict[str, str] = {
     "reproduced": _ORANGE,             # result review ran something that shows the wrong result
     "inferred": _YELLOW,               # advisory — result review read it from code only
     "display": _GREY,                  # listed only — changes what is drawn, not a result
+    "wrong claim": _ORANGE,            # plan review: the source contradicts the plan
+    "already exists": _YELLOW,         # plan review: built, or designed in another plan
+    "design flaw": _ORANGE,            # plan review: a decision fails at its own goal
+    "scope": _GREY,                    # plan review advisory — cut or add
+    "answered": _GREY,                 # plan review advisory — open question already answered
+    "unverified": _YELLOW,             # plan review advisory — unmerged code unreachable
     "error": _ORANGE,                  # agent run hit a platform error (5xx, no error text)
     "repeat": _YELLOW,                 # same 4xx across separate agent runs — guidance gap
 }

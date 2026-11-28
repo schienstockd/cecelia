@@ -8,6 +8,7 @@ interval, and a plausible-looking median would be indistinguishable from a measu
 Run with `pixi run test-py`.
 """
 import os
+import random
 import shutil
 import tempfile
 import unittest
@@ -101,6 +102,63 @@ class SummariseGapsTest(unittest.TestCase):
         self.assertEqual(ims_meta.summarise_gaps([0.0, 0.0]), (None, False, None))
 
 
+# The `TimePointN` gaps of VYZ9TQ (Zeiss Elyra SIM via Imaris, project I10ZTq), read from its store's
+# OME original metadata: three fast frames, then a steady ~5.26 s stamped to the whole second.
+_VYZ9TQ_GAPS = [2.0, 3.0, 2.0] + [float(g) for g in
+                '655655655565565556555655565556555655556556555655565555']
+
+
+class SteadyIntervalTest(unittest.TestCase):
+    """An irregular series' interval from its steady part (`steady_interval`) — pure, no HDF5."""
+
+    def test_real_fast_start_yields_the_steady_interval(self):
+        interval, (start, stop), deviating = ims_meta.steady_interval(_VYZ9TQ_GAPS, resolution=1.0)
+        self.assertAlmostEqual(interval, 5.26, delta=0.01)
+        self.assertEqual((start, stop), (3, 57))
+        self.assertEqual(ims_meta.deviating_frames(deviating), [[0, 3]])
+
+    def test_exact_fast_start_yields_the_steady_median(self):
+        interval, (start, stop), deviating = ims_meta.steady_interval([2.0, 3.0, 2.0] + [5.26] * 20)
+        self.assertEqual(interval, 5.26)
+        self.assertEqual((start, stop), (3, 23))
+        self.assertEqual(deviating, [0, 1, 2])
+
+    def test_a_pause_mid_series_keeps_the_interval_and_flags_the_pause(self):
+        interval, _, deviating = ims_meta.steady_interval([30.0] * 10 + [600.0] + [30.0] * 9)
+        self.assertEqual(interval, 30.0)
+        self.assertEqual(ims_meta.deviating_frames(deviating), [[10, 11]])
+
+    def test_random_gaps_have_no_steady_part(self):
+        rng = random.Random(7)
+        for _ in range(50):
+            gaps = [rng.uniform(1.0, 60.0) for _ in range(40)]
+            self.assertIsNone(ims_meta.steady_interval(gaps))
+            self.assertIsNone(ims_meta.steady_interval([float(round(g)) for g in gaps], resolution=1.0))
+
+    def test_two_equal_halves_at_different_rates_have_no_steady_part(self):
+        self.assertIsNone(ims_meta.steady_interval([30.0] * 5 + [60.0] * 5))
+
+    def test_too_few_gaps(self):
+        self.assertIsNone(ims_meta.steady_interval([]))
+        self.assertIsNone(ims_meta.steady_interval([5.0, 9.0]))
+
+    def test_a_steady_run_of_the_last_two_gaps_counts(self):
+        # Two of three gaps at 5 s is a majority, wherever they sit.
+        self.assertEqual(ims_meta.steady_interval([9.0, 5.0, 5.0]), (5.0, (1, 3), [0]))
+
+    def test_a_gap_exactly_at_the_tolerance_is_steady(self):
+        # `tol` is inclusive, as in `summarise_gaps`: 21 s is exactly 5% off 20 s.
+        self.assertEqual(ims_meta.steady_interval([20.0, 20.0, 20.0, 21.0]), (20.0, (0, 4), []))
+
+    def test_equal_runs_either_side_of_a_pause_measure_on_the_first(self):
+        _, run, deviating = ims_meta.steady_interval([30.0] * 5 + [600.0] + [30.0] * 5)
+        self.assertEqual(run, (0, 5))
+        self.assertEqual(deviating, [5])
+
+    def test_consecutive_deviating_gaps_merge_into_one_frame_range(self):
+        self.assertEqual(ims_meta.deviating_frames([0, 1, 2, 7, 9, 10]), [[0, 3], [7, 8], [9, 11]])
+
+
 @unittest.skipUnless(HAVE_H5PY, 'h5py not installed')
 class TimeIncrementTest(unittest.TestCase):
     def setUp(self):
@@ -186,18 +244,38 @@ class TimeIncrementTest(unittest.TestCase):
         self.assertEqual(r['TimeIncrement'], 30.0)
         self.assertTrue(r['nominal'])       # declared, not measured — the caller says so in the log
 
-    def test_irregular_series_yields_no_interval(self):
-        # THE case this module exists to get right: never flatten a paused acquisition to a median.
+    def test_irregular_series_without_a_steady_part_yields_no_interval(self):
+        # THE case this module exists to get right: never flatten an irregular series to a median.
+        # Two steady gaps of four is no majority, so there is no steady part to take it from.
         _ims(self._p(), births_s=[0, 30, 60, 600, 630])
         r = ims_meta.time_increment(self._p())
         self.assertNotIn('TimeIncrement', r)
         self.assertFalse(r['uniform'])
-        self.assertIn('no single interval', r['reason'])
+        self.assertEqual(r['frames'], 5)
+        self.assertGreater(r['spread'], 1.0)
+        self.assertIn('no steady interval', r['reason'])
+
+    def test_fast_start_then_steady_yields_the_steady_interval_flagged(self):
+        # VYZ9TQ (Zeiss Elyra SIM via Imaris): whole-second stamps 2, 3, 2 s apart, then a steady
+        # ~5.26 s (rounded to 5/6 s gaps). The interval is the steady part's, with frames 0–3 flagged.
+        secs, t = [0, 2, 5, 7], 7.0
+        for _ in range(30):
+            t += 5.26
+            secs.append(int(t))
+        _ims(self._p(), stamps=[f'2025-09-29 01:{s // 60:02d}:{s % 60:02d}' for s in secs])
+        r = ims_meta.time_increment(self._p())
+        self.assertAlmostEqual(r['TimeIncrement'], 5.26, delta=0.05)
+        self.assertEqual((r['source'], r['frames']), ('DataSetInfo/TimeInfo', 34))
+        self.assertGreater(r['spread'], 0.5)       # 2 s against a 5 s median
+        self.assertFalse(r['uniform'])
+        self.assertEqual(r['steadyFrames'], [3, 33])
+        self.assertEqual(r['irregularFrames'], [[0, 3]])
 
     def test_irregular_measured_series_does_not_fall_through_to_the_nominal_value(self):
         # An irregular series is an ANSWER — "there is no one interval" — not a failed lookup. Falling
         # through would report the requested interval as though it were what happened.
-        _ims(self._p(), births_s=[0, 30, 60, 600], oir_step='30.000')
+        # Gaps of 30, 60, 210 s: no steady part either.
+        _ims(self._p(), births_s=[0, 30, 90, 300], oir_step='30.000')
         self.assertNotIn('TimeIncrement', ims_meta.time_increment(self._p()))
 
     def test_single_timepoint_is_not_a_timelapse(self):

@@ -31,6 +31,23 @@
     m2 = Cecelia._crop_inherited_meta(Dict{String,Any}("SizeC" => 2),
                                       (; x0=0, x1=50, y0=0, y1=50, z0=-1, z1=-1, t0=10, t1=40))
     @test m2["SizeT"] == 30 && m2["SizeC"] == 2 && !haskey(m2, "SizeZ")
+    # An interval read from an irregular series carries its deviating timepoints (0-based [first, last]
+    # frame ranges); a T-crop keeps only the deviating gaps inside it, renumbered from the crop's frame 0.
+    # Read back through JSON3, as a ccid.json is.
+    irr_src = merge(src, Dict{String,Any}("TimeIncrementIrregular" => Cecelia.JSON3.read(Cecelia.JSON3.write(
+        Dict("frames" => [[0, 3], [100, 101]], "steadyFrames" => [3, 180], "spread" => 0.6)))))
+    whole = Cecelia._crop_inherited_meta(irr_src, (; x0=0, x1=10, y0=0, y1=10, z0=-1, z1=-1, t0=-1, t1=-1))
+    @test whole["TimeIncrementIrregular"]["frames"] == [[0, 3], [100, 101]]
+    # frames 2..119 kept: gap 2→3 of the fast start and the 100→101 pause stay, renumbered
+    part = Cecelia._crop_inherited_meta(irr_src, (; x0=0, x1=10, y0=0, y1=10, z0=-1, z1=-1, t0=2, t1=120))
+    @test part["TimeIncrementIrregular"]["frames"] == [[0, 1], [98, 99]]
+    @test part["TimeIncrementIrregular"]["steadyFrames"] == [1, 117]
+    @test [f["code"] for f in Cecelia.metadata_qc_findings(part)] == ["metadata.frame_interval_irregular"]
+    # frames 3..99 kept: no deviating gap left, so no marker and no warning
+    clean = Cecelia._crop_inherited_meta(irr_src, (; x0=0, x1=10, y0=0, y1=10, z0=-1, z1=-1, t0=3, t1=100))
+    @test !haskey(clean, "TimeIncrementIrregular")
+    # a T-projection is one frame: the marker rides along as provenance, but nothing to warn about
+    @test isempty(Cecelia.metadata_qc_findings(Cecelia._tproj_inherited_meta(irr_src)))
 end
 
 @testset "Crop/copy inherit source acquisition settings (pure helpers)" begin

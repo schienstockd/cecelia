@@ -20,9 +20,9 @@ import re
 from datetime import datetime
 
 #: Fractional tolerance on the gap between consecutive timepoints. Acquisition clocks jitter by a
-#: frame or two of scan time; a genuinely irregular series (a paused or resumed acquisition) is a
-#: different animal and must NOT be flattened to its median — an interval is either a property of the
-#: whole series or it is not something we can record.
+#: frame or two of scan time; a genuinely irregular series (a paused or resumed acquisition, a fast
+#: start) is a different animal and must NOT be flattened to its median — its interval comes from its
+#: steady part only, and is flagged with the frames that deviate (`steady_interval`).
 UNIFORM_TOL = 0.05
 
 #: Imaris stores `DataSetTimes/Time` Birth/Death in nanoseconds.
@@ -106,6 +106,75 @@ def _rounded_uniform(gaps, interval, tol, resolution):
     return True
 
 
+def steady_interval(gaps, tol=UNIFORM_TOL, resolution=0.0):
+    """The interval of an IRREGULAR series' steady part, as `(interval, (start, stop), deviating)`, or
+    None when it has no steady part. `gaps[start:stop]` is the longest run it was measured on;
+    `deviating` lists the gap indices that don't fit it — never empty for a series `summarise_gaps`
+    calls irregular.
+
+    A Zeiss Elyra SIM file (VYZ9TQ) starts with gaps of 2, 3, 2 s and then runs at a steady ~5.26 s for
+    54 gaps: its interval is 5.26 s, with the first frames flagged — not "no interval". Definition:
+
+      1. runs — every maximal run of two or more consecutive gaps that `summarise_gaps` calls uniform
+         (the whole-series rule, same `tol` / `resolution`), with its interval (median; mean for
+         rounded stamps);
+      2. the steady run is the LONGEST (the earliest on a tie) — never a short run that straddles a
+         rate change, whose in-between interval would sit within `tol` of both rates;
+      3. a gap is covered when it lies in a run whose interval is within `tol` of the steady one AND
+         is itself within `tol` (plus `resolution`) of it;
+      4. it is the series' interval only when it covers MORE THAN HALF of all gaps. Otherwise None:
+         random gaps, or two halves at different rates, have no one interval to record.
+
+    Coverage counts runs anywhere, not one unbroken run, so a single pause in the middle of a steady
+    series still yields its interval with the pause flagged. A gap counts only inside a run (never on
+    its own), so whole-second stamps of random gaps rarely pass: one gap of 5 s fits a 5.3 s series
+    after rounding, but a run of them must fit it jointly (`_rounded_uniform`). Random gaps of only
+    1–4 s stamped to the second can still pass — at that resolution they cannot be told from a 2.5 s
+    series, as for `summarise_gaps` itself.
+    """
+    n = len(gaps)
+    if n < 2:
+        return None
+    # Maximal uniform runs by two pointers: `stop` never moves back, so O(n) window checks. The
+    # earliest start per stop is the longest run ending there.
+    starts, stop = {}, 0
+    for start in range(n - 1):
+        stop = max(stop, start + 1)
+        while stop < n and summarise_gaps(gaps[start:stop + 1], tol, resolution)[1]:
+            stop += 1
+        if stop - start >= 2 and stop not in starts and summarise_gaps(gaps[start:stop], tol, resolution)[1]:
+            starts[stop] = start
+    runs = [(start, stop, summarise_gaps(gaps[start:stop], tol, resolution)[0])
+            for stop, start in starts.items()]
+    if not runs:
+        return None
+    start, stop, interval = max(runs, key=lambda r: (r[1] - r[0], -r[0]))
+    covered = [False] * n
+    for a, b, other in runs:
+        if abs(other - interval) <= tol * interval:
+            for i in range(a, b):
+                covered[i] = covered[i] or abs(gaps[i] - interval) <= tol * interval + resolution
+    if sum(covered) * 2 <= n:
+        return None
+    deviating = [i for i, c in enumerate(covered) if not c]
+    # Every gap within `tol` of the steady interval, yet the series failed the whole-series rule (its
+    # median sits elsewhere): the gaps outside the steady run are the unverified ones, so flag those.
+    # Never empty — the run itself passed that rule, so it can't be the whole series.
+    return interval, (start, stop), deviating or [i for i in range(n) if not start <= i < stop]
+
+
+def deviating_frames(deviating):
+    """Gap indices → 0-based frame ranges `[first, last]`: gap `i` runs from frame `i` to `i + 1`, and
+    consecutive deviating gaps merge into one range."""
+    out = []
+    for i in deviating:
+        if out and out[-1][1] == i:
+            out[-1][1] = i + 1
+        else:
+            out.append([i, i + 1])
+    return out
+
+
 def _from_dataset_times(f):
     """`DataSetTimes/Time` — a per-timepoint record whose `Birth` is nanoseconds from the start.
 
@@ -186,8 +255,11 @@ def time_increment(path, tol=UNIFORM_TOL):
       3. `DataSetInfo/OIR Dataset Size/Time Step` (Olympus) or `LSM Dataset Size/Time Interval [s]`
          (Zeiss) — NOMINAL
 
-    1 and 2 are measured, so they are checked for uniformity and yield nothing when the series is
-    irregular; `spread` reports how irregular. 3 is a single declared number with nothing to check.
+    1 and 2 are measured, so they are checked for uniformity. An irregular series yields the interval
+    of its steady part (`steady_interval`) with `uniform: False`, `steadyFrames` (the run it was
+    measured on, frames `[start, stop]`) and `irregularFrames` (0-based `[first, last]` frame ranges
+    whose gaps deviate) — or nothing when it has no steady part; `spread` reports how irregular. 3 is a
+    single declared number with nothing to check.
     """
     h5py = _h5py()
     if not os.path.isfile(path):
@@ -206,11 +278,18 @@ def time_increment(path, tol=UNIFORM_TOL):
                 if interval is None:
                     continue
                 if not uniform:
-                    # Deliberately not the median: an irregular series has no one interval, and a
-                    # plausible number here would be indistinguishable from a measured one downstream.
-                    return {'source': name, 'frames': len(gaps) + 1, 'uniform': False,
-                            'spread': spread, 'median': interval,
-                            'reason': f'gaps vary by {spread:.1%} — no single interval'}
+                    # Deliberately not the median: an irregular series' interval comes from its steady
+                    # part, and says which frames deviate (`irregularFrames`) so the caller flags it.
+                    steady = steady_interval(gaps, tol=tol, resolution=resolution)
+                    if steady is None:
+                        return {'source': name, 'frames': len(gaps) + 1, 'uniform': False,
+                                'spread': spread, 'median': interval,
+                                'reason': f'gaps vary by {spread:.1%} — no steady interval'}
+                    step, (start, stop), deviating = steady
+                    return {'TimeIncrement': step, 'source': name, 'frames': len(gaps) + 1,
+                            'uniform': False, 'spread': spread,
+                            'steadyFrames': [start, stop],
+                            'irregularFrames': deviating_frames(deviating)}
                 return {'TimeIncrement': interval, 'source': name,
                         'frames': len(gaps) + 1, 'uniform': True, 'spread': spread}
 
