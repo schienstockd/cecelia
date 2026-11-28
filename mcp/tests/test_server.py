@@ -325,9 +325,11 @@ class ServerToolRegistrationTest(unittest.TestCase):
             server._client.navigate_viewer = orig_nav
 
     def test_no_tool_can_start_work(self):
-        # Claude designs, the user runs. No tool may launch a chain or submit a task — enforced by the
-        # transport (launching is a WS message; this server speaks HTTP) but asserted here so adding
-        # one is a deliberate act with a failing test in front of it.
+        # Claude designs, the user runs. No OBSERVER tool may launch a chain or submit a task — enforced
+        # by the transport (launching is a WS message; this server speaks HTTP) but asserted here so
+        # adding one is a deliberate act with a failing test in front of it. Starting work is the
+        # separate cecelia-autonomous server's, and in a GUI user's session (the plugin, GUI mode) only
+        # within its refusals — test_autonomous.py GuiMode / GuiWriteRefusals.
         for forbidden in ("run_chain", "start_chain", "start_chain_run", "submit_task", "run_task",
                           "rename_chain", "delete_chain", "save_chain"):
             self.assertNotIn(forbidden, self.names)

@@ -1,8 +1,8 @@
 {
   "name": "cecelia",
   "displayName": "Cecelia",
-  "version": "1.0.0",
-  "description": "The Cecelia observer tools, and a hook that records which model made each call",
+  "version": "1.1.0",
+  "description": "The Cecelia observer tools, the run tools for the project open in Cecelia, and a hook that records which model made each call",
   "author": { "name": "Cecelia" },
   "license": "GPL-3.0-or-later",
   "userConfig": {
@@ -20,6 +20,16 @@
         "PYTHONPATH": "${user_config.pythonpath}",
         "CECELIA_API_URL": "${user_config.api_url}",
         "CECELIA_API_TOKEN_FILE": "${user_config.token_file}"
+      }
+    },
+    "cecelia-autonomous": {
+      "command": "${user_config.python}",
+      "args": ["-m", "cecelia_mcp.autonomous_server"],
+      "env": {
+        "PYTHONPATH": "${user_config.pythonpath}",
+        "CECELIA_API_URL": "${user_config.api_url}",
+        "CECELIA_API_TOKEN_FILE": "${user_config.token_file}",
+        "CECELIA_MCP_GUI": "1"
       }
     }
   },

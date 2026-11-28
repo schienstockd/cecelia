@@ -71,6 +71,42 @@
     end
 end
 
+# ── POST /api/tasks/write-check — what a run would write (docs/todo/AGENT_GUI_RUNS_PLAN.md D3) ─────
+# `run_write_check`'s logic is pinned in the PACKAGE suite (run_log_provenance.jl); here the WIRING:
+# shape errors → 4xx, an image that does not resolve is a 404 (never a silent "nothing replaced"),
+# and a real fixture image round-trips.
+@testset "API: /api/tasks/write-check — wiring" begin
+    st, _ = api_task_write_check(Vector{UInt8}("{not json"))
+    @test st == 400
+    @test first(_post(api_task_write_check, Dict("projectUid" => "p", "imageUids" => ["i"]))) == 400
+    @test first(_post(api_task_write_check, Dict("funName" => "t.x", "imageUids" => ["i"]))) == 400
+    @test first(_post(api_task_write_check, Dict("funName" => "t.x", "projectUid" => "p"))) == 400
+    @test first(_post(api_task_write_check, Dict("funName" => "t.x", "projectUid" => "no-such-project",
+                                                 "imageUids" => ["i"]))) == 404
+
+    src = api_fixture("testpr")   # MAINT-EXEMPT: wiring only — the package suite pins the logic on this same copy
+    if !api_have_fixture(src)
+        @test_skip "testpr fixture (missing)"
+    else
+        dir = mktempdir(); cp(src, joinpath(dir, "testpr"))
+        dirs = get!(cecelia_conf(), "dirs", Dict{String,Any}())
+        old = get(dirs, "projects", nothing)
+        try
+            dirs["projects"] = dir                 # in memory only — never set_projects_dir
+            st, body = _post(api_task_write_check, Dict("funName" => "segment.cellposeMeasure",
+                "projectUid" => "testpr", "imageUids" => ["KDIeEm"],
+                "params" => Dict("valueName" => "default", "outputValueName" => "B")))
+            @test st == 200
+            r = JSON3.read(body)
+            @test String(r.output.ns) == "labels" && haskey(r.replaces, :KDIeEm) && String(r.free) == "B_2"
+            @test first(_post(api_task_write_check, Dict("funName" => "segment.cellposeMeasure",
+                "projectUid" => "testpr", "imageUids" => ["KDIeEm", "nope00"], "params" => Dict()))) == 404
+        finally
+            old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+        end
+    end
+end
+
 # ── /api/cell_cards — metadata + sidecar cache ──────────────────────────────────
 # Exercises the pool-first pipeline on the synthetic clustering fixture (`docs/todo/CELL_CARDS_PLAN.md`
 # Decision 0). No OME-Zarr is on disk for `KDIeEm`, so the filmstrip PNGs deliberately come back

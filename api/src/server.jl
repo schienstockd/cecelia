@@ -428,6 +428,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/config/threads/set" => (req, body_bytes) -> (api_threads_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
     "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
+    "/api/tasks/write-check" => (req, body_bytes) -> (api_task_write_check(body_bytes)),
     "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
     "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
     "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),

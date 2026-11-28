@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { runningTaskCount, tasksLostOnRestart, adoptableTasks, staleInFlightStatuses,
+import { runningTaskCount, tasksLostOnRestart, adoptableTasks, adoptsForeignTask, staleInFlightStatuses,
          type InFlightTaskRow } from './runningTasks'
 
 const jsonRes = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
@@ -272,5 +272,22 @@ describe('tasksLostOnRestart', () => {
   it('counts them when the runner probe fails', async () => {
     vi.stubGlobal('fetch', routes(new Error('offline'), [{ id: 'a' }]))
     expect(await tasksLostOnRestart()).toBe(1)
+  })
+})
+
+// docs/todo/AGENT_GUI_RUNS_PLAN.md D4: a task started from another socket (Claude's autonomous server in
+// the user's session) sends frames for an id this tab has no row for — those pull the snapshot.
+describe('adoptsForeignTask', () => {
+  const none = () => false
+  it('a live frame for an unknown task pulls the snapshot', () => {
+    expect(adoptsForeignTask({ taskId: 'claude1', status: 'queued', pool: 'cpu' }, none)).toBe(true)
+    expect(adoptsForeignTask({ taskId: 'claude1', status: 'running' }, none)).toBe(true)
+  })
+  it('not for a task this tab already has, an ended one, a backend job, or no id', () => {
+    expect(adoptsForeignTask({ taskId: 'mine', status: 'running' }, id => id === 'mine')).toBe(false)
+    expect(adoptsForeignTask({ taskId: 'claude1', status: 'done' }, none)).toBe(false)
+    expect(adoptsForeignTask({ taskId: 'claude1', status: 'failed' }, none)).toBe(false)
+    expect(adoptsForeignTask({ taskId: 'hpc:env', status: 'running', pool: 'job' }, none)).toBe(false)
+    expect(adoptsForeignTask({ taskId: '', status: 'running' }, none)).toBe(false)
   })
 })

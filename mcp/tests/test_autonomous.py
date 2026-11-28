@@ -210,6 +210,135 @@ class NoGuiTools(unittest.TestCase):
         self.assertIn("add_gate", names & set(tool_kinds.OBSERVER))
 
 
+class GuiMode(unittest.TestCase):
+    """GUI mode (CECELIA_MCP_GUI=1, docs/todo/AGENT_GUI_RUNS_PLAN.md): the plugin's server in a GUI user's
+    own session. Locked per call to the project open in the app; refuses runs that write an image version
+    or a label set, or that would replace an existing output (the server's /api/tasks/write-check)."""
+
+    GUI = {"CECELIA_MCP_GUI": "1", "CECELIA_MCP_NO_GUI": "", au.PROJECT_ENV: ""}
+    PROJECTS = {"projects": [{"uid": "older1", "lastOpenedAt": "2026-11-27T10:00:00"},
+                             {"uid": "open01", "lastOpenedAt": "2026-11-28T09:00:00"},
+                             {"uid": "never1"}]}
+    DEFS = {"clustRegions": [{"task": "clustRegions", "fun_name": "clustRegions.cluster", "scope": "image",
+                              "params": [{"key": "valueNameSuffix", "type": "valueNameInput",
+                                          "namespace": "regions", "default": "default"}]}]}
+
+    def _client(self, check: dict):
+        c = au.AutonomousClient("http://x")
+        replies = {"/api/projects": self.PROJECTS, "/api/tasks/definitions": self.DEFS,
+                   "/api/tasks/write-check": check}
+        return c, mock.patch.object(c, "_request", side_effect=lambda m, r, *a, **k: replies[r])
+
+    def test_the_lock_is_the_project_open_in_the_app(self):
+        c, req = self._client({})
+        with mock.patch.dict(os.environ, self.GUI), req:
+            self.assertEqual(c.gui_project(), "open01")
+            c.check_project("open01")
+            with self.assertRaisesRegex(au.LockViolation, "not the one open in Cecelia"):
+                c.check_project("older1")
+        with mock.patch.dict(os.environ, self.GUI):
+            with self.assertRaisesRegex(au.LockViolation, "no project is open"):
+                au.check_project("open01", "")
+
+    def test_a_new_regions_suffix_runs(self):
+        c, req = self._client({"output": {"name": "gBT", "ns": "regions", "into": False,
+                                          "key": "valueNameSuffix"}})
+        with mock.patch.dict(os.environ, self.GUI), req, \
+                mock.patch.object(c, "_ws_send", return_value=[]) as ws:
+            out = c.run_task("open01", "clustRegions.cluster", {"valueNameSuffix": "gBT"}, ["img1"])
+        self.assertEqual(ws.call_count, 1)
+        self.assertEqual(out["tasks"][0]["status"], "submitted")
+
+    def test_a_taken_suffix_is_refused_with_a_free_one(self):
+        c, req = self._client({"output": {"name": "gBT", "ns": "regions", "into": False,
+                                          "key": "valueNameSuffix"},
+                               "replaces": {"img1": {"name": "gBT", "taskId": "t0"}}, "free": "gBT_2"})
+        with mock.patch.dict(os.environ, self.GUI), req, mock.patch.object(c, "_ws_send") as ws:
+            with self.assertRaisesRegex(au.LockViolation, "valueNameSuffix='gBT_2'"):
+                c.run_task("open01", "clustRegions.cluster", {"valueNameSuffix": "gBT"}, ["img1"])
+        ws.assert_not_called()
+
+    def test_without_gui_mode_nothing_asks_the_write_check(self):
+        c, req = self._client({"replaces": {"img1": {}}})
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_GUI": "", au.PROJECT_ENV: "open01"}), req as r, \
+                mock.patch.object(c, "_ws_send", return_value=[]):
+            c.run_task("open01", "clustRegions.cluster", {"valueNameSuffix": "gBT"}, ["img1"])
+        self.assertNotIn("/api/tasks/write-check", [call.args[1] for call in r.call_args_list])
+
+    def test_a_chain_with_a_segmentation_node_is_refused(self):
+        c = au.AutonomousClient("http://x")
+        seg = {"output": {"name": "B", "ns": "labels", "into": False, "key": "outputValueName"}}
+        replies = {"/api/projects": self.PROJECTS, "/api/tasks/definitions": DEFS,
+                   "/api/chains/get": {"name": "seg", "nodes": [
+                       {"id": "n1", "fn": "segment.cellpose", "params": {"valueName": "B"}}]},
+                   "/api/tasks/write-check": seg}
+        with mock.patch.dict(os.environ, self.GUI), \
+                mock.patch.object(c, "_request", side_effect=lambda m, r, *a, **k: replies[r]), \
+                mock.patch.object(c, "_ws_send") as ws:
+            with self.assertRaisesRegex(au.LockViolation, "label set 'B'"):
+                c.run_chain("open01", "seg", ["img1"])
+        ws.assert_not_called()
+
+    def test_gui_routes_open_only_in_gui_mode(self):
+        c = au.AutonomousClient("http://127.0.0.1:1")
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_GUI": ""}):
+            with self.assertRaises(DisallowedRoute):
+                c._request("GET", "/api/projects")
+        self.assertFalse(au.GUI_ROUTES & au.AUTONOMOUS_ROUTES)
+
+    def test_switch_rejects_a_typo_and_both_modes(self):
+        from cecelia_mcp.gui_mode import gui_mode_enabled
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_GUI": "yes"}):
+            with self.assertRaises(ValueError):
+                gui_mode_enabled()
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_GUI": "1", "CECELIA_MCP_NO_GUI": "1"}):
+            with self.assertRaises(ValueError):
+                gui_mode_enabled()
+
+
+class GuiWriteRefusals(unittest.TestCase):
+    """What a GUI-mode run may write, from /api/tasks/write-check's answer (gui_mode.write_refusals)."""
+
+    def _bad(self, output, **extra):
+        from cecelia_mcp.gui_mode import write_refusals
+        return write_refusals("t.x", {"output": output, **extra})
+
+    def test_new_outputs_outside_images_and_label_sets_run(self):
+        self.assertEqual(self._bad({"name": "gBT", "ns": "regions"}), [])
+        self.assertEqual(self._bad({"name": "hmm1", "ns": "obsCols"}), [])
+        self.assertEqual(self._bad({"name": "default", "ns": "", "into": False}), [])   # a new image
+        from cecelia_mcp.gui_mode import write_refusals
+        self.assertEqual(write_refusals("t.x", {}), [])                                 # names nothing
+
+    def test_label_sets_and_image_versions_are_refused(self):
+        self.assertTrue(self._bad({"name": "B", "ns": "labels"}))
+        self.assertTrue(self._bad({"name": "B", "ns": "labels", "into": True}))        # tracking into B
+        self.assertTrue(self._bad({"name": "smoothed", "ns": ""}))
+
+    def test_a_replace_names_the_images_and_the_free_name(self):
+        bad = self._bad({"name": "gBT", "ns": "regions", "key": "valueNameSuffix"},
+                        replaces={"i2": {}, "i1": {}}, free="gBT_2")
+        self.assertEqual(len(bad), 1)
+        self.assertIn("i1, i2", bad[0])
+        self.assertIn("valueNameSuffix='gBT_2'", bad[0])
+
+
+class GuiTools(unittest.TestCase):
+    """GUI mode registers the run and wait tools only — gating and figures stay the observer's."""
+
+    def test_only_the_run_tools(self):
+        import importlib
+        from cecelia_mcp import autonomous_server
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_GUI": "1", "CECELIA_MCP_NO_GUI": ""}):
+            mod = importlib.reload(autonomous_server)
+            names = {t.name for t in asyncio.run(mod.mcp.list_tools())}
+            text = mod.INSTRUCTIONS
+        importlib.reload(autonomous_server)
+        self.assertEqual(names, {"get_lock", "run_task", "wait_for_tasks", "run_chain", "wait_for_chain"})
+        self.assertIn("approving each call", text)
+        self.assertIn("free name", text)
+
+
 class RunChainStoredName(unittest.TestCase):
     def test_runs_under_the_name_the_server_stored(self):
         # create_chain repairs "Drift + segment" to "Drift segment"; an agent that then runs the name

@@ -98,7 +98,7 @@ export cohort_qc_summary_lines, cohort_has_outliers
 export cohort_has_answer, cohort_reply, cohort_check!, chain_cohort_qc!, cohort_state, stamp_cohort_check!
 export gating_qc!, gating_qc_findings, gating_value_names, gating_qc_summary_lines
 export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired, claim_unit_attrs
-export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, run_entry_format, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces, run_gates
+export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, run_entry_format, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces, run_write_check, run_gates
 export open_run_log!, close_run_log!, reap_run_log!, skip_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED, RUN_LOG_SKIPPED
 export run_author, run_env_of, read_run_env
 export RunUsage, with_run_usage, record_run_usage!, run_usage, merge_run_usage!, read_local_py_usage, run_usage_from_hpc

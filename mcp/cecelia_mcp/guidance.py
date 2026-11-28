@@ -54,9 +54,9 @@ things you can write. Read it and follow it; it is the rest of these instruction
 is relevant.
 
 Writes add beside the user's work and change only what you added. You can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
-not a limitation to apologise for. (The exception is a session also given the separate \
-cecelia-autonomous server — an unattended run, or one with no GUI: there, its run_chain / run_task \
-start what you design here.) If \
+not a limitation to apologise for. (Exception: the cecelia-autonomous server's run_chain / run_task — \
+unattended or with no GUI; with the GUI, only in the open project, never onto a label set, an image \
+version or a taken name.) If \
 these tools cannot reach Cecelia, say so; do not try to install, register or configure anything.
 
 Never hand-edit or work around Cecelia's code, ccid.json or stores; call report_issue on a bug or \
@@ -311,7 +311,8 @@ keys/ranges, and get_image_info for the CHANNEL names (a drift reference channel
 cell/nuc channels, cannot be picked without them). Then say which values came from the data, which \
 you left at defaults, and what genuinely could not be resolved yet — a population a later node \
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
-that part is the user's. In a session that also has the cecelia-autonomous server (unattended, or no GUI), the chain \
+that part is the user's. In a session that also has the cecelia-autonomous server (unattended, no GUI, or the GUI \
+through the plugin — there only for steps that write no label set or image version), the chain \
 IS how you run the pipeline: author it here, start it with run_chain, and the Chains page keeps it as \
 the record of what ran. A segmentation (or other label set) onto a name the image already has is \
 refused, and the refusal names a free one ("use 'default_2'") — take that name. Never set \

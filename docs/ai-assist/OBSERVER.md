@@ -11,6 +11,7 @@ Claude sits next to the user. Watches what's happening. Reads task logs, image n
 
 **Phase 2 — Designer** (after API and chain scheduler are stable)
 Claude proposes analysis strategies, suggests parameter adjustments, flags before things go wrong rather than after. Write-capable MCP with human confirmation on every action.
+Starting work in the user's own session is the autonomous server's GUI mode (`mcp/cecelia_mcp/gui_mode.py`, `docs/todo/AGENT_GUI_RUNS_PLAN.md`): Claude Code's per-call prompt is the confirmation, and runs that write a label set or an image version, or replace an existing output, are refused.
 
 **Phase 3 — Analyst** (after Phase 2 is proven)
 The overnight analyst. "I have 20 images, two treatment groups, I need to know if there's a behaviour difference by tomorrow." Claude runs the pipeline, flags edge cases, writes the morning summary. User reviews results, not a blank screen.

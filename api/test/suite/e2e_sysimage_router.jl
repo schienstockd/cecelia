@@ -448,7 +448,7 @@ end
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim", "/api/viewer/chunk-cache/set",
         "/api/versions/prune",   # VN P5 prune surface — dry-run first, then destructive
         "/api/profiles/save", "/api/profiles/delete",
-        "/api/tasks/custom-modules/reload", "/api/tasks/validate",
+        "/api/tasks/custom-modules/reload", "/api/tasks/validate", "/api/tasks/write-check",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/system/envs/install",
         "/api/system/weights/fetch",
@@ -513,7 +513,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 136 && length(POST_ROUTES) == 207
+    @test length(GET_ROUTES) == 136 && length(POST_ROUTES) == 208
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

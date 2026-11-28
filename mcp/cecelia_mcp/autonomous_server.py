@@ -1,7 +1,8 @@
-"""cecelia-autonomous: the MCP server an UNATTENDED agent gets beside the read-only observer — start
-work, wait for it, draw gates. Never wired into a GUI user's session. Two callers: the agent-eval runner
-(`scripts/agent_eval/run_app.py`) starts it with ``CECELIA_MCP_PROJECT`` set to a disposable project,
-and the chat launcher (`chat.py`, ``CECELIA_MCP_NO_GUI=1``) for a user with no GUI at all.
+"""cecelia-autonomous: the MCP server that STARTS work beside the read-only observer — start work, wait
+for it, draw gates. Three callers: the agent-eval runner (`scripts/agent_eval/run_app.py`) starts it with
+``CECELIA_MCP_PROJECT`` set to a disposable project; the chat launcher (`chat.py`, ``CECELIA_MCP_NO_GUI=1``)
+for a user with no GUI at all; and the Cecelia plugin (``CECELIA_MCP_GUI=1``, `gui_mode.py`) in a GUI
+user's own session, where it offers only the run and wait tools, each call approved by the user.
 The guard and its allow-list live in ``cecelia_mcp.autonomous``.
 
 Run:   CECELIA_MCP_PROJECT=<uid> [CECELIA_MCP_PREFIX=agent] PYTHONPATH=mcp:python python -m cecelia_mcp.autonomous_server
@@ -18,6 +19,7 @@ from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.issue_report import failure_text, note_failed_runs
 from cecelia_mcp.gating_views import register_gating_tools
 from cecelia_mcp.figure_tools import register_figure_tools
+from cecelia_mcp.gui_mode import gui_mode_enabled
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.tool_kinds import annotations_for
 
@@ -38,8 +40,20 @@ NO_GUI_INSTRUCTIONS = (
     "`importImages.omezarr` over the new image uids to convert them — nothing is analysable before "
     "that import is done. Projects you create join this session's lock."
 )
+# GUI mode (gui_mode.py): the user's own session, the app open, each call approved at the keyboard.
+GUI_INSTRUCTIONS = (
+    "Starts work in the project the user has OPEN in Cecelia, with them approving each call: run_task / "
+    "run_chain what you designed together (the observer's create_chain), then wait_for_tasks / "
+    "wait_for_chain. The run shows in their Task Manager, where they can cancel it. Refused here, and "
+    "for the user to run instead: anything that writes an image version or a label set (segmentation, "
+    "measuring, tracking, image processing), and any run that would replace an existing output — the "
+    "refusal names a free name to use instead. Before a long or GPU run, say what it is and roughly how "
+    "long it takes."
+)
 if no_gui_enabled():
     INSTRUCTIONS += NO_GUI_INSTRUCTIONS
+if gui_mode_enabled():
+    INSTRUCTIONS = GUI_INSTRUCTIONS
 
 _client = AutonomousClient()   # this user's backend: loopback.default_base_url()
 mcp = CallerMCPServer("cecelia-autonomous", instructions=INSTRUCTIONS)
@@ -63,9 +77,14 @@ def _tool(fn):
 def get_lock() -> dict:
     """Which project this session may run work in, and the output-name prefix it must use (empty =
     none). Call first; every other tool refuses a different project. `projectUids` lists every
-    allowed project — in a session with no GUI, the projects it created join it."""
+    allowed project — in a session with no GUI, the projects it created join it; with the GUI
+    (`gui: true`) it is the project open in Cecelia, and follows the user when they switch."""
+    if gui_mode_enabled():
+        open_uid = _client.gui_project()
+        return {"projectUid": open_uid, "projectUids": [open_uid] if open_uid else [],
+                "prefix": "", "noGui": False, "gui": True}
     return {"projectUid": locked_project(), "projectUids": allowed_projects(),
-            "prefix": required_prefix(), "noGui": no_gui_enabled()}
+            "prefix": required_prefix(), "noGui": no_gui_enabled(), "gui": False}
 
 
 def _no_gui_tool(fn):
@@ -108,8 +127,10 @@ def run_task(project_uid: str, fun_name: str, params: dict, image_uids: list[str
     Returns `{tasks: [{taskId, imageUid, status, log}]}` — `status` is "submitted" or "failed" (an
     immediate refusal; `log` says why). Then call wait_for_tasks with the ids. A task that NAMES an
     output (a segmentation, an HMM column) is refused unless the name carries the session prefix.
-    A name the image already has is refused with a free one to use instead — use it. `overwrite: true`
-    is refused unless every output carries the prefix (only this session's own outputs)."""
+    A segmentation under a name the image already has is refused with a free one to use instead — use
+    it. `overwrite: true` is refused unless every output carries the prefix (only this session's own
+    outputs). In a GUI session, a run that writes an image version or a label set is refused, and so is
+    any run that would replace an existing output — that refusal also names a free one."""
     out = _client.run_task(project_uid, fun_name, params, image_uids, set_uid)
     return note_failed_runs(out, any(t.get("status") == "failed" for t in out.get("tasks") or []))
 
@@ -145,9 +166,12 @@ def wait_for_chain(project_uid: str, run_id: str, timeout_s: int = 1800) -> dict
 
 # The gating toolset — the observer's, defined ONCE in gating_views.py. This server's client adds the
 # project lock, the output-name prefix and the measured-segmentation check (`_gating_guard`).
-globals().update(register_gating_tools(_tool, _client))
 # The figure toolset (figure_tools.py) — the observer's too; the project lock applies through `_request`.
-globals().update(register_figure_tools(_tool, _client))
+# Not in GUI mode: the observer beside it already offers both, and a second copy of every gating tool
+# would only split which one Claude picks.
+if not gui_mode_enabled():
+    globals().update(register_gating_tools(_tool, _client))
+    globals().update(register_figure_tools(_tool, _client))
 
 
 def main():
