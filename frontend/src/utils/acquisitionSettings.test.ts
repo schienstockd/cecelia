@@ -186,6 +186,15 @@ describe('a Leica widefield .lif: camera, cube, exposure, gain', () => {
     expect(rows.find(r => r.k === 'CD68')!.v).toBe('cycle 2 · AF647 · RX015 · clone KP1 · 100 ms · gain 1')
   })
 
+  it('a run with only some channels AF-subtracted says how many, as the light path does', () => {
+    // blank cycles are not subtracted (`calibration_helpers.jl` builds the same mixed run)
+    const ch = (order: number, afSubtracted: boolean) =>
+      ({ order, name: `C${order}`, dyePreset: null, laser: null, detector: 'cam', hv: null, gain: 1, offset: 0, afSubtracted })
+    const rows = acquisitionRows({ channels: [ch(1, true), ch(2, false), ch(3, true)] })
+    expect(rows.find(r => r.k === 'Autofluorescence')?.v).toBe('subtracted by the scanner on 2 of 3 channels')
+    expect(acquisitionRows({ channels: [ch(1, false)] }).find(r => r.k === 'Autofluorescence')).toBeUndefined()
+  })
+
   it('marks a UTC-only time stamp as UTC', () => {
     expect(acquiredAtText(lif)).toBe('2026-07-09 04:31 UTC')
     expect(acquiredAtText({ acquiredAt: '2026-07-16T13:44:00+10:00' })).toBe('2026-07-16 13:44')

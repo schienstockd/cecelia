@@ -9,7 +9,7 @@
 
 import type { CciaImage } from '../stores/project'
 import { fmtNum, shortUnit, formatTimeIncrement } from './physicalSize'
-import { depthRampName, framesShortOf, pinholeText, type AcquisitionSettings } from './acquisitionSettings'
+import { afSubtractedText, depthRampName, framesShortOf, pinholeText, type AcquisitionSettings } from './acquisitionSettings'
 
 /** Where a value came from — drawn as a shape AND a colour, so it reads without colour vision. */
 export type LightPathSource = 'ome' | 'file' | 'measured' | 'missing'
@@ -290,11 +290,8 @@ function stageItems(img: LightPathImage, laserTargets: boolean): Record<string, 
   if (cyc) {
     const plan = [cyc.planned != null && `${cyc.planned} planned`, cyc.blank != null && `${cyc.blank} blank`].filter(Boolean).join(', ')
     stack.push(item(`${cyc.count} cycles imaged${plan ? ` (${plan})` : ''}`, 'file'))
-    const afOn = chans.filter(c => c.afSubtracted === true).length
-    if (afOn > 0) {
-      stack.push(item(afOn === chans.length ? 'Autofluorescence subtracted by the scanner'
-        : `Autofluorescence subtracted by the scanner on ${afOn} of ${chans.length} channels`, 'file'))
-    }
+    const af = afSubtractedText(chans)
+    if (af) stack.push(item(`Autofluorescence ${af}`, 'file'))
     for (const c of chans.filter(c => c.cycle != null)) stack.push({ ...item(`${chName(c)} cycle ${c.cycle}`, 'file'), channel: c.order })
   }
 
