@@ -52,7 +52,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `tasks/segment/coastal_run.py` | `app/src/tasks/segment/coastal.jl:183` | `imPath`, `models`, `qcOutPath` |
 | `tasks/segment/correct_run.py` | `app/src/tasks/segment/correct.jl:181` | `imPath`, `labelsPath`, `ops`, `resultFile` |
 | `tasks/segment/import_labels_run.py` | `app/src/tasks/segment/import_labels.jl:109` | `imPath`, `matchIds`, `matchThreshold`, `outPaths`, `qcOutPath`, `sources` |
-| `tasks/segment/measure_labels_run.py` | `app/src/tasks/segment/measure_labels.jl:81` | `imPath`, `labelDir`, `labelFiles`, `nThreads`, `outputValueName` |
+| `tasks/segment/measure_labels_run.py` | `app/src/tasks/segment/measure_labels.jl:77` | `imPath`, `labelDir`, `labelFiles`, `nThreads`, `outputValueName` |
 | `tasks/segment/ridges_run.py` | `app/src/tasks/segment/ridges.jl:123` | `channelIndex`, `darkRidges`, `filter`, `imPath`, `labelsOutPath`, `minSizePx`, `perZ`, `qcOutPath`, `sigmaMax`, `sigmaMin`, `threshold` |
 | `tasks/spatialAnalysis/cell_aggregates_mesh_run.py` | `app/src/tasks/spatialAnalysis/aggregatesMeshes.jl:61` | `aggregateIdCol`, `imPath`, `isAggregateCol`, `labelPath`, `labels`, `maxClusterDist`, `minCells`, `physicalSizes`, `popType`, `propsPath`, `qcOutPath` |
 | `tasks/spatialAnalysis/cell_contacts_mesh_run.py` | `app/src/tasks/spatialAnalysis/contactsMeshes.jl:95` | `aLabelPath`, `aLabels`, `bLabelPath`, `checkContained`, `imPath`, `maxContactDist`, `physicalSizes`, `popType`, `propsPath`, `qcOutPath`, `targets` |
@@ -70,7 +70,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:845` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
 | `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1175` | — |
 
-Call sites with a computed script name (not resolved): `app/src/maintenance.jl:88`, `app/src/model/project.jl:412`, `app/src/py_runner.jl:188`
+Call sites with a computed script name (not resolved): `app/src/maintenance.jl:88`, `app/src/model/project.jl:412`, `app/src/py_runner.jl:214`
 
 ## 2. HTTP: `/api` routes by area
 

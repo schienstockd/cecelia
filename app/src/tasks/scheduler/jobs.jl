@@ -146,6 +146,8 @@ function _execute_job!(job::TaskJob)
         # set-scope job runs _run_task over the whole image vector at once; else single image.
         job_target = run_task_target(job.target)
         result = try
+          # The task sizes its own parallelism from this (run_usage.jl); the HPC dispatch rebinds it.
+          Base.ScopedValues.with(RUN_CPU_BUDGET => _pool_cpu_budget()) do
           with_run_usage(usage) do
           tracking_new_images(new_images) do   # every image `add_image!` registers lands in new_images
           # On `TARGET_HPC` the handler still runs here; its `run_py` calls go to the cluster
@@ -167,6 +169,7 @@ function _execute_job!(job::TaskJob)
                           end
                           Base.invokelatest(job.on_process, proc)
                       end)
+          end
           end
           end
           end

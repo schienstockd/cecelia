@@ -292,6 +292,46 @@ _hpc_table(path) = (lp = label_props(path); (n_obs(lp), sort(collect(lp |> as_df
     end
 end
 
+# The dispatch rebinds the task's CPU budget to the job's allocation (`RUN_CPU_BUDGET`, run_usage.jl),
+# so a task sizes itself from the cluster job rather than this machine's pool — without calling up into
+# the HPC layer. Same transport override as the end-to-end test; nothing is submitted.
+@testset "HPC dispatch: the job's CPUs become the task's whole budget" begin
+    if !_HPC_DISPATCH_E2E
+        @test_skip false
+    else
+        Cecelia._HPC_TRANSPORT_OVERRIDE[] = (HpcLocalConn(), LocalShellBackend())
+        try
+            mktempdir() do dir
+                img, _ = _label_import_project(dir)
+                task = Cecelia._task_from_fun_name("segment.measureLabels")
+                rec = Cecelia._register_task!("cpub$(rand(1000:9999))", "segment.measureLabels", "hpc",
+                                              img.uid, "", _ -> nothing;
+                                              target = TARGET_HPC, hpc = Dict{String,Any}("cpus" => 3))
+                try
+                    got = Base.ScopedValues.with(Cecelia.RUN_CPU_BUDGET => (; cpus = 2, dedicated = false)) do
+                        Cecelia._with_run_target(rec, task, img, _ -> nothing) do
+                            (Cecelia.RUN_CPU_BUDGET[], Cecelia.run_cpu_threads(; cap = 1), hpc_task_cpus())
+                        end
+                    end
+                    @test got == ((; cpus = 3, dedicated = true), 3, 3)
+                    # a local run keeps the pool's budget the scheduler bound
+                    rec.target = TARGET_LOCAL
+                    got = Base.ScopedValues.with(Cecelia.RUN_CPU_BUDGET => (; cpus = 2, dedicated = false)) do
+                        Cecelia._with_run_target(rec, task, img, _ -> nothing) do
+                            (Cecelia.RUN_CPU_BUDGET[], hpc_task_cpus())
+                        end
+                    end
+                    @test got == ((; cpus = 2, dedicated = false), nothing)
+                finally
+                    Cecelia._deregister_task!(rec)
+                end
+            end
+        finally
+            Cecelia._HPC_TRANSPORT_OVERRIDE[] = nothing
+        end
+    end
+end
+
 @testset "HPC dispatch: cancel reaches the cluster job (local remote)" begin
     if !_HPC_DISPATCH_E2E
         @test_skip false

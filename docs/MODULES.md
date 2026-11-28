@@ -351,8 +351,9 @@ here, unchanged; only `run_py` calls leave. Porting is three edits, and the ratc
    keys; there are no class defaults): `"hpc": {"cpus": 8, "mem_gb": 64, "gpus": 1, "walltime_min": 240}`. The env chip under the function
    name then offers local ⇄ hpc, and the run form shows these, editable per run. A composite can list
    `"hpc"` only when every step does; its steps run with the composite's block.
-3. **Size anything from the machine with `hpc_task_cpus()`** when dispatched: the job's allocation, not
-   this machine's pool (`measure_labels.jl` sizes its workers this way).
+3. **Size anything from the machine with `run_cpu_threads(; cap)`** (`run_usage.jl`): when dispatched it is the
+   job's whole allocation, locally the cpu pool's headroom capped at `cap` (`measure_labels.jl` sizes its
+   workers this way). `hpc_task_cpus()` is the cluster half alone.
 
 A missed read fails fast: any other absolute path in the params refuses the run before submitting,
 naming the path. A missed write is lost, and the log names it (`[WARN] The cluster job also changed …`);

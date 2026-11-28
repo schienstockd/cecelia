@@ -1,14 +1,6 @@
 [
     {
         "kind": "julia-upward",
-        "subject": "`active_profile_name`",
-        "rank": -5,
-        "detail": "defined in ai+lab log (tier 8), called from config (tier 1), jobs (export, import, maintenance) (tier 7), model (tier 2), scheduler+chains (tier 7), task framework (tier 5)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_history_leaves`",
         "rank": -4,
         "detail": "defined in scheduler+chains (tier 7), called from cell data (tier 3), model (tier 2), qc+checks (tier 4), run records (tier 2)",
@@ -73,14 +65,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`TaskRequest`",
-        "rank": -1,
-        "detail": "defined in runner (tier 8), called from scheduler+chains (tier 7)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_catkey`",
         "rank": -1,
         "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
@@ -116,14 +100,6 @@
         "subject": "`_finite`",
         "rank": -1,
         "detail": "defined in plots+boards (tier 8), called from tracking+spatial (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_fun_name_from_task`",
-        "rank": -1,
-        "detail": "defined in scheduler+chains (tier 7), called from task framework (tier 5)",
         "where": [
         ]
     },
@@ -185,41 +161,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`_run_py_hpc`",
-        "rank": -1,
-        "detail": "defined in hpc (tier 7), called from python bridge (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_run_tar`",
-        "rank": -1,
-        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`_stored_key`",
         "rank": -1,
         "detail": "defined in task framework (tier 5), called from qc+checks (tier 4)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_tar_available`",
-        "rank": -1,
-        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`_tar_unpack_cmd`",
-        "rank": -1,
-        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from task framework (tier 5)",
         "where": [
         ]
     },
@@ -236,22 +180,6 @@
         "subject": "`corrections_dir`",
         "rank": -1,
         "detail": "defined in tracking+spatial (tier 4), called from cell data (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`default_export_dir`",
-        "rank": -1,
-        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`execute_task`",
-        "rank": -1,
-        "detail": "defined in runner (tier 8), called from scheduler+chains (tier 7)",
         "where": [
         ]
     },
@@ -281,14 +209,6 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`hpc_task_cpus`",
-        "rank": -1,
-        "detail": "defined in hpc (tier 7), called from tasks (tier 6)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`is_bookkeeping_param`",
         "rank": -1,
         "detail": "defined in scheduler+chains (tier 7), called from qc+checks (tier 4)",
@@ -313,33 +233,9 @@
     },
     {
         "kind": "julia-upward",
-        "subject": "`list_tasks`",
-        "rank": -1,
-        "detail": "defined in scheduler+chains (tier 7), called from task framework (tier 5)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
         "subject": "`load_roi_set`",
         "rank": -1,
         "detail": "defined in tracking+spatial (tier 4), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`plugin_roots`",
-        "rank": -1,
-        "detail": "defined in task framework (tier 5), called from python bridge (tier 3)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`pool_status`",
-        "rank": -1,
-        "detail": "defined in scheduler+chains (tier 7), called from tasks (tier 6)",
         "where": [
         ]
     },
@@ -388,14 +284,6 @@
         "subject": "`save_pop_tree!`",
         "rank": -1,
         "detail": "defined in gating (tier 4), called from model (tier 2)",
-        "where": [
-        ]
-    },
-    {
-        "kind": "julia-upward",
-        "subject": "`store_debris_summary`",
-        "rank": -1,
-        "detail": "defined in jobs (export, import, maintenance) (tier 7), called from model (tier 2)",
         "where": [
         ]
     },
