@@ -1,7 +1,7 @@
 """Recital orchestrator — the single entry point for pre-commit reviewer discipline.
 
 Spawns the reviewers (fanout audit + convention check, plus the result review when the diff touches
-a result path) via `claude -p` subprocess, runs the two
+a result path, and the plan review when it adds to a parked plan) via `claude -p` subprocess, runs the two
 mechanical checks (inventory coverage, maintainability lint), emits log
 events atomically with the runs, and produces formatted recital text ready to paste into the
 commit message. Replaces the manual "agent spawns subagents, agent formats, agent emits"
@@ -56,6 +56,7 @@ from cecelia.utils.atomic_io import write_json_atomic
 _FANOUT_DOC = "docs/ai-assist/FANOUT_AUDIT.md"
 _CONVENTION_DOC = "docs/ai-assist/CONVENTION_CHECK.md"
 _RESULT_DOC = "docs/ai-assist/RESULT_REVIEW.md"
+_PLAN_DOC = "docs/ai-assist/PLAN_REVIEW.md"
 
 
 #: Heads a reviewer's section when it errored: the recital still prints, stamp included, but that
@@ -99,6 +100,7 @@ MARKERS: dict[str, tuple[str, ...]] = {
     "convention": ("should reuse", "wrong home"),
     "result": ("reproduced",),
     "test_value": ("passes on base", "untested", "no browser test"),   # mechanical: test_value.py
+    "plan": ("wrong claim", "already exists", "design flaw"),
 }
 
 #: Advisory markers — no outcome tag required and no `_finding` row, but still a finding the
@@ -108,13 +110,14 @@ ADVISORY_MARKERS: dict[str, tuple[str, ...]] = {
     "convention": ("potential duplicate",),
     "result": ("inferred", "display"),
     "test_value": (),
+    "plan": ("scope", "answered", "unverified"),
 }
 
 #: Advisory markers that still get a printed slug, so the author MAY tag one fixed. The weekly bug
 #: sweep re-checks every untagged `plausible` note (the same slug is its key); about half are fixed
 #: at commit, and a `[slug: fixed_pre_commit]` lets it skip those. Optional: the hook never asks.
 TAGGABLE_ADVISORY: dict[str, tuple[str, ...]] = {"fanout": ("plausible",), "convention": (), "result": ("inferred",),
-                                                 "test_value": ()}
+                                                 "test_value": (), "plan": ()}
 
 _OPTIONAL_TAG_NOTE = ("_{Marker} notes need no tag. If you fixed one, tag it `[<slug>: fixed_pre_commit]` "
                       "so the weekly judge doesn't re-check it._")
@@ -352,7 +355,7 @@ def _reviewer_prompt(doc_path: str, diff: str) -> str:
 #: Strip trailing patterns like `_Convention check: run_` / `_Fanout audit: run_` /
 #: `_Sibling-call audit: run_` so the recital's own tail isn't a duplicate.
 _STRIP_TRAILING_TAIL = re.compile(
-    r"\n?\s*_(?:Fanout audit|Sibling-call audit|Convention check|Result review):\s*[^\n_]+_\s*$"
+    r"\n?\s*_(?:Fanout audit|Sibling-call audit|Convention check|Result review|Plan review):\s*[^\n_]+_\s*$"
 )
 
 
@@ -770,6 +773,69 @@ def run_result_review(
     )
 
 
+#: A parked plan (`docs/todo/README.md`). Briefs (`*_PROMPT.md`) live in `docs/archive/` and never match.
+_PLAN_GLOB = "docs/todo/*_PLAN.md"
+#: The reviewer reads code, docs, history and other worktrees; it writes nothing.
+PLAN_REVIEW_TOOLS = "Read,Grep,Glob,Bash"
+#: It reads the plan, its brief, the overlapping plans and the code they name: minutes, like the result review.
+PLAN_REVIEW_TIMEOUT = 1200.0
+
+
+def touched_plans(diff: str) -> list[str]:
+    """The parked plans the diff adds lines to. A deletion or a pure rename has nothing to review."""
+    return [f.path for f in _parse_diff(diff)
+            if fnmatch.fnmatch(f.path, _PLAN_GLOB) and not f.is_deleted and f.added]
+
+
+def run_plan_review(
+    diff: str,
+    *,
+    claude_runner: _t.Callable[[str], str | ReviewerReply] | None,
+    pr: str | None,
+    commit: str | None,
+    branch: str | None,
+    rounds: Rounds | None = None,
+) -> str:
+    """The fourth reviewer (`docs/ai-assist/PLAN_REVIEW.md`), gated on parked plans; repeat rounds as
+    `_run_reviewer`. A fresh read-only session in the worktree, under the agent sandbox."""
+    title = "Plan review"
+    plans = touched_plans(diff)
+    if not plans:
+        append_event("plan_review_run", {"duration_s": 0.0, "escape_valve": "no_plan"},
+                     pr=pr, commit=commit, branch=branch)
+        return f"_{title}: skipped — no plan changed_"
+    runner = claude_runner
+    if runner is None:
+        root = _repo_root()
+
+        def runner(prompt: str) -> ReviewerReply:
+            # Sandboxed like the result review's agent: `~` is write-denied, so the worktree (under `~`)
+            # is read-only; network off. Reads of sibling worktrees stay allowed: a plan may lean on one.
+            return _default_runner(prompt, PLAN_REVIEW_TIMEOUT, cwd=str(root),
+                                   extra_args=["--dangerously-skip-permissions",
+                                               "--settings", json.dumps(SANDBOX_SETTINGS),
+                                               "--tools", PLAN_REVIEW_TOOLS, "--strict-mcp-config",
+                                               "--no-session-persistence"],
+                                   env=agent_env())
+
+    return _run_reviewer(
+        event_name="plan_review_run",
+        finding_event_name="plan_review_finding",
+        advisory_event_name="plan_review_advisory",
+        mechanism="plan",
+        title=title,
+        tail_none="no plan review needed",
+        doc_path=_PLAN_DOC,
+        diff=diff,
+        claude_runner=runner,
+        pr=pr,
+        commit=commit,
+        branch=branch,
+        run_extra={"plans": plans[:20]},
+        rounds=rounds,
+    )
+
+
 #: The stamp recital ends its body with — which change (branch @ parent SHA) the review is OF.
 #: The commit-msg hook rejects a message carrying a stamp for a different change: a recital body
 #: written to a file another session also writes (a shared scratchpad) gets spliced — one run's
@@ -882,6 +948,8 @@ def run_recital(
     )
     result_section = run_result_review(diff, claim=claim, claude_runner=claude_runner,
                                        pr=pr, commit=commit, branch=branch, rounds=rounds)
+    plan_section = run_plan_review(diff, claude_runner=claude_runner, pr=pr, commit=commit, branch=branch,
+                                   rounds=rounds)
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
     lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
     changelog_section = run_changelog_check(diff, pr=pr, commit=commit, branch=branch)
@@ -894,5 +962,5 @@ def run_recital(
             test_value_section = (f"_{_TEST_VALUE_TITLE} (evidence):_\n\n> **{ERROR_MARKER}** — {type(e).__name__}: {e}"
                                   f"\n\n_{_TEST_VALUE_TITLE}: {ERRORED_TAIL}_")
 
-    return (f"{fanout_section}\n\n{convention_section}\n\n{result_section}\n\n{inventory_section}\n\n{lint_section}\n\n{changelog_section}"
+    return (f"{fanout_section}\n\n{convention_section}\n\n{result_section}\n\n{plan_section}\n\n{inventory_section}\n\n{lint_section}\n\n{changelog_section}"
             f"\n\n{test_value_section}\n\n{recital_stamp(branch, commit)}")
