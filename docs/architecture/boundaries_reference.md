@@ -67,7 +67,7 @@ Every touchpoint, row by row. The map and what does not line up: [`boundaries.md
 | `utils/store_sweep.py` | `app/src/maintenance.jl:57` | `apply`, `resultPath`, `root` |
 | `writers/render_animation_run.py` | `api/src/movie_render.jl:213`, `api/src/movie_render.jl:280` +1 | `canvasH`, `canvasW`, `fps`, `labelColouring`, `labelColours`, `labelContourPx`, `labelFiles`, `labelOpacity`, `labelsPath`, `outPath`, `outPaths`, `overlaySizeUnit` +10 |
 | `writers/render_figure.py` | `app/src/figures.jl:103` | `states` |
-| `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:835` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
+| `writers/stitch_movies_run.py` | `api/src/movie_rail.jl:845` | `fps`, `labels`, `layout`, `outPath`, `sources`, `titleCard` |
 | `writers/write_categorical_obs_run.py` | `app/src/label_props.jl:1175` | — |
 
 Call sites with a computed script name (not resolved): `app/src/maintenance.jl:88`, `app/src/model/project.jl:412`, `app/src/py_runner.jl:188`
@@ -215,7 +215,7 @@ Routes with no caller on purpose (`ARCH-EXEMPT:` on the route's line):
 
 | File | Path | Named from |
 |---|---|---|
-| `constants.json` | `frontend/src/lib/webgpu/shaders/constants.json` | Julia: `api/src/shader_constants.jl`; Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts`, `frontend/src/lib/webgpu/shaderSource.ts` +7 |
+| `constants.json` | `frontend/src/lib/webgpu/shaders/constants.json` | Julia: `api/src/shader_constants.jl`; Python: `python/cecelia/utils/movie_io.py`, `python/cecelia/utils/wgpu_host.py` +1; TS/Vue: `frontend/src/lib/webgpu/mipShader.ts`, `frontend/src/lib/webgpu/shaderSource.ts` +8 |
 | `figureStyle.json` | `frontend/src/lib/figureStyle.json` | Julia: `app/src/figures.jl`; Python: `python/cecelia/writers/render_figure.py`; TS/Vue: `frontend/src/components/FigureStyleEditor.vue`, `frontend/src/utils/figureStyle.ts` |
 | `golden.json` | `frontend/src/lib/webgpu/shaders/golden.json` | Python: `python/cecelia/utils/wgpu_host.py`, `python/cecelia/utils/wgsl_utils.py`; TS/Vue: `frontend/src/lib/webgpu/wgslExpand.ts` |
 | `guides.json` | `mcp/cecelia_mcp/guides.json` | Python: `mcp/cecelia_mcp/server.py`, `scripts/agent_eval/guide_run.py` +1; TS/Vue: `frontend/src/lib/claudeOverview.ts`, `frontend/src/lib/guides/guideText.ts` +1 |
@@ -240,7 +240,7 @@ Files per language that name each kind of project file (a reference, not necessa
 
 | File kind | Julia | Python | TS/Vue |
 |---|---|---|---|
-| project.json | 12 |  |  |
+| project.json | 11 |  |  |
 | ccid.json (image / set record) | 42 | 16 | 17 |
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The lab-log panel: the human/AI shared analysis memory for the current project. Backed by
-// GET/POST /api/lablog (→ {proj}/lab-log.md; see app/src/lab_log.jl, docs/ai-assist/LAB-LOG.md).
+// GET/POST /api/lablog (→ {proj}/lab-log.md; see app/src/model/lab_log.jl, docs/ai-assist/LAB-LOG.md).
 // Zero-friction by design: an always-focused entry field at the top, submit on Enter, newest-first
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.

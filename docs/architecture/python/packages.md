@@ -27,7 +27,7 @@ flowchart LR
     runners__tracking["runners: tracking<br/><small>3 files · 0.1k lines</small>"]
   end
   MCP_server__cecelia_mcp_["MCP server (cecelia_mcp)<br/><small>19 files · 6.9k lines</small>"]
-  cecelia_utils["cecelia.utils<br/><small>61 files · 22.5k lines</small>"]
+  cecelia_utils["cecelia.utils<br/><small>61 files · 22.6k lines</small>"]
   cecelia_writers["cecelia.writers<br/><small>4 files · 1.2k lines</small>"]
   cecelia_client["cecelia_client<br/><small>1 files · 0.1k lines</small>"]
   dev_tooling__effectiveness_["dev tooling (effectiveness)<br/><small>19 files · 6.1k lines</small>"]

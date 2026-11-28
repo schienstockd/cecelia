@@ -1,6 +1,6 @@
 // Pure helpers for the lab-log panel (frontend half). The heavy lifting — parsing markdown into
 // entries, injecting the dated author header, append-only writes — lives in the backend
-// (app/src/lab_log.jl); the panel just renders what /api/lablog returns and formats a new entry.
+// (app/src/model/lab_log.jl); the panel just renders what /api/lablog returns and formats a new entry.
 // Keeping author classification + the correction template here (one source of truth) means the
 // colour coding, the badge, and the correction prefill all agree. See docs/ai-assist/LAB-LOG.md.
 import { SEVERITY } from '../lib/severity'
@@ -66,7 +66,7 @@ export const CECELIA_AUTHOR = 'Cecelia'
  */
 export function authorKind(author: string): AuthorKind {
   // A human entry carries the profile that wrote it after ` · ` (`lab_log_user_author` in
-  // app/src/lab_log.jl) — classify on the tag alone so a profile name can't change the kind.
+  // app/src/model/lab_log.jl) — classify on the tag alone so a profile name can't change the kind.
   const a = (author ?? '').split(' · ')[0].trim().toLowerCase()
   if (a.includes('correction')) return 'correction'
   if (a.includes('labarchives')) return 'labarchives'
