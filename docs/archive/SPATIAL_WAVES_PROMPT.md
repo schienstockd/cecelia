@@ -1,3 +1,7 @@
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
+> time. It is not a description of how the code works now, and not instructions to re-run. Current
+> design lives in [`docs/todo/SPATIAL_WAVES_PLAN.md`](../todo/SPATIAL_WAVES_PLAN.md).
+
 # SPATIAL_WAVES_PROMPT
 
 You are auditing and designing a feature for Cecelia (`schienstockd/cecelia`). Read the repo first. Do not build anything until the validation plan (section 6, item 7) is agreed. These are ideas, not decisions.
