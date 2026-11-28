@@ -241,7 +241,7 @@ Files per language that name each kind of project file (a reference, not necessa
 | File kind | Julia | Python | TS/Vue |
 |---|---|---|---|
 | project.json | 11 |  |  |
-| ccid.json (image / set record) | 42 | 16 | 17 |
+| ccid.json (image / set record) | 43 | 16 | 17 |
 | OME-ZARR (.zarr) | 36 | 32 | 10 |
 | .h5ad (cell data) | 32 | 22 | 6 |
 | gating JSON | 28 |  | 4 |

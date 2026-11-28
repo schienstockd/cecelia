@@ -198,7 +198,7 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
 end
 
 # Rename one image's segmentation value_name across every artifact keyed by it. See
-# `rename_value_name!` in app/src/storage.jl for the on-disk + ccid.json contract; this route is a
+# `rename_value_name!` in app/src/rename_value_name.jl for the on-disk + ccid.json contract; this route is a
 # thin body-parse + call + fresh-image-payload wrapper, symmetric with `api_images_delete_labels`.
 function api_images_rename_labels(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
