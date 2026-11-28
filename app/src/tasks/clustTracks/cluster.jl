@@ -201,7 +201,8 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     at = string(Dates.now())                  # one stamp for the whole run
     for seg in segments
         _write_clust_features!(seg["propsPath"], p.valueNameSuffix, present_cols, uids;
-                               behaviour_axes = axes, at = at, labels = pop_fraction_labels(popfrac))
+                               behaviour_axes = axes, at = at, labels = pop_fraction_labels(popfrac),
+                               pop_fractions = pop_fraction_record(df, seg["uID"], seg["valueName"], popfrac))
     end
     # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = p.valueNameSuffix, on_log = on_log)

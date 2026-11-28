@@ -333,3 +333,68 @@ function add_track_pop_fractions!(df, imgs, tokens)::Vector{String}
     end
     problems
 end
+
+"""
+    pop_fraction_record(df, uid, vn, tokens) -> Union{Nothing, Dict}
+
+What a Cluster tracks run saves of the shares it clustered on, for one segmentation of its pooled
+frame (`uID`, `value_name`, `label` = track id): the tracks' ids and each token's shares in that
+order, NaN as null. `nothing` without share features. Read back by `run_pop_fractions`.
+"""
+function pop_fraction_record(df, uid::AbstractString, vn::AbstractString, tokens)
+    isempty(tokens) && return nothing
+    rows = [i for i in 1:nrow(df) if string(df.uID[i]) == uid && string(df.value_name[i]) == vn]
+    share(v) = (v isa Real && isfinite(v)) ? Float64(v) : nothing
+    Dict{String,Any}("trackIds" => Int[Int(df.label[i]) for i in rows],
+                     "shares" => Dict{String,Any}(String(t) => Any[share(df[i, t]) for i in rows] for t in tokens))
+end
+
+"""
+    freeze_run_pop_fractions!(df, imgs, suffix; pop_type = nothing) -> Bool
+
+Swap each `popfrac:` column of a track run's frame (`value_name`, `label` = track id, plus `uID` on a
+set read — else every row is `imgs[1]`'s) for the shares saved when the run clustered
+(`run_pop_fractions`): a heatmap describes the clusters by the numbers they were built on, not by the
+current gates. The run is each row's cluster population's own (`cluster_pop_suffix`, with `pop_type`
+and a `pop` column — a board can show pops of several runs), else `suffix`. A group read from a save
+takes every value from it — NaN for a track the run left out — so no series mixes two gate states.
+Returns whether a saved share differs from today's — a gate changed since the run, which only
+re-running the clustering brings the clusters up to. A run that saved none keeps today's values.
+"""
+function freeze_run_pop_fractions!(df, imgs, suffix; pop_type = nothing)::Bool
+    toks = filter(is_pop_fraction, names(df))
+    (isempty(toks) || nrow(df) == 0 || isempty(imgs)) && return false
+    by_uid = Dict(img.uid => img for img in imgs)
+    set_read = "uID" in names(df)
+    per_pop = pop_type !== nothing && "pop" in names(df)
+    keys_ = vcat(set_read ? [:uID] : Symbol[], [:value_name], per_pop ? [:pop] : Symbol[])
+    trees = Dict{Tuple{String,String},PopulationTree}()
+    changed = false
+    for g in groupby(df, keys_; sort = false)
+        img = set_read ? get(by_uid, string(first(g.uID)), nothing) : first(imgs)
+        img === nothing && continue
+        vn = string(first(g.value_name))
+        run = suffix
+        if per_pop
+            m = get!(() -> load_pop_tree(img; value_name = vn, pop_type = pop_type), trees, (img.uid, vn))
+            path = string(first(g.pop))
+            own = has_pop(m, path) ? cluster_pop_suffix(m.pops[path]) : nothing
+            own === nothing || (run = own)
+        end
+        run === nothing && continue
+        saved = run_pop_fractions(img_track_props_path(img, vn), String(run))
+        saved === nothing && continue
+        for t in toks
+            s = get(saved, t, nothing)
+            s === nothing && continue
+            col = g[!, t]                                   # a view: writes land in `df`
+            for (j, tid) in enumerate(g.label)
+                v = get(s, Int(tid), nothing)
+                live = col[j] isa Real ? Float64(col[j]) : NaN
+                v === nothing || (changed |= !(isnan(v) && isnan(live)) && !isapprox(v, live; atol = 1e-9))
+                col[j] = something(v, NaN)                  # not in the run: no clustered-on share
+            end
+        end
+    end
+    changed
+end

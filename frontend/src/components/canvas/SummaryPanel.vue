@@ -792,6 +792,10 @@ const facetNote = computed(() => {
 // state signature over an HMM run: which measures drove the states, and how well the run fit
 const fitNote = computed(() => (result.value?.chartType === 'matrix' ? hmmFitNote(result.value.fit) : null))
 
+// a track run's share rows show what it clustered on; a gate edited since leaves the clusters out of date
+const sharesNote = computed(() => (result.value?.popFractionsChanged
+  ? { text: 'Gates changed since this run', tip: 'Shares show the values clustered on. Re-run clustering to update' } : null))
+
 // a run of this name that measured something else on some images (proximity plots): they are left out
 const skippedNote = computed(() => {
   const n = result.value?.nSkipped ?? 0
@@ -1536,6 +1540,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
            Icon-only, text on hover: a wrapped sentence here made the footer row grow. -->
       <PlotNotice v-if="statsNote" class="sp-foot-note" icon-only :text="statsNote.text" :tip="statsNote.tip" />
       <PlotNotice v-if="skippedNote" class="sp-foot-note" icon-only :text="skippedNote.text" :tip="skippedNote.tip" />
+      <PlotNotice v-if="sharesNote" class="sp-foot-note" icon-only :text="sharesNote.text" :tip="sharesNote.tip" />
       <PlotNotice v-if="clipNote" class="sp-foot-note" icon-only tone="muted" :text="clipNote.text" :tip="clipNote.tip" />
       <PlotNotice v-if="overrideText" class="sp-foot-note" icon-only :text="overrideText" :tip="overrideTip" />
       <PlotNotice v-else-if="facetNote" class="sp-foot-note" icon-only :text="facetNote.text" :tip="facetNote.tip" />

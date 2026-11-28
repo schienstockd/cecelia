@@ -530,6 +530,14 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   its cells (`track_pop_fractions`, `add_track_pop_fractions!`); the run labels it `<name> share`. The
   shares of sub-populations that tile their parent sum to 1 per track, so one of them is redundant;
   nothing drops it automatically — pick the ones that matter, as with any compositional features.
+  The run saves the shares it clustered on (`popFractions` in its clustfeatures entry,
+  `pop_fraction_record` / `run_pop_fractions`), and the run's heatmap and UMAP colour read those back
+  (`freeze_run_pop_fractions!`; on a board plot of track cluster pops, each pop's own run; a track the
+  run left out has none), so a gate
+  edited after the run cannot change the numbers its clusters are described by. When today's gates give
+  other shares the plot notes it (`popFractionsChanged`):
+  the clusters are out of date, and only a re-run updates them. A run from before the save reads
+  today's shares. Track plots of flow/live pops and the behaviour cards always read today's.
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths
