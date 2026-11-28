@@ -263,13 +263,22 @@ _cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(In
 _cal_txt(v) = (v === nothing || (v isa AbstractString && isempty(v))) ? nothing : string(v)
 
 """
+    _frame_ranges_text(ranges) -> String
+
+0-based `[first, last]` frame ranges as `"0–3, 50–52"` — the wording of the irregular-interval log line
+and QC finding (`metadata.frame_interval_irregular`).
+"""
+_frame_ranges_text(ranges) = join(("$(r[1])–$(r[2])" for r in ranges), ", ")
+
+"""
     metadata_qc_findings(meta) -> Vector
 
 Advisory calibration findings for one image, from its `meta` dict (String keys: `SizeZ`/`SizeT`,
 `PhysicalSizeX/Y/Z`, `PhysicalSizeUnit`, `PhysicalSizeZ_raw` presence = auto-corrected,
-`TimeIncrement`/`TimeIncrementUnit`). PURE → unit-tested. Faithful port of the old frontend
-`fieldIssues`: missing Z spacing / auto-corrected Z / unusual Z ratio / missing frame interval /
-unit-less interval / unit-less pixel size. All `warn`; each carries `detail.field`.
+`TimeIncrement`/`TimeIncrementUnit`, `TimeIncrementIrregular` presence = read from an irregular
+series' steady part). PURE → unit-tested. Faithful port of the old frontend `fieldIssues`: missing Z
+spacing / auto-corrected Z / unusual Z ratio / missing frame interval / unit-less interval / irregular
+interval / unit-less pixel size. All `warn`; each carries `detail.field`.
 """
 function metadata_qc_findings(meta::AbstractDict)
     size_z    = _cal_int(get(meta, "SizeZ", nothing), 1)
@@ -316,6 +325,15 @@ function metadata_qc_findings(meta::AbstractDict)
         mf("metadata.frame_interval_no_unit", "t")
     elseif t_incr !== nothing && time_unit_seconds(t_unit) === nothing
         mf("metadata.frame_interval_unit_unknown", "t")
+    elseif size_t > 1 && t_incr !== nothing &&
+           (irr = get(meta, "TimeIncrementIrregular", nothing)) isa AbstractDict
+        # Read from an irregular series' steady part (`_recover_ims_time_increment!`): say which
+        # timepoints don't run at it. Cleared when a human re-enters the interval.
+        push!(fs, qc_finding("warn", "metadata.frame_interval_irregular";
+                             interval = string(round(t_incr; sigdigits = 3), " ", something(ome_xml_unit_name(t_unit), t_unit)),
+                             frames = _frame_ranges_text(something(get(irr, "frames", nothing), [])),
+                             detail = Dict{String,Any}("field" => "t", "frames" => get(irr, "frames", []),
+                                                       "steadyFrames" => get(irr, "steadyFrames", []))))
     end
 
     # spatial unit — one PhysicalSizeUnit covers x/y/z; flag whichever axes carry a value

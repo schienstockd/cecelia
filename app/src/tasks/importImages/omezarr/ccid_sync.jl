@@ -15,7 +15,7 @@ end
 const _OME_DERIVED_META_KEYS = (
     "SizeC", "SizeT", "SizeZ",
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
-    "TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared",
+    "TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared", "TimeIncrementIrregular",
     # Read from the SOURCE file, same rule; and the new store runs in the file's plane order.
     "acquisition", "acquisitionMissing", ORI_Z_REVERSED_KEY,
     # The saturation probe of the store just written: a failed probe must not keep the previous
