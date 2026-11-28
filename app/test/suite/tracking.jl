@@ -1609,4 +1609,21 @@ end
     # a lone usable frame keeps its input position too
     @test unique(pooled_track_frame([untracked, one_row]).__pool_grp) == [2]
     @test nrow(pooled_track_frame([empty_tracked, untracked])) == 0
+    # an empty frame does not count as a second input: the lone usable one is not renumbered
+    lone = pooled_track_frame([empty_tracked, one_row])
+    @test Int.(lone.track_id) == [5] && unique(lone.__pool_grp) == [2]
+end
+
+@testset "pooled_track_frame — the stride clears the LARGEST id of ANY input" begin
+    # Hand-worked: image 1 holds tracks 1 and 1005, image 2 holds track 5. The largest id in the set is
+    # 1005 (4 digits), so the round decimal stride is 10^4 and image 2's track 5 becomes 10_005. A stride
+    # taken from any smaller id (1000) would turn image 2's track 5 into 1005 — image 1's track — and
+    # silently splice two cells from two movies into one path.
+    big = _diag_df([1 => [(t, Float64(t), 0.0) for t in 0:3],
+                    1005 => [(t, Float64(t), 10.0) for t in 0:3]])
+    small = _diag_df([5 => [(t, Float64(t), 20.0) for t in 0:3]])
+    p = pooled_track_frame([big, small])
+    @test length(track_ids_present(p)) == 3
+    @test Set(Int.(p.track_id[p.__pool_grp .== 1])) == Set([1, 1005])
+    @test Set(Int.(p.track_id[p.__pool_grp .== 2])) == Set([10_005])
 end
